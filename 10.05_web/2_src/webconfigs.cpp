@@ -27,8 +27,15 @@
                                        comparison against the saved ones;
                                        503 while the machine is busy
      GET    /api/configs/<name>        full snapshot content
-     PUT    /api/configs/<name>        save the current setup under <name>,
-                                       which becomes the current configuration
+     PUT    /api/configs/<name>        write a config document {"devices":[…]}
+                                       to the file, validated against the known
+                                       devices/params. ?from=live marks the body
+                                       the live setup being saved: <name> becomes
+                                       the current configuration and the modified
+                                       state clears. Without the flag it is an
+                                       offline edit of a stored file: the file is
+                                       written, the current pointer and the live
+                                       machine untouched.
      POST   /api/configs/<name>/apply  restore a snapshot (best effort,
                                        returns the rejections); sets current
      POST   /api/configs/<name>/rename {"name":"<new>"} rename the file; the
@@ -361,6 +368,98 @@ static bool read_json_body(struct mg_connection *conn, picojson::value *out) {
 	return parse_err.empty() && out->is<picojson::object>();
 }
 
+// A config document can carry the whole device set, so read the body to its end
+// rather than to a fixed buffer.
+static bool read_json_body_full(struct mg_connection *conn, picojson::value *out) {
+	std::string body;
+	char buf[4096];
+	int n;
+	while ((n = mg_read(conn, buf, sizeof(buf))) > 0)
+		body.append(buf, (size_t) n);
+	if (body.empty())
+		return false;
+	std::string parse_err = picojson::parse(*out, body);
+	return parse_err.empty() && out->is<picojson::object>();
+}
+
+// Write a configuration file atomically: a reader either sees the previous file
+// or the new one, never a half-written document. The temporary is created
+// alongside the target so the rename stays within one filesystem.
+static bool write_config_file(const std::string &name, const std::string &body,
+		std::string *error) {
+	std::string path = config_path(name);
+	std::string tmp = path + ".tmp";
+	{
+		std::ofstream out(tmp.c_str(), std::ios::trunc);
+		if (!out.is_open()) {
+			if (error != nullptr)
+				*error = "cannot write configuration \"" + name + "\"";
+			return false;
+		}
+		out << body;
+		out.close();
+		if (out.fail()) {
+			::unlink(tmp.c_str());
+			if (error != nullptr)
+				*error = "cannot write configuration \"" + name + "\"";
+			return false;
+		}
+	}
+	if (::rename(tmp.c_str(), path.c_str()) != 0) {
+		::unlink(tmp.c_str());
+		if (error != nullptr)
+			*error = "cannot write configuration \"" + name + "\"";
+		return false;
+	}
+	return true;
+}
+
+// Check a config document against the live device registry before it is stored,
+// so an edited file can never name a device that does not exist or a parameter
+// a device does not have or an operator may not set. The registry is only read,
+// never changed — a stored edit must not disturb the running machine. On
+// rejection *error names the offending device/param.
+static bool validate_config_document(const picojson::value &doc, std::string *error) {
+	std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
+	for (const picojson::value &d : doc.get("devices").get<picojson::array>()) {
+		if (!d.get("name").is<std::string>()) {
+			*error = "every device entry needs a string \"name\"";
+			return false;
+		}
+		std::string devname = d.get("name").get<std::string>();
+		device_c *dev = nullptr;
+		for (device_c *cand : device_c::mydevices)
+			if (!device_is_infrastructure(cand)
+					&& strcasecmp(cand->name.value.c_str(), devname.c_str()) == 0) {
+				dev = cand;
+				break;
+			}
+		if (dev == nullptr) {
+			*error = "unknown device \"" + devname + "\"";
+			return false;
+		}
+		if (!d.get("params").is<picojson::object>())
+			continue;
+		for (const std::pair<const std::string, picojson::value> &kv :
+				d.get("params").get<picojson::object>()) {
+			parameter_c *p = dev->param_by_name(kv.first);
+			if (p == nullptr) {
+				*error = devname + "." + kv.first + ": unknown parameter";
+				return false;
+			}
+			if (!is_settable(p)) {
+				*error = devname + "." + kv.first + ": not settable";
+				return false;
+			}
+			if (!kv.second.is<std::string>()) {
+				*error = devname + "." + kv.first + ": value must be a string";
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
 // the image a device entry names, empty when it names none
 static std::string device_image(const picojson::value &d) {
 	if (!d.get("params").is<picojson::object>())
@@ -478,25 +577,70 @@ static void configs_list(struct mg_connection *conn) {
 // Save the live setup under <name> and make it the current configuration,
 // which clears the modified state. Save and Save As are the same operation.
 bool webconfigs_save(const std::string &name, std::string *error) {
-	std::string body = snapshot_devices().serialize();
-	std::ofstream out(config_path(name).c_str());
-	if (!out.is_open()) {
-		if (error != nullptr)
-			*error = "cannot write configuration \"" + name + "\"";
+	if (!write_config_file(name, snapshot_devices().serialize(), error))
 		return false;
-	}
-	out << body;
-	out.close();
 	WEB_INFO("configuration \"%s\" saved", name.c_str());
 	set_current(name);
 	return true;
 }
 
-// PUT /api/configs/<name> — save the current setup
-static void config_save(struct mg_connection *conn, const std::string &name) {
+// Write a config document to <name>, validated against the device registry.
+// One endpoint stores every configuration: the body is always the document to
+// save. With from_live true the body is the live setup being saved under
+// <name>, so <name> becomes the current configuration and the modified state
+// clears; with it false the document is an offline edit, written to the file
+// only, leaving the current pointer and the running machine untouched — even
+// when <name> is the current configuration, editing its stored file being
+// distinct from the live dirty state. An unknown device or unsettable parameter
+// is refused (*status 422) and nothing is written.
+bool webconfigs_write(const std::string &name, const picojson::value &document,
+		bool from_live, std::string *error, int *status) {
+	if (!document.is<picojson::object>()
+			|| !document.get("devices").is<picojson::array>()) {
+		if (error != nullptr)
+			*error = "configuration must be a JSON object with a \"devices\" array";
+		if (status != nullptr)
+			*status = 422;
+		return false;
+	}
+	std::string verr;
+	if (!validate_config_document(document, &verr)) {
+		if (error != nullptr)
+			*error = verr;
+		if (status != nullptr)
+			*status = 422;
+		return false;
+	}
+	if (!write_config_file(name, document.serialize(), error)) {
+		if (status != nullptr)
+			*status = 500;
+		return false;
+	}
+	if (from_live) {
+		WEB_INFO("configuration \"%s\" saved from the live setup", name.c_str());
+		set_current(name);
+	} else
+		WEB_INFO("configuration \"%s\" edited (%u devices)", name.c_str(),
+				(unsigned) document.get("devices").get<picojson::array>().size());
+	if (status != nullptr)
+		*status = 200;
+	return true;
+}
+
+// PUT /api/configs/<name> — write the config document in the body. ?from=live
+// marks it the live setup being saved under <name>.
+static void config_put(struct mg_connection *conn, const std::string &name,
+		bool from_live) {
+	picojson::value doc;
+	if (!read_json_body_full(conn, &doc)) {
+		send_error(conn, 400,
+				"body must be a JSON configuration document {\"devices\":[…]}");
+		return;
+	}
 	std::string error;
-	if (!webconfigs_save(name, &error)) {
-		send_error(conn, 500, error);
+	int status = 200;
+	if (!webconfigs_write(name, doc, from_live, &error, &status)) {
+		send_error(conn, status, error);
 		return;
 	}
 	picojson::object res;
@@ -935,9 +1079,11 @@ static int api_configs_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		picojson::object res;
 		res["ok"] = picojson::value(true);
 		send_json(conn, 200, picojson::value(res));
-	} else if (action.empty() && method == "PUT")
-		config_save(conn, name);
-	else if (action.empty() && method == "GET") {
+	} else if (action.empty() && method == "PUT") {
+		const char *query = ri->query_string;
+		bool from_live = query != nullptr && strstr(query, "from=live") != nullptr;
+		config_put(conn, name, from_live);
+	} else if (action.empty() && method == "GET") {
 		picojson::value content;
 		std::string err;
 		if (!read_config(name, &content, &err))

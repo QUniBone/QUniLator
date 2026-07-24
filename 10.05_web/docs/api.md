@@ -202,8 +202,30 @@ The full snapshot:
 
 ### `PUT /api/configs/<name>`
 
-Saves the current setup under `<name>` (no request body). Save and Save As are
-the same call. `<name>` becomes the current configuration, clearing `modified`.
+Writes a configuration document to `<name>`, atomically. The body is the whole
+device set in snapshot shape:
+
+```json
+{"devices": [{"name": "RL11", "enabled": true,
+              "params": {"address": "174400", ...}}, ...]}
+```
+
+One endpoint stores every configuration; what differs is whether the body is the
+live setup or an offline edit, signalled by the `from=live` query flag:
+
+- **`?from=live`** — the body is the live setup being saved under `<name>` (the
+  client obtains it from `GET /api/configs?current=1`). `<name>` becomes the
+  current configuration, clearing `modified`. Save and Save As are this call.
+- **no flag** — the body is an offline edit of a stored configuration. The file
+  is written; the current pointer and the running machine are left untouched,
+  even when `<name>` is the current configuration — editing the stored file is
+  distinct from the live dirty state.
+
+The document is validated against the known devices and their parameters before
+it is written: a device the machine does not have, a parameter a device does not
+have, or a parameter an operator may not set is refused with `422` naming the
+offending device/param, and the file is left unchanged. A body that is not a
+JSON object with a `devices` array answers `400`. On success, `{"ok": true}`.
 
 ### `POST /api/configs/<name>/apply`
 

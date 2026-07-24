@@ -26,6 +26,8 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <cstdio>
@@ -224,6 +226,34 @@ static const picojson::value *snap_device(const picojson::value &snap,
 	return nullptr;
 }
 
+// build a config document {"devices":[…]} for the bulk-PUT tests
+static picojson::value dev_entry(const std::string &name, bool enabled,
+		const std::vector<std::pair<std::string, std::string> > &params) {
+	picojson::object o;
+	o["name"] = picojson::value(name);
+	o["enabled"] = picojson::value(enabled);
+	picojson::object p;
+	for (const std::pair<std::string, std::string> &kv : params)
+		p[kv.first] = picojson::value(kv.second);
+	o["params"] = picojson::value(p);
+	return picojson::value(o);
+}
+static picojson::value make_doc(const std::vector<picojson::value> &devs) {
+	picojson::array a(devs.begin(), devs.end());
+	picojson::object root;
+	root["devices"] = picojson::value(a);
+	return picojson::value(root);
+}
+static std::string dev_param(const picojson::value &snap, const std::string &dev,
+		const std::string &param) {
+	const picojson::value *d = snap_device(snap, dev);
+	if (d == nullptr || !d->get("params").is<picojson::object>())
+		return "";
+	const picojson::object &p = d->get("params").get<picojson::object>();
+	picojson::object::const_iterator it = p.find(param);
+	return it == p.end() || !it->second.is<std::string>() ? "" : it->second.get<std::string>();
+}
+
 static bool modified_now(void) {
 	bool m = false, busy = false;
 	webconfigs_status(nullptr, nullptr, &m, &busy);
@@ -304,6 +334,94 @@ int main(void) {
 		std::string err;
 		check(webconfigs_apply("cfgA", &rej, &err), "revert via apply(current)");
 		check(!modified_now(), "not modified after revert");
+	}
+
+	/* 3b. stored-config editing via webconfigs_write: a bulk write of the whole
+	       document, validated, that does not move the current pointer or touch
+	       the machine unless it is the live setup being saved (from_live). The
+	       machine is clean on cfgA here (section 3 reverted it). */
+	{
+		std::vector<picojson::value> devs;
+		devs.push_back(dev_entry("rl", true, { { "address", "160010" } }));
+		devs.push_back(dev_entry("rl0", true, { { "image", "stored.rl02" } }));
+		picojson::value doc = make_doc(devs);
+
+		// a. a bulk edit of a non-current stored config validates, writes the
+		//    document, and leaves the current pointer and the live machine alone
+		std::string err;
+		int status = 0;
+		check(webconfigs_write("stored1", doc, false, &err, &status), "bulk PUT writes stored1");
+		check(status == 200, "bulk PUT reports 200");
+		check(webconfigs_current() == "cfgA", "stored edit leaves current at cfgA");
+		check(rl0->image.value == "rt11.rl02", "stored edit does not touch the live machine");
+		picojson::value snap;
+		check(read_json_file(cfg_path("stored1"), &snap), "stored1 file written");
+		check(dev_param(snap, "rl", "address") == "160010", "stored1 carries the edited address");
+		check(dev_param(snap, "rl0", "image") == "stored.rl02", "stored1 carries the edited image");
+
+		// b. an unknown device is refused (422) and the file is unchanged
+		std::vector<picojson::value> bad;
+		bad.push_back(dev_entry("nosuch", true, { }));
+		err.clear();
+		status = 0;
+		check(!webconfigs_write("stored1", make_doc(bad), false, &err, &status),
+				"unknown device refused");
+		check(status == 422, "unknown device answers 422");
+		picojson::value after;
+		check(read_json_file(cfg_path("stored1"), &after), "stored1 still present after rejection");
+		check(snap_device(after, "rl") != nullptr && snap_device(after, "nosuch") == nullptr,
+				"stored1 unchanged after the rejected write");
+
+		// c. an unknown parameter is refused (422)
+		std::vector<picojson::value> badp;
+		badp.push_back(dev_entry("rl", true, { { "frobnicate", "1" } }));
+		err.clear();
+		status = 0;
+		check(!webconfigs_write("stored1", make_doc(badp), false, &err, &status),
+				"unknown parameter refused");
+		check(status == 422, "unknown parameter answers 422");
+
+		// d. from=live moves the current pointer and clears modified; the body it
+		//    stores is the live snapshot, so saved == live afterwards
+		check(webconfigs_save("live1", &err), "capture the live setup into live1");
+		picojson::value livedoc;
+		check(read_json_file(cfg_path("live1"), &livedoc), "read back the live snapshot");
+		err.clear();
+		status = 0;
+		check(webconfigs_write("live2", livedoc, true, &err, &status), "from=live writes live2");
+		check(webconfigs_current() == "live2", "from=live moves current to live2");
+		check(!modified_now(), "from=live clears the modified state");
+
+		// e. a stored edit of a non-current config does not move the current pointer
+		err.clear();
+		status = 0;
+		check(webconfigs_write("stored1", doc, false, &err, &status),
+				"stored edit of a non-current config");
+		check(webconfigs_current() == "live2", "stored edit leaves current at live2");
+
+		// f. a stored edit of the CURRENT config writes the file without clearing
+		//    the live modified state or touching the machine
+		rl0->image.set("dirty.rl02"); // diverge the live setup from live2's saved form
+		check(modified_now(), "machine modified against live2");
+		std::vector<picojson::value> cur;
+		cur.push_back(dev_entry("rl", true, { }));
+		cur.push_back(dev_entry("rl0", true, { { "image", "other.rl02" } }));
+		err.clear();
+		status = 0;
+		check(webconfigs_write("live2", make_doc(cur), false, &err, &status),
+				"stored edit of the current config");
+		check(webconfigs_current() == "live2", "stored edit of current keeps the pointer");
+		check(rl0->image.value == "dirty.rl02", "stored edit of current does not touch the machine");
+		check(modified_now(), "stored edit of current leaves modified set");
+		picojson::value cursnap;
+		check(read_json_file(cfg_path("live2"), &cursnap), "live2 file present");
+		check(dev_param(cursnap, "rl0", "image") == "other.rl02", "live2 carries the offline edit");
+
+		// restore a clean current cfgA for the sections that follow
+		std::vector<std::string> rej;
+		webconfigs_apply("cfgA", &rej, &err);
+		check(webconfigs_current() == "cfgA", "restored current cfgA");
+		check(!modified_now(), "clean cfgA for the following sections");
 	}
 
 	/* 4. rename moves the file and carries the current/default pointers; the
@@ -520,7 +638,8 @@ int main(void) {
 	}
 
 	// tidy the temp tree
-	for (const char *n : {"cfgA", "cfgB", "cfgC", "default", "logcfg"})
+	for (const char *n : {"cfgA", "cfgB", "cfgC", "default", "logcfg",
+			"stored1", "live1", "live2"})
 		unlink(cfg_path(n).c_str());
 	rmdir(configs_dir.c_str());
 	rmdir(dir);

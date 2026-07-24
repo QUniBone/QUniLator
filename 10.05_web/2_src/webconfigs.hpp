@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+#include "picojson.h"
+
 struct mg_context;
 
 // register /api/configs; configurations live in $QUNIBONE_DIR/configs
@@ -37,6 +39,15 @@ void webconfigs_status(std::string *current, std::string *def, bool *modified,
 
 // Save the live setup under <name>, which becomes the current configuration.
 bool webconfigs_save(const std::string &name, std::string *error);
+
+// Write a config document to <name>, validated against the device registry
+// first. An unknown device or unsettable parameter is refused (*status 422,
+// nothing written). With from_live true the body is the live setup being saved
+// under <name>, so <name> becomes the current configuration and the modified
+// state clears; with it false the document is an offline edit written to the
+// file only, leaving the current pointer and the running machine untouched.
+bool webconfigs_write(const std::string &name, const picojson::value &document,
+		bool from_live, std::string *error, int *status);
 
 // Rename a configuration file; the current/default pointers follow it. The
 // live device set — and so the modified state — is left untouched.
