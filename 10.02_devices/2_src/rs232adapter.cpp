@@ -58,12 +58,14 @@
 #include <pthread.h>
 #include "logger.hpp"
 #include "rs232adapter.hpp"
+#include "serial_tcp_line.hpp"
 
-rs232adapter_c::rs232adapter_c() 
+rs232adapter_c::rs232adapter_c()
 {
 	log_label = "ADP232";
 
 	rs232 = NULL;
+	tcp_line = NULL;
 	stream_rcv = NULL;
 	stream_xmt = NULL;
 	stream_xmt_tap = NULL;
@@ -98,6 +100,15 @@ bool rs232adapter_c::rs232byte_rcv_poll(rs232byte_t *rcvbyte)
 	if (result) {
 		*rcvbyte = rcvbuffer.front();
 		rcvbuffer.pop_front();
+	}
+	if (!result && tcp_line) {
+		// TCP transport: bytes arrive already de-framed, no termios escaping
+		uint8_t c_raw;
+		if (tcp_line->poll_rcv(&c_raw)) {
+			rcvbyte->c = c_raw;
+			rcvbyte->format_error = false;
+			result = true;
+		}
 	}
 	if (!result && rs232) {
 		// rs232 must be programmed to generate 0xff 0xff sequences
@@ -163,6 +174,8 @@ void rs232adapter_c::rs232byte_xmt_send(rs232byte_t xmtbyte)
 
 	if (rs232)
 		rs232->SendByte(xmtbyte.c);
+	if (tcp_line)
+		tcp_line->send(xmtbyte.c);
 	if (stream_xmt)
 		stream_xmt->put(xmtbyte.c);
 	if (stream_xmt_tap)

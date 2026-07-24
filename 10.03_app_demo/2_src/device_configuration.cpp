@@ -68,6 +68,12 @@ device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
 	DL11b->rs232adapter.stream_xmt = NULL;
 	DL11b->rs232adapter.baudrate = DL11b->baudrate.value;
 
+	// serial multiplexers over TCP: a 4-line DZV11/DZQ11 and an 8-line
+	// DHV11/DHQ11. Both ship disabled; per-line tcp_role/tcp_host/tcp_port
+	// parameters map each line to a TCP endpoint before enabling.
+	DZV11 = new dzv11_c();
+	DHV11 = new dhv11_c();
+
 	LTC = new ltc_c();
 
 #if defined(UNIBUS)
@@ -118,6 +124,10 @@ device_configuration_c::~device_configuration_c() {
 
 	LTC->enabled.set(false);
 	delete LTC;
+	DHV11->enabled.set(false);
+	delete DHV11;
+	DZV11->enabled.set(false);
+	delete DZV11;
 	DL11b->enabled.set(false);
 	delete DL11b;
 	DL11->enabled.set(false);

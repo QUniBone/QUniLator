@@ -59,6 +59,15 @@ $CXX -std=c++11 -Wall -Wextra -I "$WEB" \
 	"$WEB/webcontrol.cpp" \
 	-o "$OUT/status_power_test"
 
+# The TCP serial-line backend is PRU/logger-free, so it links against nothing
+# but its own translation unit and drives itself over a loopback socket.
+DEV=$ROOT/10.02_devices/2_src
+$CXX -std=c++11 -Wall -Wextra -I "$DEV" \
+	"$TOOLS/serial_tcp_line_test.cpp" \
+	"$DEV/serial_tcp_line.cpp" \
+	-lpthread -o "$OUT/serial_tcp_line_test"
+
 "$OUT/config_test"
 "$OUT/console_channel_test"
 "$OUT/status_power_test"
+"$OUT/serial_tcp_line_test"

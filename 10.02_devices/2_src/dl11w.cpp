@@ -116,8 +116,44 @@ slu_c::~slu_c()
 
 // called when "enabled" goes true, before registers plugged to QBUS/UNIBUS
 // result false: configuration error, do not install
-bool slu_c::on_before_install(void) 
+bool slu_c::on_before_install(void)
 {
+	use_tcp = !tcp_role.value.empty();
+
+	if (use_tcp) {
+		// carry the line over TCP instead of a physical UART
+		if (tcp_role.value == "listen")
+			tcp_line.role = serial_tcp_line_c::ROLE_LISTEN;
+		else if (tcp_role.value == "connect")
+			tcp_line.role = serial_tcp_line_c::ROLE_CONNECT;
+		else {
+			ERROR("tcp_role must be \"listen\" or \"connect\", got \"%s\"",
+					tcp_role.value.c_str());
+			return false;
+		}
+		tcp_line.host = tcp_host.value;
+		tcp_line.port = (uint16_t) tcp_port.value;
+		tcp_line.idle_timeout_sec = tcp_idle_timeout.value;
+		tcp_line.log_label = name.value;
+		tcp_line.verbose = true;
+		if (!tcp_line.open()) {
+			ERROR("Cannot open TCP line (role %s, port %u)", tcp_role.value.c_str(),
+					(unsigned) tcp_port.value);
+			return false; // reject "enable"
+		}
+		rs232adapter.tcp_line = &tcp_line;
+		// no termios error escaping on a de-framed TCP byte stream
+		rs232adapter.rcv_termios_error_encoding = false;
+		// give the pollers a sane character time derived from the nominal baud
+		rs232.CharTransmissionTime_us = baudrate.value ? 10 * 1000000u / baudrate.value : 1000;
+
+		tcp_role.readonly = true;
+		tcp_host.readonly = true;
+		tcp_port.readonly = true;
+		INFO("DL11 line on TCP (%s port %u)", tcp_role.value.c_str(), (unsigned) tcp_port.value);
+		return true;
+	}
+
 	// enable SLU: setup COM serial port
 	// setup for BREAK and parity evaluation
 	rs232adapter.rcv_termios_error_encoding = true;
@@ -134,14 +170,25 @@ bool slu_c::on_before_install(void)
 
 	INFO("Serial port %s opened", serialport.value.c_str());
 	char buff[256];
-	sprintf(buff, "\n\rSerial port %s opened by " QUNIBONE_NAME "\n\r", serialport.value.c_str());
+	snprintf(buff, sizeof buff, "\n\rSerial port %s opened by " QUNIBONE_NAME "\n\r",
+			serialport.value.c_str());
 	rs232.cputs(buff);
 
 	return true;
 }
 
-void slu_c::on_after_uninstall(void) 
+void slu_c::on_after_uninstall(void)
 {
+	if (use_tcp) {
+		rs232adapter.tcp_line = NULL;
+		tcp_line.close();
+		tcp_role.readonly = false;
+		tcp_host.readonly = false;
+		tcp_port.readonly = false;
+		use_tcp = false;
+		INFO("DL11 TCP line closed");
+		return;
+	}
 	// disable SLU
 	rs232.CloseComport();
 	// unlock serial port and settings
@@ -259,8 +306,9 @@ void slu_c::eval_xcsr_dato_value(void)
 	// if xmt_ready and int enable goes high: INTR
 	set_xcsr_dati_value_and_INTR();
 
-	if (old_break != xmt_break) {
-		// re-evaluate break state on bit change
+	if (old_break != xmt_break && !use_tcp) {
+		// re-evaluate break state on bit change (COM port only; the TCP
+		// transport has no hardware break line)
 		if (break_enable.value)
 			rs232.SetBreak(xmt_break);
 		else

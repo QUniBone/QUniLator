@@ -34,6 +34,7 @@
 #include "parameter.hpp"
 #include "rs232.hpp"
 #include "rs232adapter.hpp"
+#include "serial_tcp_line.hpp"
 
 // socket console settings
 //#define IP_PORT 5001
@@ -97,8 +98,10 @@ enum slu_reg_index {
 class slu_c: public qunibusdevice_c {
 private:
 	rs232_c rs232; /// COM port interface
+	bool use_tcp = false; /// true when the line runs over TCP, not the COM port
 public:
 	rs232adapter_c rs232adapter; /// stream router
+	serial_tcp_line_c tcp_line; /// TCP transport when tcp_role is set
 
 	const char *category(void) const override { return "serial"; }
 
@@ -165,6 +168,18 @@ public:
 
 	parameter_bool_c break_enable = parameter_bool_c(this, "break", "b", /*readonly*/false,
 			"Enable BREAK transmission (M7856 SW4-1)");
+
+	// TCP transport: when tcp_role is "listen" or "connect" the line's bytes are
+	// carried over a TCP/RFC2217 connection instead of the Linux serial port,
+	// so an independent DL11 can be reached without a physical UART.
+	parameter_string_c tcp_role = parameter_string_c(this, "tcp_role", "tr", /*readonly*/false,
+			"TCP role: \"\" = use serial port, \"listen\" = accept a client, \"connect\" = dial out");
+	parameter_string_c tcp_host = parameter_string_c(this, "tcp_host", "th", /*readonly*/false,
+			"TCP connect-out target host (tcp_role=connect)");
+	parameter_unsigned_c tcp_port = parameter_unsigned_c(this, "tcp_port", "tp", /*readonly*/false,
+			"", "%d", "TCP listen/connect port", 16, 10);
+	parameter_unsigned_c tcp_idle_timeout = parameter_unsigned_c(this, "tcp_idle_timeout", "ti",
+			/*readonly*/false, "s", "%d", "drop a silent TCP client after N seconds, 0 = never", 16, 10);
 
 	void reset(void) ;
 

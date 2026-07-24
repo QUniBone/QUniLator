@@ -131,7 +131,10 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/rx211.o	\
 	$(OBJDIR)/rs232.o \
 	$(OBJDIR)/rs232adapter.o \
+	$(OBJDIR)/serial_tcp_line.o \
 	$(OBJDIR)/dl11w.o \
+	$(OBJDIR)/dzv11.o \
+	$(OBJDIR)/dhv11.o \
 	$(OBJDIR)/deuna.o \
 	$(OBJDIR)/ether_bridge.o \
 	$(OBJDIR)/m9312.o \
@@ -359,10 +362,19 @@ $(OBJDIR)/mscp_drive.o :   $(DEVICE_SRC_DIR)/mscp_drive.cpp $(DEVICE_SRC_DIR)/ms
 $(OBJDIR)/rs232.o :  $(DEVICE_SRC_DIR)/rs232.cpp $(DEVICE_SRC_DIR)/rs232.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/rs232adapter.o :  $(DEVICE_SRC_DIR)/rs232adapter.cpp $(DEVICE_SRC_DIR)/rs232adapter.hpp
+$(OBJDIR)/rs232adapter.o :  $(DEVICE_SRC_DIR)/rs232adapter.cpp $(DEVICE_SRC_DIR)/rs232adapter.hpp $(DEVICE_SRC_DIR)/serial_tcp_line.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/dl11w.o :  $(DEVICE_SRC_DIR)/dl11w.cpp $(DEVICE_SRC_DIR)/dl11w.hpp
+$(OBJDIR)/serial_tcp_line.o :  $(DEVICE_SRC_DIR)/serial_tcp_line.cpp $(DEVICE_SRC_DIR)/serial_tcp_line.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/dl11w.o :  $(DEVICE_SRC_DIR)/dl11w.cpp $(DEVICE_SRC_DIR)/dl11w.hpp $(DEVICE_SRC_DIR)/serial_tcp_line.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/dzv11.o :  $(DEVICE_SRC_DIR)/dzv11.cpp $(DEVICE_SRC_DIR)/dzv11.hpp $(DEVICE_SRC_DIR)/serial_tcp_line.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/dhv11.o :  $(DEVICE_SRC_DIR)/dhv11.cpp $(DEVICE_SRC_DIR)/dhv11.hpp $(DEVICE_SRC_DIR)/serial_tcp_line.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/deuna.o :  $(DEVICE_SRC_DIR)/deuna.cpp $(DEVICE_SRC_DIR)/deuna.hpp $(DEVICE_SRC_DIR)/deuna_bootrom.h $(DEVICE_SRC_DIR)/ether_bridge.hpp

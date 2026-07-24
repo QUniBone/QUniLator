@@ -35,6 +35,8 @@
 #include "logsource.hpp"
 #include "rs232.hpp"
 
+class serial_tcp_line_c; // routed transport when a line runs over TCP
+
 // a character with additional transmission status
 typedef struct {
 	uint8_t c; // 5/6/7/8 bit character
@@ -72,6 +74,11 @@ public:
 
 	/*** RS232 interface ***/
 	rs232_c *rs232; // if assigned, routing to initialized RS232 port
+
+	/*** TCP line interface ***/
+	// if assigned, xmt/rcv bytes are carried over a TCP connection instead of
+	// the RS232 port. Takes priority over rs232 in the byte poll/send path.
+	serial_tcp_line_c *tcp_line;
 
 	/*** BYTE interface ***/
 	bool rs232byte_rcv_poll(rs232byte_t *rcvbyte);

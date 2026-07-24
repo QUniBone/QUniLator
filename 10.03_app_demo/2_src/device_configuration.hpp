@@ -45,6 +45,8 @@
 #include "rk11.hpp"
 #include "uda.hpp"
 #include "dl11w.hpp"
+#include "dzv11.hpp"
+#include "dhv11.hpp"
 #include "rx11211.hpp"
 #if defined(QBUS)
 #include "delqa.hpp"
@@ -85,6 +87,8 @@ public:
 #endif
 	uda_c *UDA50;
 	slu_c *DL11, *DL11b;
+	dzv11_c *DZV11;
+	dhv11_c *DHV11;
 	ltc_c *LTC;
 
 	// to inject characters into the SLU receivers (console scripting,
