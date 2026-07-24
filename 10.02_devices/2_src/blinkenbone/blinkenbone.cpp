@@ -367,6 +367,7 @@ void blinkenbone_c::on_after_register_access(qunibusdevice_register_t *device_re
         }
         pthread_mutex_unlock(&on_after_input_register_access_mutex) ;
     }
+    break ;
     case 1: { // OCS
         pthread_mutex_lock(&on_after_output_register_access_mutex);
         if (unibus_control == QUNIBUS_CYCLE_DATO) {

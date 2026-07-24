@@ -387,6 +387,7 @@ uda_c::on_after_register_access(
                 case InitializationStep::Uninitialized:
                     // Should not occur, we treat it like step1 here.
                     DEBUG_FAST("Write to SA in Uninitialized state.");
+                    __attribute__((fallthrough));
 
                 case InitializationStep::Step1:
                     // Host writes the following:
@@ -565,7 +566,7 @@ uda_c::GetNextCommand(bool* error)
         _commandRingPointer, 
         descriptorAddress);
 
-    std::unique_ptr<Descriptor> cmdDescriptor(
+    DMABufferPtr<Descriptor> cmdDescriptor(
         reinterpret_cast<Descriptor*>(
             DMARead(
                 descriptorAddress,
@@ -610,12 +611,12 @@ uda_c::GetNextCommand(bool* error)
             return nullptr;
         }     
    
-        std::unique_ptr<Message> cmdMessage(
+        DMABufferPtr<Message> cmdMessage(
             reinterpret_cast<Message*>(
                 DMARead(
                     messageAddress - 4,
-                    messageLength + 4, 
-                    sizeof(Message)))); 
+                    messageLength + 4,
+                    sizeof(Message))));
 
         if (!cmdMessage)
         {
@@ -648,7 +649,7 @@ uda_c::GetNextCommand(bool* error)
                     GetCommandDescriptorAddress(
                         (_commandRingPointer - 1) % _commandRingLength);
 
-                std::unique_ptr<Descriptor> previousDescriptor(
+                DMABufferPtr<Descriptor> previousDescriptor(
                     reinterpret_cast<Descriptor*>(
                         DMARead(
                             previousDescriptorAddress,
@@ -726,7 +727,7 @@ uda_c::PostResponse(
 
     // Grab the next descriptor.
     uint32_t descriptorAddress = GetResponseDescriptorAddress(_responseRingPointer);
-    std::unique_ptr<Descriptor> cmdDescriptor(
+    DMABufferPtr<Descriptor> cmdDescriptor(
         reinterpret_cast<Descriptor*>(
             DMARead(
                 descriptorAddress,
@@ -827,7 +828,7 @@ uda_c::PostResponse(
                     GetResponseDescriptorAddress(
                     (_responseRingPointer - 1) % _responseRingLength);
 
-                std::unique_ptr<Descriptor> previousDescriptor(
+                DMABufferPtr<Descriptor> previousDescriptor(
                     reinterpret_cast<Descriptor*>(
                         DMARead(
                             previousDescriptorAddress,

@@ -62,6 +62,21 @@ struct Message
 };
 #pragma pack(pop)
 
+// Buffers returned by uda_c::DMARead() are allocated with new uint16_t[], so
+// they must be released with delete[]. This deleter pairs array-new with
+// array-delete for any pointer type a DMARead buffer is reinterpret_cast to,
+// making it safe to hold in a unique_ptr.
+struct DMABufferDeleter
+{
+    void operator()(void *buffer) const
+    {
+        delete[] static_cast<uint16_t *>(buffer);
+    }
+};
+
+template <typename T>
+using DMABufferPtr = std::unique_ptr<T, DMABufferDeleter>;
+
 /*
   This implements the Transport layer for a Qbus/Unibus MSCP controller.
 

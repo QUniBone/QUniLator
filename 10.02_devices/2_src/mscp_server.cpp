@@ -994,7 +994,7 @@ mscp_server::DoDiskTransfer(
                 diskBuffer.reset(drive->Read(params->LBN, params->ByteCount));
             }
 
-            std::unique_ptr<uint8_t> memBuffer(_port->DMARead(
+            DMABufferPtr<uint8_t> memBuffer(_port->DMARead(
                 params->BufferPhysicalAddress & 0x00ffffff,
                 params->ByteCount,
                 params->ByteCount));
@@ -1004,12 +1004,16 @@ mscp_server::DoDiskTransfer(
                 return STATUS(Status::HOST_BUFFER_ACCESS_ERROR, HostBufferAccessSubcodes::NXM, 0);
             }
   
-            if (!memcmp(diskBuffer.get(), memBuffer.get(), params->ByteCount))
+            if (memcmp(diskBuffer.get(), memBuffer.get(), params->ByteCount))
             {
+                // Host and disk data differ: report a compare error.
                 return STATUS(Status::COMPARE_ERROR, 0, 0);
             }
+
+            // Data matches: fall out to the common success path below.
         }
- 
+        break;
+
         case Opcodes::ERASE:
         {
             std::unique_ptr<uint8_t> memBuffer(new uint8_t[params->ByteCount]);
@@ -1055,7 +1059,7 @@ mscp_server::DoDiskTransfer(
 
         case Opcodes::WRITE:
         {
-            std::unique_ptr<uint8_t> memBuffer(_port->DMARead(
+            DMABufferPtr<uint8_t> memBuffer(_port->DMARead(
                 params->BufferPhysicalAddress & 0x00ffffff,
                 params->ByteCount,
                 params->ByteCount));
