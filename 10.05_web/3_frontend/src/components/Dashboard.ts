@@ -13,48 +13,116 @@ import {
   serialDisconnect,
   serialConnected,
 } from '../lib/terminals';
-import { DangerButton } from './common';
+import { Led } from './common';
 import { Widgets } from './widgets';
-import type { BusState, HwState, Settings, TermKey } from '../types';
+import type { Settings, TermKey } from '../types';
 
 const KEY_TO_CH: Record<TermKey, string> = { slu0: '0', slu1: '1', serial: 'ext' };
 const CH_TO_KEY: Record<string, TermKey> = { '0': 'slu0', '1': 'slu1', ext: 'serial' };
 
-function Control() {
-  return html`<div class="card ctrl-card"><div class="card-head"><h3>Control</h3></div>
-    <div class="card-body ctrl-btns">
-      ${html`<${DangerButton} action="halt" label="Halt" armLabel="Click again to halt"
-        onFire=${() => {
-          liveControl('halt', 'HALT asserted — CPU stopped');
-          store.bus.halted = true;
-          emit();
-        }} />`}
-      ${html`<${DangerButton} action="continue" label="Continue" armLabel="Click again to continue"
-        onFire=${() => {
-          liveControl('continue', 'HALT released — CPU running');
-          store.bus.halted = false;
-          emit();
-        }} />`}
-      ${html`<${DangerButton} action="powercycle" label="Power cycle" armLabel="Click again to power cycle"
-        onFire=${() => {
-          liveControl('powercycle', 'devices reset, CPU reboots');
-          store.bus.halted = false;
-          emit();
-        }} />`}
-    </div></div>`;
+// One switch of the 11/03 bezel: a bat-handle toggle with a silkscreen legend
+// above (two-position) and/or below it. `momentary` springs back and fires on
+// click; `two` reflects and sets a position.
+function PanelSwitch({
+  kind,
+  top,
+  bottom,
+  pos,
+  disabled,
+  onFire,
+  onToggle,
+}: {
+  kind: 'momentary' | 'two';
+  top?: string;
+  bottom: string;
+  pos?: 'top' | 'bottom';
+  disabled?: boolean;
+  onFire?: () => void;
+  onToggle?: () => void;
+}) {
+  const click = () => {
+    if (disabled) return;
+    if (kind === 'momentary') onFire?.();
+    else onToggle?.();
+  };
+  return html`<div class=${'cp-sw ' + kind + (disabled ? ' off' : '')} data-pos=${pos || 'mid'}>
+    <span class=${'cp-leg' + (top ? '' : ' ph')}>${top || ''}</span>
+    <button class="cp-toggle" type="button" disabled=${!!disabled}
+      role=${kind === 'two' ? 'switch' : undefined}
+      aria-checked=${kind === 'two' ? pos === 'top' : undefined}
+      aria-label=${top ? top + ' / ' + bottom : bottom}
+      onClick=${click}><span class="cp-bat"></span></button>
+    <span class="cp-leg">${bottom}</span>
+  </div>`;
 }
 
-function FrontPanel({ bus, hw }: { bus: BusState; hw: HwState }) {
+// The PDP-11/03 control bezel: PWR OK + RUN lamps and the RESTART /
+// HALT-ENABLE / DC-ON-OFF switches, the single run-state and power controls.
+function ControlPanel() {
+  const s = useStore();
+  const powered = s.hw.powered !== false;
+  // HALT/ENABLE holds its last definite position: keep the last known halt
+  // reading and only move the switch when a new definite value arrives, so a
+  // transitional gap does not flicker it.
+  const lastHalt = useRef(s.bus.halted);
+  if (typeof s.bus.halted === 'boolean') lastHalt.current = s.bus.halted;
+  const halted = lastHalt.current;
+  const run = powered && !halted;
+
+  const restart = () => liveControl('restart', 'reset and restart from boot');
+  const setHalt = () => {
+    if (halted) {
+      liveControl('continue', 'HALT released — CPU running');
+      store.bus.halted = false;
+    } else {
+      liveControl('halt', 'HALT asserted — CPU stopped');
+      store.bus.halted = true;
+    }
+    emit();
+  };
+  // power is authoritative from the backend's `powered` state event; do not
+  // guess it optimistically, so a machine that has not yet learned dc_on/dc_off
+  // does not strand the UI in a frozen "off" it never actually entered
+  const setPower = () =>
+    powered
+      ? liveControl('dc_off', 'DC off — machine powered down')
+      : liveControl('dc_on', 'DC on — machine powered up');
+
+  return html`<div class="card cp-card">
+    <div class="cp-bezel">
+      <div class="cp-band"><span class="cp-model">PDP-11/03</span></div>
+      <div class="cp-lamps">
+        <div class="cp-lamp">${html`<${Led} on=${powered} title="PWR OK" />`}<span class="cp-leg">PWR OK</span></div>
+        <div class="cp-lamp">${html`<${Led} on=${run} title="RUN" />`}<span class="cp-leg">RUN</span></div>
+      </div>
+      <div class="cp-switches">
+        ${html`<${PanelSwitch} kind="momentary" bottom="RESTART" disabled=${!powered} onFire=${restart} />`}
+        ${html`<${PanelSwitch} kind="two" top="ENABLE" bottom="HALT"
+          pos=${halted ? 'bottom' : 'top'} disabled=${!powered} onToggle=${setHalt} />`}
+        ${html`<${PanelSwitch} kind="two" top="DC ON" bottom="OFF"
+          pos=${powered ? 'top' : 'bottom'} onToggle=${setPower} />`}
+      </div>
+    </div>
+  </div>`;
+}
+
+// The cape's own front panel: activity LEDs and DIP switches, display-only, in
+// the shared LED visual language. Dark while the machine is powered off.
+function FrontPanel() {
+  const s = useStore();
+  const powered = s.hw.powered !== false;
   return html`<div class="card frontpanel"><div class="card-head"><h3>Front panel</h3></div>
     <div class="card-body">
-      <div class="fp-row"><span class="fp-k">Bus</span>
-        <span class=${'chip ' + (bus.halted ? 'out' : 'ok')}>run</span>
-        <span class=${'chip ' + (bus.halted ? 'warn' : 'out')}>halt</span>
-        <span class=${'chip ' + (bus.init ? 'ok' : 'out')}>init</span></div>
-      <div class="fp-row"><span class="fp-k">LEDs</span><span class="ledrow">
-        ${hw.leds.map((v) => html`<span class=${'led' + (v ? ' on' : '')}></span>`)}</span></div>
-      <div class="fp-row"><span class="fp-k">DIP</span><span class="dipsw">
-        ${hw.dip.map((v) => html`<span class=${'dip' + (v ? ' on' : '')}></span>`)}</span></div>
+      <div class="fp-block"><span class="fp-k">Activity</span>
+        <div class="fp-cells">${s.hw.leds.map(
+          (v, i) => html`<div class="fp-cell">${html`<${Led} on=${powered && v} title=${'Activity ' + i} />`}
+            <span class="fp-n">${i}</span></div>`
+        )}</div></div>
+      <div class="fp-block"><span class="fp-k">DIP switches</span>
+        <div class="fp-cells">${s.hw.dip.map(
+          (v, i) => html`<div class="fp-cell"><span class=${'dip' + (v ? ' on' : '')}></span>
+            <span class="fp-n">${i + 1}</span></div>`
+        )}</div></div>
     </div></div>`;
 }
 
@@ -155,7 +223,7 @@ export function Dashboard() {
   };
   return html`<section class="page active" data-page="dashboard">
     <div class="dash-top">
-      <div class="dash-left">${html`<${Control} />`}${html`<${FrontPanel} bus=${s.bus} hw=${s.hw} />`}</div>
+      <div class="dash-left">${html`<${ControlPanel} />`}${html`<${FrontPanel} />`}</div>
       <div class="dash-term">${html`<${TermTabs} settings=${s.settings} select=${select} />`}${html`<${TerminalHost} />`}</div>
     </div>
     <div class="widget-grid" style="margin-top:14px">${html`<${Widgets} />`}</div>

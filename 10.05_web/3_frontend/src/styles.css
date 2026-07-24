@@ -47,6 +47,27 @@
   --lamp-red-hot:  #FF8A70;   /* the bright core of a lit lamp */
   --lamp-red-deep: #C21807;   /* shaded edge of the lens */
 
+  /* shared indicator LED — one physical amber-red panel lamp everywhere.
+     The colour is the lens colour, not a semantic state. */
+  --led-lit-core:  #FFCF95;   /* incandescent-warm core */
+  --led-lit:       #F5532B;   /* red-amber lens body */
+  --led-lit-edge:  #B0210A;   /* shaded lens edge */
+  --led-glow:      rgba(245, 83, 43, .5);
+  --led-dark:      #3E241D;   /* unlit red lens */
+  --led-dark-edge: #25130F;
+
+  /* PDP-11/03 control bezel: tan molded plastic, DEC-magenta band, dark
+     switch recess with a silkscreen legend */
+  --cp-bezel-hi:   #CFC3AB;
+  --cp-bezel:      #BCAE93;
+  --cp-bezel-lo:   #9C8E72;
+  --cp-recess:     #29251F;
+  --cp-legend:     #EFE9DE;
+  --dec-magenta:   #8E2F58;
+  --dec-magenta-2: #6C2242;
+  --sw-bat:        #E7E1D4;
+  --sw-bat-lo:     #B4AD9C;
+
   /* type */
   --font-ui:   system-ui, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
@@ -188,23 +209,6 @@ button { font: inherit; color: inherit; }
   font-family: var(--font-mono); font-size: var(--fs-0);
   color: var(--ink-muted); white-space: nowrap;
 }
-/* the topbar dots are indicator lamps: a lit one carries a hot core and
-   throws a little glow, so lit and dark read apart at a glance */
-.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint); flex: 0 0 auto; }
-.dot.ok, .dot.warn, .dot.err { box-shadow: 0 0 5px 1px currentColor; }
-.dot.ok {
-  color: var(--ok);
-  background: radial-gradient(circle at 50% 32%, #FFFFFFC0 0%, var(--ok) 58%);
-}
-.dot.warn {
-  color: var(--warn);
-  background: radial-gradient(circle at 50% 32%, #FFFFFFC0 0%, var(--warn) 58%);
-}
-.dot.err {
-  color: var(--err);
-  background: radial-gradient(circle at 50% 32%, #FFFFFFC0 0%, var(--err) 58%);
-}
-
 .chip {
   display: inline-block; padding: 1px 8px; border-radius: 999px;
   font-size: var(--fs-0); font-weight: 600; letter-spacing: .04em;
@@ -297,76 +301,117 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 .table-wrap { overflow-x: auto; }
 
 /* ============================ dashboard ============================ */
-.tile {
-  padding: 14px; min-height: 104px;
-  display: flex; flex-direction: column; gap: 8px;
-  align-items: center; text-align: center;
+
+/* ---- shared indicator LED ---- one physical amber-red panel lamp, seated in
+   its own dark grommet so it reads the same on any surface. Slightly larger and
+   with a restrained glow, unlike the earlier bright lamp. */
+.led {
+  --led-sz: 15px;
+  width: var(--led-sz); height: var(--led-sz); border-radius: 50%;
+  flex: 0 0 auto; display: inline-block; vertical-align: middle;
+  background: radial-gradient(circle at 50% 34%, var(--led-dark) 0%, var(--led-dark-edge) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, .5),
+    inset 0 -1px 2px rgba(0, 0, 0, .55),
+    inset 0 1px 1px rgba(255, 255, 255, .06);
 }
-.tile .t-body {
-  flex: 1; display: flex; flex-direction: column; gap: 4px;
-  align-items: center; justify-content: center;
+.led.on {
+  background: radial-gradient(circle at 50% 33%,
+    var(--led-lit-core) 0%, var(--led-lit) 52%, var(--led-lit-edge) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(60, 10, 0, .5),
+    inset 0 -1px 2px rgba(120, 20, 0, .45),
+    0 0 5px 0 var(--led-glow);
 }
-.tile .k {
+.led.sm { --led-sz: 10px; }
+
+/* ---- PDP-11/03 control bezel ---- the run-state and power controls, styled as
+   the machine's own front panel: tan plastic, a DEC-magenta band, and bat-handle
+   toggles in a dark switch recess. */
+.cp-card { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.cp-bezel {
+  border-radius: var(--r-md);
+  background: linear-gradient(180deg, var(--cp-bezel-hi), var(--cp-bezel) 34%, var(--cp-bezel-lo));
+  border: 1px solid var(--cp-bezel-lo);
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, .28);
+  color: var(--rl-ink); padding-bottom: 16px;
+}
+.cp-band {
+  background: linear-gradient(180deg, var(--dec-magenta), var(--dec-magenta-2));
+  padding: 7px 14px; border-radius: var(--r-md) var(--r-md) 0 0;
+  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, .22);
+}
+.cp-model {
+  font-family: var(--font-mono); font-weight: 700; letter-spacing: .2em;
+  font-size: var(--fs-1); color: #F6E8EF;
+}
+.cp-leg {
+  font-family: var(--font-mono); font-size: var(--fs-0); font-weight: 700;
+  letter-spacing: .06em; text-align: center; white-space: nowrap; color: var(--rl-ink);
+}
+.cp-lamps { display: flex; gap: 30px; justify-content: center; padding: 16px 14px 4px; }
+.cp-lamp { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+.cp-switches {
+  display: flex; justify-content: space-around; align-items: center; gap: 6px;
+  margin: 10px 12px 0; padding: 12px 6px;
+  background: var(--cp-recess); border-radius: 6px;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, .55);
+}
+.cp-sw { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.cp-sw .cp-leg { color: var(--cp-legend); }
+.cp-sw .cp-leg.ph { visibility: hidden; }
+.cp-toggle {
+  width: 30px; height: 46px; border-radius: 7px; padding: 0;
+  border: 1px solid #000; position: relative; cursor: pointer;
+  background: linear-gradient(180deg, #14110E, #2C2823);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, .7), inset 0 -1px 0 rgba(255, 255, 255, .06);
+}
+.cp-bat {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  width: 18px; height: 22px; border-radius: 5px 5px 7px 7px;
+  background: linear-gradient(180deg, var(--sw-bat), var(--sw-bat-lo));
+  box-shadow: 0 2px 3px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .7),
+    inset 0 -2px 2px rgba(0, 0, 0, .16);
+  transition: top .12s ease;
+}
+.cp-sw[data-pos="top"] .cp-bat { top: 3px; }
+.cp-sw[data-pos="bottom"] .cp-bat { top: 21px; }
+.cp-sw[data-pos="mid"] .cp-bat { top: 12px; }
+.cp-sw.momentary .cp-toggle:active .cp-bat { top: 16px; }
+.cp-sw.off { opacity: .42; }
+.cp-sw.off .cp-toggle, .cp-toggle:disabled { cursor: default; }
+
+/* ---- front panel ---- the cape's activity LEDs and DIP switches, display-only */
+.frontpanel { display: flex; flex-direction: column; }
+.frontpanel .card-head { padding-bottom: 0; }
+.frontpanel .card-body {
+  flex: 1 1 auto; display: flex; flex-direction: column; gap: 16px; justify-content: center;
+}
+.fp-block { display: flex; flex-direction: column; gap: 8px; }
+.fp-k {
   font-size: var(--fs-0); text-transform: uppercase; letter-spacing: .06em;
   color: var(--ink-faint); font-weight: 600;
 }
-.tile .v { font-size: 1.25rem; font-weight: 650; font-family: var(--font-mono); }
-.tile .s { font-size: var(--fs-1); color: var(--ink-muted); }
-.tile .chips { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
-.tile .chips .chip { font-family: var(--font-mono); text-transform: none; letter-spacing: 0; }
-
-.ledrow { display: flex; gap: 14px; align-items: center; }
-.led {
-  width: 14px; height: 14px; border-radius: 50%;
-  background: var(--lamp-off);
-  box-shadow: inset 0 1px 2px rgba(0,0,0,.4);
-}
-/* lit lamp: hot core inside the lens, with the glow it throws on the panel */
-.led.on {
-  background: radial-gradient(circle at 50% 38%,
-              var(--lamp-red-hot) 0%, var(--lamp-red) 62%, var(--lamp-red-deep) 100%);
-  box-shadow: 0 0 4px 1px rgba(255, 59, 34, .45),
-              0 0 9px 2px rgba(255, 59, 34, .18);
-}
-.led-label { font-family: var(--font-mono); font-size: var(--fs-0); color: var(--ink-muted); }
-
-.dipsw { display: flex; gap: 8px; }
+.fp-cells { display: flex; gap: 13px; flex-wrap: wrap; align-items: flex-end; }
+.fp-cell { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.fp-n { font-family: var(--font-mono); font-size: var(--fs-0); color: var(--ink-faint); }
 .dip {
-  width: 18px; height: 34px; border-radius: 3px;
-  background: var(--bezel); position: relative;
-  border: 1px solid var(--bezel-2);
+  width: 16px; height: 30px; border-radius: 3px;
+  background: var(--bezel); position: relative; border: 1px solid var(--bezel-2);
 }
 .dip::after {
-  content: ""; position: absolute; left: 3px; right: 3px; height: 12px;
-  border-radius: 2px; background: var(--ink-faint); top: 17px;
+  content: ""; position: absolute; left: 3px; right: 3px; height: 11px;
+  border-radius: 2px; background: var(--rl-panel); top: 15px;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, .4);
 }
-.dip.on::after { top: 4px; background: var(--phosphor-dim); }
+.dip.on::after { top: 3px; }
 
 /* dashboard layout: control + front panel left, terminal right, widgets below */
 .dash-top { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; }
-.dash-left { display: flex; flex-direction: column; gap: 14px; width: 260px; flex: 0 0 auto; }
-.dash-left .ctrl-card { flex: 0 0 auto; }
+.dash-left { display: flex; flex-direction: column; gap: 14px; width: 272px; flex: 0 0 auto; }
+.dash-left .cp-card { flex: 0 0 auto; }
 .dash-left .frontpanel { flex: 1 1 auto; }
-.ctrl-btns { display: flex; flex-direction: column; gap: 8px; }
-.ctrl-btns > .btn { width: 100%; justify-content: center; }
 .dash-term { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
-/* the three rows share the card's height evenly, and each row's controls
-   spread across the width the legend column leaves them */
-.frontpanel { display: flex; flex-direction: column; }
-/* the head's own padding would otherwise widen the gap above the first row */
-.frontpanel .card-head { padding-bottom: 0; }
-.frontpanel .card-body {
-  flex: 1 1 auto; padding-bottom: 0;
-  display: flex; flex-direction: column; justify-content: space-evenly;
-}
-.frontpanel .fp-row { display: flex; align-items: center; gap: 10px; }
-.frontpanel .fp-row .chip { flex: 1 1 0; text-align: center; white-space: nowrap; }
-/* lamps and switches keep their own spacing and read as one block, the way
-   they sit on a real panel */
-.frontpanel .fp-k {
-  font-size: var(--fs-0); text-transform: uppercase; letter-spacing: .05em;
-  color: var(--ink-faint); font-weight: 600; width: 38px; flex: 0 0 auto;
-}
 .term-tabs #serial-bar { align-items: center; gap: 6px; margin-left: auto; }
 
 /* ============================ devices ============================ */
@@ -573,33 +618,14 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
   border: 0; border-radius: 3px;
   color: #17150E;
   font-family: var(--font-mono); font-size: var(--fs-0); font-weight: 700;
-  padding: 8px 2px; text-align: center; cursor: pointer;
+  padding: 8px 2px; text-align: center;
   letter-spacing: .04em; line-height: 1.2;
   transition: background .2s, box-shadow .2s;
 }
-.lampbtn.wide {
-  width: 104px;
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-}
-.lampbtn:disabled { cursor: default; }
-/* a cap whose whole legend is the drive's port letter carries it large */
-.lampbtn.legend-lg { font-size: 1.35rem; letter-spacing: 0; }
-.lampbtn .num { display: block; font-size: 1.05rem; font-weight: 800; line-height: 1.1; }
-/* the unit number is set large in a thin engraved frame, the legend beside it
-   staying small */
-.lampbtn.wide .num {
-  border: 1px solid rgba(23, 21, 14, .7); border-radius: 1px;
-  padding: 3px 11px; font-size: 1.35rem; font-weight: 800; line-height: 1;
-}
-.lampbtn.wide .rdy { font-size: var(--fs-0); letter-spacing: .06em; }
 .lampbtn.cap-yellow      { background: #93803A; }
 .lampbtn.cap-yellow.lit  { background: #F7CE3B; box-shadow: 0 0 12px #F7CE3B88; }
 .lampbtn.cap-white       { background: #BDB9AE; }
 .lampbtn.cap-white.lit   { background: #FFEED2; box-shadow: 0 0 12px #FFD99A88; }
-.lampbtn.cap-red         { background: #8C312A; }
-.lampbtn.cap-red.lit     { background: #EF4B3D; box-shadow: 0 0 12px #EF4B3D88; }
-.lampbtn.cap-orange      { background: #93803A; }
-.lampbtn.cap-orange.lit  { background: #F7A427; box-shadow: 0 0 12px #F7A42788; }
 
 /* ============================ device widgets ============================ */
 /* the column is wide enough for a four-cap switch plate in one row */
@@ -607,8 +633,6 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 /* each widget stands at its own height; a short panel beside a tall one (the
    VCB01 screen) sizes to its own content rather than stretching to the row */
 .widget-grid .rlpanel { height: auto; }
-/* a panel whose bezel needs the room takes two columns */
-.rlpanel.span2 { grid-column: span 2; }
 /* the VCB01 shows its framebuffer; give it the room and keep pixels crisp */
 .vcb01-widget { grid-column: span 2; }
 .vcb01-screen { margin-top: 8px; background: var(--term-bg); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
@@ -616,11 +640,6 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 .vcb01-screen canvas:focus { box-shadow: inset 0 0 0 2px var(--phosphor); }
 .vcb01-hint { font-size: var(--fs-1); color: var(--ink-muted); margin-top: 4px; }
 
-/* removable-media tags */
-.w-tag { font-size: var(--fs-0); padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
-.w-tag.fixed    { color: var(--ink-faint); background: var(--surface-2); }
-.w-tag.locked   { color: var(--warn); background: var(--warn-soft); }
-.w-tag.unlocked { color: var(--ok);   background: var(--ok-soft); }
 .rlpanel .rl-foot { display: flex; align-items: center; gap: 8px; margin-top: auto;
   padding-top: 12px; flex-wrap: wrap; }
 /* device facts that are text rather than a medium */
@@ -630,14 +649,19 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
   background: var(--rl-inset); border: 1px solid var(--rl-panel-edge);
   line-height: 1.6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.rl-img {
-  flex: 1 1 auto; min-width: 0; max-width: 260px; padding: 5px 8px; border-radius: var(--r-sm);
-  font-size: var(--fs-0); color: var(--rl-ink); background: var(--rl-inset);
-  border: 1px solid var(--rl-panel-edge);
-  text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+
+/* disk widget: the drive's verbal status beside its lamp, the shared image
+   picker below */
+.disk-status { display: flex; align-items: center; gap: 12px; margin: 2px 0 4px; }
+.disk-status .led { --led-sz: 18px; }
+.disk-state { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.disk-word { font-weight: 700; font-size: var(--fs-2); color: var(--rl-ink); }
+.disk-word.st-off, .disk-word.st-idle { color: var(--rl-ink-dim); }
+.disk-role {
+  font-family: var(--font-mono); font-size: var(--fs-0); color: var(--rl-ink-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-button.rl-img.swap { cursor: pointer; }
-button.rl-img.swap:hover { border-color: var(--accent); color: var(--accent); }
+.disk-widget .rl-foot .imgfield { flex: 1 1 auto; }
 
 /* image-picker modal */
 .modal-overlay { position: fixed; inset: 0; background: rgba(10,14,18,.5); display: flex; align-items: center; justify-content: center; z-index: 60; }

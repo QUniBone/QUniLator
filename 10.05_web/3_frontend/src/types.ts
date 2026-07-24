@@ -24,6 +24,9 @@ export interface ApiParam {
   options?: string[];
 }
 
+// The verbal runtime state of a disk drive (GET /api/devices → status).
+export type DiskStatus = 'off' | 'idle' | 'loaded' | 'ready' | 'busy';
+
 export interface ApiDevice {
   name: string;
   type: string;
@@ -33,6 +36,7 @@ export interface ApiDevice {
   parent?: string;
   removable?: boolean;
   locked?: boolean;
+  status?: DiskStatus;
   params: ApiParam[];
 }
 
@@ -59,6 +63,7 @@ export interface LiveDev {
   enabled: boolean;
   removable?: boolean;
   locked?: boolean;
+  status?: DiskStatus; // verbal disk state from the backend, when present
   info: string;
   params: LiveParam[];
   drives: LiveDev[];
@@ -123,6 +128,7 @@ export interface LogLine {
 export interface HwState {
   dcok: boolean;
   pok: boolean;
+  powered: boolean; // logical power flag (dc_on/dc_off); defaults on
   leds: boolean[];
   dip: boolean[];
 }

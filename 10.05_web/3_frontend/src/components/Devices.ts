@@ -3,8 +3,7 @@ import { useState } from 'preact/hooks';
 import { imageLabel } from '../lib/util';
 import { liveSetParam } from '../api';
 import { useStore } from '../store';
-import { Toggle, Chip } from './common';
-import { openImagePicker } from './widgets';
+import { Toggle, Chip, ImageField } from './common';
 import type { LiveDev, LiveParam } from '../types';
 
 function ParamRow({ dev, p }: { dev: string; p: LiveParam }) {
@@ -13,8 +12,9 @@ function ParamRow({ dev, p }: { dev: string; p: LiveParam }) {
   if (p.n === 'image' && p.ro)
     ctl = html`<span class="ro" title=${p.v}>${p.v ? imageLabel(p.v) : 'no image'}</span>`;
   else if (p.n === 'image')
-    ctl = html`<button class="imgfield mono" title=${p.v || 'no image'}
-      onClick=${() => openImagePicker(dev, p.v)}>${p.v ? imageLabel(p.v) : html`<span class="muted">no image</span>`}</button>`;
+    ctl = html`<${ImageField} drive=${dev} image=${p.v}
+      onPick=${(name: string) =>
+        liveSetParam(dev, 'image', name, name ? 'image attached' : 'image detached')} />`;
   else if (p.ro)
     ctl = html`<span class="ro">${p.t === 'oct' ? html`<span class="octal"></span>` : null}${p.v}</span>`;
   else if (p.t === 'enum')

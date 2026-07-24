@@ -13,6 +13,17 @@ export function Chip({ cls, children }: { cls: string; children: ComponentChildr
   return html`<span class=${'chip ' + cls}>${children}</span>`;
 }
 
+// The one indicator lamp used everywhere — topbar status, the control-panel
+// PWR OK / RUN lamps, the front-panel activity LEDs. It renders a single
+// physical amber-red LED (the colour of a period DEC panel) in its own dark
+// grommet, so it reads the same on any surface. `sm` is the compact topbar
+// size; the default is the larger panel size.
+export function Led({ on, sm, title }: { on: boolean; sm?: boolean; title?: string }) {
+  return html`<span class=${'led' + (on ? ' on' : '') + (sm ? ' sm' : '')}
+    role="img" aria-label=${(title ? title + ' — ' : '') + (on ? 'lit' : 'dark')}
+    title=${title || null}></span>`;
+}
+
 // Shared image-assignment field: a button showing the drive's current medium
 // that opens the image library and hands the chosen name (or "" to detach) to
 // onPick. The detail pane wires it to a live or a staged assignment; the

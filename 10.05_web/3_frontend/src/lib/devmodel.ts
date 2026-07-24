@@ -52,6 +52,7 @@ export function liveModel(devs: ApiDevice[]): LiveDev[] {
         enabled: d.enabled,
         removable: d.removable,
         locked: d.locked,
+        status: d.status,
         info: '',
         params: d.params.filter((p) => !hidden.includes(p.name)).map(liveParam),
         drives: [] as LiveDev[],

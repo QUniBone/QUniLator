@@ -1,12 +1,11 @@
 import { html } from '../html';
-import { useState, useRef, useEffect } from 'preact/hooks';
+import { useRef, useEffect } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
-import type { LiveDev } from '../types';
-import { imageLabel } from '../lib/util';
-import { liveSetParam, refreshDevices } from '../api';
-import { pickImage } from '../lib/modals';
-import { useStore } from '../store';
+import type { LiveDev, DiskStatus } from '../types';
+import { liveSetParam } from '../api';
+import { store, useStore } from '../store';
 import { enabledDevices } from '../lib/devmodel';
+import { Led, ImageField } from './common';
 import {
   vcb01Connect,
   vcb01Blit,
@@ -23,160 +22,72 @@ export function paramVal(d: LiveDev, n: string): string {
   const p = (d.params || []).find((q) => q.n === n);
   return p ? p.v : '';
 }
-function unitOf(d: LiveDev): string {
-  return paramVal(d, 'unit') || d.name.replace(/\D/g, '');
-}
-function driveRemovable(d: LiveDev): boolean {
-  return d.removable === true;
-}
-function driveLocked(d: LiveDev): boolean {
-  const img = (d.params || []).find((p) => p.n === 'image');
-  if (img && img.ro) return true;
-  return lampOn(d, 'lock') || d.locked === true;
-}
-
-export async function openImagePicker(drive: string, current: string): Promise<void> {
-  const name = await pickImage('Change image · ' + drive, 'Detach — leave the drive empty', current);
-  if (name === null) return;
-  liveSetParam(drive, 'image', name, name ? 'image attached' : 'image detached');
-  setTimeout(() => refreshDevices().catch(() => {}), 300);
-}
-
-function LockTag({ d }: { d: LiveDev }) {
-  if (!driveRemovable(d)) return html`<span class="w-tag fixed">fixed</span>`;
-  return driveLocked(d)
-    ? html`<span class="w-tag locked" title="host holds the medium locked">🔒 locked</span>`
-    : html`<span class="w-tag unlocked" title="medium can be changed">🔓 removable</span>`;
-}
-
-function Swap({ d, cls }: { d: LiveDev; cls: string }) {
-  const img = d.img || paramVal(d, 'image');
-  const txt = img ? imageLabel(img) : 'no image';
-  if (driveRemovable(d) && !driveLocked(d))
-    return html`<button class=${cls + ' swap mono'} title=${img || 'change image'}
-      onClick=${(e: Event) => {
-        e.preventDefault();
-        openImagePicker(d.name, img);
-      }}>${txt} · change…</button>`;
-  return html`<div class=${cls + ' mono'} title=${img || ''}>${txt}</div>`;
-}
 
 function Cap({
   cls,
   lit,
-  onClick,
   children,
 }: {
   cls: string;
   lit: boolean;
-  onClick?: () => void;
   children: ComponentChildren;
 }) {
-  return html`<button class=${'lampbtn ' + cls + (lit ? ' lit' : '')}
-    disabled=${!onClick} onClick=${onClick || null}>${children}</button>`;
-}
-
-function ReadyCap({ unit, lit, wide }: { unit: string; lit: boolean; wide?: boolean }) {
-  return html`<${Cap} cls=${'cap-white' + (wide ? ' wide' : '')} lit=${lit}>
-    <span class="num">${unit}</span>${wide ? html`<span class="rdy">READY</span>` : 'READY'}</${Cap}>`;
+  return html`<span class=${'lampbtn ' + cls + (lit ? ' lit' : '')}>${children}</span>`;
 }
 
 function Panel({
   d,
   caps,
   foot,
-  panelCls,
 }: {
   d: LiveDev;
   caps: ComponentChildren;
   foot: ComponentChildren;
-  panelCls?: string;
 }) {
-  return html`<div class=${'rlpanel' + (panelCls ? ' ' + panelCls : '')}>
+  return html`<div class="rlpanel">
     <div class="plabel"><span>${d.type}</span><span>${d.name}</span></div>
     <div class="lamps">${caps}</div>
     <div class="rl-foot">${foot}</div></div>`;
 }
 
-function RlWidget({ d }: { d: LiveDev }) {
-  const unit = unitOf(d);
-  const rsToggle = () => {
-    const on = paramVal(d, 'runstopbutton') === '1';
-    liveSetParam(
-      d.name,
-      'runstopbutton',
-      on ? '0' : '1',
-      on ? 'pack spins down, LOAD lights when safe' : 'loading — READY after spin-up'
-    );
-  };
-  const wpToggle = () => {
-    const on = paramVal(d, 'writeprotectbutton') === '1';
-    liveSetParam(
-      d.name,
-      'writeprotectbutton',
-      on ? '0' : '1',
-      on ? 'write protection released' : 'write-protected'
-    );
-  };
-  return html`<div class="rlpanel">
-    <div class="plabel"><span>${d.type}</span><span>${d.name}</span></div>
-    <div class="lamps">
-      <button class=${'lampbtn cap-yellow' + (lampOn(d, 'loadlamp') ? ' lit' : '')} onClick=${rsToggle}>LOAD</button>
-      <button class=${'lampbtn cap-white' + (lampOn(d, 'readylamp') ? ' lit' : '')} disabled><span class="num">${unit}</span>READY</button>
-      <button class=${'lampbtn cap-red' + (lampOn(d, 'faultlamp') ? ' lit' : '')} disabled>FAULT</button>
-      <button class=${'lampbtn cap-orange' + (lampOn(d, 'writeprotectlamp') ? ' lit' : '')} onClick=${wpToggle}>WRITE<br />PROT</button>
-    </div>
-    <div class="rl-foot">${html`<${LockTag} d=${d} />`}${html`<${Swap} d=${d} cls="rl-img" />`}</div></div>`;
-}
+// ---- disk widgets: one verbal status, one image picker ----
+const STATUS_WORD: Record<DiskStatus, string> = {
+  off: 'Off',
+  idle: 'No medium',
+  loaded: 'Coming online',
+  ready: 'Ready',
+  busy: 'Busy',
+};
 
-interface Ra81Sw {
-  wp: boolean;
-  fault: boolean;
-}
-const RA81_SWITCHES = new Map<string, Ra81Sw>();
-function ra81Switches(name: string): Ra81Sw {
-  if (!RA81_SWITCHES.has(name)) RA81_SWITCHES.set(name, { wp: false, fault: false });
-  return RA81_SWITCHES.get(name)!;
-}
-function Ra81Widget({ d }: { d: LiveDev }) {
-  const [, force] = useState(0);
-  const unit = unitOf(d),
-    sw = ra81Switches(d.name);
-  const mounted = !!(d.img || paramVal(d, 'image'));
-  const active = lampOn(d, 'accesslamp');
-  const toggle = (k: keyof Ra81Sw) => {
-    sw[k] = !sw[k];
-    force((x) => x + 1);
-  };
-  useEffect(() => {
-    const up = () => {
-      if (sw.fault) {
-        sw.fault = false;
-        force((x) => x + 1);
-      }
-    };
-    document.addEventListener('mouseup', up);
-    return () => document.removeEventListener('mouseup', up);
-  }, []);
-  const caps = html`
-    ${html`<${Cap} cls="cap-yellow" lit=${mounted}>RUN<br />STOP</${Cap}>`}
-    <button class=${'lampbtn cap-red' + (sw.fault ? ' lit' : '')}
-      onMouseDown=${() => toggle('fault')}>FAULT</button>
-    ${html`<${ReadyCap} unit=${unit} lit=${mounted && !active} wide=${true} />`}
-    <button class=${'lampbtn cap-yellow' + (sw.wp ? ' lit' : '')} onClick=${() => toggle('wp')}>WRITE<br />PROT</button>
-    ${html`<${Cap} cls="cap-white legend-lg" lit=${true}>A</${Cap}>`}
-    ${html`<${Cap} cls="cap-white legend-lg" lit=${false}>B</${Cap}>`}`;
-  return html`<${Panel} d=${d} caps=${caps} panelCls="span2"
-    foot=${html`${html`<${LockTag} d=${d} />`}${html`<${Swap} d=${d} cls="rl-img" />`}`} />`;
+// The drive's verbal state. The backend computes it and sends `status`; until
+// that is deployed the widget derives a sensible value from the parameters the
+// drive already exposes. A powered-down machine reads every drive dark.
+function diskStatus(d: LiveDev): DiskStatus {
+  if (store.hw.powered === false) return 'off';
+  if (d.status) return d.status;
+  if (!d.enabled) return 'off';
+  if (!(d.img || paramVal(d, 'image'))) return 'idle';
+  if (lampOn(d, 'accesslamp') || d.activity) return 'busy';
+  return 'ready';
 }
 
 function DiskWidget({ d }: { d: LiveDev }) {
-  const active = lampOn(d, 'accesslamp'),
-    unit = unitOf(d);
-  const caps = html`${html`<${ReadyCap} unit=${unit} lit=${d.enabled && !active} />`}
-    ${html`<${Cap} cls="cap-yellow" lit=${active}>ACCESS</${Cap}>`}`;
-  return html`<${Panel} d=${d} caps=${caps} panelCls="span2"
-    foot=${html`${html`<${LockTag} d=${d} />`}${html`<${Swap} d=${d} cls="rl-img" />`}`} />`;
+  const st = diskStatus(d);
+  const online = st === 'ready' || st === 'busy' || st === 'loaded';
+  const img = d.img || paramVal(d, 'image');
+  return html`<div class="rlpanel disk-widget">
+    <div class="plabel"><span>${d.type}</span><span>${d.name}</span></div>
+    <div class="disk-status">
+      ${html`<${Led} on=${online} title=${'drive ' + st} />`}
+      <div class="disk-state">
+        <span class=${'disk-word st-' + st}>${STATUS_WORD[st]}</span>
+        <span class="disk-role">${d.label || d.type}</span>
+      </div>
+    </div>
+    <div class="rl-foot">${html`<${ImageField} drive=${d.name} image=${img}
+      onPick=${(name: string) =>
+        liveSetParam(d.name, 'image', name, name ? 'image attached' : 'image detached')} />`}</div>
+  </div>`;
 }
 
 function NetworkWidget({ d }: { d: LiveDev }) {
@@ -210,9 +121,6 @@ function Vcb01Widget({ d }: { d: LiveDev }) {
 
 type Widget = (props: { d: LiveDev }) => ReturnType<typeof html>;
 const WIDGET_MODELS: Record<string, Widget> = {
-  RL02: RlWidget,
-  RL01: RlWidget,
-  RA81: Ra81Widget,
   VCB01: Vcb01Widget,
 };
 const WIDGET_CATEGORIES: Record<string, Widget> = {

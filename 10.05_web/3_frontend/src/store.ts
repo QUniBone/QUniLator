@@ -51,7 +51,15 @@ export const store: Store = {
   platform: '',
   connected: false,
   bus: { halted: false, init: false },
-  hw: { dcok: true, pok: true, leds: [false, false, false, false], dip: [false, false, false, false] },
+  hw: {
+    dcok: true,
+    pok: true,
+    // the live board (pre-deploy) never sends `powered`; default on so the
+    // machine reads powered-up until a dc_off arrives
+    powered: true,
+    leds: [false, false, false, false],
+    dip: [false, false, false, false],
+  },
   log: [],
   activeLevels: new Set<LogLevelName>(['ERROR', 'WARNING', 'INFO']),
   termReady: false,

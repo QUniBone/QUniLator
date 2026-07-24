@@ -40,10 +40,13 @@ export function initEvents(): void {
     } else if (ev.t === 'state') {
       const hw = store.hw,
         bus = store.bus;
+      // state frames may be partial (e.g. {"t":"state","powered":false}); merge
+      // each field only when present so the last-known value holds otherwise
       if ('halt' in ev) bus.halted = ev.halt;
       if ('init' in ev) bus.init = ev.init;
       if ('dcok' in ev) hw.dcok = ev.dcok;
       if ('pok' in ev) hw.pok = ev.pok;
+      if ('powered' in ev) hw.powered = ev.powered;
       if (ev.leds) ev.leds.forEach((v: boolean, i: number) => (hw.leds[i] = v));
       if (ev.switches) ev.switches.forEach((v: boolean, i: number) => (hw.dip[i] = v));
       emit();
