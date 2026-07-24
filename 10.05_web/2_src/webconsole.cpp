@@ -25,8 +25,6 @@
 #include <chrono>
 #include <mutex>
 #include <ostream>
-#include <set>
-#include <vector>
 #include <sstream>
 #include <streambuf>
 #include <string>
@@ -34,6 +32,7 @@
 
 #include "civetweb.h"
 #include "webws.hpp"
+#include "webconsole_channel.hpp"
 
 #include "logger.hpp"
 #include "device_configuration.hpp"
@@ -56,9 +55,8 @@ struct console_c {
 		}
 	};
 
-	// clients, guarded by clients_mutex; writes only from the flush thread
-	std::mutex clients_mutex;
-	std::set<struct mg_connection *> clients;
+	// retained history + live clients for this line's /ws/console/<n>
+	console_channel_c channel{web_ws_console_send};
 
 	// xmt bytes from the PDP-11, buffered so the DL11 thread never blocks
 	std::mutex xmt_mutex;
@@ -91,14 +89,7 @@ static void flush_loop(void) {
 			}
 			if (batch.empty())
 				continue;
-			std::lock_guard<std::mutex> lock(console.clients_mutex);
-			std::vector<struct mg_connection *> dead;
-			for (struct mg_connection *conn : console.clients)
-				if (web_ws_try_send(conn, MG_WEBSOCKET_OPCODE_BINARY,
-						batch.data(), batch.size()) < 0)
-					dead.push_back(conn);
-			for (struct mg_connection *conn : dead)
-				console.clients.erase(conn);
+			console.channel.append(batch.data(), batch.size());
 		}
 	}
 }
@@ -109,8 +100,7 @@ static int ws_connect_handler(const struct mg_connection *, void *) {
 
 static void ws_ready_handler(struct mg_connection *conn, void *cbdata) {
 	console_c *console = (console_c *) cbdata;
-	std::lock_guard<std::mutex> lock(console->clients_mutex);
-	console->clients.insert(conn);
+	console->channel.add_client(conn);
 }
 
 static int ws_data_handler(struct mg_connection *, int opcode, char *data,
@@ -130,8 +120,7 @@ static int ws_data_handler(struct mg_connection *, int opcode, char *data,
 
 static void ws_close_handler(const struct mg_connection *conn, void *cbdata) {
 	console_c *console = (console_c *) cbdata;
-	std::lock_guard<std::mutex> lock(console->clients_mutex);
-	console->clients.erase(const_cast<struct mg_connection *>(conn));
+	console->channel.remove_client(const_cast<struct mg_connection *>(conn));
 }
 
 void webconsole_register(struct mg_context *ctx) {
@@ -160,8 +149,6 @@ void webconsole_shutdown(void) {
 			console.dl11->rs232adapter.stream_xmt_tap = nullptr;
 	running = false;
 	flusher.join();
-	for (console_c &console : consoles) {
-		std::lock_guard<std::mutex> lock(console.clients_mutex);
-		console.clients.clear();
-	}
+	for (console_c &console : consoles)
+		console.channel.clear_clients();
 }

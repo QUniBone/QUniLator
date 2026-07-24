@@ -34,4 +34,12 @@ static inline int web_ws_try_send(struct mg_connection *conn, int opcode,
 	return (mg_websocket_write(conn, opcode, data, len) > 0) ? 1 : -1;
 }
 
+// console_channel_c client sink: send binary bytes to one mg_connection.
+// Signature matches console_channel_c::send_fn_t; the client handle is the
+// mg_connection. Return follows web_ws_try_send: 1 sent / 0 skipped / -1 dead.
+static inline int web_ws_console_send(void *client, const char *data, size_t len) {
+	return web_ws_try_send((struct mg_connection *) client,
+			MG_WEBSOCKET_OPCODE_BINARY, data, len);
+}
+
 #endif // _WEBWS_HPP_

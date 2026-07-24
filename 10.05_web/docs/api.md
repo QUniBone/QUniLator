@@ -316,3 +316,16 @@ Binary frames, byte-transparent in both directions, bridged to the DL11
 SLUs: `0` is the PDP-11 console at 777560, `1` the second line at 776500.
 No echo, no line discipline; terminal emulation is the client's job. The
 physical UART stays attached; the WebSocket is a parallel tap.
+
+On connect the server replays the channel's retained history — the raw bytes
+the line has emitted, up to a 256 KB in-memory ring — as one or more leading
+binary frames, then continues with the live stream. A client that opens
+mid-session reconstructs the current screen from the replay; xterm.js repaints
+from the raw bytes with no server-side screen model. The ring is per channel and
+does not persist across a service restart; it is unrelated to the log journal.
+
+### `/ws/console/ext`
+
+Binary frames bridged to the real console SLU on `/dev/ttyS2` (the external
+console bridge); no emulated device sits behind it. Same shape and same
+history replay on connect as `/ws/console/<n>`.

@@ -23,13 +23,12 @@
 #include <atomic>
 #include <chrono>
 #include <mutex>
-#include <set>
-#include <vector>
 #include <string>
 #include <thread>
 
 #include "civetweb.h"
 #include "webws.hpp"
+#include "webconsole_channel.hpp"
 
 #include "rs232.hpp"
 #include "dl11w.hpp"
@@ -45,8 +44,8 @@ static std::string cur_source = "webserial";
 static std::string cur_port = "ttyS2";
 static unsigned cur_baud = 38400;
 
-static std::mutex clients_mutex;
-static std::set<struct mg_connection *> clients;
+// retained history + live clients for /ws/console/ext
+static console_channel_c channel(web_ws_console_send);
 
 static std::atomic<bool> running(false);
 static std::thread reader;
@@ -79,14 +78,7 @@ static void reader_loop(void) {
 				n = port_io.PollComport(buf, sizeof(buf));
 		}
 		if (n > 0) {
-			std::lock_guard<std::mutex> lock(clients_mutex);
-			std::vector<struct mg_connection *> dead;
-			for (struct mg_connection *conn : clients)
-				if (web_ws_try_send(conn, MG_WEBSOCKET_OPCODE_BINARY,
-						(const char *) buf, n) < 0)
-					dead.push_back(conn);
-			for (struct mg_connection *conn : dead)
-				clients.erase(conn);
+			channel.append((const char *) buf, (size_t) n);
 		} else {
 			std::this_thread::sleep_for(std::chrono::milliseconds(n == 0 ? 5 : 20));
 		}
@@ -125,8 +117,7 @@ static int ws_connect_handler(const struct mg_connection *, void *) {
 }
 
 static void ws_ready_handler(struct mg_connection *conn, void *) {
-	std::lock_guard<std::mutex> lock(clients_mutex);
-	clients.insert(conn);
+	channel.add_client(conn);
 }
 
 static int ws_data_handler(struct mg_connection *, int opcode, char *data,
@@ -142,8 +133,7 @@ static int ws_data_handler(struct mg_connection *, int opcode, char *data,
 }
 
 static void ws_close_handler(const struct mg_connection *conn, void *) {
-	std::lock_guard<std::mutex> lock(clients_mutex);
-	clients.erase(const_cast<struct mg_connection *>(conn));
+	channel.remove_client(const_cast<struct mg_connection *>(conn));
 }
 
 void webconsole_ext_register(struct mg_context *ctx) {
@@ -163,6 +153,5 @@ void webconsole_ext_shutdown(void) {
 		port_io.CloseComport();
 		port_open = false;
 	}
-	std::lock_guard<std::mutex> clock(clients_mutex);
-	clients.clear();
+	channel.clear_clients();
 }

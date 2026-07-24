@@ -44,4 +44,12 @@ $CXX -std=c++11 -Wall -Wextra $INCLUDES \
 	"$OUT/civetweb.o" \
 	-lpthread -o "$OUT/config_test"
 
+# The console channel is civetweb-free, so it links against nothing but its own
+# translation unit.
+$CXX -std=c++11 -Wall -Wextra -I "$WEB" \
+	"$TOOLS/console_channel_test.cpp" \
+	"$WEB/webconsole_channel.cpp" \
+	-lpthread -o "$OUT/console_channel_test"
+
 "$OUT/config_test"
+"$OUT/console_channel_test"

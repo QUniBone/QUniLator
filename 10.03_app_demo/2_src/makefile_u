@@ -199,6 +199,7 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/webevents.o	\
 	$(OBJDIR)/webconsole.o	\
 	$(OBJDIR)/webconsole_ext.o	\
+	$(OBJDIR)/webconsole_channel.o	\
 	$(OBJDIR)/webvcb01.o	\
 	$(OBJDIR)/webstorage.o	\
 	$(OBJDIR)/webconfigs.o	\
@@ -522,10 +523,13 @@ $(OBJDIR)/device_label.o :  $(WEB_SRC_DIR)/device_label.cpp $(WEB_SRC_DIR)/devic
 $(OBJDIR)/webevents.o :  $(WEB_SRC_DIR)/webevents.cpp $(WEB_SRC_DIR)/webevents.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/webconsole.o :  $(WEB_SRC_DIR)/webconsole.cpp $(WEB_SRC_DIR)/webconsole.hpp device_configuration.hpp
+$(OBJDIR)/webconsole.o :  $(WEB_SRC_DIR)/webconsole.cpp $(WEB_SRC_DIR)/webconsole.hpp $(WEB_SRC_DIR)/webconsole_channel.hpp device_configuration.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/webconsole_ext.o :  $(WEB_SRC_DIR)/webconsole_ext.cpp $(WEB_SRC_DIR)/webconsole_ext.hpp device_configuration.hpp
+$(OBJDIR)/webconsole_ext.o :  $(WEB_SRC_DIR)/webconsole_ext.cpp $(WEB_SRC_DIR)/webconsole_ext.hpp $(WEB_SRC_DIR)/webconsole_channel.hpp device_configuration.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/webconsole_channel.o :  $(WEB_SRC_DIR)/webconsole_channel.cpp $(WEB_SRC_DIR)/webconsole_channel.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webvcb01.o :  $(WEB_SRC_DIR)/webvcb01.cpp $(WEB_SRC_DIR)/webvcb01.hpp $(DEVICE_SRC_DIR)/vcb01_render.hpp
