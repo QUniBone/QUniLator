@@ -40,6 +40,59 @@ export function confirmModal(title: string, body: string, confirmLabel: string):
   });
 }
 
+// A one-field text prompt (Save As, rename). Resolves the trimmed value, or
+// null when cancelled.
+export function promptModal(
+  title: string,
+  label: string,
+  initial: string,
+  confirmLabel: string
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    const host = document.createElement('div');
+    host.className = 'modal-overlay';
+    host.innerHTML =
+      '<div class="card modal-card"><div class="card-head"><h3>' +
+      esc(title) +
+      '</h3><button class="modal-close" data-pm-no aria-label="Close" title="Close">&times;</button></div>' +
+      '<div class="card-body"><div class="set-grid">' +
+      '<label class="set-name" for="pm-in">' +
+      esc(label) +
+      '</label><input class="set-val mono" id="pm-in" type="text" value="' +
+      esc(initial) +
+      '"></div>' +
+      '<div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">' +
+      '<button class="btn" data-pm-no>Cancel</button>' +
+      '<button class="btn primary" data-pm-yes>' +
+      esc(confirmLabel) +
+      '</button></div></div></div>';
+    const input = () => (host.querySelector('#pm-in') as HTMLInputElement).value.trim();
+    const done = (v: string | null) => {
+      host.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve(v);
+    };
+    const submit = () => {
+      const v = input();
+      if (v) done(v);
+    };
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key === 'Escape') done(null);
+      else if (ev.key === 'Enter') submit();
+    }
+    host.addEventListener('click', (ev) => {
+      const target = ev.target as HTMLElement;
+      if (target === host || target.closest('[data-pm-no]')) done(null);
+      else if (target.closest('[data-pm-yes]')) submit();
+    });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(host);
+    const el = host.querySelector('#pm-in') as HTMLInputElement;
+    el.focus();
+    el.select();
+  });
+}
+
 export async function pickImage(
   title: string,
   emptyLabel: string,

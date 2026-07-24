@@ -47,6 +47,7 @@ export function liveModel(devs: ApiDevice[]): LiveDev[] {
       {
         name: d.name,
         type: d.type,
+        label: d.label,
         category: d.category,
         enabled: d.enabled,
         removable: d.removable,
@@ -79,6 +80,24 @@ export function enabledDevices(): LiveDev[] {
   walkDevs((d) => {
     if (d.enabled) out.push(d);
   });
+  return out;
+}
+
+// The friendly label of a device from the live registry, keyed by handle;
+// falls back to the handle for a device the registry does not carry.
+export function deviceLabel(name: string): string {
+  let out = '';
+  walkDevs((d) => {
+    if (d.name === name) out = d.label || '';
+  });
+  return out || name;
+}
+
+// The live registry as a flat list (controllers and their drives), for the
+// stored-config editor to enumerate the editable device set.
+export function flatDevices(): LiveDev[] {
+  const out: LiveDev[] = [];
+  walkDevs((d) => out.push(d));
   return out;
 }
 

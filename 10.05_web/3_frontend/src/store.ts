@@ -21,6 +21,9 @@ export interface Store {
   images: ImageInfo[];
   imagesDir: string;
   configs: ConfigSummary[] | null;
+  configCurrent: string; // the running configuration's name
+  configDefault: string; // the startup default
+  configModified: boolean | null; // live setup differs from saved current; null when the busy machine blocked the compare
   platform: string;
   connected: boolean;
   bus: BusState;
@@ -42,6 +45,9 @@ export const store: Store = {
   images: [],
   imagesDir: '',
   configs: null,
+  configCurrent: '',
+  configDefault: '',
+  configModified: null,
   platform: '',
   connected: false,
   bus: { halted: false, init: false },

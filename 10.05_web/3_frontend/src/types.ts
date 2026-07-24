@@ -54,6 +54,7 @@ export interface LiveParam {
 export interface LiveDev {
   name: string;
   type: string;
+  label?: string; // friendly "<role> (<code>)" from GET /api/devices
   category?: string;
   enabled: boolean;
   removable?: boolean;
@@ -91,20 +92,20 @@ export interface ImageInfo {
   used?: ImageUse[];
 }
 
+// One row of the master list (GET /api/configs → configs[]).
 export interface ConfigSummary {
   name: string;
   mtime?: string;
   enabled?: string[];
   default?: boolean;
-  // filled in by the frontend after loading each snapshot
-  snapshot?: ConfigSnapshot | null;
-  loaded?: boolean;
 }
 export interface ConfigDeviceSnapshot {
   name: string;
   enabled: boolean;
   params?: Record<string, string>;
 }
+// The full document of one configuration (GET /api/configs/<name> and the
+// body of PUT /api/configs/<name>).
 export interface ConfigSnapshot {
   devices: ConfigDeviceSnapshot[];
 }

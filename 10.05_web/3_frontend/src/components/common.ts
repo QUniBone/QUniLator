@@ -1,6 +1,8 @@
 import { html } from '../html';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
+import { imageLabel } from '../lib/util';
+import { pickImage } from '../lib/modals';
 
 export function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return html`<label class="toggle"><input type="checkbox" checked=${checked}
@@ -9,6 +11,32 @@ export function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: 
 
 export function Chip({ cls, children }: { cls: string; children: ComponentChildren }) {
   return html`<span class=${'chip ' + cls}>${children}</span>`;
+}
+
+// Shared image-assignment field: a button showing the drive's current medium
+// that opens the image library and hands the chosen name (or "" to detach) to
+// onPick. The detail pane wires it to a live or a staged assignment; the
+// dashboard disk widgets can use the same component.
+export function ImageField({
+  drive,
+  image,
+  onPick,
+}: {
+  drive: string;
+  image: string;
+  onPick: (name: string) => void;
+}) {
+  const open = async () => {
+    const name = await pickImage(
+      'Image for ' + drive,
+      'No image — leave the drive empty',
+      image
+    );
+    if (name === null) return;
+    onPick(name);
+  };
+  return html`<button class="imgfield mono" title=${image || 'no image'} onClick=${open}>
+    ${image ? imageLabel(image) : html`<span class="muted">no image</span>`}</button>`;
 }
 
 const ARM_MS = 5000;

@@ -1,156 +1,393 @@
+// Configuration management as a master/detail screen at /config.
+//
+//   /config                     master list, empty detail
+//   /config/<name>              detail for <name>: its devices + image assignments
+//   /config/<name>/<device>     the same, with <device>'s parameters expanded
+//   ?show=all                   ephemeral filter: reveal disabled devices too
+//
+// One editor serves every configuration; the difference is what Save does, and
+// it is signalled by the header, not a mode:
+//   - the CURRENT configuration edits the running machine live (via /api/devices)
+//     and Save writes the live setup back to the file (?from=live);
+//   - a STORED configuration is staged in the editor and reaches nothing until
+//     Save writes the whole document (no flag).
 import { html } from '../html';
 import { useState, useEffect } from 'preact/hooks';
 import { useRoute, useLocation } from 'preact-iso';
-import { esc, imageLabel } from '../lib/util';
-import { toast } from '../lib/toast';
-import { apiJSON, cfgDriveNames, loadConfigs, refreshDevices } from '../api';
-import { confirmModal, pickImage } from '../lib/modals';
+import { useQueryParam } from '../router';
+import { esc } from '../lib/util';
+import { confirmModal, promptModal } from '../lib/modals';
+import {
+  loadConfigs,
+  refreshDevices,
+  liveSetParam,
+  fetchConfigSnapshot,
+  saveConfigFromLive,
+  saveConfigDoc,
+  applyConfig,
+  renameConfig,
+  setDefaultConfig,
+  deleteConfig,
+} from '../api';
+import { flatDevices } from '../lib/devmodel';
 import { useStore } from '../store';
-import { DelButton } from './common';
-import type { ConfigSnapshot, ConfigSummary } from '../types';
+import { Toggle, Chip, ImageField, DelButton } from './common';
+import type { LiveDev, LiveParam, ConfigSnapshot, ConfigSummary } from '../types';
 
-async function setConfigImage(cfgName: string, drive: string, current: string): Promise<void> {
-  const name = await pickImage(
-    'Image for ' + drive + ' in “' + cfgName + '”',
-    'No image — leave the drive empty',
-    current
-  );
-  if (name === null) return;
-  const res = await apiJSON<{ error?: string }>(
-    '/api/configs/' +
-      encodeURIComponent(cfgName) +
-      '/devices/' +
-      encodeURIComponent(drive) +
-      '/image',
-    {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ value: name }),
-    }
-  );
-  toast(cfgName + ':' + drive + ' = ' + (name || '""'), res.ok ? 'configuration updated' : res.data.error || 'rejected');
-  await loadConfigs().catch(() => {});
+// ---- staged edits of a stored document ----
+interface Staged {
+  enabled: Record<string, boolean>;
+  params: Record<string, Record<string, string>>;
 }
-
-function CfgDevices({ cfgName, snap }: { cfgName: string; snap: ConfigSnapshot | null | undefined }) {
-  const devs = ((snap || { devices: [] }).devices || []).filter((d) => d.enabled);
-  if (!devs.length)
-    return html`<div class="muted" style="padding:10px 14px; font-size:var(--fs-1)">This configuration switches every device off.</div>`;
-  const drives = cfgDriveNames();
-  return devs.map((d) => {
-    const names = Object.keys(d.params || {})
-      .sort()
-      .filter((n) => n !== 'image');
-    const takesImage = drives.indexOf(d.name) !== -1;
-    const img = (d.params || {}).image || '';
-    return html`<div key=${d.name}>
-      <div class="dev-sub"><span class="devname">${d.name}</span><span class="spacer"></span><span class="chip ok">enabled</span></div>
-      <div class="params">${
-        names.length || takesImage
-          ? html`<div class="p-grid">
-            ${
-              takesImage
-                ? html`<div class="p-name">image</div>
-              <div class="p-val"><button class="btn small" onClick=${() =>
-                setConfigImage(cfgName, d.name, img)}>
-                ${img ? imageLabel(img) : 'no image'} · change…</button></div>
-              <div class="p-info">the medium this drive starts with</div>`
-                : null
-            }
-            ${names.map(
-              (n) => html`<div class="p-name">${n}</div>
-              <div class="p-val"><span class="ro">${String((d.params || {})[n])}</span></div><div class="p-info"></div>`
-            )}</div>`
-          : html`<span class="muted" style="font-size:var(--fs-1)">all parameters at their defaults</span>`
-      }</div></div>`;
+function seedStaged(doc: ConfigSnapshot): Staged {
+  const st: Staged = { enabled: {}, params: {} };
+  (doc.devices || []).forEach((d) => {
+    st.enabled[d.name] = d.enabled;
+    st.params[d.name] = { ...(d.params || {}) };
   });
+  return st;
+}
+// The staged document written by a stored-config Save: every staged-enabled
+// device with the parameters staged for it (untouched defaults are omitted, so
+// the backend fills them in).
+function serialize(st: Staged): ConfigSnapshot {
+  const devices = flatDevices()
+    .filter((d) => st.enabled[d.name])
+    .map((d) => ({ name: d.name, enabled: true, params: st.params[d.name] || {} }));
+  return { devices };
 }
 
-function CfgRow({ c, halted, open }: { c: ConfigSummary; halted: boolean; open: boolean }) {
+// ---- the row model both modes render ----
+interface Row {
+  name: string;
+  label: string;
+  type: string;
+  enabled: boolean;
+  takesImage: boolean;
+  image: string;
+  params: LiveParam[]; // settable/display params (image handled separately)
+  drives: Row[];
+}
+function liveRow(d: LiveDev): Row {
+  return {
+    name: d.name,
+    label: d.label || d.name,
+    type: d.type,
+    enabled: d.enabled,
+    takesImage: d.params.some((p) => p.n === 'image'),
+    image: d.img,
+    params: d.params,
+    drives: (d.drives || []).map(liveRow),
+  };
+}
+function storedRow(d: LiveDev, st: Staged): Row {
+  const pv = st.params[d.name] || {};
+  return {
+    name: d.name,
+    label: d.label || d.name,
+    type: d.type,
+    enabled: !!st.enabled[d.name],
+    takesImage: d.params.some((p) => p.n === 'image'),
+    image: 'image' in pv ? pv.image : d.img,
+    params: d.params
+      .filter((p) => !p.ro && p.n !== 'image')
+      .map((p) => ({ ...p, v: p.n in pv ? pv[p.n] : p.v })),
+    drives: (d.drives || []).map((c) => storedRow(c, st)),
+  };
+}
+
+type SetEnabled = (name: string, on: boolean) => void;
+type SetParam = (name: string, param: string, value: string) => void;
+type SetImage = (name: string, image: string) => void;
+
+function paramControl(row: Row, p: LiveParam, onParam: SetParam) {
+  if (p.ro) return html`<span class="ro">${p.v}</span>`;
+  if (p.t === 'enum')
+    return html`<select onChange=${(e: Event) =>
+      onParam(row.name, p.n, (e.target as HTMLSelectElement).value)}>
+      ${(p.opts || []).map((o) => html`<option selected=${o === p.v}>${o}</option>`)}</select>`;
+  return html`<input type="text" value=${p.v}
+    onChange=${(e: Event) => onParam(row.name, p.n, (e.target as HTMLInputElement).value)} />`;
+}
+
+function DevRow({
+  row,
+  cfg,
+  device,
+  showAll,
+  onToggle,
+  onParam,
+  onImage,
+}: {
+  row: Row;
+  cfg: string;
+  device: string;
+  showAll: boolean;
+  onToggle: SetEnabled;
+  onParam: SetParam;
+  onImage: SetImage;
+}) {
   const loc = useLocation();
-  const apply = async () => {
+  const open = device === row.name;
+  const gridParams = row.params.filter((p) => p.n !== 'image');
+  const toggleOpen = () => {
+    const base = '/config/' + encodeURIComponent(cfg);
+    const path = open ? base : base + '/' + encodeURIComponent(row.name);
+    loc.route(path + location.search);
+  };
+  return html`<div class=${'cfg-dev' + (row.enabled ? '' : ' off')}>
+    <div class="dev-sub">
+      <span class="dev-label">${row.label}</span>
+      <span class="dev-handle mono">${row.name}</span>
+      <span class="muted" style="font-size:var(--fs-0)">${row.type}</span>
+      ${
+        row.takesImage
+          ? html`<${ImageField} drive=${row.name} image=${row.image}
+            onPick=${(n: string) => onImage(row.name, n)} />`
+          : null
+      }
+      <span class="spacer"></span>
+      <${Chip} cls=${row.enabled ? 'ok' : 'off'}>${row.enabled ? 'enabled' : 'disabled'}</${Chip}>
+      <${Toggle} checked=${row.enabled} onChange=${(on: boolean) => onToggle(row.name, on)} />
+      ${
+        gridParams.length
+          ? html`<button class="btn small" onClick=${toggleOpen}>${open ? 'Hide' : 'Parameters'}</button>`
+          : null
+      }
+    </div>
+    ${
+      open && gridParams.length
+        ? html`<div class="params"><div class="p-grid">
+      ${gridParams.map(
+        (p) => html`<div class="p-name">${p.n}${
+          p.s && p.s !== p.n ? html` <span class="p-short">(${p.s})</span>` : null
+        }</div>
+        <div class="p-val">${paramControl(row, p, onParam)}${
+          p.u ? html`<span class="unit">${p.u}</span>` : null
+        }</div>
+        <div class="p-info">${p.i}</div>`
+      )}
+    </div></div>`
+        : null
+    }
+    ${
+      row.enabled
+        ? (row.drives || [])
+            .filter((d) => d.enabled || showAll)
+            .map(
+              (d) => html`<${DevRow} row=${d} cfg=${cfg} device=${device} showAll=${showAll}
+              onToggle=${onToggle} onParam=${onParam} onImage=${onImage} key=${d.name} />`
+            )
+        : null
+    }
+  </div>`;
+}
+
+function Detail({ name }: { name: string }) {
+  const s = useStore();
+  const loc = useLocation();
+  const { params } = useRoute();
+  const device = params.device ? decodeURIComponent(params.device) : '';
+  const [showQ, setShowQ] = useQueryParam('show');
+  const showAll = showQ === 'all';
+  const isCurrent = name === s.configCurrent;
+  const isDefault = name === s.configDefault;
+
+  const [staged, setStaged] = useState<Staged | null>(null);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    if (isCurrent) {
+      setStaged(null);
+      setDirty(false);
+      return;
+    }
+    let live = true;
+    fetchConfigSnapshot(name).then((doc) => {
+      if (live) {
+        setStaged(seedStaged(doc || { devices: [] }));
+        setDirty(false);
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, [name, isCurrent]);
+
+  // live edits reach the running machine at once; staged edits sit in the editor
+  const liveToggle: SetEnabled = (dev, on) =>
+    liveSetParam(dev, 'enabled', on ? '1' : '0', on ? 'device enabled' : 'device disabled');
+  const liveParam: SetParam = (dev, pn, val) => liveSetParam(dev, pn, val, 'parameter set');
+  const liveImage: SetImage = (dev, img) => {
+    liveSetParam(dev, 'image', img, img ? 'image attached' : 'image detached');
+    setTimeout(() => refreshDevices().catch(() => {}), 300);
+  };
+  const stage = (fn: (st: Staged) => void) => {
+    setStaged((prev) => {
+      const base = prev || { enabled: {}, params: {} };
+      const st: Staged = { enabled: { ...base.enabled }, params: { ...base.params } };
+      fn(st);
+      return st;
+    });
+    setDirty(true);
+  };
+  const stagedToggle: SetEnabled = (dev, on) => stage((st) => (st.enabled[dev] = on));
+  const stagedParam: SetParam = (dev, pn, val) =>
+    stage((st) => (st.params[dev] = { ...(st.params[dev] || {}), [pn]: val }));
+  const stagedImage: SetImage = (dev, img) => stagedParam(dev, 'image', img);
+
+  const roots = isCurrent
+    ? s.devmodel.map(liveRow)
+    : staged
+    ? s.devmodel.map((d) => storedRow(d, staged))
+    : [];
+  const visible = roots.filter((r) => r.enabled || showAll);
+
+  const doSaveAs = async () => {
+    const nn = await promptModal('Save configuration as', 'Name', name, 'Save');
+    if (!nn) return;
+    if (await saveConfigFromLive(nn)) loc.route('/config/' + encodeURIComponent(nn));
+  };
+  const doRevert = async () => {
     if (
-      !halted &&
+      !(await confirmModal(
+        'Revert to the saved ' + esc(name) + '?',
+        'This re-initialises the running machine to the saved device set, dropping any change made since the last save.',
+        'Revert'
+      ))
+    )
+      return;
+    applyConfig(name);
+  };
+  const doSaveStored = async () => {
+    if (staged && (await saveConfigDoc(name, serialize(staged)))) setDirty(false);
+  };
+  const doApply = async () => {
+    if (
+      !s.bus.halted &&
       !(await confirmModal(
         'Apply while the PDP-11 is running?',
         'The CPU is running. Applying <b>' +
-          esc(c.name) +
-          '</b> reconfigures every device — drives are detached ' +
-          'and reattached, and the running system will not survive it.',
+          esc(name) +
+          '</b> reconfigures every device — the running system will not survive it.',
         'Apply anyway'
       ))
     )
       return;
-    const res = await apiJSON<{ ok?: boolean; errors?: string[] }>(
-      '/api/configs/' + encodeURIComponent(c.name) + '/apply',
-      { method: 'POST' }
-    );
-    toast(
-      'POST /api/configs/' + c.name + '/apply',
-      res.ok && res.data.ok
-        ? 'configuration applied'
-        : 'applied with rejections: ' + ((res.data.errors || []).join('; ') || 'request failed')
-    );
-    refreshDevices().catch(() => {});
-    loadConfigs().catch(() => {});
+    applyConfig(name);
   };
-  const del = () =>
-    fetch('/api/configs/' + encodeURIComponent(c.name), { method: 'DELETE' }).then((r) => {
-      toast('DELETE /api/configs/' + c.name, r.ok ? 'configuration deleted' : 'delete failed');
-      loadConfigs().catch(() => {});
-    });
-  return html`<div class="card cfg-row">
-    <div class="card-head">
-      <h3>${c.name}</h3>
-      <span class="muted" style="font-size:var(--fs-0)">${c.mtime}</span>
-      ${c.loaded ? html`<span class="chip ok">loaded</span>` : null}
-      ${(c.enabled || []).map((d) => html`<span class="chip out">${d}</span>`)}
-      <span style="margin-left:auto; display:flex; gap:8px">
-        <button class="btn small" onClick=${() => loc.route(open ? '/config' : '/config/' + encodeURIComponent(c.name))}>${open ? 'Hide' : 'View'}</button>
-        <button class="btn small primary" disabled=${c.loaded} title=${c.loaded ? 'already loaded' : ''} onClick=${apply}>Apply</button>
-        <${DelButton} label="Delete" confirmLabel="Confirm delete" onConfirm=${del} />
-      </span></div>
-    ${open ? html`<div class="cfg-devs"><${CfgDevices} cfgName=${c.name} snap=${c.snapshot} /></div>` : null}
-  </div>`;
+  const doRename = async () => {
+    const nn = await promptModal('Rename configuration', 'New name', name, 'Rename');
+    if (!nn || nn === name) return;
+    if (await renameConfig(name, nn)) loc.route('/config/' + encodeURIComponent(nn));
+  };
+  const doDelete = async () => {
+    if (await deleteConfig(name)) loc.route('/config');
+  };
+
+  return html`<div class="cfg-detail"><div class="card">
+    <div class="cfg-detail-head">
+      <div class="cfg-heading">
+        <div class="cfg-kicker">${isCurrent ? 'Current · live' : 'Stored'}</div>
+        <div class="cfg-title">
+          <span class="mono">${name}</span>
+          ${isCurrent && s.configModified ? html`<${Chip} cls="warn">modified</${Chip}>` : null}
+          ${isDefault ? html`<${Chip} cls="out">default</${Chip}>` : null}
+        </div>
+      </div>
+      <div class="cfg-actions">
+        ${
+          isCurrent
+            ? html`<button class="btn small primary" onClick=${() => saveConfigFromLive(name)}>Save</button>
+              <button class="btn small" onClick=${doSaveAs}>Save As…</button>
+              <button class="btn small" onClick=${doRevert}>Revert</button>`
+            : html`<button class="btn small primary" disabled=${!dirty} onClick=${doSaveStored}>Save</button>
+              <button class="btn small" onClick=${doApply}>Apply</button>`
+        }
+        ${isDefault ? null : html`<button class="btn small" onClick=${() => setDefaultConfig(name)}>Set default</button>`}
+        <button class="btn small" onClick=${doRename}>Rename…</button>
+        <${DelButton} label="Delete" confirmLabel="Confirm delete" onConfirm=${doDelete} />
+      </div>
+    </div>
+    <div class="cfg-detail-sub">
+      <span class="muted" style="font-size:var(--fs-1)">${
+        isCurrent
+          ? 'Edits act on the running machine immediately, so this configuration goes modified.'
+          : 'Edits are staged here and reach nothing until you Save.'
+      }</span>
+      <span class="spacer"></span>
+      <button class=${'chip cfg-filter ' + (showAll ? 'out' : 'ok')}
+        onClick=${() => setShowQ(showAll ? '' : 'all')}>${showAll ? 'all devices' : 'enabled only'}</button>
+    </div>
+    <div class="cfg-editor">
+      ${
+        visible.length
+          ? visible.map(
+              (r) => html`<${DevRow} row=${r} cfg=${name} device=${device} showAll=${showAll}
+                onToggle=${isCurrent ? liveToggle : stagedToggle}
+                onParam=${isCurrent ? liveParam : stagedParam}
+                onImage=${isCurrent ? liveImage : stagedImage} key=${r.name} />`
+            )
+          : html`<div class="cfg-empty muted">${
+              isCurrent ? 'No enabled devices.' : 'This configuration switches every device off.'
+            }${showAll ? '' : ' Switch to “all devices” to add one.'}</div>`
+      }
+    </div>
+  </div></div>`;
+}
+
+function MasterRow({ c }: { c: ConfigSummary }) {
+  const s = useStore();
+  const loc = useLocation();
+  const { params } = useRoute();
+  const selected = params.name ? decodeURIComponent(params.name) : '';
+  const isCurrent = c.name === s.configCurrent;
+  const isDefault = c.name === s.configDefault;
+  return html`<button class=${'cfg-item' + (c.name === selected ? ' active' : '')}
+    onClick=${() => loc.route('/config/' + encodeURIComponent(c.name))}>
+    <span class="cfg-item-top">
+      <span class="cfg-item-name mono">${c.name}</span>
+      <span class="cfg-item-marks">
+        ${isCurrent ? html`<${Chip} cls="ok">current</${Chip}>` : null}
+        ${isCurrent && s.configModified ? html`<${Chip} cls="warn">modified</${Chip}>` : null}
+        ${isDefault ? html`<${Chip} cls="out">default</${Chip}>` : null}
+      </span>
+    </span>
+    <span class="cfg-item-devs muted mono">${(c.enabled || []).join(' · ') || 'all devices off'}</span>
+  </button>`;
 }
 
 export function ConfigsPage() {
   const s = useStore();
+  const { params } = useRoute();
+  const name = params.name ? decodeURIComponent(params.name) : '';
   useEffect(() => {
     loadConfigs().catch(() => {});
   }, []);
-  const { params } = useRoute();
-  const selected = params.name ? decodeURIComponent(params.name) : '';
-  const [name, setName] = useState('');
   const configs = s.configs || [];
-  const alreadySaved = configs.some((c) => c.loaded);
-  const save = async () => {
-    if (!name.trim()) {
-      toast('PUT /api/configs/…', 'enter a configuration name first');
-      return;
-    }
-    const r = await fetch('/api/configs/' + encodeURIComponent(name.trim()), { method: 'PUT' });
-    toast('PUT /api/configs/' + name.trim(), r.ok ? 'current setup saved' : 'save failed');
-    setName('');
-    loadConfigs().catch(() => {});
-  };
-  return html`<section class="page active" data-page="configurations"><div>
-    ${
-      !alreadySaved
-        ? html`<div class="card cfg-row"><div class="card-head">
-      <h3>Save current setup</h3>
-      <span style="margin-left:auto; display:flex; gap:8px">
-        <input type="text" placeholder="configuration name" class="mono" value=${name}
-          onInput=${(e: Event) => setName((e.target as HTMLInputElement).value)}
-          style="background:transparent; border:1px solid var(--line); border-radius:6px; padding:4px 8px; color:inherit" />
-        <button class="btn small primary" onClick=${save}>Save</button></span></div></div>`
-        : null
-    }
-    ${configs.map((c) => html`<${CfgRow} c=${c} halted=${s.bus.halted} open=${selected === c.name} key=${c.name} />`)}
-    ${
-      configs.length === 0 && s.configs != null
-        ? html`<div class="muted" style="padding:8px">No saved configurations yet.</div>`
-        : null
-    }
-  </div></section>`;
+  const exists = configs.some((c) => c.name === name);
+  return html`<section class="page active" data-page="configurations">
+    <div class="cfg-layout">
+      <div class="cfg-master card">
+        <div class="card-head"><h3>Configurations</h3></div>
+        <div class="cfg-list">
+          ${
+            configs.length
+              ? configs.map((c) => html`<${MasterRow} c=${c} key=${c.name} />`)
+              : html`<div class="muted" style="padding:8px 14px; font-size:var(--fs-1)">${
+                  s.configs == null ? 'Loading…' : 'No saved configurations yet.'
+                }</div>`
+          }
+        </div>
+      </div>
+      ${
+        !name
+          ? html`<div class="cfg-detail"><div class="card"><div class="cfg-empty muted">
+              Select a configuration to view its devices and image assignments.</div></div></div>`
+          : exists
+          ? html`<${Detail} name=${name} key=${name} />`
+          : html`<div class="cfg-detail"><div class="card"><div class="cfg-empty muted">
+              No configuration named “${name}”.</div></div></div>`
+      }
+    </div>
+  </section>`;
 }
