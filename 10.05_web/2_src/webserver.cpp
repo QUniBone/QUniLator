@@ -25,6 +25,8 @@
 #include <string.h>
 #include <pthread.h>
 #include <sched.h>
+#include <sys/stat.h>
+#include <string>
 
 #include "civetweb.h"
 #include "picojson.h"
@@ -79,25 +81,58 @@ static bool base64_decode(const char *in, std::string *out) {
 	return true;
 }
 
-// result 0: request continues (authorized or auth disabled), 1: rejected
-static int begin_request_handler(struct mg_connection *conn) {
-	if (!webauth_configured())
+// The single-page frontend routes on History-API paths, so a reload or a deep
+// link to a client route (e.g. /config/211bsd) must return the SPA shell for
+// the client router to resolve. This is scoped so it never shadows the API or
+// the WebSockets: /api/ and /ws/ are left to their handlers, an existing static
+// asset is served normally, and only an otherwise-unresolved GET falls back to
+// index.html. mg_send_file routes through civetweb's static handler, so the
+// shell keeps its ETag and static_file_max_age revalidation. Non-GET methods on
+// unknown paths still 404 through civetweb's default handling.
+static int spa_shell_fallback(struct mg_connection *conn) {
+	const struct mg_request_info *ri = mg_get_request_info(conn);
+	if (ri->request_method == nullptr || strcmp(ri->request_method, "GET") != 0)
 		return 0;
-	const char *auth = mg_get_header(conn, "Authorization");
-	if (auth != nullptr && strncmp(auth, "Basic ", 6) == 0) {
-		std::string credentials; // "user:password", any user accepted
-		if (base64_decode(auth + 6, &credentials)) {
-			size_t colon = credentials.find(':');
-			if (colon != std::string::npos
-					&& webauth_verify(credentials.substr(colon + 1)))
-				return 0;
+	const char *uri = ri->local_uri != nullptr ? ri->local_uri : "/";
+	if (strncmp(uri, "/api/", 5) == 0 || strncmp(uri, "/ws/", 4) == 0)
+		return 0; // belongs to a registered handler
+	const char *root = mg_get_option(mg_get_context(conn), "document_root");
+	if (root == nullptr)
+		return 0;
+	// civetweb cleans local_uri of "." and ".." segments, so this cannot escape
+	// the document root
+	std::string path = std::string(root) + uri;
+	struct stat st;
+	if (stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode))
+		return 0; // an existing asset: let civetweb serve it
+	std::string shell = std::string(root) + "/index.html";
+	mg_send_file(conn, shell.c_str());
+	return 1;
+}
+
+// result 0: request continues (authorized or auth disabled), 1: handled here
+static int begin_request_handler(struct mg_connection *conn) {
+	if (webauth_configured()) {
+		const char *auth = mg_get_header(conn, "Authorization");
+		bool ok = false;
+		if (auth != nullptr && strncmp(auth, "Basic ", 6) == 0) {
+			std::string credentials; // "user:password", any user accepted
+			if (base64_decode(auth + 6, &credentials)) {
+				size_t colon = credentials.find(':');
+				if (colon != std::string::npos
+						&& webauth_verify(credentials.substr(colon + 1)))
+					ok = true;
+			}
+		}
+		if (!ok) {
+			mg_printf(conn,
+					"HTTP/1.1 401 Unauthorized\r\n"
+					"WWW-Authenticate: Basic realm=\"" QUNIBONE_NAME "\"\r\n"
+					"Content-Length: 0\r\n\r\n");
+			return 1;
 		}
 	}
-	mg_printf(conn,
-			"HTTP/1.1 401 Unauthorized\r\n"
-			"WWW-Authenticate: Basic realm=\"" QUNIBONE_NAME "\"\r\n"
-			"Content-Length: 0\r\n\r\n");
-	return 1;
+	return spa_shell_fallback(conn);
 }
 
 #if defined(QBUS)

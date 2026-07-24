@@ -20,6 +20,21 @@
 set -e
 cd "$(dirname "$0")/.."
 
+# The web frontend is a Vite + Preact + TypeScript project; its bundle is built
+# on the dev machine and shipped as the civetweb docroot (source only in git).
+# Node lives on the dev machine, not in the Debian packaging container, so build
+# here before the container re-entry below; inside the container npm is absent
+# and the already-built dist/ is used.
+FRONTEND=10.05_web/3_frontend
+if command -v npm >/dev/null 2>&1; then
+    echo "Building web frontend ..."
+    ( cd "$FRONTEND" && npm ci && npm run build )
+elif [ ! -d "$FRONTEND/dist" ]; then
+    echo "no $FRONTEND/dist and no npm to build it -" >&2
+    echo "run 'npm ci && npm run build' in $FRONTEND first" >&2
+    exit 1
+fi
+
 # dpkg-deb, GNU find and dtc are all Debian tools, and the host is usually
 # macOS, so the packaging runs in a container. Re-enter one when the tools are
 # not here; inside, the check passes and the script continues.
@@ -86,7 +101,7 @@ install -d -m 755 $STAGE/DEBIAN \
     $STAGE/etc/modprobe.d \
     $STAGE/etc/modules-load.d \
     $STAGE/usr/bin \
-    $STAGE/usr/share/bone/frontend/vendor \
+    $STAGE/usr/share/bone/frontend/assets \
     $STAGE/usr/share/doc/$NAME \
     $STAGE/etc/bone \
     $STAGE/lib/systemd/system \
@@ -101,19 +116,33 @@ install -m 755 $BINARY $STAGE/usr/bin/$NAME
 install -m 755 $BINARY_DEMO $STAGE/usr/bin/$NAME-demo
 # its unit, the one that names the binary
 rebrand < packaging/debian/qbone.service > $STAGE/lib/systemd/system/$NAME.service
-# the web root: index.html and the manifest carry the display brand
-rebrand < 10.05_web/3_frontend/index.html > $STAGE/usr/share/bone/frontend/index.html
-rebrand < 10.05_web/3_frontend/site.webmanifest > $STAGE/usr/share/bone/frontend/site.webmanifest
-chmod 644 $STAGE/usr/share/bone/frontend/index.html \
-    $STAGE/usr/share/bone/frontend/site.webmanifest
-install -m 644 10.05_web/3_frontend/vendor/* $STAGE/usr/share/bone/frontend/vendor/
-# favicons served from the web root beside index.html (binary, copied as-is)
-install -m 644 10.05_web/3_frontend/favicon.ico 10.05_web/3_frontend/favicon.svg \
-    10.05_web/3_frontend/favicon-16x16.png 10.05_web/3_frontend/favicon-32x32.png \
-    10.05_web/3_frontend/favicon-48x48.png 10.05_web/3_frontend/apple-touch-icon.png \
-    10.05_web/3_frontend/android-chrome-192x192.png \
-    10.05_web/3_frontend/android-chrome-512x512.png \
-    $STAGE/usr/share/bone/frontend/
+# the web root: the Vite build output. index.html, the hashed JS/CSS bundles and
+# the manifest carry the display brand, so rebrand those text assets; the
+# favicons and other binaries copy as-is. The bundle hash is not recomputed, but
+# index.html references the assets by their built names, so this stays coherent.
+DIST=10.05_web/3_frontend/dist
+for f in "$DIST"/*; do
+    [ -f "$f" ] || continue
+    b=$(basename "$f")
+    case "$b" in
+        index.html|site.webmanifest)
+            rebrand < "$f" > $STAGE/usr/share/bone/frontend/"$b"
+            chmod 644 $STAGE/usr/share/bone/frontend/"$b" ;;
+        *)
+            install -m 644 "$f" $STAGE/usr/share/bone/frontend/"$b" ;;
+    esac
+done
+for f in "$DIST"/assets/*; do
+    [ -f "$f" ] || continue
+    b=$(basename "$f")
+    case "$b" in
+        *.js|*.css)
+            rebrand < "$f" > $STAGE/usr/share/bone/frontend/assets/"$b"
+            chmod 644 $STAGE/usr/share/bone/frontend/assets/"$b" ;;
+        *)
+            install -m 644 "$f" $STAGE/usr/share/bone/frontend/assets/"$b" ;;
+    esac
+done
 
 # Everything below manages a BeagleBone carrying a cape and does the same job
 # whichever bus it bridges, so it installs exactly as it is in the repository.
