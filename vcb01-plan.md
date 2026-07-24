@@ -380,11 +380,17 @@ the framebuffer, beyond a text terminal.
    (with the read-only bank field), the 6845 CRTC, the eight-source interrupt
    controller, and the SCN2681 DUART — adjusting the emulation to the specific
    board the driver expects where they differ.
-3. **If none exists**, write a `qv`-class driver exposing the 256 KB video bank as
-   a **framebuffer device** (a character/`mmap` device onto the bank) so user
-   programs draw directly, with the LK201 keyboard delivered through the DUART.
-   Built from the QVSS register interface this emulation already implements and
-   the DEC manual kept in the repo.
+3. **If none exists**, write a `qv`-class driver exposing the 256 KB video bank.
+   The investigation ([`docs/vcb01-2bsd-driver.md`](docs/vcb01-2bsd-driver.md))
+   confirms 2.11BSD carries no `qv` driver (it is a VAX-era device) and that the
+   surface cannot be an `mmap` device — 2.11BSD has no `d_mmap` and a split-I/D
+   process has only 64 KB of data space against the 256 KB bank. The realistic
+   form is a **kernel-mediated `/dev/qv0` character device** (`write`/`lseek`
+   linear-framebuffer plus a `blit` ioctl), the kernel reaching the bank through
+   a mapping APR as `vcbdemo.mac` already does; the LK201 keyboard is delivered
+   through the DUART. Built from the QVSS register interface this emulation
+   implements (register-ready, one stale-CRTC-read-back caveat) and `vcbdemo.mac`
+   as the starting material.
 
 Because the VCB01/QVSS may have no XXDP diagnostic, its stand-in validation (per
 the [device implementation standard](docs/planning/device-implementation-standard.md))
