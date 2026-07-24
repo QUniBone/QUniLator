@@ -44,6 +44,7 @@
 #include "webstorage.hpp"
 #include "webconfigs.hpp"
 #include "websettings.hpp"
+#include "weblogging.hpp"
 
 static void send_json(struct mg_connection *conn, int status, const picojson::value &val) {
 	std::string body = val.serialize();
@@ -491,6 +492,9 @@ void webapi_register(struct mg_context *ctx) {
 	webstorage_register(ctx);
 	webconfigs_register(ctx);
 	websettings_register(ctx);
+	// after websettings_register: the persisted log levels are loaded, so
+	// weblogging_register can apply them to the logger
+	weblogging_register(ctx);
 	webevents_register(ctx);
 	webconsole_register(ctx);
 	webconsole_ext_register(ctx);

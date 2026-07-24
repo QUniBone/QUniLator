@@ -43,6 +43,7 @@
 #include "device_label.hpp"
 #include "webconfigs.hpp"
 #include "websettings.hpp"
+#include "weblogging.hpp"
 #include "webevents.hpp"
 #include "webstorage.hpp"
 
@@ -61,6 +62,31 @@ void logger_c::vlog(logsource_c *logsource, unsigned msglevel, bool,
 	fprintf(stderr, "[%s %u] ", logsource->log_label.c_str(), msglevel);
 	vfprintf(stderr, fmt, args);
 	fprintf(stderr, "\n");
+}
+// The real logger registers each source and seeds its level with the global
+// default; the logging-control layer walks the registered set. The stub keeps
+// the same behaviour over the (otherwise unused) logsources vector so the
+// synthetic sources of the logging test appear in list_logsources().
+void logger_c::add_source(logsource_c *logsource) {
+	*(logsource->log_level_ptr) = default_level;
+	logsources.push_back(logsource);
+}
+void logger_c::remove_source(logsource_c *logsource) {
+	for (logsource_c *&s : logsources)
+		if (s == logsource)
+			s = nullptr;
+}
+void logger_c::reset_log_levels(void) {
+	for (logsource_c *s : logsources)
+		if (s != nullptr)
+			*(s->log_level_ptr) = default_level;
+}
+std::vector<logger_c::logsource_ref_t> logger_c::list_logsources(void) {
+	std::vector<logsource_ref_t> result;
+	for (logsource_c *s : logsources)
+		if (s != nullptr)
+			result.push_back({ s, s->log_label, s->log_level_ptr });
+	return result;
 }
 
 logsource_c::logsource_c() {
@@ -120,6 +146,9 @@ std::mutex device_configuration_c::operations_mutex;
 static std::string g_default_config; // stands in for settings.json default_config
 std::string websettings_default_config(void) { return g_default_config; }
 void websettings_set_default_config(const std::string &name) { g_default_config = name; }
+
+// weblogging.cpp persists on every write; the test keeps no settings file
+void websettings_save(void) {}
 
 void webevents_note_config(void) {} // the event stream is not part of this test
 
@@ -377,8 +406,121 @@ int main(void) {
 				"label: unknown type falls back to the raw handle");
 	}
 
+	/* 9. logging control (weblogging.cpp): the global default reaches every
+	      un-overridden source, an override sets one source and clears back to
+	      the default, a configuration apply is followed by re-assertion so the
+	      stored override wins, and an override for a not-yet-registered source
+	      is applied when it appears. */
+	{
+		// a clean model: default warning, no overrides
+		picojson::value seed;
+		picojson::parse(seed, std::string("{\"default\":\"warning\",\"sources\":{}}"));
+		weblogging_load(seed);
+
+		// two subsystem sources and one device source
+		logsource_c pru;
+		pru.log_label = "PRU";
+		logsource_c websrc;
+		websrc.log_label = "web";
+		test_device_c *ndev = new test_device_c("delqa", "DELQA");
+		ndev->log_label = "delqa";
+		logger->add_source(&pru);
+		logger->add_source(&websrc);
+		logger->add_source(ndev);
+
+		reset_devices();
+		webconfigs_init(configs_dir); // capture delqa's defaults now it exists
+
+		// the global default reaches every source, device and subsystem alike
+		{
+			std::string err;
+			check(weblogging_set_default("info", &err), "set default info");
+		}
+		check(*pru.log_level_ptr == LL_INFO, "default reaches subsystem PRU");
+		check(*websrc.log_level_ptr == LL_INFO, "default reaches subsystem web");
+		check(ndev->verbosity.value == LL_INFO, "default reaches device delqa");
+
+		// an override sets one source and leaves the rest at the default
+		{
+			std::string err;
+			check(weblogging_set_source("PRU", picojson::value(std::string("debug")), &err),
+					"override PRU to debug");
+		}
+		check(*pru.log_level_ptr == LL_DEBUG, "override sets PRU to debug");
+		check(*websrc.log_level_ptr == LL_INFO, "override leaves web at default");
+		check(ndev->verbosity.value == LL_INFO, "override leaves delqa at default");
+
+		// clearing the override returns the source to the default
+		{
+			std::string err;
+			check(weblogging_set_source("PRU", picojson::value(), &err), "clear PRU override");
+		}
+		check(*pru.log_level_ptr == LL_INFO, "clear returns PRU to default");
+
+		// device vs subsystem is reported from where the level lives
+		{
+			bool pru_sub = false, delqa_dev = false;
+			for (const weblogging_source_t &s : weblogging_sources()) {
+				if (s.label == "PRU" && s.kind == "subsystem") pru_sub = true;
+				if (s.label == "delqa" && s.kind == "device") delqa_dev = true;
+			}
+			check(pru_sub, "PRU reported as subsystem");
+			check(delqa_dev, "delqa reported as device");
+		}
+
+		// a configuration apply resets device verbosity to its construction
+		// default; the re-assert at the end of the apply restores the stored
+		// override. verbosity stays out of the saved snapshot.
+		{
+			std::string err;
+			check(weblogging_set_source("delqa", picojson::value(std::string("debug")), &err),
+					"override delqa to debug");
+		}
+		check(ndev->verbosity.value == LL_DEBUG, "delqa override takes effect");
+		reset_devices();
+		ndev->enabled.value = true;
+		{
+			std::string err;
+			check(webconfigs_save("logcfg", &err), "save logcfg");
+			picojson::value snap;
+			check(read_json_file(cfg_path("logcfg"), &snap), "logcfg written");
+			const picojson::value *d = snap_device(snap, "delqa");
+			check(d != nullptr, "logcfg names delqa");
+			if (d != nullptr)
+				check(d->get("params").get<picojson::object>().count("verbosity") == 0,
+						"logcfg omits verbosity");
+		}
+		ndev->verbosity.value = LL_FATAL; // a value neither default nor the override
+		{
+			std::vector<std::string> rej;
+			std::string err;
+			check(webconfigs_apply("logcfg", &rej, &err), "apply logcfg");
+		}
+		check(ndev->verbosity.value == LL_DEBUG,
+				"apply re-asserts the stored delqa override");
+
+		// an override for a not-yet-registered label is retained and applied
+		// when that source appears
+		{
+			std::string err;
+			check(weblogging_set_source("late", picojson::value(std::string("error")), &err),
+					"store override for an absent source");
+		}
+		logsource_c late;
+		late.log_label = "late";
+		logger->add_source(&late);
+		weblogging_apply();
+		check(*late.log_level_ptr == LL_ERROR,
+				"retained override applied when the source appears");
+
+		logger->remove_source(&pru);
+		logger->remove_source(&websrc);
+		logger->remove_source(ndev);
+		logger->remove_source(&late);
+	}
+
 	// tidy the temp tree
-	for (const char *n : {"cfgA", "cfgB", "cfgC", "default"})
+	for (const char *n : {"cfgA", "cfgB", "cfgC", "default", "logcfg"})
 		unlink(cfg_path(n).c_str());
 	rmdir(configs_dir.c_str());
 	rmdir(dir);

@@ -76,6 +76,7 @@
 #include "webconfigs.hpp"
 #include "webstorage.hpp"
 #include "websettings.hpp"
+#include "weblogging.hpp"
 #include "webevents.hpp"
 
 static std::string configs_dir;
@@ -201,6 +202,11 @@ static picojson::value snapshot_devices_locked(void) {
 		o["enabled"] = picojson::value(true);
 		picojson::object params;
 		for (parameter_c *p : dev->parameter) {
+			// verbosity is owned by settings.json (log_levels), not the
+			// configuration, so it stays out of the snapshot; it remains the
+			// live per-device knob
+			if (p->name == "verbosity")
+				continue;
 			if (!is_settable(p) || is_default(p))
 				continue;
 			params[p->name] = picojson::value(*p->render());
@@ -674,6 +680,10 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 				dev->enabled.set(d.get("enabled").get<bool>());
 		}
 	}
+	// An apply resets every device's verbosity to its construction default, so
+	// re-assert the persisted log levels: the stored overrides win, the rest
+	// fall to the global default.
+	weblogging_apply();
 	WEB_INFO("configuration \"%s\" applied, %u rejections",
 			name.c_str(), (unsigned) errors->size());
 	return true;

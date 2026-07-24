@@ -197,6 +197,19 @@ void logger_c::remove_source(logsource_c *logsource)
     logsources[id] = NULL;
 }
 
+// snapshot the registered sources for the logging-control layer. Taken under
+// the logger's lock; the sources themselves live for the process, so the
+// returned pointers stay valid for the caller to read and re-level.
+std::vector<logger_c::logsource_ref_t> logger_c::list_logsources(void)
+{
+    std::vector<logsource_ref_t> result;
+    std::lock_guard<std::mutex> lock(fifo_mutex);
+    for (logsource_c *s : logsources)
+        if (s != NULL)
+            result.push_back({ s, s->log_label, s->log_level_ptr });
+    return result;
+}
+
 // set log levels of all soruces back to "default"
 void logger_c::reset_log_levels()
 {

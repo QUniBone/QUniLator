@@ -203,6 +203,7 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/webstorage.o	\
 	$(OBJDIR)/webconfigs.o	\
 	$(OBJDIR)/websettings.o	\
+	$(OBJDIR)/weblogging.o	\
 	$(OBJDIR)/webauth.o	\
 	$(OBJDIR)/civetweb.o
 endif
@@ -536,7 +537,10 @@ $(OBJDIR)/webstorage.o :  $(WEB_SRC_DIR)/webstorage.cpp $(WEB_SRC_DIR)/webstorag
 $(OBJDIR)/webconfigs.o :  $(WEB_SRC_DIR)/webconfigs.cpp $(WEB_SRC_DIR)/webconfigs.hpp device_configuration.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/websettings.o :  $(WEB_SRC_DIR)/websettings.cpp $(WEB_SRC_DIR)/websettings.hpp $(WEB_SRC_DIR)/webevents.hpp device_configuration.hpp
+$(OBJDIR)/websettings.o :  $(WEB_SRC_DIR)/websettings.cpp $(WEB_SRC_DIR)/websettings.hpp $(WEB_SRC_DIR)/webevents.hpp $(WEB_SRC_DIR)/weblogging.hpp device_configuration.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/weblogging.o :  $(WEB_SRC_DIR)/weblogging.cpp $(WEB_SRC_DIR)/weblogging.hpp $(WEB_SRC_DIR)/websettings.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webauth.o :  $(WEB_SRC_DIR)/webauth.cpp $(WEB_SRC_DIR)/webauth.hpp $(WEB_SRC_DIR)/websettings.hpp

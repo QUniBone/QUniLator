@@ -164,6 +164,18 @@ public:
 	std::string default_filepath; // caller may save a file name here
 	void reset_log_levels(void);
 
+	// one registered log source, for the logging-control layer to enumerate
+	// and re-level. "source" is the object itself so a caller can tell a
+	// device apart from a subsystem; "level_ptr" writes its current level.
+	struct logsource_ref_t {
+		logsource_c *source;
+		std::string label;
+		unsigned *level_ptr;
+	};
+	// snapshot of the currently registered sources, taken under the logger's
+	// lock, for /api/logging and the level-apply walk
+	std::vector<logsource_ref_t> list_logsources(void);
+
 	// observer for rendered messages (web interface event stream).
 	// Called under the fifo mutex — must not log and must not block.
 	// NULL when inactive.

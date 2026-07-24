@@ -40,6 +40,7 @@
 #include "webauth.hpp"
 #include "webevents.hpp"
 #include "webconsole_ext.hpp"
+#include "weblogging.hpp"
 #include "websettings.hpp"
 
 #if defined(QBUS)
@@ -102,6 +103,7 @@ static void load_settings(void) {
 	if (!picojson::parse(v, ss.str()).empty() || !v.is<picojson::object>())
 		return;
 	webauth_load(v.get("admin"));
+	weblogging_load(v.get("log_levels"));
 	{
 		std::lock_guard<std::mutex> lock(settings_mutex);
 		if (v.get("default_config").is<std::string>())
@@ -130,6 +132,7 @@ static void save_settings(void) {
 	picojson::value admin = webauth_json();
 	if (!admin.is<picojson::null>())
 		root["admin"] = admin;
+	root["log_levels"] = weblogging_json();
 
 	// The file carries a password digest, so it is written through a private
 	// temporary and renamed: readable only by the emulator's user, and never

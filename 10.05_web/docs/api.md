@@ -170,7 +170,8 @@ configuration; this is computed by comparison, not tracked. The default is a
 board setting (in `settings.json`), applied at startup and protected from
 deletion. Configurations capture the device set only — the console bridge and
 other board settings stay separate, so switching configurations never disturbs
-them.
+them. A device's `verbosity` (log level) is likewise not part of a snapshot; it
+belongs to the board's logging settings (see [Logging](#logging)).
 
 ### `GET /api/configs`
 
@@ -247,6 +248,54 @@ different default, first.
 Sets the medium a drive in the stored configuration starts with, without
 disturbing the running machine. An empty value detaches. Refused with `409`
 when another drive in the same configuration already names the file.
+
+## Logging
+
+The log level is adjustable at runtime: a global default plus per-target
+overrides, for devices and non-device subsystems alike. The levels are the
+logger's five, exposed as lowercase names — `fatal`, `error`, `warning`,
+`info`, `debug`. A change governs both the dashboard log stream and the
+journal.
+
+The levels are persisted in the board's `settings.json` (a `log_levels`
+object), independent of the configuration: switching configurations never
+disturbs them. They are applied to the logger at startup and re-asserted after
+every configuration apply. A stored override for a target that is not currently
+registered is retained and applied if that target later appears.
+
+A **target** is a registered log source: a `device` (its level is the device's
+`verbosity` parameter, still writable through
+`PUT /api/devices/<device>/params/verbosity`) or a `subsystem` (the web layer,
+the PRU and bus layer, and others, which have no device parameter).
+
+### `GET /api/logging`
+
+The global default and every registered target with its current level:
+
+```json
+{"default": "warning",
+ "sources": [{"label": "delqa", "level": "debug", "kind": "device"},
+             {"label": "PRU", "level": "warning", "kind": "subsystem"}]}
+```
+
+### `PUT /api/logging/default`
+
+```json
+{"level": "info"}
+```
+
+Sets the global default and re-levels every target with no explicit override.
+Persists. `422` for an unknown level name. Answers `{"ok": true}`.
+
+### `PUT /api/logging/sources/<label>`
+
+```json
+{"level": "debug"}
+```
+
+Overrides one target's level. `{"level": null}` clears the override back to the
+global default. Persists. `422` for an unknown level name. Answers
+`{"ok": true}`.
 
 ## WebSockets
 
