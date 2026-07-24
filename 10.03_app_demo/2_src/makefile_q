@@ -198,6 +198,7 @@ CCFLAGS+= -DWEBUI -I$(WEB_SRC_DIR) -I$(CIVETWEB_DIR) -I$(PICOJSON_DIR)
 OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/weblog.o	\
 	$(OBJDIR)/webapi.o	\
+	$(OBJDIR)/device_label.o	\
 	$(OBJDIR)/webevents.o	\
 	$(OBJDIR)/webconsole.o	\
 	$(OBJDIR)/webconsole_ext.o	\
@@ -521,7 +522,10 @@ $(OBJDIR)/webserver.o :  $(WEB_SRC_DIR)/webserver.cpp $(WEB_SRC_DIR)/webserver.h
 $(OBJDIR)/weblog.o :  $(WEB_SRC_DIR)/weblog.cpp $(WEB_SRC_DIR)/weblog.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/webapi.o :  $(WEB_SRC_DIR)/webapi.cpp $(WEB_SRC_DIR)/webserver.hpp $(WEB_SRC_DIR)/webevents.hpp $(WEB_SRC_DIR)/webconsole.hpp device_configuration.hpp
+$(OBJDIR)/webapi.o :  $(WEB_SRC_DIR)/webapi.cpp $(WEB_SRC_DIR)/webserver.hpp $(WEB_SRC_DIR)/webevents.hpp $(WEB_SRC_DIR)/webconsole.hpp $(WEB_SRC_DIR)/device_label.hpp device_configuration.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/device_label.o :  $(WEB_SRC_DIR)/device_label.cpp $(WEB_SRC_DIR)/device_label.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webevents.o :  $(WEB_SRC_DIR)/webevents.cpp $(WEB_SRC_DIR)/webevents.hpp

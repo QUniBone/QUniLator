@@ -16,6 +16,7 @@
    it too.
 */
 
+#include <stdio.h>
 #include <string.h>
 #include <vector>
 #include <mutex>
@@ -33,6 +34,7 @@
 #include "panel.hpp"
 #include "mscp_server.hpp"
 #include "device_configuration.hpp"
+#include "device_label.hpp"
 
 #include "weblog.hpp"
 #include "webevents.hpp"
@@ -146,6 +148,20 @@ static void devices_list(struct mg_connection *conn) {
 			picojson::object o;
 			o["name"] = picojson::value(d->name.value);
 			o["type"] = picojson::value(d->type_name.value);
+			// friendly name from the static per-type table (read-only, derived)
+			std::string unit;
+			if (parameter_c *up = d->param_by_name("unit")) {
+				if (parameter_unsigned_c *uu = dynamic_cast<parameter_unsigned_c *>(up)) {
+					char buf[16];
+					snprintf(buf, sizeof(buf), "%u", (unsigned) uu->value);
+					unit = buf;
+				}
+			}
+			uint32_t base_addr = 0;
+			if (qunibusdevice_c *qd = dynamic_cast<qunibusdevice_c *>(d))
+				base_addr = qd->base_addr.value;
+			o["label"] = picojson::value(
+					device_label(d->type_name.value, d->name.value, unit, base_addr));
 			o["category"] = picojson::value(std::string(d->category()));
 			storagedrive_c *drv = dynamic_cast<storagedrive_c *>(d);
 			if (drv != nullptr) {

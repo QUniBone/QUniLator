@@ -54,7 +54,8 @@ Infrastructure singletons (bus adapter, panel driver) are not exposed.
 Snapshot of every device and its parameters.
 
 ```json
-[{"name": "RL11", "type": "RLV12_c", "enabled": false, "parent": null,
+[{"name": "uda0", "type": "RA81", "label": "MSCP disk 0 (RA81)",
+  "enabled": false, "parent": "uda",
   "params": [
     {"name": "address", "shortname": "addr", "type": "unsigned",
      "value": 63944, "base": 8, "bitwidth": 18,
@@ -65,6 +66,15 @@ Snapshot of every device and its parameters.
 Parameter `type` is one of `string`, `bool`, `unsigned`, `unsigned64`,
 `double`. Unsigned parameters carry `base` (usually 8) and `bitwidth`.
 Drives reference their controller through `parent`.
+
+`label` is a computed, read-only friendly name in the form `<role> (<code>)`,
+drawn from a static per-type table keyed by `type`. Instanced drives append
+their unit (`MSCP disk 0 (RA81)`); the two serial lines carry their CSR
+address (`Serial line unit @777560 (DL11)`); internal devices with no DEC
+code show the bare role (`Front panel`); an unrecognised type falls back to
+the raw handle. The field is derived at response time and held nowhere on the
+device — there is no setter and no persistence. `type` keeps carrying the raw
+DEC code.
 
 ### `PUT /api/devices/<device>/params/<param>`
 

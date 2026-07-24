@@ -40,6 +40,7 @@
 #include "parameter.hpp"
 
 #include "device_configuration.hpp"
+#include "device_label.hpp"
 #include "webconfigs.hpp"
 #include "websettings.hpp"
 #include "webevents.hpp"
@@ -344,6 +345,37 @@ int main(void) {
 	webconfigs_startup("default");
 	check(webconfigs_current() == "default", "--config overrides the default");
 	check(websettings_default_config() == "cfgC", "override leaves the default alone");
+
+	/* 8. device_label: the static per-type table renders each shape correctly.
+	      Fed the (type_name, name, unit, base_addr) triple the API extracts. */
+	{
+		// controller / standalone: bare role, no unit, no address
+		check(device_label("UDA50", "uda", "", 0760334) == "MSCP disk controller (UDA50)",
+				"label: controller shows the bare role");
+		check(device_label("RLV12", "rl", "", 0774400) == "RL disk controller (RLV12)",
+				"label: RL controller bare role");
+		// instanced drive: unit appended before the code
+		check(device_label("RA81", "uda0", "0", 0) == "MSCP disk 0 (RA81)",
+				"label: instanced drive appends its unit");
+		check(device_label("RL02", "rl1", "1", 0) == "RL02 cartridge disk 1 (RL02)",
+				"label: RL02 drive appends its unit");
+		// the two serial lines: disambiguated by CSR address
+		check(device_label("slu_c", "DL11", "", 0777560) == "Serial line unit @777560 (DL11)",
+				"label: DL11 carries its CSR address");
+		check(device_label("slu_c", "DL11b", "", 0776500) == "Serial line unit @776500 (DL11)",
+				"label: DL11b carries its CSR address");
+		// internal device with no DEC code: bare role, no parentheses
+		check(device_label("blinkenbone_c", "panel", "", 0) == "Front panel",
+				"label: internal device has no code parentheses");
+		check(device_label("RX0102uCPU", "rxcpu", "", 0) == "Floppy microcontroller",
+				"label: floppy microcontroller names an internal device");
+		// DELQA is instanced; a lone interface omits the unit
+		check(device_label("DELQA", "delqa", "", 017774440) == "Ethernet controller (DELQA)",
+				"label: lone DELQA omits its unit");
+		// unknown type: raw handle fallback
+		check(device_label("mystery_c", "widget0", "", 0) == "widget0",
+				"label: unknown type falls back to the raw handle");
+	}
 
 	// tidy the temp tree
 	for (const char *n : {"cfgA", "cfgB", "cfgC", "default"})
