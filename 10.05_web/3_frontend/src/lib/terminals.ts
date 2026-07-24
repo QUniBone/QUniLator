@@ -1,8 +1,15 @@
-// xterm.js terminals + Web Serial. Three terminal instances live in module
-// state inside a persistent root element; the dashboard and the standalone
-// /console page both mount a host that this root is re-parented into, so
-// navigating away and back keeps the live instances and their WebSockets
-// rather than tearing the console down.
+// xterm.js terminals + Web Serial. The terminals follow the router's lifecycle:
+// a mount builds three fresh Terminal instances against the live host DOM and
+// connects their channel WebSockets; the server replays each channel's retained
+// history on connect, so the screen repaints. An unmount closes those sockets
+// and disposes the terminals. Nothing survives in module state across a route
+// change, so there is no detached-host or stale-instance to leave a black
+// screen behind.
+//
+// The Web Serial session is the exception: it is a user-granted hardware port,
+// not a channel socket, so it stays open across navigation and its read loop
+// writes to whichever serial terminal is currently mounted (dropping bytes while
+// the console is unmounted, since Web Serial has no server-side replay).
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { store, setStore, emit } from '../store';
@@ -22,23 +29,43 @@ interface TermInst {
 type Terms = Record<TermKey, TermInst>;
 
 let TERMS: Terms | null = null;
-let termRoot: HTMLDivElement | null = null;
+let hostEl: HTMLElement | null = null;
 let extWs: WebSocket | null = null;
 let serialPort: WebSerialPort | null = null;
 let serialWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
 let serialReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 const serialEncoder = new TextEncoder();
+let serialDisconnectHooked = false;
 
 export function serialConnected(): boolean {
   return serialPort != null;
 }
 
-function makeTermInstance(): TermInst {
+// the current serial terminal, or null while the console is unmounted
+function serialTerm(): Terminal | null {
+  return TERMS ? TERMS.serial.term : null;
+}
+
+// close a socket without triggering its reconnect timer
+function closeWs(ws: WebSocket | null | undefined): void {
+  if (!ws) return;
+  try {
+    ws.onclose = null;
+    ws.close();
+  } catch {
+    /* ignore */
+  }
+}
+
+function makeTermInstance(visible: boolean): TermInst {
   const cs = getComputedStyle(document.documentElement);
   const phosphor = cs.getPropertyValue('--phosphor').trim() || '#7CE38B';
   const el = document.createElement('div');
-  el.style.display = 'none';
-  termRoot!.appendChild(el);
+  el.style.display = visible ? '' : 'none';
+  // append into the live host first so term.open() runs against an element that
+  // is in the document with layout — the active tab is visible, so its cursor
+  // renders immediately even before the first byte arrives
+  hostEl!.appendChild(el);
   const term = new Terminal({
     cols: COLS,
     rows: ROWS,
@@ -56,36 +83,56 @@ function makeTermInstance(): TermInst {
   return { el, term };
 }
 
+// Mount: build fresh terminals into the host and connect. Called from the
+// TerminalHost component's mount effect, after the host div is committed to the
+// DOM.
 export function initLiveTerminal(host: HTMLElement): void {
-  const first = !TERMS;
-  if (first) {
-    termRoot = document.createElement('div');
-    termRoot.className = 'term-root';
-    TERMS = { slu0: makeTermInstance(), slu1: makeTermInstance(), serial: makeTermInstance() };
-    wireConsole('slu0', 0);
-    wireConsole('slu1', 1);
-    wireSerial();
-    setStore({ termReady: true });
+  // never stack instances: a remount without a matching unmount rebuilds clean
+  if (TERMS) teardownTerminals();
+  hostEl = host;
+  // the stored tab may be an SLU that is disabled; fall back to the console
+  const en0 = devEnabled('DL11'),
+    en1 = devEnabled('DL11b');
+  const start: TermKey =
+    (store.activeTerm === 'slu0' && !en0) || (store.activeTerm === 'slu1' && !en1)
+      ? en0
+        ? 'slu0'
+        : en1
+          ? 'slu1'
+          : 'serial'
+      : store.activeTerm;
+  TERMS = {
+    slu0: makeTermInstance(start === 'slu0'),
+    slu1: makeTermInstance(start === 'slu1'),
+    serial: makeTermInstance(start === 'serial'),
+  };
+  store.activeTerm = start;
+  wireConsole('slu0', 0);
+  wireConsole('slu1', 1);
+  wireSerial();
+  updateConsoleSource();
+  setStore({ termReady: true });
+  TERMS[start].term.focus();
+}
+
+// Unmount: close the channel sockets and dispose the terminals. The Web Serial
+// port stays connected; its read loop simply finds no terminal and drops bytes
+// until the console remounts.
+export function teardownTerminals(): void {
+  if (!TERMS) return;
+  for (const k of Object.keys(TERMS) as TermKey[]) {
+    const inst = TERMS[k];
+    closeWs(inst.ws);
+    try {
+      inst.term.dispose();
+    } catch {
+      /* ignore */
+    }
+    inst.el.remove();
   }
-  // move the persistent root into the freshly mounted host
-  host.appendChild(termRoot!);
-  if (first) {
-    // the default tab is an SLU that may be disabled; fall back to the console
-    const en0 = devEnabled('DL11'),
-      en1 = devEnabled('DL11b');
-    const start: TermKey =
-      (store.activeTerm === 'slu0' && !en0) || (store.activeTerm === 'slu1' && !en1)
-        ? en0
-          ? 'slu0'
-          : en1
-            ? 'slu1'
-            : 'serial'
-        : store.activeTerm;
-    liveTab(start);
-    updateConsoleSource();
-  } else {
-    TERMS![store.activeTerm].term.focus();
-  }
+  extConsoleDisconnectWs();
+  TERMS = null;
+  hostEl = null;
 }
 
 function wireConsole(key: TermKey, n: number): void {
@@ -94,8 +141,14 @@ function wireConsole(key: TermKey, n: number): void {
     if (t.ws && t.ws.readyState === WebSocket.OPEN) t.ws.send(d);
   });
   (function connect() {
+    // stop reconnecting once this mount has been torn down
+    if (!TERMS || TERMS[key] !== t) return;
     t.ws = new WebSocket(wsURL('/ws/console/' + n));
     t.ws.binaryType = 'arraybuffer';
+    // the server replays the full ring on connect; clear the screen first so a
+    // reconnect repaints from the replay rather than appending a second copy of
+    // the history onto the surviving terminal
+    t.ws.onopen = () => t.term.reset();
     t.ws.onmessage = (e) => t.term.write(new Uint8Array(e.data as ArrayBuffer));
     t.ws.onclose = () => setTimeout(connect, 2000);
   })();
@@ -110,27 +163,28 @@ export function liveTab(key: TermKey): void {
 }
 
 function extConsoleDisconnectWs(): void {
-  if (extWs) {
-    try {
-      extWs.close();
-    } catch {
-      /* ignore */
-    }
-    extWs = null;
-  }
+  closeWs(extWs);
+  extWs = null;
 }
 
 function wireExtConsoleWs(): void {
-  const t = TERMS!.serial;
   extConsoleDisconnectWs();
   (function connect() {
-    if ((store.settings.external_console || {}).source !== 'ttys2') return;
+    if (!TERMS || (store.settings.external_console || {}).source !== 'ttys2') return;
     extWs = new WebSocket(wsURL('/ws/console/ext'));
     extWs.binaryType = 'arraybuffer';
-    extWs.onmessage = (e) => t.term.write(new Uint8Array(e.data as ArrayBuffer));
+    // clear before the ring replay so a reconnect repaints rather than doubling
+    extWs.onopen = () => {
+      const t = serialTerm();
+      if (t) t.reset();
+    };
+    extWs.onmessage = (e) => {
+      const t = serialTerm();
+      if (t) t.write(new Uint8Array(e.data as ArrayBuffer));
+    };
     extWs.onclose = () => {
       extWs = null;
-      if ((store.settings.external_console || {}).source === 'ttys2') setTimeout(connect, 2000);
+      if (TERMS && (store.settings.external_console || {}).source === 'ttys2') setTimeout(connect, 2000);
     };
   })();
 }
@@ -145,8 +199,7 @@ export function updateConsoleSource(): void {
 }
 
 export async function serialConnect(baudRate: number): Promise<void> {
-  if (!TERMS || !navigator.serial) return;
-  const t = TERMS.serial;
+  if (!navigator.serial) return;
   let port: WebSerialPort;
   try {
     port = await navigator.serial.requestPort();
@@ -168,7 +221,8 @@ export async function serialConnect(baudRate: number): Promise<void> {
         while (true) {
           const { value, done } = await serialReader.read();
           if (done) break;
-          if (value) t.term.write(value);
+          const t = serialTerm();
+          if (value && t) t.write(value);
         }
       } finally {
         serialReader.releaseLock();
@@ -214,24 +268,18 @@ function wireSerial(): void {
       if (extWs && extWs.readyState === WebSocket.OPEN) extWs.send(d);
     } else if (serialWriter) serialWriter.write(serialEncoder.encode(d));
   });
-  if (navigator.serial)
+  // the physical-disconnect hook lives on navigator.serial, which outlives every
+  // mount, so register it once rather than on each rebuild
+  if (navigator.serial && !serialDisconnectHooked) {
+    serialDisconnectHooked = true;
     navigator.serial.addEventListener('disconnect', (e) => {
       if (serialPort && e.target === serialPort) serialDisconnect();
     });
+  }
 }
 
 // closes every terminal socket; used by the pagehide teardown
 export function shutdownTerminals(): void {
-  const shut = (ws: WebSocket | null | undefined) => {
-    try {
-      if (ws) {
-        ws.onclose = null;
-        ws.close();
-      }
-    } catch {
-      /* ignore */
-    }
-  };
-  shut(extWs);
-  if (TERMS) for (const k of Object.keys(TERMS) as TermKey[]) shut(TERMS[k].ws);
+  closeWs(extWs);
+  if (TERMS) for (const k of Object.keys(TERMS) as TermKey[]) closeWs(TERMS[k].ws);
 }

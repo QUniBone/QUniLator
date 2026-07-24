@@ -7,6 +7,7 @@ import { liveControl, putSettings } from '../api';
 import { devEnabled } from '../lib/devmodel';
 import {
   initLiveTerminal,
+  teardownTerminals,
   liveTab,
   serialConnect,
   serialDisconnect,
@@ -136,6 +137,7 @@ export function TerminalHost() {
   const host = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (host.current) initLiveTerminal(host.current);
+    return () => teardownTerminals();
   }, []);
   return html`<div class="term" ref=${host} tabindex="0" aria-label="VT100 terminal, 80 columns by 24 rows"></div>`;
 }
