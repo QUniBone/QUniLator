@@ -407,7 +407,7 @@ void filesystem_base_c::sort_add_group_pattern(std::string pattern)
         tmp.group = sort_group_regexes.size() ; // enumerate
         sort_group_regexes.push_back(tmp);
     }
-    catch (std::regex_error e) {
+    catch (const std::regex_error &e) {
         ERROR("Error compiling tmp: %s", e.what());
     }
 }

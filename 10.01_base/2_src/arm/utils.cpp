@@ -682,7 +682,13 @@ static void hexdump_put(std::ostream &stream, unsigned start, char *line_hexb, c
         strcat(line_hexw, " ");
     while (strlen(line_ascii) < HEXDUMP_BYTESPERLINE)
         strcat(line_ascii, " ");
-    sprintf(buffer, "%3x: %s   %s  %s\n", start, line_hexb, line_hexw, line_ascii);
+    // the fields arrive as char* (no size), so bound each %s to its padded
+    // width — the same lengths the loops above pad to — which keeps the output
+    // provably within buffer.
+    snprintf(buffer, sizeof(buffer), "%3x: %.*s   %.*s  %.*s\n", start,
+             HEXDUMP_BYTESPERLINE * 3, line_hexb,
+             (HEXDUMP_BYTESPERLINE / 2) * 5, line_hexw,
+             HEXDUMP_BYTESPERLINE, line_ascii);
     stream << buffer ;
     line_hexb[0] = 0; // clear output
     line_hexw[0] = 0;

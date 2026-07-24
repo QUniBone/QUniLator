@@ -149,7 +149,7 @@ struct prucode_entry prucode[] = {
 #endif		
 	}, //
 	   // end marker
-	{ pru_c::PRUCODE_EOD, NULL, 0, 0, NULL, 0, 0 } };
+	{ pru_c::PRUCODE_EOD, NULL, 0, 0, NULL, 0, 0, 0, 0, NULL, 0 } };
 
 int pru_c::start(enum prucode_enum _prucode_id) 
 {

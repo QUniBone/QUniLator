@@ -17,6 +17,10 @@
 CompileFlags:
   Add:
     - -std=c++11
+    # The board's gcc (and CI) do not deprecate sprintf/vsprintf/syscall; only a
+    # host libc (e.g. macOS) does. Drop that host-only noise so the editor's
+    # diagnostics match the actual target build.
+    - -Wno-deprecated-declarations
     - -D__linux__
     - -DARM
     - -DQBUS

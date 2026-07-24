@@ -132,8 +132,8 @@ int main(int argc, char *argv[])
 	app->devices_startup(/*with_emulated_CPU*/false);
 
 	std::string docroot = resolve_docroot(webroot);
-	webserver_c webserver(port, docroot);
-	if (!webserver.start()) {
+	webserver_c web_server(port, docroot);
+	if (!web_server.start()) {
 		WEB_ERROR("Web server failed to start on port %u, document root %s.", port,
 				docroot.c_str());
 		app->devices_shutdown();
@@ -155,7 +155,7 @@ int main(int argc, char *argv[])
 		pause();
 
 	WEB_INFO("Signal %d received, shutting down.", (int) terminate_requested);
-	webserver.stop();
+	web_server.stop();
 	app->devices_shutdown();
 	WEB_INFO(QUNIBONE_NAME " web service stopped.");
 	return 0;

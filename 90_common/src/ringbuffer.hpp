@@ -99,6 +99,13 @@ namespace jnk0le
 			 * \param data element to be inserted into internal buffer
 			 * \return True if data was inserted
 			 */
+// Local patch: gcc's -Wstringop-overflow falsely reports "region of size 0" for
+// the fixed-size data_buff store below (buffer_size is a positive power of two).
+// Silenced narrowly; guarded so non-gcc compilers ignore the pragma.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
 			bool insert(T data)
 			{
 				index_t tmp_head = head.load(std::memory_order_relaxed);
@@ -113,6 +120,9 @@ namespace jnk0le
 				}
 				return true;
 			}
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 			/*!
 			 * \brief Inserts data into internal buffer, without blocking

@@ -300,7 +300,7 @@ const char *logger_c::timestamp_text(timeval *tv)
     static char result[80], millibuff[10];
 //	int millis = tv->tv_usec / 1000;
     strftime(result, 26, "%H:%M:%S", localtime(&tv->tv_sec));
-    sprintf(millibuff, ".%06ld", tv->tv_usec);
+    snprintf(millibuff, sizeof(millibuff), ".%06lld", (long long) tv->tv_usec);
 //	sprintf(millibuff, ".%03d", millis);
     strcat(result, millibuff);
     return result;
