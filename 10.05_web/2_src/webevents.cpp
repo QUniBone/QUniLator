@@ -60,12 +60,15 @@ static std::mutex state_mutex;
 static bool last_halt = false;
 static int cur_leds = 0, cur_switches = 0;
 static bool cur_init = false, cur_dcok = false, cur_pok = false;
+// logical power flag: runtime only, comes up powered on
+static bool cur_powered = true;
 
 // serialized {"t":"state",...} of the current values; caller holds state_mutex
 static std::string state_json(void) {
 	picojson::object event;
 	event["t"] = picojson::value("state");
 	event["halt"] = picojson::value(last_halt);
+	event["powered"] = picojson::value(cur_powered);
 	picojson::array led_arr, switch_arr;
 	for (unsigned i = 0; i < 4; i++) {
 		led_arr.push_back(picojson::value((bool) (cur_leds & (1 << i))));
@@ -188,6 +191,20 @@ void webevents_note_halt(bool halted) {
 bool webevents_is_halted(void) {
 	std::lock_guard<std::mutex> lock(state_mutex);
 	return last_halt;
+}
+
+void webevents_note_powered(bool powered) {
+	std::lock_guard<std::mutex> lock(state_mutex);
+	cur_powered = powered;
+	picojson::object event;
+	event["t"] = picojson::value("state");
+	event["powered"] = picojson::value(powered);
+	enqueue(event);
+}
+
+bool webevents_is_powered(void) {
+	std::lock_guard<std::mutex> lock(state_mutex);
+	return cur_powered;
 }
 
 // Lamp parameters (RL02 panel etc.) are updated by direct value assignment

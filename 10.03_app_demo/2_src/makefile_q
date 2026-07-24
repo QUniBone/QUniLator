@@ -199,6 +199,8 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/weblog.o	\
 	$(OBJDIR)/webapi.o	\
 	$(OBJDIR)/device_label.o	\
+	$(OBJDIR)/device_status.o	\
+	$(OBJDIR)/webcontrol.o	\
 	$(OBJDIR)/webevents.o	\
 	$(OBJDIR)/webconsole.o	\
 	$(OBJDIR)/webconsole_ext.o	\
@@ -524,10 +526,16 @@ $(OBJDIR)/webserver.o :  $(WEB_SRC_DIR)/webserver.cpp $(WEB_SRC_DIR)/webserver.h
 $(OBJDIR)/weblog.o :  $(WEB_SRC_DIR)/weblog.cpp $(WEB_SRC_DIR)/weblog.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/webapi.o :  $(WEB_SRC_DIR)/webapi.cpp $(WEB_SRC_DIR)/webserver.hpp $(WEB_SRC_DIR)/webevents.hpp $(WEB_SRC_DIR)/webconsole.hpp $(WEB_SRC_DIR)/device_label.hpp device_configuration.hpp
+$(OBJDIR)/webapi.o :  $(WEB_SRC_DIR)/webapi.cpp $(WEB_SRC_DIR)/webserver.hpp $(WEB_SRC_DIR)/webevents.hpp $(WEB_SRC_DIR)/webconsole.hpp $(WEB_SRC_DIR)/device_label.hpp $(WEB_SRC_DIR)/device_status.hpp $(WEB_SRC_DIR)/webcontrol.hpp device_configuration.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/device_label.o :  $(WEB_SRC_DIR)/device_label.cpp $(WEB_SRC_DIR)/device_label.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/device_status.o :  $(WEB_SRC_DIR)/device_status.cpp $(WEB_SRC_DIR)/device_status.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/webcontrol.o :  $(WEB_SRC_DIR)/webcontrol.cpp $(WEB_SRC_DIR)/webcontrol.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webevents.o :  $(WEB_SRC_DIR)/webevents.cpp $(WEB_SRC_DIR)/webevents.hpp

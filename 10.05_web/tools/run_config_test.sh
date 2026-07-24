@@ -51,5 +51,14 @@ $CXX -std=c++11 -Wall -Wextra -I "$WEB" \
 	"$WEB/webconsole_channel.cpp" \
 	-lpthread -o "$OUT/console_channel_test"
 
+# The disk-status and power-gate helpers are pure functions with no device or
+# civetweb dependency, so they link against nothing but their own units.
+$CXX -std=c++11 -Wall -Wextra -I "$WEB" \
+	"$TOOLS/status_power_test.cpp" \
+	"$WEB/device_status.cpp" \
+	"$WEB/webcontrol.cpp" \
+	-o "$OUT/status_power_test"
+
 "$OUT/config_test"
 "$OUT/console_channel_test"
+"$OUT/status_power_test"

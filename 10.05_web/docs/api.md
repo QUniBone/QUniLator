@@ -67,6 +67,24 @@ Parameter `type` is one of `string`, `bool`, `unsigned`, `unsigned64`,
 `double`. Unsigned parameters carry `base` (usually 8) and `bitwidth`.
 Drives reference their controller through `parent`.
 
+Disk drives (category `disk`) additionally carry `removable`, `locked`, and a
+computed, read-only `status` — the drive's verbal runtime state, one of:
+
+| value | meaning |
+|---|---|
+| `off` | device disabled |
+| `idle` | enabled, no medium attached |
+| `loaded` | medium present, drive still coming online (spin-up / seek / load) |
+| `ready` | online, ready for I/O |
+| `busy` | actively transferring |
+
+It is derived per drive type from the parameters the drive already exposes
+(`enabled`, `image`, the drive state machine, the ready lamp, the access lamp),
+so the dashboard and the MCP server read one field and never drift. Drives with
+no modelled spin-up (RK05, RX, MSCP/RA81) report `ready` as soon as a medium is
+present; the RL01/RL02 pass through `loaded` while the pack spins up and reach
+`ready` at lock-on. Non-disk devices omit the field.
+
 `label` is a computed, read-only friendly name in the form `<role> (<code>)`,
 drawn from a static per-type table keyed by `type`. Instanced drives append
 their unit (`MSCP disk 0 (RA81)`); the two serial lines carry their CSR
@@ -99,8 +117,22 @@ write to the drive's `image` parameter; an empty value detaches.
 {"action": "init"}
 ```
 
-Actions: `init` (pulse bus INIT), `powercycle` (simulated DCOK/POK power
-fail cycle), `halt` / `continue` (QBUS HALT line).
+Actions:
+
+| action | effect |
+|---|---|
+| `init` | pulse bus INIT |
+| `powercycle` | simulated DCOK/POK power-fail cycle |
+| `restart` | reset then restart: pulse INIT and resume the CPU |
+| `halt` / `continue` | QBUS HALT line |
+| `dc_on` | logical power on: set `powered`, then power cycle the machine up |
+| `dc_off` | logical power off: halt the CPU and clear `powered` |
+
+`dc_on`/`dc_off` drive a **runtime logical power flag**, `powered`, reported in
+the `state` event. It is runtime only — a service restart comes up powered on —
+and does not touch the PRU or bus. While `powered` is false the machine is
+frozen and dark: `restart`, `halt`, and `continue` are refused with `409`, and
+`dc_on` is the only transition back up.
 
 ## Memory
 
@@ -329,7 +361,7 @@ Text frames, one JSON event each, pushed to every connected client:
 |---|---|
 | `{"t":"param","dev":…,"param":…,"value":…}` | committed parameter change (includes enable/disable, image attach, panel lamps) |
 | `{"t":"log","level":n,"label":…,"text":…}` | log message; levels 1 FATAL … 5 DEBUG |
-| `{"t":"state","halt":…,"leds":[…],"switches":[…],"init":…,"dcok":…,"pok":…}` | activity LEDs, DIP switches, HALT, bus INIT/DCOK/POK — published on change (10 Hz poll); a full snapshot opens every connection |
+| `{"t":"state","halt":…,"powered":…,"leds":[…],"switches":[…],"init":…,"dcok":…,"pok":…}` | activity LEDs, DIP switches, HALT, the logical power flag, bus INIT/DCOK/POK — published on change (10 Hz poll); a full snapshot opens every connection. `powered` is the runtime power flag driven by `dc_on`/`dc_off`; the dashboard derives RUN from `!halt && powered` and PWR OK from `powered`. Transitions may arrive as partial `state` frames (e.g. `{"t":"state","powered":false}`), which the client merges onto the last snapshot |
 | `{"t":"config","current":…,"default":…,"modified":…}` | current/default configuration and the live modified flag — published on apply, save, default change, rename, and whenever the modified flag flips (10 Hz poll); a snapshot opens every connection |
 
 ### `/ws/console/0`, `/ws/console/1`

@@ -28,6 +28,8 @@
 #include "device.hpp"
 #include "storagedrive.hpp"
 #include "storagecontroller.hpp"
+#include "timeout.hpp"     // timeout_c, used by rl0102.hpp
+#include "rl0102.hpp"
 #include "parameter.hpp"
 #include "qunibus.h"
 #include "qunibusadapter.hpp"
@@ -35,6 +37,8 @@
 #include "mscp_server.hpp"
 #include "device_configuration.hpp"
 #include "device_label.hpp"
+#include "device_status.hpp"
+#include "webcontrol.hpp"
 
 #include "weblog.hpp"
 #include "webevents.hpp"
@@ -138,6 +142,30 @@ static device_c *find_device(const std::string &name) {
 	return nullptr;
 }
 
+// the RL lock-on state feeds the loaded/ready split; keep the mirror constant
+// in device_status.hpp honest against the device header
+static_assert(RL0102_STATE_lock_on == DISK_STATUS_RL_LOCK_ON,
+		"DISK_STATUS_RL_LOCK_ON out of sync with rl0102.hpp");
+
+// Computed verbal status for a disk drive, one of off/idle/loaded/ready/busy.
+// Reads only the parameters the drive already publishes and defers the mapping
+// to disk_status(); "" for a non-disk device, which omits the field.
+static std::string device_status_for(device_c *d) {
+	storagedrive_c *drv = dynamic_cast<storagedrive_c *>(d);
+	if (drv == nullptr)
+		return "";
+	disk_signals_c s;
+	s.enabled = d->enabled.value;
+	s.has_image = !drv->image_filepath.value.empty();
+	s.activity = drv->access_lamp.value;
+	disk_family_e fam = disk_family_e::generic;
+	if (RL0102_c *rl = dynamic_cast<RL0102_c *>(drv)) {
+		fam = disk_family_e::rl;
+		s.rl_state = (int) rl->state.value;
+	}
+	return disk_status(fam, s);
+}
+
 // GET /api/devices — snapshot of the device registry
 static void devices_list(struct mg_connection *conn) {
 	picojson::array devices;
@@ -168,6 +196,8 @@ static void devices_list(struct mg_connection *conn) {
 			if (drv != nullptr) {
 				o["removable"] = picojson::value(drv->removable());
 				o["locked"] = picojson::value(drv->locked());
+				// computed verbal status, shared with the dashboard and MCP
+				o["status"] = picojson::value(device_status_for(d));
 			}
 			o["enabled"] = picojson::value(d->enabled.value);
 			o["parent"] = d->parent ?
@@ -314,7 +344,8 @@ static int api_devices_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	return 200;
 }
 
-// POST /api/control {"action": "init"|"powercycle"|"halt"|"continue"}
+// POST /api/control
+// {"action": "init"|"powercycle"|"restart"|"halt"|"continue"|"dc_on"|"dc_off"}
 static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	const struct mg_request_info *ri = mg_get_request_info(conn);
 	if (strcmp(ri->request_method, "POST") != 0) {
@@ -328,25 +359,34 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	}
 	std::string action = req.get("action").get<std::string>();
 
+	control_decision_c dec = control_decide(action, webevents_is_powered());
+	if (!dec.known) {
+		send_error(conn, 400, "unknown action \"" + action + "\"");
+		return 400;
+	}
+	if (!dec.allowed) {
+		send_error(conn, 409, "machine is powered off");
+		return 409;
+	}
+
 	{
 		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
-		if (action == "init")
+		if (dec.do_init)
 			qunibus->init();
-		else if (action == "powercycle")
+		if (dec.do_powercycle)
 			qunibus->powercycle();
 #if defined(QBUS)
-		else if (action == "halt") {
+		if (dec.do_halt) {
 			qunibus->set_halt(1);
 			webevents_note_halt(true);
-		} else if (action == "continue") {
+		}
+		if (dec.do_resume) {
 			qunibus->set_halt(0);
 			webevents_note_halt(false);
 		}
 #endif
-		else {
-			send_error(conn, 400, "unknown action \"" + action + "\"");
-			return 400;
-		}
+		if (dec.set_powered >= 0)
+			webevents_note_powered(dec.set_powered != 0);
 		WEB_INFO("control %s", action.c_str());
 	}
 	picojson::object res;
