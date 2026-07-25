@@ -73,6 +73,7 @@
   --cap-red-lit:  #EF4B3D;
   --cap-orange:   #93803A;
   --cap-orange-lit: #F7A427;
+  --cap-h:        56px;   /* one fixed cap height for every device indicator */
 
   /* type */
   --font-ui:   system-ui, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
@@ -335,19 +336,25 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
    indicator lamps grouped on the left, three bat-handle switches grouped on the
    right. Switches are drawn flat (2D). */
 .cp-body {
-  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
   padding: 6px 14px 16px;
 }
 .cp-lamps, .cp-switches { display: flex; align-items: flex-start; }
-.cp-lamps { gap: 16px; }
-.cp-switches { gap: 12px; }
-.cp-lamp { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.cp-lamps { gap: 26px; }
+.cp-switches { gap: 18px; }
+/* every lamp and switch shares one three-row rhythm — an upper position legend,
+   the element in a fixed band, and the lower legend — so the elements sit on one
+   line and every legend beneath them aligns on a common baseline */
+.cp-ctrl {
+  display: grid; grid-template-rows: 15px 42px auto; row-gap: 7px;
+  justify-items: center; align-items: center;
+}
+.cp-el { display: flex; align-items: center; justify-content: center; height: 42px; }
 .cp-leg {
   font-family: var(--font-mono); font-size: var(--fs-0); font-weight: 700;
   letter-spacing: .04em; text-align: center; white-space: nowrap; color: var(--sw-legend);
 }
-.cp-sw { display: flex; flex-direction: column; align-items: center; gap: 5px; }
-.cp-sw .cp-leg.ph { visibility: hidden; }
+.cp-ctrl .cp-leg.ph { visibility: hidden; }
 .cp-toggle {
   width: 26px; height: 42px; border-radius: 4px; padding: 3px;
   border: 1px solid var(--sw-slot-lo); position: relative; cursor: pointer;
@@ -442,6 +449,16 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 }
 .params .unit { font-size: var(--fs-0); color: var(--ink-faint); }
 .params .p-info { font-size: var(--fs-0); color: var(--ink-faint); grid-column: 2; margin-top: -4px; }
+
+/* serial lines: one endpoint field per line, in a shared row rhythm */
+.serial-lines { margin-bottom: 12px; }
+.serial-lines-head { font-size: var(--fs-0); color: var(--ink-faint); margin-bottom: 8px; }
+.serial-line {
+  display: grid; grid-template-columns: 60px minmax(0, 220px) 1fr;
+  gap: 10px; align-items: center; margin-bottom: 6px;
+}
+.serial-line-name { font-size: var(--fs-1); color: var(--ink-muted); }
+.serial-line-hint { font-size: var(--fs-0); }
 
 /* ============================ machine settings ============================ */
 .set-grid { display: grid; grid-template-columns: 130px 1fr; gap: 4px 16px; align-items: center; }
@@ -602,19 +619,36 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
   box-shadow: inset 0 1px 4px rgba(0, 0, 0, .6);
 }
 /* Switch caps come in two sizes: the small square every legend uses, and the
-   wide cap the RA81 READY needs for its unit number beside the legend.
-   Colored caps, black legends, incandescent glow when lit. */
+   wide cap the RA81 READY needs for its unit number beside the legend. Every
+   cap is the same fixed size across every device, so a one-line legend (LINK,
+   LOAD) matches a two-line one (WRITE PROT). Colored caps, black legends,
+   incandescent glow when lit. */
 .lampbtn {
-  flex: 0 0 auto; width: 50px; min-height: 44px;
+  flex: 0 0 auto; width: 50px; height: var(--cap-h);
   border: 0; border-radius: 3px;
   color: #17150E;
   font-family: var(--font-mono); font-size: var(--fs-0); font-weight: 700;
-  padding: 8px 2px; text-align: center;
+  padding: 6px 2px; text-align: center; cursor: pointer;
   letter-spacing: .04em; line-height: 1.2;
+  display: inline-flex; flex-direction: column;
+  align-items: center; justify-content: center;
   transition: background .2s, box-shadow .2s;
 }
-/* the wide READY cap carries its unit number above the legend */
+.lampbtn:disabled { cursor: default; }
+/* the wide READY cap carries its unit number beside the legend */
+.lampbtn.wide {
+  width: 104px; flex-direction: row; gap: 7px;
+}
+/* a cap whose whole legend is the drive's port letter carries it large */
+.lampbtn.legend-lg { font-size: 1.35rem; letter-spacing: 0; }
 .lampbtn .num { display: block; font-size: 1.15rem; font-weight: 800; line-height: 1.1; }
+/* the unit number is set large in a thin engraved frame, the legend beside it
+   staying small */
+.lampbtn.wide .num {
+  border: 1px solid rgba(23, 21, 14, .7); border-radius: 1px;
+  padding: 3px 11px; font-size: 1.35rem; font-weight: 800; line-height: 1;
+}
+.lampbtn.wide .rdy { font-size: var(--fs-0); letter-spacing: .06em; }
 .lampbtn.cap-yellow      { background: #93803A; }
 .lampbtn.cap-yellow.lit  { background: #F7CE3B; box-shadow: 0 0 12px #F7CE3B88; }
 .lampbtn.cap-white       { background: #BDB9AE; }
@@ -630,6 +664,8 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 /* each widget stands at its own height; a short panel beside a tall one (the
    VCB01 screen) sizes to its own content rather than stretching to the row */
 .widget-grid .rlpanel { height: auto; }
+/* a panel whose bezel needs the room takes two columns */
+.rlpanel.span2 { grid-column: span 2; }
 /* the VCB01 shows its framebuffer; give it the room and keep pixels crisp */
 .vcb01-widget { grid-column: span 2; }
 .vcb01-screen { margin-top: 8px; background: var(--term-bg); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
@@ -653,7 +689,13 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
   font-weight: 650; font-size: var(--fs-2); color: var(--rl-ink);
   margin-bottom: 12px; line-height: 1.25;
 }
-.disk-widget .rl-foot .imgfield { flex: 1 1 auto; }
+.rlpanel .rl-foot .imgfield { flex: 1 1 auto; min-width: 0; }
+
+/* removable-media tags on the drive foot */
+.w-tag { font-size: var(--fs-0); padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.w-tag.fixed    { color: var(--ink-faint); background: var(--surface-2); }
+.w-tag.locked   { color: var(--warn); background: var(--warn-soft); }
+.w-tag.unlocked { color: var(--ok);   background: var(--ok-soft); }
 
 /* image-picker modal */
 .modal-overlay { position: fixed; inset: 0; background: rgba(10,14,18,.5); display: flex; align-items: center; justify-content: center; z-index: 60; }

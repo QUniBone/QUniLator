@@ -29,6 +29,8 @@ import {
   deleteConfig,
 } from '../api';
 import { flatDevices } from '../lib/devmodel';
+import { serialEndpoint, serialLines } from '../lib/serial';
+import type { SerialLine, SerialRole } from '../lib/serial';
 import { useStore } from '../store';
 import { Toggle, Chip, ImageField, DelButton } from './common';
 import type { LiveDev, LiveParam, ConfigSnapshot, ConfigSummary } from '../types';
@@ -99,6 +101,54 @@ type SetEnabled = (name: string, on: boolean) => void;
 type SetParam = (name: string, param: string, value: string) => void;
 type SetImage = (name: string, image: string) => void;
 
+// A plain-language read-back of what a serial field's text does, translated by
+// the same pure endpoint parser the field writes with.
+function endpointHint(text: string): string {
+  const ep = serialEndpoint.parse(text);
+  if (!ep.port) return 'line off';
+  return ep.role === 'connect'
+    ? 'connects to ' + ep.host + ':' + ep.port
+    : 'listens on port ' + ep.port;
+}
+
+// One serial line configured as a single field. It reads the line's three
+// backend parameters (role/host/port), formats them into one endpoint string,
+// and on change parses the field back into those three parameters — writing
+// through the same onParam path the rest of the editor uses (live for the
+// current configuration, staged for a stored one). It never evaluates the
+// endpoint; it only translates the field.
+function SerialPortField({ row, line, onParam }: { row: Row; line: SerialLine; onParam: SetParam }) {
+  const param = (n: string) => row.params.find((q) => q.n === n);
+  const val = (n: string) => {
+    const p = param(n);
+    return p ? p.v : '';
+  };
+  const text = serialEndpoint.format({
+    role: val(line.roleParam) as SerialRole,
+    host: val(line.hostParam),
+    port: parseInt(val(line.portParam), 10) || 0,
+  });
+  // a running mux fixes its line configuration; the backend marks the parameters
+  // read-only, so the field reflects the value without offering an edit
+  const ro = !!(param(line.portParam) || {}).ro;
+  const [draft, setDraft] = useState(text);
+  useEffect(() => setDraft(text), [text]);
+  const commit = () => {
+    const ep = serialEndpoint.parse(draft);
+    onParam(row.name, line.roleParam, ep.role);
+    onParam(row.name, line.hostParam, ep.host);
+    onParam(row.name, line.portParam, String(ep.port));
+  };
+  return html`<div class="serial-line">
+    <span class="serial-line-name mono">${line.label}</span>
+    <input class="serial-line-input mono" type="text" value=${draft} placeholder="port or host:port"
+      disabled=${ro}
+      onInput=${(e: Event) => setDraft((e.target as HTMLInputElement).value)}
+      onChange=${commit} onBlur=${commit} />
+    <span class="serial-line-hint muted">${endpointHint(draft)}</span>
+  </div>`;
+}
+
 function paramControl(row: Row, p: LiveParam, onParam: SetParam) {
   if (p.ro) return html`<span class="ro">${p.v}</span>`;
   if (p.t === 'enum')
@@ -128,7 +178,12 @@ function DevRow({
 }) {
   const loc = useLocation();
   const open = device === row.name;
-  const gridParams = row.params.filter((p) => p.n !== 'image');
+  // serial lines are edited as one field each, so their raw role/host/port
+  // parameters are lifted out of the generic parameter grid
+  const lines = serialLines(row.params);
+  const lineParams = new Set(lines.flatMap((l) => [l.roleParam, l.hostParam, l.portParam]));
+  const gridParams = row.params.filter((p) => p.n !== 'image' && !lineParams.has(p.n));
+  const hasDetail = gridParams.length > 0 || lines.length > 0;
   const toggleOpen = () => {
     const base = '/config/' + encodeURIComponent(cfg);
     const path = open ? base : base + '/' + encodeURIComponent(row.name);
@@ -155,7 +210,7 @@ function DevRow({
           : null
       }
       ${
-        gridParams.length
+        hasDetail
           ? html`<button class="btn small" onClick=${toggleOpen}>${open ? 'Hide' : 'Parameters'}</button>`
           : null
       }
@@ -167,18 +222,34 @@ function DevRow({
       }
     </div>
     ${
-      open && gridParams.length
-        ? html`<div class="params"><div class="p-grid">
-      ${gridParams.map(
-        (p) => html`<div class="p-name">${p.n}${
-          p.s && p.s !== p.n ? html` <span class="p-short">(${p.s})</span>` : null
-        }</div>
-        <div class="p-val">${paramControl(row, p, onParam)}${
-          p.u ? html`<span class="unit">${p.u}</span>` : null
-        }</div>
-        <div class="p-info">${p.i}</div>`
-      )}
-    </div></div>`
+      open && hasDetail
+        ? html`<div class="params">
+      ${
+        lines.length
+          ? html`<div class="serial-lines">
+          <div class="serial-lines-head">Serial lines — a bare port listens, <span class="mono">host:port</span> connects</div>
+          ${lines.map(
+            (l) => html`<${SerialPortField} row=${row} line=${l} onParam=${onParam} key=${l.roleParam} />`
+          )}
+        </div>`
+          : null
+      }
+      ${
+        gridParams.length
+          ? html`<div class="p-grid">
+        ${gridParams.map(
+          (p) => html`<div class="p-name">${p.n}${
+            p.s && p.s !== p.n ? html` <span class="p-short">(${p.s})</span>` : null
+          }</div>
+          <div class="p-val">${paramControl(row, p, onParam)}${
+            p.u ? html`<span class="unit">${p.u}</span>` : null
+          }</div>
+          <div class="p-info">${p.i}</div>`
+        )}
+      </div>`
+          : null
+      }
+    </div>`
         : null
     }
     ${

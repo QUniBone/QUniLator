@@ -44,19 +44,30 @@ function PanelSwitch({
     if (kind === 'momentary') onFire?.();
     else onToggle?.();
   };
-  return html`<div class=${'cp-sw ' + kind + (disabled ? ' off' : '')} data-pos=${pos || 'mid'}>
+  return html`<div class=${'cp-ctrl cp-sw ' + kind + (disabled ? ' off' : '')} data-pos=${pos || 'mid'}>
     <span class=${'cp-leg' + (top ? '' : ' ph')}>${top || ''}</span>
-    <button class="cp-toggle" type="button" disabled=${!!disabled}
+    <span class="cp-el"><button class="cp-toggle" type="button" disabled=${!!disabled}
       role=${kind === 'two' ? 'switch' : undefined}
       aria-checked=${kind === 'two' ? pos === 'top' : undefined}
       aria-label=${top ? top + ' / ' + bottom : bottom}
-      onClick=${click}><span class="cp-bat"></span></button>
+      onClick=${click}><span class="cp-bat"></span></button></span>
     <span class="cp-leg">${bottom}</span>
   </div>`;
 }
 
+// One indicator lamp on the bezel: a lens over a legend, on the same three-row
+// rhythm as a switch so their legends share a baseline across the row.
+function PanelLamp({ on, label }: { on: boolean; label: string }) {
+  return html`<div class="cp-ctrl cp-lamp">
+    <span class="cp-leg ph"></span>
+    <span class="cp-el">${html`<${Led} on=${on} title=${label} />`}</span>
+    <span class="cp-leg">${label}</span>
+  </div>`;
+}
+
 // The PDP-11/03 control bezel: PWR OK + RUN lamps and the RESTART /
-// HALT-ENABLE / DC-ON-OFF switches, the single run-state and power controls.
+// HALT-ENABLE / AUX-ON-OFF switches, the single run-state and power controls.
+// AUX ON/OFF is the auxiliary DC power switch, driving the dc_on/dc_off flag.
 function ControlPanel() {
   const s = useStore();
   const powered = s.hw.powered !== false;
@@ -91,14 +102,14 @@ function ControlPanel() {
     <div class="card-head"><h3>Control panel</h3></div>
     <div class="cp-body">
       <div class="cp-lamps">
-        <div class="cp-lamp">${html`<${Led} on=${powered} title="DC ON" />`}<span class="cp-leg">DC ON</span></div>
-        <div class="cp-lamp">${html`<${Led} on=${run} title="RUN" />`}<span class="cp-leg">RUN</span></div>
+        ${html`<${PanelLamp} on=${powered} label="PWR OK" />`}
+        ${html`<${PanelLamp} on=${run} label="RUN" />`}
       </div>
       <div class="cp-switches">
         ${html`<${PanelSwitch} kind="momentary" bottom="RESTART" disabled=${!powered} onFire=${restart} />`}
         ${html`<${PanelSwitch} kind="two" top="ENABLE" bottom="HALT"
           pos=${halted ? 'bottom' : 'top'} disabled=${!powered} onToggle=${setHalt} />`}
-        ${html`<${PanelSwitch} kind="two" top="DC ON" bottom="OFF"
+        ${html`<${PanelSwitch} kind="two" top="AUX ON" bottom="OFF"
           pos=${powered ? 'top' : 'bottom'} onToggle=${setPower} />`}
       </div>
     </div>
