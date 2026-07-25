@@ -57,6 +57,7 @@ static const uint8_t T_DONT_B = 254;
 
 // Telnet options we support
 static const uint8_t OPT_BINARY = 0;
+static const uint8_t OPT_ECHO = 1;     // server echoes (client stops local echo)
 static const uint8_t OPT_SGA = 3;      // suppress go ahead
 static const uint8_t OPT_COMPORT = 44; // RFC2217 COM-PORT-CONTROL
 
@@ -462,7 +463,11 @@ void serial_tcp_line_c::on_new_connection(void)
 	memset(will_state_, 0, sizeof will_state_);
 	memset(do_state_, 0, sizeof do_state_);
 
-	// offer 8-bit clean transport and advertise RFC2217
+	// offer 8-bit clean transport and advertise RFC2217. WILL ECHO tells the
+	// client the guest echoes, so it stops local-echoing: input shows once, and
+	// the guest can suppress echo for password entry. With SGA this is the
+	// character-at-a-time remote-echo mode a Unix login expects.
+	send_will(OPT_ECHO);
 	send_will(OPT_BINARY);
 	send_do(OPT_BINARY);
 	send_will(OPT_SGA);
