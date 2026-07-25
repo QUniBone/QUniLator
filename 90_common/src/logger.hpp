@@ -186,9 +186,6 @@ public:
 	FILE *file_sink = nullptr;
 	void set_file_sink(const char *path);
 
-	// show messages up to this level immediately on console
-	unsigned life_level;
-
 	// is output with verbosity "level" active for logsource?
 	bool ignored(logsource_c *logsource, unsigned msglevel) {
 	    if (msglevel == LL_FATAL)

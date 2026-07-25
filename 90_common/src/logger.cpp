@@ -79,7 +79,6 @@ logger_c::logger_c()
     fifo = NULL;
     fifo_init(LOG_FIFO_DEFAULT_SIZE);
     messagecount = 0;
-    life_level = default_level;
     logsources.clear();
     output_thread = std::thread(&logger_c::output_worker, this);
 //	pthread_mutex_destroy(&mutex);
@@ -459,25 +458,25 @@ void logger_c::vlog(logsource_c *logsource, unsigned msglevel, bool late_evaluat
 	msg.valid = true;
     fifo_push(&msg); // always into ring buffer
 
-    if (message_sink || file_sink || msglevel <= life_level) {
-        char msgtext[LOGMESSAGE_TEXT_SIZE];
-        message_render(msgtext, sizeof(msgtext), &msg, RENDER_STYLE_CONSOLE);
-        if (message_sink)
-            message_sink(msglevel, logsource->log_label.c_str(), msgtext);
-        // console and file writes block on slow consumers (pty, storage):
-        // hand them to the writer thread, bounded so a stalled writer
-        // cannot exhaust memory
-        bool to_file = file_sink != nullptr;
-        bool to_console = msglevel <= life_level;
-        if (to_file || to_console) {
-            std::lock_guard<std::mutex> lock(output_mutex);
-            if (output_queue.size() >= 20000)
-                output_dropped++;
-            else
-                output_queue.push_back(
-                        output_entry_c { msgtext, to_file, to_console });
-            output_cond.notify_one();
-        }
+    // Every message that reaches vlog has passed its source's verbosity gate,
+    // so it is part of the one log. Render it once and fan out to all surfaces:
+    // the web sink, the console (-> journald) and the optional file sink see the
+    // same message, so the log reads identically wherever it is inspected.
+    char msgtext[LOGMESSAGE_TEXT_SIZE];
+    message_render(msgtext, sizeof(msgtext), &msg, RENDER_STYLE_CONSOLE);
+    if (message_sink)
+        message_sink(msglevel, logsource->log_label.c_str(), msgtext);
+    {
+        // console and file writes block on slow consumers (pty, storage): hand
+        // them to the writer thread, bounded so a stalled writer cannot exhaust
+        // memory.
+        std::lock_guard<std::mutex> lock(output_mutex);
+        if (output_queue.size() >= 20000)
+            output_dropped++;
+        else
+            output_queue.push_back(
+                    output_entry_c { msgtext, file_sink != nullptr, true });
+        output_cond.notify_one();
     }
 
     m1--;

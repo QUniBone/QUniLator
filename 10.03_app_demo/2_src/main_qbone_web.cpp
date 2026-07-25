@@ -100,7 +100,6 @@ int main(int argc, char *argv[])
 	// journal afterwards. The menu program leaves this at warnings, where the
 	// operator sees everything on screen as it happens anyway.
 	logger->default_level = loglevel;
-	logger->life_level = loglevel;
 	logger->reset_log_levels();
 
 	// systemd stops a unit with SIGTERM; answering it is what makes the stop

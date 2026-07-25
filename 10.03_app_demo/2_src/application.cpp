@@ -330,11 +330,6 @@ int application_c::run(int argc, char *argv[])
     parse_commandline(argc, argv);
 
     logger->reset_log_levels(); // logger.default_level maybe info or debug
-    // Print to the console whatever passes each source's own verbosity, so a
-    // device raised to DEBUG shows its trace on the console as well as the web
-    // log. Sources at their default level still suppress DEBUG, so this does
-    // not flood normal operation.
-    logger->life_level = LL_DEBUG;
     // QUNIBONE_LOG=<path> additionally appends every message to a file,
     // flushed per line - reliable capture for tail/grep
     if (getenv("QUNIBONE_LOG"))

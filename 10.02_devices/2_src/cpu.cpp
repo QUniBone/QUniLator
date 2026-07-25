@@ -64,10 +64,12 @@ static cpu_c *unibone_cpu = NULL;
 void unibone_log(unsigned msglevel, const char *srcfilename, unsigned srcline, const char *fmt,
                  ...) 
 {
+    // gate on the CPU source's verbosity like logger_c::log does, so the trace
+    // obeys the same per-source level as every other source in the one log
+    if (logger->ignored(unibone_cpu, msglevel))
+        return;
     va_list arg_ptr;
     va_start(arg_ptr, fmt);
-    //vprintf(fmt, arg_ptr) ;
-    //va_end(arg_ptr); va_start(arg_ptr, fmt);
     logger->vlog(unibone_cpu, msglevel, /*late_evaluation*/true, srcfilename, srcline, fmt, arg_ptr);
     va_end(arg_ptr);
 }

@@ -42,7 +42,6 @@ logger_c::logger_c() {
 	fifo = nullptr;
 	fifo_capacity = fifo_readidx = fifo_writeidx = fifo_fill = 0;
 	messagecount = 0;
-	life_level = LL_DEBUG;
 }
 logger_c::~logger_c() {
 }
