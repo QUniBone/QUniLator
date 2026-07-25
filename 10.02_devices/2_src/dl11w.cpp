@@ -153,9 +153,8 @@ bool slu_c::on_before_install(void)
 		// give the pollers a sane character time derived from the nominal baud
 		rs232.CharTransmissionTime_us = baudrate.value ? 10 * 1000000u / baudrate.value : 1000;
 
-		tcp_role.readonly = true;
-		tcp_host.readonly = true;
-		tcp_port.readonly = true;
+		// tcp_role/tcp_host/tcp_port stay writable so the line can be retuned live
+		// (see on_param_changed); they do not touch the bus registration.
 		INFO("DL11 line on TCP (%s port %u)", tcp_role.value.c_str(), (unsigned) tcp_port.value);
 		return true;
 	}
@@ -188,9 +187,6 @@ void slu_c::on_after_uninstall(void)
 	if (use_tcp) {
 		rs232adapter.tcp_line = NULL;
 		tcp_line.close();
-		tcp_role.readonly = false;
-		tcp_host.readonly = false;
-		tcp_port.readonly = false;
 		use_tcp = false;
 		INFO("DL11 TCP line closed");
 		return;
@@ -216,8 +212,63 @@ bool slu_c::on_param_changed(parameter_c *param)
 	} else if (param == &intr_level) {
 		rcvintr_request.set_level(intr_level.new_value);
 		xmtintr_request.set_level(intr_level.new_value);
+	} else if (param == &tcp_role || param == &tcp_host || param == &tcp_port) {
+		// A live tcp_role/tcp_host/tcp_port edit re-opens the TCP transport with
+		// the new config while the device stays on the bus. on_param_changed runs
+		// before the parameter's value is committed, so the changed field's
+		// new_value is used and the two unchanged fields keep their current value.
+		// Only a device already carrying its line over TCP is retuned; a
+		// serial-port DL11 is not switched to TCP live.
+		if (enabled.value && use_tcp) {
+			std::string role = tcp_role.value;
+			std::string host = tcp_host.value;
+			uint16_t port = (uint16_t) tcp_port.value;
+			if (param == &tcp_role)
+				role = tcp_role.new_value;
+			else if (param == &tcp_host)
+				host = tcp_host.new_value;
+			else
+				port = (uint16_t) tcp_port.new_value;
+			reopen_tcp_line(role, host, port);
+		}
 	}
 	return qunibusdevice_c::on_param_changed(param); // more actions (for enable)
+}
+
+// Retune the TCP transport in place. tcp_line is a stable member object and
+// rs232adapter keeps pointing at it, so the socket thread simply stops and
+// restarts on the new role/host/port; the blocking close()/open() runs with no
+// device lock held. A client connected under the old config is dropped.
+void slu_c::reopen_tcp_line(const std::string &role, const std::string &host, uint16_t port)
+{
+	tcp_line.close();
+	if (role.empty()) {
+		// an empty tcp_role leaves the line closed and idle
+		rs232adapter.tcp_line = NULL;
+		use_tcp = false;
+		INFO("DL11 TCP line closed (empty tcp_role)");
+		return;
+	}
+	if (role == "listen")
+		tcp_line.role = serial_tcp_line_c::ROLE_LISTEN;
+	else if (role == "connect")
+		tcp_line.role = serial_tcp_line_c::ROLE_CONNECT;
+	else {
+		ERROR("tcp_role must be \"listen\" or \"connect\", got \"%s\"", role.c_str());
+		return;
+	}
+	tcp_line.host = host;
+	tcp_line.port = port;
+	tcp_line.idle_timeout_sec = tcp_idle_timeout.value;
+	tcp_line.log_label = name.value;
+	tcp_line.verbose = true;
+	if (tcp_line.open()) {
+		rs232adapter.tcp_line = &tcp_line;
+		INFO("DL11 line retuned on TCP (%s port %u)", role.c_str(), (unsigned) port);
+	} else {
+		rs232adapter.tcp_line = NULL;
+		ERROR("Cannot reopen TCP line (role %s port %u)", role.c_str(), (unsigned) port);
+	}
 }
 
 //--------------------------------------------

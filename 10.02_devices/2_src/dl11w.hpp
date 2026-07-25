@@ -149,6 +149,11 @@ private:
 	void eval_xcsr_dato_value(void);
 	void eval_xbuf_dato_value(void);
 
+	// (re)configure the TCP transport with the given role/host/port while the
+	// device stays installed. Closes the current line first; an empty role
+	// leaves it closed. Used for a live tcp_* edit.
+	void reopen_tcp_line(const std::string &role, const std::string &host, uint16_t port);
+
 public:
 
 	slu_c();

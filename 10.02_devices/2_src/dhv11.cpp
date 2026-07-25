@@ -82,38 +82,78 @@ bool dhv11_c::on_param_changed(parameter_c *param)
 	} else if (param == &intr_level) {
 		rcvintr_request.set_level(intr_level.new_value);
 		xmtintr_request.set_level(intr_level.new_value);
+	} else {
+		// A live tcp_role/tcp_host/tcp_port edit re-opens just that one line with
+		// the new transport config, leaving the other lines and the bus
+		// registration untouched. on_param_changed runs before the parameter's
+		// value is committed, so the changed field's new_value is used and the
+		// two unchanged fields keep their current value.
+		for (unsigned i = 0; i < DHV_LINE_COUNT; i++) {
+			if (param != &tcp_role[i] && param != &tcp_host[i] && param != &tcp_port[i])
+				continue;
+			if (enabled.value) {
+				std::string role = tcp_role[i].value;
+				std::string host = tcp_host[i].value;
+				uint16_t port = (uint16_t) tcp_port[i].value;
+				if (param == &tcp_role[i])
+					role = tcp_role[i].new_value;
+				else if (param == &tcp_host[i])
+					host = tcp_host[i].new_value;
+				else
+					port = (uint16_t) tcp_port[i].new_value;
+				open_line(i, role, host, port);
+			}
+			break;
+		}
 	}
 	return qunibusdevice_c::on_param_changed(param);
 }
 
+// (Re)open one line's transport. The channel's open flag is flipped under
+// state_mutex so the workers stop touching the line, but the blocking socket
+// close()/open() runs outside the lock — the same "never hold state_mutex across
+// blocking I/O" rule the DMA transmit path follows.
+void dhv11_c::open_line(unsigned i, const std::string &role, const std::string &host,
+		uint16_t port)
+{
+	pthread_mutex_lock(&state_mutex);
+	bool was_open = chan[i].open;
+	chan[i].open = false;
+	pthread_mutex_unlock(&state_mutex);
+	if (was_open)
+		tcp_line[i].close(); // drops any client connected under the old config
+
+	if (role.empty())
+		return; // an empty tcp_role leaves the line closed
+
+	serial_tcp_line_c &ln = tcp_line[i];
+	if (role == "listen")
+		ln.role = serial_tcp_line_c::ROLE_LISTEN;
+	else if (role == "connect")
+		ln.role = serial_tcp_line_c::ROLE_CONNECT;
+	else {
+		WARNING("line %u: tcp_role must be listen/connect, got \"%s\"", i, role.c_str());
+		return;
+	}
+	ln.host = host;
+	ln.port = port;
+	char lbl[32];
+	snprintf(lbl, sizeof lbl, "dhv11.%u", i);
+	ln.log_label = lbl;
+	ln.verbose = true;
+	if (ln.open()) {
+		pthread_mutex_lock(&state_mutex);
+		chan[i].open = true;
+		pthread_mutex_unlock(&state_mutex);
+	} else {
+		WARNING("line %u: cannot open TCP transport (port %u)", i, (unsigned) port);
+	}
+}
+
 void dhv11_c::open_lines(void)
 {
-	for (unsigned i = 0; i < DHV_LINE_COUNT; i++) {
-		chan[i].open = false;
-		if (tcp_role[i].value.empty())
-			continue;
-		serial_tcp_line_c &ln = tcp_line[i];
-		if (tcp_role[i].value == "listen")
-			ln.role = serial_tcp_line_c::ROLE_LISTEN;
-		else if (tcp_role[i].value == "connect")
-			ln.role = serial_tcp_line_c::ROLE_CONNECT;
-		else {
-			WARNING("line %u: tcp_role must be listen/connect, got \"%s\"", i,
-					tcp_role[i].value.c_str());
-			continue;
-		}
-		ln.host = tcp_host[i].value;
-		ln.port = (uint16_t) tcp_port[i].value;
-		char lbl[32];
-		snprintf(lbl, sizeof lbl, "dhv11.%u", i);
-		ln.log_label = lbl;
-		ln.verbose = true;
-		if (ln.open())
-			chan[i].open = true;
-		else
-			WARNING("line %u: cannot open TCP transport (port %u)", i,
-					(unsigned) tcp_port[i].value);
-	}
+	for (unsigned i = 0; i < DHV_LINE_COUNT; i++)
+		open_line(i, tcp_role[i].value, tcp_host[i].value, (uint16_t) tcp_port[i].value);
 }
 
 void dhv11_c::close_lines(void)
@@ -127,23 +167,17 @@ void dhv11_c::close_lines(void)
 
 bool dhv11_c::on_before_install(void)
 {
+	// The TCP transport params stay writable while installed so a line's port or
+	// role can be retuned live (see on_param_changed); they do not touch the bus
+	// registration. The base class locks the bus params (base_addr/slot/vector/
+	// level) on enable.
 	open_lines();
-	for (unsigned i = 0; i < DHV_LINE_COUNT; i++) {
-		tcp_role[i].readonly = true;
-		tcp_host[i].readonly = true;
-		tcp_port[i].readonly = true;
-	}
 	return true;
 }
 
 void dhv11_c::on_after_uninstall(void)
 {
 	close_lines();
-	for (unsigned i = 0; i < DHV_LINE_COUNT; i++) {
-		tcp_role[i].readonly = false;
-		tcp_host[i].readonly = false;
-		tcp_port[i].readonly = false;
-	}
 }
 
 // -------------------------------------------------------------------------

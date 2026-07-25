@@ -168,6 +168,11 @@ private:
 
 	void open_lines(void);
 	void close_lines(void);
+	// (re)configure and (re)open one line's TCP transport with the given role/
+	// host/port. Closes any transport already running on the line first; an empty
+	// role leaves it closed. Used both at install and for a live tcp_* edit.
+	void open_line(unsigned i, const std::string &role, const std::string &host,
+			uint16_t port);
 
 	// transmit handoff between register callback and worker
 	bool tdr_pending;

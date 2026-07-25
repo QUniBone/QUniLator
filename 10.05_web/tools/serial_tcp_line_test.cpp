@@ -338,6 +338,56 @@ int main(void)
 		line.close();
 	}
 
+	/* 7. reconfigure: a line opened on one port closes and re-binds another.
+	   This is the primitive the DZV11/DHV11/DL11 live tcp_* edit drives — close
+	   the line, change its port, re-open — so it must rebind cleanly and fully
+	   release the old port. */
+	{
+		serial_tcp_line_c line;
+		line.role = serial_tcp_line_c::ROLE_LISTEN;
+		line.port = 0; // kernel-assigned port A
+		check(line.open(), "reconfig: line opens on port A");
+		uint16_t portA = line.local_port();
+		check(portA != 0, "reconfig: line reports port A");
+
+		telnet_client a;
+		check(a.connect_to(portA), "reconfig: a client connects on port A");
+		check(wait_until([&] { return line.client_connected(); }, 1000),
+				"reconfig: port-A client is accepted");
+
+		// close the line, then reserve port A so the kernel must pick a different
+		// port B for the re-open. A successful bind proves the old port was fully
+		// released by close().
+		line.close();
+		int hold = socket(AF_INET, SOCK_STREAM, 0);
+		int one = 1;
+		setsockopt(hold, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+		struct sockaddr_in ha;
+		memset(&ha, 0, sizeof ha);
+		ha.sin_family = AF_INET;
+		ha.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		ha.sin_port = htons(portA);
+		check(bind(hold, (struct sockaddr *) &ha, sizeof ha) == 0,
+				"reconfig: old port A is free after close (line released it)");
+		listen(hold, 1);
+
+		// re-open on a fresh kernel-assigned port B
+		line.port = 0;
+		check(line.open(), "reconfig: line re-opens on port B");
+		uint16_t portB = line.local_port();
+		check(portB != 0 && portB != portA, "reconfig: line rebinds to a new port B");
+
+		telnet_client b;
+		check(b.connect_to(portB), "reconfig: a client connects on port B");
+		check(wait_until([&] { return line.client_connected(); }, 1000),
+				"reconfig: port-B client is accepted by the re-opened line");
+
+		a.close_it();
+		b.close_it();
+		::close(hold);
+		line.close();
+	}
+
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures == 0 ? 0 : 1;
 }
