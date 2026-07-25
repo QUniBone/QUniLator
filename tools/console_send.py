@@ -48,54 +48,60 @@ class Console:
         self.echo_timeout = echo_timeout
         self.quiet = quiet
 
-    def _pump(self, deadline):
-        """Read whatever is available until deadline; return True if new data."""
-        got = False
-        while time.monotonic() < deadline:
-            try:
-                data = self.ws.recv()
-            except Exception:
-                break
-            if not data:
-                break
-            text = data.decode("latin-1") if isinstance(data, bytes) else data
-            if text:
-                self.buf += text
-                if not self.quiet:
-                    sys.stdout.write(text)
-                    sys.stdout.flush()
-                got = True
-        return got
+    def _read(self, timeout):
+        """Read one frame within `timeout` seconds; append it. Return True if
+        data arrived. A frame is delivered the instant it is available, so a
+        caller that re-checks its condition after each _read reacts with no
+        added latency."""
+        try:
+            self.ws.settimeout(max(0.001, timeout))
+            data = self.ws.recv()
+        except Exception:
+            return False
+        if not data:
+            return False
+        text = data.decode("latin-1") if isinstance(data, bytes) else data
+        if text:
+            self.buf += text
+            if not self.quiet:
+                sys.stdout.write(text)
+                sys.stdout.flush()
+        return True
 
     def expect(self, pattern, timeout=30.0):
         """Wait until pattern (regex) appears in the output. Returns the match."""
         rx = re.compile(pattern)
         deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
+        while True:
             m = rx.search(self.buf)
             if m:
                 self.buf = self.buf[m.end():]   # consume up to the match
                 return m
-            self._pump(min(deadline, time.monotonic() + 0.5))
-        raise TimeoutError("expected %r, buffer tail: %r" % (pattern, self.buf[-200:]))
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("expected %r, buffer tail: %r"
+                                   % (pattern, self.buf[-200:]))
+            self._read(remaining)
 
     def _send_char(self, ch):
-        """Send one byte and wait for its echo before returning."""
+        """Send one byte and return as soon as its echo is seen. The buffer is
+        checked before every read, so the next character follows the echo with
+        no fixed per-character delay."""
         self.ws.send_binary(ch.encode("latin-1"))
         # CR is normally echoed as CRLF; accept either the char or a newline for it
         wanted = ("\r", "\n") if ch == "\r" else (ch,)
         deadline = time.monotonic() + self.echo_timeout
-        while time.monotonic() < deadline:
-            self._pump(min(deadline, time.monotonic() + 0.2))
-            if any(w in self.buf for w in wanted):
-                # drop the echoed char so it is not re-matched by a later expect
-                for w in wanted:
-                    i = self.buf.find(w)
-                    if i >= 0:
-                        self.buf = self.buf[:i] + self.buf[i + 1:]
-                        break
-                return True
-        return False   # never echoed (non-echoing input, or guest not reading)
+        while True:
+            for w in wanted:
+                i = self.buf.find(w)
+                if i >= 0:
+                    # drop the echoed char so it is not re-matched by a later expect
+                    self.buf = self.buf[:i] + self.buf[i + 1:]
+                    return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False   # never echoed (non-echoing input, or guest not reading)
+            self._read(remaining)
 
     def send(self, line, cr=True, require_echo=True):
         """Type a line echo-driven, then CR. Falls back to a small delay for a
