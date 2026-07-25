@@ -30,6 +30,8 @@
 
 #include <sstream>
 #include <mutex>
+#include <vector>
+#include <string>
 
 #include "timeout.hpp"
 #include "parameter.hpp"
@@ -87,8 +89,13 @@ public:
 #endif
 	uda_c *UDA50;
 	slu_c *DL11, *DL11b;
-	dzv11_c *DZV11;
-	dhv11_c *DHV11;
+	// Fixed pools of the serial muxes, so an operator can enable several of one
+	// type at once. All instances ship disabled; each defaults to a distinct
+	// I/O-page address, interrupt vector, priority slot and per-line TCP port
+	// block (see build_mux_pool in device_configuration.cpp). DZV11[0] and
+	// DHV11[0] keep the single-device names/addresses used before pooling.
+	std::vector<dzv11_c *> DZV11;
+	std::vector<dhv11_c *> DHV11;
 	ltc_c *LTC;
 
 	// to inject characters into the SLU receivers (console scripting,

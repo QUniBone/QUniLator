@@ -52,6 +52,8 @@ const label_entry k_table[] = {
 	{ "RX02",          "RX02 floppy",            "RX02",  INST_UNIT },
 	{ "DELQA",         "Ethernet controller",    "DELQA", INST_UNIT },
 	{ "VCB01",         "Graphics display",       "VCB01", INST_NONE },
+	{ "dzv11_c",       "4-line async serial mux","DZV11", INST_ADDR },
+	{ "dhv11_c",       "8-line async serial mux","DHV11", INST_ADDR },
 };
 
 } // namespace

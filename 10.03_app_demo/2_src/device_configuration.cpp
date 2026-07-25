@@ -14,6 +14,50 @@
 device_configuration_c *device_configuration = nullptr;
 std::mutex device_configuration_c::operations_mutex;
 
+/* build_mux_pool: construct a fixed pool of one serial-mux device type, all
+   disabled, each instance at a distinct, non-overlapping bus footprint.
+
+   Instance 0 keeps the type's single-device name/address (dzv11, dhv11);
+   instances 1.. get the letter-suffix name (dzv11b, dzv11c, ...) matching the
+   DL11/DL11b convention. Each instance k is offset from the type's DEC defaults:
+
+     base_addr    addr0    + k * (2 * register_count)   // spaced by the register span
+     intr_vector  vec0     + k * 010                    // each device uses RCV(+0) and XMT(+4)
+     priority_slot slot    + k * 2                       // each device uses slot and slot+1
+     tcp_port[i]  (type base + i) + k * 16               // a 16-port block per instance
+
+   The address/vector/slot steps derive from the device itself (register count,
+   the RCV/XMT vector+slot pair), so pooling another mux type later is one more
+   call with that type's DEC address and vector base. */
+template<typename T>
+static std::vector<T *> build_mux_pool(unsigned count, const char *base_name,
+		uint32_t addr0, uint16_t vec0)
+{
+	std::vector<T *> pool;
+	pool.reserve(count);
+	for (unsigned k = 0; k < count; k++) {
+		T *d = new T();
+		// instance 0: bare type name; 1->b, 2->c, 3->d
+		std::string suffix = k ? std::string(1, char('a' + k)) : std::string();
+		d->name.value = std::string(base_name) + suffix;
+		d->log_label = std::string(base_name) + suffix;
+
+		uint32_t addr = addr0 + k * (2 * d->register_count);
+		uint16_t vec = (uint16_t)(vec0 + k * 010);
+		unsigned slot = d->default_priority_slot + k * 2;
+		d->set_default_bus_params(addr, slot, vec, d->default_intr_level);
+
+		// shift this instance's per-line default listen ports into its own
+		// 16-port block, so listen ports don't collide across instances
+		unsigned line_count = sizeof(d->tcp_port) / sizeof(d->tcp_port[0]);
+		for (unsigned i = 0; i < line_count; i++)
+			d->tcp_port[i].value += k * 16;
+
+		pool.push_back(d);
+	}
+	return pool;
+}
+
 device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
 		dl11_rcv_stream(std::ios::app | std::ios::in | std::ios::out),
 		dl11b_rcv_stream(std::ios::app | std::ios::in | std::ios::out) {
@@ -68,11 +112,14 @@ device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
 	DL11b->rs232adapter.stream_xmt = NULL;
 	DL11b->rs232adapter.baudrate = DL11b->baudrate.value;
 
-	// serial multiplexers over TCP: a 4-line DZV11/DZQ11 and an 8-line
-	// DHV11/DHQ11. Both ship disabled; per-line tcp_role/tcp_host/tcp_port
-	// parameters map each line to a TCP endpoint before enabling.
-	DZV11 = new dzv11_c();
-	DHV11 = new dhv11_c();
+	// Serial multiplexers over TCP, held as fixed pools so several of a type can
+	// run at once. Both types ship disabled; per-line tcp_role/tcp_host/tcp_port
+	// map each line to a TCP endpoint before enabling. Instance sequences:
+	//   DZV11 (4-reg span, 010 vector pair): dzv11  760100 v300, dzv11b 760110 v310,
+	//                                        dzv11c 760120 v320, dzv11d 760130 v330
+	//   DHV11 (8-reg span, 010 vector pair): dhv11  760440 v300, dhv11b 760460 v310
+	DZV11 = build_mux_pool<dzv11_c>(4, "dzv11", DZV11_ADDR, DZV11_VECTOR);
+	DHV11 = build_mux_pool<dhv11_c>(2, "dhv11", DHV11_ADDR, DHV11_VECTOR);
 
 	LTC = new ltc_c();
 
@@ -124,10 +171,14 @@ device_configuration_c::~device_configuration_c() {
 
 	LTC->enabled.set(false);
 	delete LTC;
-	DHV11->enabled.set(false);
-	delete DHV11;
-	DZV11->enabled.set(false);
-	delete DZV11;
+	for (dhv11_c *d : DHV11) {
+		d->enabled.set(false);
+		delete d;
+	}
+	for (dzv11_c *d : DZV11) {
+		d->enabled.set(false);
+		delete d;
+	}
 	DL11b->enabled.set(false);
 	delete DL11b;
 	DL11->enabled.set(false);

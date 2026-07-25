@@ -181,6 +181,22 @@ public:
 
 	char *get_qunibus_resource_info(void);
 
+	// Occupied I/O-page byte range, as [addr_first, addr_beyond): the device
+	// answers base_addr .. base_addr + 2*register_count - 1. addr_beyond is the
+	// first byte past the device. A register-less device (register_count == 0,
+	// e.g. the CPU) yields an empty range (addr_first == addr_beyond). Lets the
+	// config layer detect address overlaps between enabled devices.
+	struct iopage_range_t {
+		uint32_t addr_first;  // lowest byte answered
+		uint32_t addr_beyond; // one past the highest byte answered
+	};
+	iopage_range_t iopage_range(void) const {
+		iopage_range_t r;
+		r.addr_first = base_addr.value;
+		r.addr_beyond = base_addr.value + 2 * register_count;
+		return r;
+	}
+
 };
 
 #endif
