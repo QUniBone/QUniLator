@@ -16,3 +16,6 @@ images/211bsd/work/
 
 # python bytecode cache
 tools/__pycache__/
+
+# large scanned manual PDFs (searchable .txt is committed alongside)
+diagnostics/reference/*.pdf
