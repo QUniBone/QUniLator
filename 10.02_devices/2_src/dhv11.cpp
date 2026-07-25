@@ -36,6 +36,9 @@ dhv11_c::dhv11_c() : qunibusdevice_c()
 	static const char *rnames[dhv_idx_count] = {
 		"CSR", "RBUF", "LPR", "STAT", "LNCTRL", "TBUFAD1", "TBUFAD2", "TBUFCT"
 	};
+	// Per-register writable bits and read-back rules follow EK-DHV11-TM-002 Table
+	// 3-1 and the bit definitions in §3.2.2. The register-access test writes a
+	// pattern and reads it back masked to these bits, so the masks must be exact.
 	for (unsigned i = 0; i < dhv_idx_count; i++) {
 		reg[i] = &(this->registers[i]);
 		strcpy(reg[i]->name, rnames[i]);
@@ -44,17 +47,22 @@ dhv11_c::dhv11_c() : qunibusdevice_c()
 		reg[i]->reset_value = 0;
 		reg[i]->writable_bits = 0xffff;
 	}
-	// RBUF read pops the receive FIFO; it is read-only (a writable register
-	// active on DATI but passive on DATO is rejected by register_device).
+	// CSR is active on read too: reading it clears TX.ACTION (§3.2.2.1).
+	reg[dhv_idx_csr]->active_on_dati = true;
+	reg[dhv_idx_csr]->writable_bits = DHV_CSR_WMASK;
+	// base+2 is RBUF on read (pops the FIFO) and TXCHAR on write (a single
+	// programmed character): active on both cycles.
 	reg[dhv_idx_rbuf]->active_on_dati = true;
-	reg[dhv_idx_rbuf]->active_on_dato = false;
-	reg[dhv_idx_rbuf]->writable_bits = 0;
-	// STAT is a read-only status word kept current by the worker
+	reg[dhv_idx_rbuf]->writable_bits = DHV_TXCHAR_VALID | 0377;
+	// STAT is read-only modem status kept current by the worker.
 	reg[dhv_idx_stat]->active_on_dato = false;
 	reg[dhv_idx_stat]->writable_bits = 0;
 
 	memset(chan, 0, sizeof chan);
 	csr_rx_ie = csr_tx_ie = csr_tx_act = false;
+	csr_master_reset = csr_diag_fail = selftest_pending = selftest_skip = false;
+	selftest_ticks = 0;
+	csr_tx_line = 0;
 	csr_channel = 0;
 
 	// Usable defaults: every line listens on a distinct TCP port, so an enabled
@@ -195,8 +203,13 @@ bool dhv11_c::get_xmt_intr_level(void)
 // caller holds state_mutex
 void dhv11_c::update_csr_and_INTR(void)
 {
-	uint16_t val = (csr_tx_act ? DHV_CSR_TX_ACT : 0) | (csr_tx_ie ? DHV_CSR_TX_IE : 0)
-			| (rx_fifo.empty() ? 0 : DHV_CSR_RX_DATA) | (csr_rx_ie ? DHV_CSR_RX_IE : 0)
+	uint16_t val = (csr_tx_act ? DHV_CSR_TX_ACT : 0)
+			| (csr_tx_ie ? DHV_CSR_TX_IE : 0)
+			| (csr_diag_fail ? DHV_CSR_DIAG_FAIL : 0)
+			| (((uint16_t) csr_tx_line << DHV_CSR_TX_LINE_SHIFT) & DHV_CSR_TX_LINE_MASK)
+			| (rx_fifo.empty() ? 0 : DHV_CSR_RX_DATA)
+			| (csr_rx_ie ? DHV_CSR_RX_IE : 0)
+			| (csr_master_reset ? DHV_CSR_MASTER_RESET : 0)
 			| (csr_channel & DHV_CSR_CHAN_MASK);
 	set_register_dati_value(reg[dhv_idx_csr], val, __func__);
 
@@ -229,14 +242,98 @@ void dhv11_c::set_rbuf_dati(void)
 	set_register_dati_value(reg[dhv_idx_rbuf], val, __func__);
 }
 
-// caller holds state_mutex: STAT reports carrier per selected channel (modeled)
+// caller holds state_mutex: push one RBUF word and refresh RX status
+void dhv11_c::rx_fifo_push(uint16_t entry)
+{
+	if (rx_fifo.size() >= 256) {
+		entry |= DHV_RBUF_OVERRUN;
+		rx_fifo.pop_back();
+	}
+	rx_fifo.push_back(entry);
+	set_rbuf_dati();
+}
+
+// caller holds state_mutex: raise TX.ACTION reporting the given line (§3.2.2.1)
+void dhv11_c::tx_report(unsigned line)
+{
+	csr_tx_line = line & 7;
+	csr_tx_act = true;
+}
+
+// caller holds state_mutex: STAT (base+6) reports modem status in its high byte.
+// Bit 8 reads 0 to identify the part as a DHV11 (§3.2.2.5); a connected TCP peer
+// stands in for carrier and data-set-ready on the selected channel.
 void dhv11_c::set_stat_dati(void)
 {
 	uint16_t val = 0;
 	unsigned c = csr_channel & DHV_CSR_CHAN_MASK;
-	if (chan[c].open && tcp_line[c].client_connected())
-		val |= 1; // TODO map to the real STAT carrier-detect bit
+	if (c < DHV_LINE_COUNT && chan[c].open && tcp_line[c].client_connected())
+		val |= DHV_STAT_DCD | DHV_STAT_DSR | DHV_STAT_CTS;
 	set_register_dati_value(reg[dhv_idx_stat], val, __func__);
+}
+
+// caller holds state_mutex: load the eight self-test result codes into the FIFO
+// (§3.3.10): six null codes then the two ROM-version codes, each carrying
+// DATA.VALID, the diagnostic marker <14:12>=111 and its sequence number <11:8>.
+void dhv11_c::load_selftest_codes(void)
+{
+	// Six filler codes then the two ROM-version codes; the filler is 203 when the
+	// self-test was skipped, 201 when it ran (§3.3.10).
+	uint8_t filler = selftest_skip ? DHV_SELFTEST_SKIP : DHV_SELFTEST_NULL;
+	uint8_t code[8] = {
+		filler, filler, filler, filler, filler, filler,
+		DHV_SELFTEST_ROM1, DHV_SELFTEST_ROM2
+	};
+	rx_fifo.clear();
+	for (unsigned seq = 0; seq < 8; seq++)
+		rx_fifo.push_back(DHV_RBUF_DATA_VALID | DHV_RBUF_DIAG
+				| ((uint16_t) seq << DHV_RBUF_LINE_SHIFT) | code[seq]);
+	set_rbuf_dati();
+}
+
+// caller holds state_mutex: finish a running master reset — load the self-test
+// result codes, report success (DIAG.FAIL clear) and drop CSR<5>.
+void dhv11_c::complete_selftest(void)
+{
+	if (!csr_master_reset)
+		return;
+	// The self-test leaves every channel at its power-up defaults regardless of
+	// any skip-pattern writes the host made during the reset (§3.3.1).
+	for (unsigned i = 0; i < DHV_LINE_COUNT; i++)
+		set_channel_defaults(i);
+	load_selftest_codes();
+	csr_diag_fail = false;
+	csr_master_reset = false;
+	selftest_pending = false;
+	refresh_indexed_dati(csr_channel & DHV_CSR_CHAN_MASK);
+}
+
+// caller holds state_mutex: a channel's post-reset state (§3.3.1): 9600 baud, 8
+// data bits, one stop, no parity, receiver disabled, transmitter enabled, no
+// maintenance/modem control, DMA idle.
+void dhv11_c::set_channel_defaults(unsigned c)
+{
+	chan[c].lpr = DHV_LPR_RESET;
+	chan[c].lnctrl = 0;
+	chan[c].tbuffad1 = 0;
+	chan[c].tbuffad2 = DHV_TBUFFAD2_TX_ENA; // TX.ENA set by master reset
+	chan[c].tbuffct = 0;
+	chan[c].dma_addr = 0;
+	chan[c].dma_count = 0;
+	chan[c].dma_pending = false;
+}
+
+// caller holds state_mutex: set the read-back value of each indexed (M) register
+// from the selected channel's stored word, so a read of base+n after a write of
+// base+n (same channel) returns what was written (§3.2.1).
+void dhv11_c::refresh_indexed_dati(unsigned c)
+{
+	set_register_dati_value(reg[dhv_idx_lpr], chan[c].lpr, __func__);
+	set_register_dati_value(reg[dhv_idx_lnctrl], chan[c].lnctrl, __func__);
+	set_register_dati_value(reg[dhv_idx_tbuffad1], chan[c].tbuffad1, __func__);
+	set_register_dati_value(reg[dhv_idx_tbuffad2], chan[c].tbuffad2, __func__);
+	set_register_dati_value(reg[dhv_idx_tbuffct], chan[c].tbuffct, __func__);
+	set_stat_dati();
 }
 
 // -------------------------------------------------------------------------
@@ -249,28 +346,74 @@ void dhv11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 		return;
 
 	pthread_mutex_lock(&state_mutex);
+	bool is_dato = (unibus_control == QUNIBUS_CYCLE_DATO);
 	unsigned c = csr_channel & DHV_CSR_CHAN_MASK;
+
+	// §3.3.10.3: writing the skip pattern to a control register while a master
+	// reset is in progress asks the DHV11 to bypass the self-test, so it finishes
+	// quickly instead of running the full sequence.
+	if (is_dato && csr_master_reset && !selftest_skip && device_reg->index != dhv_idx_csr
+			&& get_register_dato_value(device_reg) == DHV_SELFTEST_SKIP_PATTERN) {
+		selftest_skip = true;
+		if (selftest_ticks > DHV_SKIP_TICKS)
+			selftest_ticks = DHV_SKIP_TICKS;
+	}
 
 	switch (device_reg->index) {
 	case dhv_idx_csr:
-		if (unibus_control == QUNIBUS_CYCLE_DATO) {
+		if (is_dato) {
 			uint16_t v = get_register_dato_value(reg[dhv_idx_csr]);
 			csr_rx_ie = v & DHV_CSR_RX_IE;
 			csr_tx_ie = v & DHV_CSR_TX_IE;
 			csr_channel = v & DHV_CSR_CHAN_MASK;
-			if (v & DHV_CSR_MASTER_RESET) {
-				rx_fifo.clear();
+			if ((v & DHV_CSR_MASTER_RESET) && !csr_master_reset) {
+				// §3.3.1: reset every channel to its power-up state and start the
+				// self-test. CSR<5> stays set — and the FIFO stays empty — for a
+				// real-time interval the worker times out, at which point
+				// complete_selftest() loads the codes and drops the bit.
+				csr_master_reset = true;
+				csr_diag_fail = true; // valid only after the test clears CSR<5>
 				csr_tx_act = false;
-				memset(chan, 0, sizeof chan);
-				// note: master reset drops all transmit state; TCP lines stay open
+				csr_tx_line = 0;
+				for (unsigned i = 0; i < DHV_LINE_COUNT; i++)
+					set_channel_defaults(i);
+				rx_fifo.clear();
 				set_rbuf_dati();
+				selftest_ticks = DHV_SELFTEST_TICKS;
+				selftest_pending = true;
+				selftest_skip = false;
 			}
+			refresh_indexed_dati(csr_channel & DHV_CSR_CHAN_MASK);
 			update_csr_and_INTR();
-			set_stat_dati();
+		} else {
+			// §3.2.2.1: a CSR read clears TX.ACTION.
+			if (csr_tx_act) {
+				csr_tx_act = false;
+				update_csr_and_INTR();
+			}
 		}
 		break;
 	case dhv_idx_rbuf:
-		if (unibus_control != QUNIBUS_CYCLE_DATO) { // read pops the FIFO
+		if (is_dato) {
+			// TXCHAR: a single programmed character (§3.2.2.3).
+			uint16_t v = get_register_dato_value(reg[dhv_idx_rbuf]);
+			if (v & DHV_TXCHAR_VALID) {
+				uint8_t ch = v & 0377;
+				uint8_t m = chan_maint(c);
+				if (m == DHV_MAINT_LOCAL || m == DHV_MAINT_REMOTE
+						|| m == DHV_MAINT_ECHO) {
+					// maintenance loopback: the character wraps back to the FIFO
+					// (echo/remote need the receiver enabled; local ignores it).
+					if (m == DHV_MAINT_LOCAL || chan_rx_enabled(c))
+						rx_fifo_push(DHV_RBUF_DATA_VALID
+								| ((uint16_t) (c & 7) << DHV_RBUF_LINE_SHIFT) | ch);
+				} else if (chan_tx_ena(c) && chan[c].open) {
+					tcp_line[c].send(ch);
+				}
+				tx_report(c);
+				update_csr_and_INTR();
+			}
+		} else { // read pops the FIFO
 			if (!rx_fifo.empty())
 				rx_fifo.pop_front();
 			set_rbuf_dati();
@@ -278,41 +421,45 @@ void dhv11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 		}
 		break;
 	case dhv_idx_lpr:
-		// line parameters (baud/bits/parity) are cosmetic on a TCP transport;
-		// accepted and ignored. TODO honor RX-enable if encoded here per manual.
+		if (is_dato) {
+			chan[c].lpr = get_register_dato_value(reg[dhv_idx_lpr]);
+			set_register_dati_value(reg[dhv_idx_lpr], chan[c].lpr, __func__);
+		}
 		break;
 	case dhv_idx_lnctrl:
-		if (unibus_control == QUNIBUS_CYCLE_DATO) {
-			uint16_t v = get_register_dato_value(reg[dhv_idx_lnctrl]);
-			chan[c].enabled = v & DHV_LNCTRL_TX_ENABLE;
-			chan[c].rx_enabled = v & DHV_LNCTRL_RX_ENABLE;
+		if (is_dato) {
+			chan[c].lnctrl = get_register_dato_value(reg[dhv_idx_lnctrl]);
+			set_register_dati_value(reg[dhv_idx_lnctrl], chan[c].lnctrl, __func__);
 		}
 		break;
 	case dhv_idx_tbuffad1:
-		if (unibus_control == QUNIBUS_CYCLE_DATO)
-			chan[c].dma_addr = (chan[c].dma_addr & 0xffff0000u)
-					| get_register_dato_value(reg[dhv_idx_tbuffad1]);
-		break;
-	case dhv_idx_tbuffad2:
-		if (unibus_control == QUNIBUS_CYCLE_DATO) {
-			uint16_t v = get_register_dato_value(reg[dhv_idx_tbuffad2]);
-			chan[c].dma_addr = (chan[c].dma_addr & 0x0000ffffu)
-					| ((uint32_t) (v & DHV_TBUFFAD2_ADDR_HI) << 16);
-			if (v & DHV_TBUFFAD2_ABORT) {
-				chan[c].dma_pending = false;
-				chan[c].dma_count = 0;
-			}
+		if (is_dato) {
+			chan[c].tbuffad1 = get_register_dato_value(reg[dhv_idx_tbuffad1]);
+			set_register_dati_value(reg[dhv_idx_tbuffad1], chan[c].tbuffad1, __func__);
 		}
 		break;
-	case dhv_idx_tbuffct:
-		if (unibus_control == QUNIBUS_CYCLE_DATO) {
-			// writing the count with the channel enabled launches the DMA
-			// transmit. TODO confirm the exact start trigger against the manual.
-			chan[c].dma_count = get_register_dato_value(reg[dhv_idx_tbuffct]);
-			if (chan[c].enabled && chan[c].dma_count > 0) {
+	case dhv_idx_tbuffad2:
+		if (is_dato) {
+			uint16_t v = get_register_dato_value(reg[dhv_idx_tbuffad2]);
+			chan[c].tbuffad2 = v;
+			// §3.2.2.8: setting TX.DMA.START launches the transfer; the DHV11
+			// clears the bit before returning TX.ACTION, so it reads back 0.
+			if ((v & DHV_TBUFFAD2_DMA_START) && (v & DHV_TBUFFAD2_TX_ENA)
+					&& chan[c].tbuffct > 0) {
+				chan[c].dma_addr = ((uint32_t) (v & DHV_TBUFFAD2_ADDR_HI) << 16)
+						| chan[c].tbuffad1;
+				chan[c].dma_count = chan[c].tbuffct;
 				chan[c].dma_pending = true;
 				pthread_cond_signal(&xmt_cond);
 			}
+			chan[c].tbuffad2 &= ~DHV_TBUFFAD2_DMA_START;
+			set_register_dati_value(reg[dhv_idx_tbuffad2], chan[c].tbuffad2, __func__);
+		}
+		break;
+	case dhv_idx_tbuffct:
+		if (is_dato) {
+			chan[c].tbuffct = get_register_dato_value(reg[dhv_idx_tbuffct]);
+			set_register_dati_value(reg[dhv_idx_tbuffct], chan[c].tbuffct, __func__);
 		}
 		break;
 	default:
@@ -338,17 +485,26 @@ void dhv11_c::reset(void)
 {
 	pthread_mutex_lock(&state_mutex);
 	reset_unibus_registers();
+	// BINIT clears the interrupt enables and, like a host master reset, runs the
+	// self-test and initialization sequence (§3.3.1). Completed synchronously
+	// here: the bus reset has no host handshake to observe CSR<5> in transit.
 	csr_rx_ie = csr_tx_ie = csr_tx_act = false;
+	csr_master_reset = false;
+	csr_diag_fail = false;
+	csr_tx_line = 0;
 	csr_channel = 0;
-	memset(chan, 0, sizeof chan);
-	// preserve which TCP lines are open across a bus INIT
-	for (unsigned i = 0; i < DHV_LINE_COUNT; i++)
-		chan[i].open = tcp_line[i].is_open();
-	rx_fifo.clear();
+	selftest_pending = false;
+	selftest_skip = false;
+	selftest_ticks = 0;
+	for (unsigned i = 0; i < DHV_LINE_COUNT; i++) {
+		bool was_open = tcp_line[i].is_open();
+		set_channel_defaults(i);
+		chan[i].open = was_open; // TCP lines survive a bus INIT
+	}
+	load_selftest_codes();
 	rcvintr_request.edge_detect_reset();
 	xmtintr_request.edge_detect_reset();
-	set_rbuf_dati();
-	set_stat_dati();
+	refresh_indexed_dati(0);
 	update_csr_and_INTR();
 	pthread_mutex_unlock(&state_mutex);
 }
@@ -383,25 +539,31 @@ void dhv11_c::worker_rcv(void)
 			continue;
 
 		pthread_mutex_lock(&state_mutex);
+		if (selftest_pending && --selftest_ticks <= 0) {
+			// the self-test interval has elapsed (§3.3.1): load the result codes,
+			// report success and drop CSR<5> so the host's poll completes.
+			complete_selftest();
+			update_csr_and_INTR();
+		}
 		set_stat_dati();
 		pthread_mutex_unlock(&state_mutex);
 
 		for (unsigned i = 0; i < DHV_LINE_COUNT; i++) {
-			if (!chan[i].open || !chan[i].rx_enabled)
+			if (!chan[i].open || !chan_rx_enabled(i))
 				continue;
+			uint8_t m = chan_maint(i);
+			if (m == DHV_MAINT_LOCAL || m == DHV_MAINT_REMOTE)
+				continue; // wire data is ignored while looping back
 			uint8_t ch;
 			while (tcp_line[i].poll_rcv(&ch)) {
 				pthread_mutex_lock(&state_mutex);
-				uint16_t entry = DHV_RBUF_VALID
-						| ((uint16_t) (i & 7) << DHV_RBUF_LINE_SHIFT) | ch;
-				if (rx_fifo.size() >= 256) {
-					entry |= DHV_RBUF_OVR;
-					rx_fifo.pop_back();
-				}
-				rx_fifo.push_back(entry);
-				set_rbuf_dati();
+				rx_fifo_push(DHV_RBUF_DATA_VALID
+						| ((uint16_t) (i & 7) << DHV_RBUF_LINE_SHIFT) | ch);
 				update_csr_and_INTR();
+				bool echo = (chan_maint(i) == DHV_MAINT_ECHO) && chan[i].open;
 				pthread_mutex_unlock(&state_mutex);
+				if (echo)
+					tcp_line[i].send(ch); // automatic echo retransmits the character
 			}
 		}
 	}
@@ -431,26 +593,38 @@ void dhv11_c::worker_xmt(void)
 		uint16_t count = chan[line].dma_count;
 		chan[line].dma_pending = false;
 		bool open = chan[line].open;
+		uint8_t maint = chan_maint(line);
+		bool rx_ena = chan_rx_enabled(line);
 		pthread_mutex_unlock(&state_mutex);
 
 		unsigned words = (count + 1) / 2;
 		if (words > 4096)
 			words = 4096; // one DMA burst; TODO chain longer buffers per manual
 		bool ok = dma_read_words(addr & ~1u, dma_buf, words);
-		if (ok && open) {
-			// bus/ARM are both little-endian: low byte first in each word
-			const uint8_t *bytes = (const uint8_t *) dma_buf;
-			unsigned n = count;
-			if (n > words * 2)
-				n = words * 2;
+		bool loopback = (maint == DHV_MAINT_LOCAL || maint == DHV_MAINT_REMOTE);
+		unsigned n = count;
+		if (n > words * 2)
+			n = words * 2;
+		const uint8_t *bytes = (const uint8_t *) dma_buf; // low byte first per word
+		// wire output runs without the state lock (the blocking-I/O rule); the
+		// maintenance loopback wraps the same bytes back to the FIFO under lock.
+		if (ok && !loopback && open)
 			for (unsigned k = 0; k < n; k++)
 				tcp_line[line].send(bytes[k]);
-		}
 
 		pthread_mutex_lock(&state_mutex);
+		if (ok && loopback)
+			for (unsigned k = 0; k < n; k++)
+				// remote loopback still needs the receiver enabled; local does not.
+				if (maint == DHV_MAINT_LOCAL || rx_ena)
+					rx_fifo_push(DHV_RBUF_DATA_VALID
+							| ((uint16_t) (line & 7) << DHV_RBUF_LINE_SHIFT)
+							| bytes[k]);
 		chan[line].dma_count = 0;
+		chan[line].tbuffct = 0; // whole buffer sent: nothing left to transfer
 		chan[line].dma_addr = (addr + count) & 0x3fffff;
-		csr_tx_act = true; // transmit complete: request service
+		set_register_dati_value(reg[dhv_idx_tbuffct], 0, __func__);
+		tx_report(line); // transmit complete: raise TX.ACTION for this line
 		update_csr_and_INTR();
 	}
 	pthread_mutex_unlock(&state_mutex);
