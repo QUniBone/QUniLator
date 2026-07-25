@@ -4,7 +4,7 @@ import type { ComponentChildren } from 'preact';
 import type { LiveDev, DiskStatus } from '../types';
 import { liveSetParam } from '../api';
 import { store, useStore } from '../store';
-import { enabledDevices } from '../lib/devmodel';
+import { enabledDevices, statusParam } from '../lib/devmodel';
 import { ImageField } from './common';
 import {
   vcb01Connect,
@@ -14,8 +14,10 @@ import {
   vcb01Disconnect,
 } from '../lib/vcb01';
 
+// Lamps, LEDs and the drive state machine are machine-driven, so they live in
+// statusParams; configuration values stay in params (paramVal).
 export function lampOn(d: LiveDev, n: string): boolean {
-  const p = (d.params || []).find((q) => q.n === n);
+  const p = statusParam(d, n);
   return !!p && p.v === '1';
 }
 export function paramVal(d: LiveDev, n: string): string {
@@ -73,7 +75,7 @@ function DiskWidget({ d }: { d: LiveDev }) {
   const lit = (v: boolean) => powered && v;
   const img = d.img || paramVal(d, 'image');
   const unit = paramVal(d, 'unit') || d.name.replace(/\D/g, '');
-  const hasRlLamps = d.params.some((p) => p.n === 'loadlamp');
+  const hasRlLamps = !!statusParam(d, 'loadlamp');
   const readyCap = html`<${Cap} cls="cap-white" lit=${lit(st === 'ready' || st === 'busy')}>
     <span class="num">${unit}</span>READY</${Cap}>`;
   const caps = hasRlLamps

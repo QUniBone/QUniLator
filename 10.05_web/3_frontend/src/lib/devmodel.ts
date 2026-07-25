@@ -55,6 +55,9 @@ export function liveModel(devs: ApiDevice[]): LiveDev[] {
         status: d.status,
         info: '',
         params: d.params.filter((p) => !hidden.includes(p.name)).map(liveParam),
+        // Machine-driven running state; empty on the pre-split backend, which
+        // is degraded gracefully rather than treated as a fault.
+        statusParams: (d.statusparams || []).map(liveParam),
         drives: [] as LiveDev[],
         img: String((d.params.find((p) => p.name === 'image') || { value: '' }).value || ''),
       },
@@ -67,6 +70,12 @@ export function liveModel(devs: ApiDevice[]): LiveDev[] {
     else roots.push(e);
   });
   return roots;
+}
+
+// Look up a machine-driven status parameter (a lamp, LED, drive-state value or
+// counter) by name; undefined when the device does not carry it.
+export function statusParam(d: LiveDev, name: string): LiveParam | undefined {
+  return (d.statusParams || []).find((p) => p.n === name);
 }
 
 export function walkDevs(fn: (d: LiveDev) => void, list: LiveDev[] = store.devmodel): void {
@@ -118,7 +127,9 @@ export function applyParamValue(dev: string, name: string, value: unknown): void
     if (d.name === dev) {
       if (name === 'enabled') d.enabled = !!value;
       if (name === 'image') d.img = String(value || '');
-      const p = d.params.find((q) => q.n === name);
+      // A committed value can land on either collection: configuration values in
+      // params, machine-driven lamp/state/counter values in statusParams.
+      const p = d.params.find((q) => q.n === name) || statusParam(d, name);
       if (p) {
         if (p.t === 'oct') p.v = octalStr(Number(value), p.bw);
         else if (typeof value === 'boolean') p.v = value ? '1' : '0';

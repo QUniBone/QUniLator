@@ -38,6 +38,9 @@ export interface ApiDevice {
   locked?: boolean;
   status?: DiskStatus;
   params: ApiParam[];
+  // Machine-driven running state (lamps, LEDs, drive state machine, counters).
+  // Read-only for display; absent on the pre-split backend.
+  statusparams?: ApiParam[];
 }
 
 // ---- derived live model ----
@@ -65,7 +68,8 @@ export interface LiveDev {
   locked?: boolean;
   status?: DiskStatus; // verbal disk state from the backend, when present
   info: string;
-  params: LiveParam[];
+  params: LiveParam[]; // configuration parameters (operator/setup, editable)
+  statusParams: LiveParam[]; // machine-driven running state (lamps, LEDs, counters)
   drives: LiveDev[];
   img: string;
   activity?: boolean;
