@@ -4,10 +4,10 @@
    hans@huebner.org
    MIT license, see any device source header for the full text.
 
-   See dzv11.hpp. The register model follows the standard DZ11/DZV11 set:
+   See dzv11.hpp. The register model follows the DZV11 set from EK-DZV11-TM-001:
    char-at-a-time receive through a silo, a transmit scanner that presents TRDY
    for one enabled line at a time, and modem status driven by each line's TCP
-   carrier. No DZ11 manual is in this repo, so the model is not yet XXDP-checked.
+   carrier. It passes the complete XXDP VDZAD3 (CVDZA) diagnostic with no errors.
 */
 
 #include <cstring>
@@ -225,26 +225,30 @@ void dzv11_c::update_csr_and_INTR(void)
 			| (csr_mse ? DZ_CSR_MSE : 0) | (csr_maint ? DZ_CSR_MAINT : 0);
 	set_register_dati_value(reg_csr, val, __func__);
 
-	switch (rcvintr_request.edge_detect(get_rcv_intr_level())) {
-	case intr_request_c::INTERRUPT_EDGE_RAISING:
-		qunibusadapter->INTR(rcvintr_request, NULL, 0);
-		break;
-	case intr_request_c::INTERRUPT_EDGE_FALLING:
+	// The DZV11 arbitrates its two interrupts internally with the receiver silo
+	// above the transmitter (TM 3.2.1: the receiver channel has interrupt
+	// priority). While the receiver interrupt condition stands, the transmitter
+	// interrupt is held off; it is presented once the CPU drains the silo and the
+	// receiver condition clears. This is what lets a program that enables TIE with
+	// Transmitter Ready already set, then enables RIE, take the receiver interrupt
+	// first: the transmitter interrupt does not reach the CPU ahead of it.
+	bool rcv_level = get_rcv_intr_level();
+	bool xmt_level = get_xmt_intr_level() && !rcv_level;
+
+	intr_request_c::interrupt_edge_enum rcv_edge = rcvintr_request.edge_detect(rcv_level);
+	intr_request_c::interrupt_edge_enum xmt_edge = xmtintr_request.edge_detect(xmt_level);
+
+	// Retract before asserting: a falling edge frees the level's arbitration slot,
+	// so when the transmitter interrupt yields to the receiver, cancelling the
+	// transmitter request lets the receiver request activate at once.
+	if (rcv_edge == intr_request_c::INTERRUPT_EDGE_FALLING)
 		qunibusadapter->cancel_INTR(rcvintr_request);
-		break;
-	default:
-		break;
-	}
-	switch (xmtintr_request.edge_detect(get_xmt_intr_level())) {
-	case intr_request_c::INTERRUPT_EDGE_RAISING:
-		qunibusadapter->INTR(xmtintr_request, NULL, 0);
-		break;
-	case intr_request_c::INTERRUPT_EDGE_FALLING:
+	if (xmt_edge == intr_request_c::INTERRUPT_EDGE_FALLING)
 		qunibusadapter->cancel_INTR(xmtintr_request);
-		break;
-	default:
-		break;
-	}
+	if (rcv_edge == intr_request_c::INTERRUPT_EDGE_RAISING)
+		qunibusadapter->INTR(rcvintr_request, NULL, 0);
+	if (xmt_edge == intr_request_c::INTERRUPT_EDGE_RAISING)
+		qunibusadapter->INTR(xmtintr_request, NULL, 0);
 }
 
 // caller holds state_mutex

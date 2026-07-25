@@ -12,8 +12,8 @@
 
    Each line's byte stream is carried by a serial_tcp_line_c (Telnet/RFC2217
    over TCP); a connected TCP client presents as carrier-detect in the modem
-   status register. No DZ11 manual is in this repo, so the register model is
-   built from the standard DZ11/DZV11 register set and is not yet XXDP-validated.
+   status register. The register model is built from EK-DZV11-TM-001 and passes
+   the complete XXDP VDZAD3 (CVDZA) diagnostic with no errors.
 */
 #ifndef _DZV11_HPP_
 #define _DZV11_HPP_
