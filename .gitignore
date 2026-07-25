@@ -9,3 +9,10 @@
 
 # reMarkable pull-annotations local watermark (per-checkout)
 .claude/.rm-*.json
+.venv/
+
+# simh scratch working dir (1GB disk image, driver scripts)
+images/211bsd/work/
+
+# python bytecode cache
+tools/__pycache__/
