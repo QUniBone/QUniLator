@@ -123,10 +123,15 @@ Actions:
 |---|---|
 | `init` | pulse bus INIT |
 | `powercycle` | simulated DCOK/POK power-fail cycle |
-| `restart` | reset then restart: pulse INIT and resume the CPU |
+| `restart` | reboot from the power-up vector: release the HALT line, then power cycle so the CPU restarts execution |
 | `halt` / `continue` | QBUS HALT line |
-| `dc_on` | logical power on: set `powered`, then power cycle the machine up |
+| `dc_on` | logical power on: set `powered`, release HALT, then power cycle the machine up running |
 | `dc_off` | logical power off: halt the CPU and clear `powered` |
+
+The HALT line is released before any power-up and asserted after it, so a
+machine brought up by `dc_on` or `restart` comes up **running** from the
+power-up vector rather than halted into micro-ODT. A `dc_off` leaves the CPU
+halted; the following `dc_on` clears that HALT as part of the power-up.
 
 `dc_on`/`dc_off` drive a **runtime logical power flag**, `powered`, reported in
 the `state` event. It is runtime only — a service restart comes up powered on —

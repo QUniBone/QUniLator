@@ -172,6 +172,24 @@ static bool is_settable(parameter_c *p) {
 	return it == parameter_defaults.end() ? !p->readonly : it->second.writable;
 }
 
+// A parameter that reports the machine's running state rather than its setup:
+// panel lamps, activity LEDs, the drive state machine and its rotation. These
+// change on their own as the machine runs, so they belong to the live view, not
+// to a configuration. Most are already read-only and excluded on that ground,
+// but a device may expose a running-state value as writable (an activity LED is
+// a settable LED number, a mapped register can read back its live value); such a
+// value diverging from a saved snapshot must never read as an operator edit.
+// The comparison keeps only genuine configuration, so an untouched machine
+// stays unmodified whatever its devices are doing.
+static bool is_runtime_status_param(const std::string &name) {
+	size_t n = name.size();
+	if (n >= 4 && name.compare(n - 4, 4, "lamp") == 0)
+		return true;
+	if (n >= 3 && name.compare(n - 3, 3, "led") == 0)
+		return true;
+	return name == "state" || name == "rotation";
+}
+
 // Put a device back the way it was constructed. Parameters named in "keep" are
 // left alone, the caller being about to set them.
 static void reset_to_defaults(device_c *dev, const std::set<std::string> *keep,
@@ -213,6 +231,11 @@ static picojson::value snapshot_devices_locked(void) {
 			// configuration, so it stays out of the snapshot; it remains the
 			// live per-device knob
 			if (p->name == "verbosity")
+				continue;
+			// running-state indicators (lamps, activity LEDs, the drive state
+			// machine) are not configuration; keeping them out of the snapshot
+			// keeps an untouched, running machine from reading modified
+			if (is_runtime_status_param(p->name))
 				continue;
 			if (!is_settable(p) || is_default(p))
 				continue;
@@ -294,8 +317,17 @@ static picojson::value canonical(const picojson::value &snapshot) {
 			e["enabled"] = d.get("enabled").is<bool>()
 					? picojson::value(d.get("enabled").get<bool>())
 					: picojson::value(true);
-			e["params"] = d.get("params").is<picojson::object>()
-					? d.get("params") : picojson::value(picojson::object());
+			// Drop running-state indicators so the two sides normalize the same
+			// way the live snapshot does. A configuration saved before these were
+			// filtered — or hand-edited to carry one — still compares equal to a
+			// live setup that no longer reports it.
+			picojson::object params;
+			if (d.get("params").is<picojson::object>())
+				for (const std::pair<const std::string, picojson::value> &kv :
+						d.get("params").get<picojson::object>())
+					if (!is_runtime_status_param(kv.first))
+						params[kv.first] = kv.second;
+			e["params"] = picojson::value(params);
 			by_name[d.get("name").get<std::string>()] = picojson::value(e);
 		}
 	return picojson::value(by_name);

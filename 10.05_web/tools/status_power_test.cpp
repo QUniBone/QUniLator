@@ -106,10 +106,13 @@ static void test_power_gate(void) {
 	check(d.known && d.allowed && d.do_powercycle && !d.do_init
 			&& d.set_powered == -1, "powercycle -> power cycle only");
 
+	// restart reboots the CPU from its power-up vector: release HALT, then power
+	// cycle. A bare INIT would not restart the CPU, so restart drives the power
+	// cycle rather than a lone bus INIT.
 	d = dec("restart", true);
-	check(d.known && d.allowed && d.do_init && d.do_resume
-			&& !d.do_powercycle && d.set_powered == -1,
-			"restart -> INIT then resume");
+	check(d.known && d.allowed && d.do_resume && d.do_powercycle
+			&& !d.do_init && !d.do_halt && d.set_powered == -1,
+			"restart -> release HALT then power cycle");
 
 	d = dec("halt", true);
 	check(d.known && d.allowed && d.do_halt && !d.do_resume
@@ -124,10 +127,13 @@ static void test_power_gate(void) {
 	check(d.known && d.allowed && d.do_halt && d.set_powered == 0
 			&& !d.do_powercycle, "dc_off -> halt and clear powered");
 
-	// dc_on sets the flag and power cycles the machine up.
+	// dc_on sets the flag, releases HALT and power cycles the machine up. The
+	// resume clears the HALT a preceding dc_off left asserted, so the CPU comes
+	// up running rather than halted into ODT.
 	d = dec("dc_on", true);
-	check(d.known && d.allowed && d.do_powercycle && d.set_powered == 1,
-			"dc_on -> power cycle and set powered");
+	check(d.known && d.allowed && d.do_powercycle && d.do_resume
+			&& !d.do_halt && d.set_powered == 1,
+			"dc_on -> release HALT, power cycle and set powered");
 
 	d = dec("bogus", true);
 	check(!d.known, "unknown action -> not known");
@@ -141,8 +147,9 @@ static void test_power_gate(void) {
 	check(d.known && !d.allowed, "continue refused while powered off");
 
 	d = dec("dc_on", false);
-	check(d.known && d.allowed && d.do_powercycle && d.set_powered == 1,
-			"dc_on allowed while powered off, sets powered");
+	check(d.known && d.allowed && d.do_powercycle && d.do_resume
+			&& d.set_powered == 1,
+			"dc_on allowed while powered off, releases HALT and sets powered");
 
 	// init/powercycle are not run controls; they are not gated.
 	d = dec("init", false);

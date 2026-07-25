@@ -27,10 +27,15 @@ struct control_decision_c {
 };
 
 // Decide the effect of `action` when the machine's power flag is `powered`.
-// Actions: init, powercycle, restart (INIT then resume), halt, continue,
-// dc_on (power up + powercycle), dc_off (halt + power down). While powered is
-// false, restart/halt/continue are refused (allowed=false); dc_on is the only
+// Actions: init, powercycle, restart (release HALT + power cycle, so the CPU
+// restarts from the power-up vector), halt, continue, dc_on (release HALT +
+// power up), dc_off (halt + power down). While powered is false,
+// restart/halt/continue are refused (allowed=false); dc_on is the only
 // transition back up.
+//
+// The handler releases HALT (do_resume) before any power-up (do_init /
+// do_powercycle) and asserts HALT (do_halt) after it, so a machine brought up
+// by dc_on or restart comes up running rather than halted into ODT.
 control_decision_c control_decide(const std::string &action, bool powered);
 
 #endif // _WEBCONTROL_HPP_

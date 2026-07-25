@@ -371,6 +371,16 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 
 	{
 		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
+#if defined(QBUS)
+		// Release the HALT line before any power-up so a machine brought up by
+		// dc_on or restart comes up executing from the power-up vector. dc_off
+		// leaves HALT asserted on the bus; powering up with it still asserted
+		// would land the CPU in micro-ODT instead of running.
+		if (dec.do_resume) {
+			qunibus->set_halt(0);
+			webevents_note_halt(false);
+		}
+#endif
 		if (dec.do_init)
 			qunibus->init();
 		if (dec.do_powercycle)
@@ -379,10 +389,6 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		if (dec.do_halt) {
 			qunibus->set_halt(1);
 			webevents_note_halt(true);
-		}
-		if (dec.do_resume) {
-			qunibus->set_halt(0);
-			webevents_note_halt(false);
 		}
 #endif
 		if (dec.set_powered >= 0)

@@ -163,6 +163,13 @@ struct test_device_c : public device_c {
 			"disk image");
 	parameter_unsigned_c address = parameter_unsigned_c(this, "address", "addr",
 			false, "", "%o", "controller address", 18, 8);
+	// running-state parameters: an activity LED the device keeps as a settable
+	// LED number yet moves as I/O runs, and a read-only panel lamp. Neither is
+	// configuration; the snapshot and the modified comparison must ignore both.
+	parameter_unsigned_c activity_led = parameter_unsigned_c(this, "activityled",
+			"al", false, "", "%d", "activity LED number", 8, 10);
+	parameter_bool_c access_lamp = parameter_bool_c(this, "accesslamp", "acl",
+			true, "state of the ACCESS lamp");
 
 	test_device_c(const char *nm, const char *ty) {
 		name.value = nm;
@@ -334,6 +341,37 @@ int main(void) {
 		std::string err;
 		check(webconfigs_apply("cfgA", &rej, &err), "revert via apply(current)");
 		check(!modified_now(), "not modified after revert");
+	}
+
+	/* 3-runtime. running-state parameters — an activity LED (settable) and a
+	   panel lamp (read-only) — are not configuration. On a clean machine they
+	   move as the emulation runs; neither may read as an operator edit, and
+	   neither enters a saved snapshot. Without the runtime-status filter the
+	   settable activity LED would flip modified with no edit — the false
+	   positive the dashboard showed. */
+	{
+		check(!modified_now(), "clean before a running-state change");
+		rl0->activity_led.set(7);      // a settable running value diverges
+		rl0->access_lamp.value = true; // a read-only lamp lights, as the device does it
+		check(!modified_now(), "running-state change does not read as modified");
+
+		std::string err;
+		check(webconfigs_save("runcfg", &err), "save with running state active");
+		picojson::value snap;
+		check(read_json_file(cfg_path("runcfg"), &snap), "runcfg written");
+		const picojson::value *d0 = snap_device(snap, "rl0");
+		if (d0 != nullptr) {
+			const picojson::object &p = d0->get("params").get<picojson::object>();
+			check(p.count("activityled") == 0, "snapshot omits the activity LED");
+			check(p.count("accesslamp") == 0, "snapshot omits the access lamp");
+		}
+		// saving made runcfg current; restore the clean cfgA the next sections
+		// expect and confirm the reverted machine reads unmodified even with the
+		// lamp still lit.
+		std::vector<std::string> rej;
+		check(webconfigs_apply("cfgA", &rej, &err), "restore cfgA current");
+		check(webconfigs_current() == "cfgA", "cfgA current again");
+		check(!modified_now(), "clean cfgA after the running-state test");
 	}
 
 	/* 3b. stored-config editing via webconfigs_write: a bulk write of the whole
@@ -638,7 +676,7 @@ int main(void) {
 	}
 
 	// tidy the temp tree
-	for (const char *n : {"cfgA", "cfgB", "cfgC", "default", "logcfg",
+	for (const char *n : {"cfgA", "cfgB", "cfgC", "default", "logcfg", "runcfg",
 			"stored1", "live1", "live2"})
 		unlink(cfg_path(n).c_str());
 	rmdir(configs_dir.c_str());
