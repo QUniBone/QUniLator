@@ -144,9 +144,21 @@ export function patchParam(dev: string, name: string, value: unknown): void {
   applyParamValue(dev, name, value);
 }
 
+// Restore the newest machine-driven values onto a freshly rebuilt model. Only
+// status values are replayed — lamps, drive state and counters, which change
+// faster than /api/devices is refetched. Configuration values (enabled, image
+// and settable parameters) come authoritatively from the GET, so a stale cached
+// event must never be replayed over them: doing so snaps a just-toggled device
+// back to its previous state on the refresh that follows the toggle.
 export function replayEventValues(): void {
   EVENT_VALUES.forEach((value, key) => {
     const sep = key.indexOf('\0');
-    applyParamValue(key.slice(0, sep), key.slice(sep + 1), value);
+    const dev = key.slice(0, sep),
+      name = key.slice(sep + 1);
+    let isStatus = false;
+    walkDevs((d) => {
+      if (d.name === dev && statusParam(d, name)) isStatus = true;
+    });
+    if (isStatus) applyParamValue(dev, name, value);
   });
 }
