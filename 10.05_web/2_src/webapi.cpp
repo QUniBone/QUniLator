@@ -202,10 +202,22 @@ static void devices_list(struct mg_connection *conn) {
 			o["enabled"] = picojson::value(d->enabled.value);
 			o["parent"] = d->parent ?
 					picojson::value(d->parent->name.value) : picojson::value();
-			picojson::array params;
-			for (parameter_c *p : d->parameter)
-				params.push_back(param_to_json(p));
+			// two collections split by parameter kind: "params" is the
+			// configuration an operator sets and a snapshot captures;
+			// "statusparams" is running state the emulator drives (lamps,
+			// activity LEDs, the drive state machine, mirrored registers),
+			// read-only for display. Entry shape is the same in both. This is
+			// distinct from the "status" string above, the disk drive's
+			// computed verbal state.
+			picojson::array params, statusparams;
+			for (parameter_c *p : d->parameter) {
+				if (p->kind == parameter_c::PARAM_STATUS)
+					statusparams.push_back(param_to_json(p));
+				else
+					params.push_back(param_to_json(p));
+			}
 			o["params"] = picojson::value(params);
+			o["statusparams"] = picojson::value(statusparams);
 			devices.push_back(picojson::value(o));
 		}
 	}

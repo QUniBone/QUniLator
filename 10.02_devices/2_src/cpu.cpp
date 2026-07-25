@@ -262,6 +262,14 @@ cpu_c::cpu_c() :
     register_count = 0;
     swab_vbit.value = false;
 
+    // running state the CPU drives as it executes, not configuration: the RUN
+    // LED, the live program counter it writes back, and the executed-opcode
+    // count. The console switches (halt/start/continue, switch_reg) stay
+    // configuration — the operator sets them.
+    runmode.kind = parameter_c::PARAM_STATUS;
+    pc.kind = parameter_c::PARAM_STATUS;
+    cycle_count.kind = parameter_c::PARAM_STATUS;
+
     memset(&bus, 0, sizeof(bus));
     memset(&ka11, 0, sizeof(ka11));
     ka11.bus = &bus;

@@ -62,6 +62,11 @@ storagedrive_c::storagedrive_c(storagecontroller_c *_controller) :
 
     // default: shared filesystem not (yet) implementable for this disk type (MSCP)
     drive_type = drive_type_e::NONE ;
+
+    // running state the drive drives itself, not configuration: the activity
+    // LED index moves as I/O runs and the ACCESS lamp lights with transfers.
+    activity_led.kind = parameter_c::PARAM_STATUS;
+    access_lamp.kind = parameter_c::PARAM_STATUS;
 }
 
 storagedrive_c::~storagedrive_c() 

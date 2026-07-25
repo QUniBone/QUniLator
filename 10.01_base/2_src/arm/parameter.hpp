@@ -76,10 +76,21 @@ public:
 	// NULL when inactive.
 	static void (*change_hook)(parameter_c *param);
 
+	// What a parameter represents, independent of whether the API may write it
+	// (that is "readonly"). PARAM_CONFIG is operator/machine setup that belongs
+	// in a saved configuration; PARAM_STATUS is running state the emulator
+	// drives on its own as the machine runs — panel lamps and activity LEDs, a
+	// drive's state machine and rotation, link-activity and mirrored registers.
+	// Status parameters stay out of a configuration snapshot, so an untouched
+	// machine never reads "modified" just because its emulation moved. Defaults
+	// to PARAM_CONFIG, so nothing is misclassified by omission.
+	enum parameter_kind_e { PARAM_CONFIG, PARAM_STATUS };
+
 	parameterized_c *parameterized; // link to parent object
 	std::string name;
 	std::string shortname;
 	bool readonly;
+	parameter_kind_e kind = PARAM_CONFIG;
 	std::string info; // help text
 	std::string unit; // "MB",
 	std::string format; // printf, scanf

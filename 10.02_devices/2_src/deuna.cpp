@@ -305,6 +305,15 @@ deuna_c::deuna_c() : qunibusdevice_c()
     type_name.value = "DEUNA";
     log_label = "deuna";
 
+    // running state the controller drives itself, not configuration: the
+    // activity LED/lamp move with traffic and the frame/error counters accrue.
+    activity_led.kind = parameter_c::PARAM_STATUS;
+    activity_lamp.kind = parameter_c::PARAM_STATUS;
+    stat_rx_frames.kind = parameter_c::PARAM_STATUS;
+    stat_tx_frames.kind = parameter_c::PARAM_STATUS;
+    stat_rx_errors.kind = parameter_c::PARAM_STATUS;
+    stat_tx_errors.kind = parameter_c::PARAM_STATUS;
+
     set_default_bus_params(DEUNA_DEFAULT_ADDR, DEUNA_DEFAULT_SLOT, DEUNA_DEFAULT_VECTOR, DEUNA_DEFAULT_LEVEL);
     dma_request.set_priority_slot(priority_slot.value);
     dma_desc_request.set_priority_slot(priority_slot.value);

@@ -127,6 +127,10 @@ delqa_c::delqa_c() :
     deqna_lock.value = false;
     activity_led.value = 3;
 
+    // running state driven by traffic, not configuration
+    activity_led.kind = parameter_c::PARAM_STATUS;
+    activity_lamp.kind = parameter_c::PARAM_STATUS;
+
     memset(rbdl, 0, sizeof(rbdl));
     memset(xbdl, 0, sizeof(xbdl));
     memset(&setup, 0, sizeof(setup));

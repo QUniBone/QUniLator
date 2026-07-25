@@ -174,6 +174,10 @@ struct test_device_c : public device_c {
 	test_device_c(const char *nm, const char *ty) {
 		name.value = nm;
 		type_name.value = ty;
+		// running state the emulator drives, classified by kind — the settable
+		// activity LED and the read-only access lamp are both PARAM_STATUS
+		activity_led.kind = parameter_c::PARAM_STATUS;
+		access_lamp.kind = parameter_c::PARAM_STATUS;
 	}
 	void on_power_changed(signal_edge_enum, signal_edge_enum) override {}
 	void on_init_changed(void) override {}
@@ -344,11 +348,12 @@ int main(void) {
 	}
 
 	/* 3-runtime. running-state parameters — an activity LED (settable) and a
-	   panel lamp (read-only) — are not configuration. On a clean machine they
-	   move as the emulation runs; neither may read as an operator edit, and
-	   neither enters a saved snapshot. Without the runtime-status filter the
-	   settable activity LED would flip modified with no edit — the false
-	   positive the dashboard showed. */
+	   panel lamp (read-only) — are PARAM_STATUS, not configuration. On a clean
+	   machine they move as the emulation runs; neither may read as an operator
+	   edit, and neither enters a saved snapshot. The settable activity LED is
+	   excluded by kind, not by its name — a settable status value would
+	   otherwise flip modified with no edit, the false positive the dashboard
+	   showed. */
 	{
 		check(!modified_now(), "clean before a running-state change");
 		rl0->activity_led.set(7);      // a settable running value diverges
@@ -362,8 +367,8 @@ int main(void) {
 		const picojson::value *d0 = snap_device(snap, "rl0");
 		if (d0 != nullptr) {
 			const picojson::object &p = d0->get("params").get<picojson::object>();
-			check(p.count("activityled") == 0, "snapshot omits the activity LED");
-			check(p.count("accesslamp") == 0, "snapshot omits the access lamp");
+			check(p.count("activityled") == 0, "snapshot omits the activity LED by kind");
+			check(p.count("accesslamp") == 0, "snapshot omits the access lamp by kind");
 		}
 		// saving made runcfg current; restore the clean cfgA the next sections
 		// expect and confirm the reverted machine reads unmodified even with the
@@ -372,6 +377,41 @@ int main(void) {
 		check(webconfigs_apply("cfgA", &rej, &err), "restore cfgA current");
 		check(webconfigs_current() == "cfgA", "cfgA current again");
 		check(!modified_now(), "clean cfgA after the running-state test");
+	}
+
+	/* 3-legacy. a configuration written by the old logic — carrying a settable
+	   running-state parameter (activityled) the current snapshot no longer
+	   emits — must still compare unmodified against the live setup. The
+	   comparison drops it by the live device's kind, not its name, so an
+	   untouched machine loaded from such a file reads modified:false. */
+	{
+		// hand-write cfgA's device set plus a stray activityled on rl0
+		picojson::value base;
+		check(read_json_file(cfg_path("cfgA"), &base), "read cfgA to seed a legacy file");
+		picojson::array &devs = base.get<picojson::object>()["devices"].get<picojson::array>();
+		for (picojson::value &d : devs)
+			if (d.get("name").is<std::string>() && d.get("name").get<std::string>() == "rl0") {
+				if (!d.get("params").is<picojson::object>())
+					d.get<picojson::object>()["params"] = picojson::value(picojson::object());
+				d.get<picojson::object>()["params"].get<picojson::object>()["activityled"] =
+						picojson::value(std::string("7"));
+			}
+		{
+			std::ofstream out(cfg_path("legacy").c_str());
+			out << base.serialize();
+		}
+		std::vector<std::string> rej;
+		std::string err;
+		check(webconfigs_apply("legacy", &rej, &err), "apply legacy cfg carrying activityled");
+		check(webconfigs_current() == "legacy", "legacy is current");
+		// the live rl0 activity LED may sit anywhere; the saved status param must
+		// not count as an operator edit
+		rl0->activity_led.set(2);
+		check(!modified_now(), "legacy status param does not read as modified");
+
+		check(webconfigs_apply("cfgA", &rej, &err), "restore cfgA current after legacy test");
+		check(webconfigs_current() == "cfgA", "cfgA current after legacy test");
+		check(!modified_now(), "clean cfgA after the legacy test");
 	}
 
 	/* 3b. stored-config editing via webconfigs_write: a bulk write of the whole
@@ -676,8 +716,8 @@ int main(void) {
 	}
 
 	// tidy the temp tree
-	for (const char *n : {"cfgA", "cfgB", "cfgC", "default", "logcfg", "runcfg",
-			"stored1", "live1", "live2"})
+	for (const char *n : {"cfgA", "cfgB", "cfgC", "default", "legacy", "logcfg",
+			"runcfg", "stored1", "live1", "live2"})
 		unlink(cfg_path(n).c_str());
 	rmdir(configs_dir.c_str());
 	rmdir(dir);

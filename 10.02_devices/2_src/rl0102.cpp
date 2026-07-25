@@ -42,6 +42,14 @@ RL0102_c::RL0102_c(storagecontroller_c *_controller) :    storagedrive_c(_contro
     cover_open.value = false;
     spinup_delay.value = false; // ready at once unless the delay is asked for
 
+    // running state the drive drives on its own — the spindle speed, the
+    // internal state machine and the front-panel lamps — is not configuration.
+    rotation_umin.kind = parameter_c::PARAM_STATUS;
+    state.kind = parameter_c::PARAM_STATUS;
+    load_lamp.kind = parameter_c::PARAM_STATUS;
+    ready_lamp.kind = parameter_c::PARAM_STATUS;
+    fault_lamp.kind = parameter_c::PARAM_STATUS;
+    writeprotect_lamp.kind = parameter_c::PARAM_STATUS;
 }
 
 // return false, if illegal parameter value.

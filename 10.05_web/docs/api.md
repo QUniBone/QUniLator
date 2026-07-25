@@ -60,15 +60,34 @@ Snapshot of every device and its parameters.
     {"name": "address", "shortname": "addr", "type": "unsigned",
      "value": 63944, "base": 8, "bitwidth": 18,
      "readonly": false, "info": "controller address"},
+    ...],
+  "statusparams": [
+    {"name": "activityled", "shortname": "al", "type": "unsigned",
+     "value": 0, "base": 10, "bitwidth": 8,
+     "readonly": false, "info": "Number of LED to used for activity display."},
     ...]}]
 ```
 
-Parameter `type` is one of `string`, `bool`, `unsigned`, `unsigned64`,
-`double`. Unsigned parameters carry `base` (usually 8) and `bitwidth`.
-Drives reference their controller through `parent`.
+A device's parameters come in two collections, split by what the value
+represents:
+
+- `params` — the configuration an operator sets and a saved configuration
+  captures (address, image, vector, baud rate, mode, …).
+- `statusparams` — running state the emulator drives on its own as the machine
+  runs: panel lamps, activity LEDs, a drive's state machine and rotation,
+  network counters, mirrored registers. Read-only for display; never part of a
+  configuration snapshot or the `modified` comparison.
+
+The split is by kind, not by writability: a status value can still be writable
+(a settable activity-LED index) yet stays in `statusparams`, so it never leaks
+into the configuration. Both collections use the same entry shape. Parameter
+`type` is one of `string`, `bool`, `unsigned`, `unsigned64`, `double`. Unsigned
+parameters carry `base` (usually 8) and `bitwidth`. Drives reference their
+controller through `parent`.
 
 Disk drives (category `disk`) additionally carry `removable`, `locked`, and a
-computed, read-only `status` — the drive's verbal runtime state, one of:
+computed, read-only `status` string — the drive's verbal runtime state (distinct
+from the `statusparams` collection), one of:
 
 | value | meaning |
 |---|---|

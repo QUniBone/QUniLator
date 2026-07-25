@@ -172,22 +172,22 @@ static bool is_settable(parameter_c *p) {
 	return it == parameter_defaults.end() ? !p->readonly : it->second.writable;
 }
 
-// A parameter that reports the machine's running state rather than its setup:
-// panel lamps, activity LEDs, the drive state machine and its rotation. These
-// change on their own as the machine runs, so they belong to the live view, not
-// to a configuration. Most are already read-only and excluded on that ground,
-// but a device may expose a running-state value as writable (an activity LED is
-// a settable LED number, a mapped register can read back its live value); such a
-// value diverging from a saved snapshot must never read as an operator edit.
-// The comparison keeps only genuine configuration, so an untouched machine
-// stays unmodified whatever its devices are doing.
-static bool is_runtime_status_param(const std::string &name) {
-	size_t n = name.size();
-	if (n >= 4 && name.compare(n - 4, 4, "lamp") == 0)
-		return true;
-	if (n >= 3 && name.compare(n - 3, 3, "led") == 0)
-		return true;
-	return name == "state" || name == "rotation";
+// The kind a live device assigns a parameter, looked up by device and parameter
+// name. A configuration saved by older logic may still carry a running-state
+// parameter (an activity LED, a mirrored register); comparing against the live
+// setup, which no longer reports it, needs the live device's own classification
+// rather than any guess from the name. A name the registry no longer knows is
+// treated as configuration and compared literally.
+static parameter_c::parameter_kind_e registry_param_kind(const std::string &devname,
+		const std::string &paramname) {
+	std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
+	for (device_c *dev : device_c::mydevices) {
+		if (strcasecmp(dev->name.value.c_str(), devname.c_str()) != 0)
+			continue;
+		parameter_c *p = dev->param_by_name(paramname);
+		return p != nullptr ? p->kind : parameter_c::PARAM_CONFIG;
+	}
+	return parameter_c::PARAM_CONFIG;
 }
 
 // Put a device back the way it was constructed. Parameters named in "keep" are
@@ -232,10 +232,11 @@ static picojson::value snapshot_devices_locked(void) {
 			// live per-device knob
 			if (p->name == "verbosity")
 				continue;
-			// running-state indicators (lamps, activity LEDs, the drive state
-			// machine) are not configuration; keeping them out of the snapshot
-			// keeps an untouched, running machine from reading modified
-			if (is_runtime_status_param(p->name))
+			// running-state parameters (lamps, activity LEDs, the drive state
+			// machine, mirrored registers) are not configuration by kind;
+			// keeping them out of the snapshot keeps an untouched, running
+			// machine from reading modified
+			if (p->kind == parameter_c::PARAM_STATUS)
 				continue;
 			if (!is_settable(p) || is_default(p))
 				continue;
@@ -317,15 +318,17 @@ static picojson::value canonical(const picojson::value &snapshot) {
 			e["enabled"] = d.get("enabled").is<bool>()
 					? picojson::value(d.get("enabled").get<bool>())
 					: picojson::value(true);
-			// Drop running-state indicators so the two sides normalize the same
+			// Drop running-state parameters so the two sides normalize the same
 			// way the live snapshot does. A configuration saved before these were
 			// filtered — or hand-edited to carry one — still compares equal to a
-			// live setup that no longer reports it.
+			// live setup that no longer reports it: the live device's own kind,
+			// not the parameter name, decides.
+			std::string devname = d.get("name").get<std::string>();
 			picojson::object params;
 			if (d.get("params").is<picojson::object>())
 				for (const std::pair<const std::string, picojson::value> &kv :
 						d.get("params").get<picojson::object>())
-					if (!is_runtime_status_param(kv.first))
+					if (registry_param_kind(devname, kv.first) != parameter_c::PARAM_STATUS)
 						params[kv.first] = kv.second;
 			e["params"] = picojson::value(params);
 			by_name[d.get("name").get<std::string>()] = picojson::value(e);
