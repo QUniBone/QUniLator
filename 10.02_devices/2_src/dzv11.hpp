@@ -35,6 +35,10 @@
 #define DZV11_VECTOR 0300   // RCV +0, XMT +4
 #define DZV11_LEVEL  05
 
+// Default TCP listen port base: line i listens on DZV11_TCP_PORT_BASE + i, so an
+// enabled device accepts a client on a distinct port without per-line setup.
+#define DZV11_TCP_PORT_BASE 4000
+
 // register indices (each a word; read and write meanings differ)
 enum dz_reg_index {
 	dz_idx_csr = 0,      // CSR       (r/w)

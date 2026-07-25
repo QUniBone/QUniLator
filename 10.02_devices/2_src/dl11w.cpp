@@ -107,6 +107,12 @@ slu_c::slu_c() : qunibusdevice_c()
 	baudrate.value = 9600;
 	mode.value = "8N1";
 
+	// slu_c backs both the console DL11s (which bridge ttyS2 with an empty
+	// tcp_role) and independent DL11-over-TCP lines. The class keeps the empty
+	// (ttyS2) tcp_role default so the console SLUs are unchanged; a TCP line sets
+	// tcp_role=listen and picks up this default port. tcp_host is for connect-out.
+	tcp_port.value = DL11_TCP_PORT_BASE;
+
 	rs232adapter.rs232 = &rs232;
 }
 

@@ -154,6 +154,24 @@ private:
 
 int main(void)
 {
+	/* 0. library defaults: role is LISTEN, so a line configured with only a
+	   valid port binds and accepts — the device muxes rely on this to make an
+	   enabled line usable from its default tcp_role/tcp_port alone. */
+	{
+		serial_tcp_line_c line;
+		check(line.role == serial_tcp_line_c::ROLE_LISTEN,
+				"default role is LISTEN");
+		line.port = 0; // kernel-assigned, standing in for a device's default port
+		check(line.open(), "line with default role opens on a valid port");
+		telnet_client c;
+		check(c.connect_to(line.local_port()),
+				"a client connects to the default-role line");
+		check(wait_until([&] { return line.client_connected(); }, 1000),
+				"default-role line accepts the client");
+		c.close_it();
+		line.close();
+	}
+
 	/* 1. listen: one client, data both ways, second refused */
 	{
 		serial_tcp_line_c line;

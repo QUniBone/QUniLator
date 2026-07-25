@@ -58,6 +58,9 @@
 #define SLU_LEVEL	04
 #define SLU_VECTOR	0300
 #endif
+// Default TCP listen port for an independent DL11 carried over TCP.
+#define DL11_TCP_PORT_BASE 4200
+
 #define LTC_ADDR	0777546
 #define LTC_SLOT	(SLU_SLOT+2) 
 #define LTC_LEVEL   06

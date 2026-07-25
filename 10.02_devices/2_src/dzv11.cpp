@@ -69,6 +69,14 @@ dzv11_c::dzv11_c() : qunibusdevice_c()
 	csr_tie = csr_sae = csr_sa = csr_rie = csr_mse = csr_maint = false;
 	csr_tline = 0;
 	csr_trdy = false;
+
+	// Usable defaults: every line listens on a distinct TCP port, so an enabled
+	// device accepts a client without any per-line configuration. tcp_host stays
+	// empty (used only for connect-out).
+	for (unsigned i = 0; i < DZ_LINE_COUNT; i++) {
+		tcp_role[i].value = "listen";
+		tcp_port[i].value = DZV11_TCP_PORT_BASE + i;
+	}
 }
 
 dzv11_c::~dzv11_c()

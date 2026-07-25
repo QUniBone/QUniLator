@@ -56,6 +56,14 @@ dhv11_c::dhv11_c() : qunibusdevice_c()
 	memset(chan, 0, sizeof chan);
 	csr_rx_ie = csr_tx_ie = csr_tx_act = false;
 	csr_channel = 0;
+
+	// Usable defaults: every line listens on a distinct TCP port, so an enabled
+	// device accepts a client without any per-line configuration. tcp_host stays
+	// empty (used only for connect-out).
+	for (unsigned i = 0; i < DHV_LINE_COUNT; i++) {
+		tcp_role[i].value = "listen";
+		tcp_port[i].value = DHV11_TCP_PORT_BASE + i;
+	}
 }
 
 dhv11_c::~dhv11_c()

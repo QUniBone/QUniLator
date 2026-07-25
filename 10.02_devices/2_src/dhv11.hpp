@@ -38,6 +38,10 @@
 #define DHV11_VECTOR 0300   // RCV +0, XMT +4
 #define DHV11_LEVEL  05
 
+// Default TCP listen port base: line i listens on DHV11_TCP_PORT_BASE + i, so an
+// enabled device accepts a client on a distinct port without per-line setup.
+#define DHV11_TCP_PORT_BASE 4100
+
 enum dhv_reg_index {
 	dhv_idx_csr = 0,   // CSR      control/status
 	dhv_idx_rbuf,      // RBUF     receive FIFO (read)
