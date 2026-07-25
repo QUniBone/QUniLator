@@ -34,7 +34,10 @@
 
 // DEC floating defaults for the first DHV11
 #define DHV11_ADDR   0760440
-#define DHV11_SLOT   20
+// Two arbitration slots per mux (RCV at slot, XMT at slot+1); the two-instance
+// pool spans slot..slot+3. Base 12 sits just above the DZV11 pool (4..11) and
+// clear of uda (20) and delqa (21) on level 5 — a shared slot loses interrupts.
+#define DHV11_SLOT   12
 #define DHV11_VECTOR 0300   // RCV +0, XMT +4
 #define DHV11_LEVEL  05
 

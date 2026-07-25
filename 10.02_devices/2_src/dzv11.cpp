@@ -250,11 +250,16 @@ void dzv11_c::set_rbuf_dati(void)
 // caller holds state_mutex
 void dzv11_c::set_msr_dati(void)
 {
-	// carrier-detect per line = that line has a connected TCP client
+	// carrier-detect per line = that line has a connected TCP client. The
+	// driver reads carrier from the MSR high byte to release a line's open(),
+	// so a connected client asserts CD there; without it getty blocks forever.
 	uint16_t val = 0;
 	for (unsigned i = 0; i < DZ_LINE_COUNT; i++)
 		if (line_open[i] && tcp_line[i].client_connected())
-			val |= (1u << i);
+			val |= (1u << (DZ_MSR_CD_SHIFT + i));
+	if (val == msr_dati_value)
+		return;  // carrier unchanged: skip the register write and its log line
+	msr_dati_value = val;
 	set_register_dati_value(reg_msr_tdr, val, __func__);
 }
 
@@ -395,6 +400,7 @@ void dzv11_c::reset(void)
 	rcvintr_request.edge_detect_reset();
 	xmtintr_request.edge_detect_reset();
 	set_rbuf_dati();
+	msr_dati_value = 0xffff;  // register was just zeroed; force a re-write
 	set_msr_dati();
 	update_csr_and_INTR();
 	pthread_mutex_unlock(&state_mutex);
@@ -462,8 +468,22 @@ void dzv11_c::worker_xmt(void)
 	pthread_mutex_lock(&state_mutex);
 	while (!workers_terminate) {
 		if (!csr_mse) {
+			// scanner off: the CPU cleared MSE, so TRDY must drop with it
+			if (csr_trdy) {
+				csr_trdy = false;
+				update_csr_and_INTR();
+			}
 			pthread_cond_wait(&xmt_cond, &state_mutex);
 			continue;
+		}
+		// A line presented as ready that the CPU answered by disabling its
+		// transmitter (clearing its TCR bit) instead of loading a character:
+		// drop TRDY so the scanner moves on. Without this the transmit
+		// interrupt stays asserted and storms the CPU after every RTI, which
+		// starves the console and hangs the guest.
+		if (csr_trdy && !tdr_pending && !tx_enabled[csr_tline]) {
+			csr_trdy = false;
+			update_csr_and_INTR();
 		}
 		if (!csr_trdy) {
 			if (select_next_tx_line()) {

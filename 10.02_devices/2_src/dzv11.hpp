@@ -31,7 +31,12 @@
 
 // DEC floating defaults for the first DZV11
 #define DZV11_ADDR   0760100
-#define DZV11_SLOT   20
+// Each mux uses two arbitration slots (RCV at slot, XMT at slot+1), and the
+// pool steps four instances by two, so a DZV11 pool spans slot..slot+7. Base 4
+// keeps all four instances clear of the console DL11 (1,2), the KW11 (3), and
+// the disk/network controllers (uda 20, delqa 21) that share level 5; a slot
+// shared with another device's request drops one device's interrupts.
+#define DZV11_SLOT   4
 #define DZV11_VECTOR 0300   // RCV +0, XMT +4
 #define DZV11_LEVEL  05
 
@@ -78,6 +83,11 @@ enum dz_reg_index {
 
 // TDR: 7..0 transmit data, 8..11 break control per line
 #define DZ_TDR_DATA   0000377
+
+// MSR bits (read at base+6): 0..3 = ring per line, 8..11 = carrier detect per
+// line. The driver takes carrier from the high byte to gate a line's open().
+#define DZ_MSR_RI_SHIFT 0
+#define DZ_MSR_CD_SHIFT 8
 
 class dzv11_c: public qunibusdevice_c {
 public:
@@ -154,6 +164,12 @@ private:
 	// receiver silo (FIFO of RBUF words)
 	std::deque<uint16_t> silo;
 	unsigned silo_alarm_count;        // chars since last silo-alarm
+
+	// last MSR value written to the register. The receiver scan refreshes modem
+	// status every 500 us; carrier only moves when a client connects or drops,
+	// so the register is rewritten (and logged) only on a real change. 0xffff is
+	// an impossible MSR, so the first refresh always writes the true value.
+	uint16_t msr_dati_value = 0xffff;
 
 	bool get_rcv_intr_level(void);
 	bool get_xmt_intr_level(void);
