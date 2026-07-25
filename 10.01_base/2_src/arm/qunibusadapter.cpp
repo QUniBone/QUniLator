@@ -150,6 +150,21 @@ bool qunibusadapter_c::register_device(qunibusdevice_c& device)
     assert(device.handle == 0); // must not be installed already
     assert(device.register_count <= MAX_IOPAGE_REGISTERS_PER_DEVICE);
 
+    // Refuse a device whose register configuration the bus model forbids,
+    // rather than aborting the whole emulator (register_device runs at enable
+    // time from a user action). A writable register that is active on DATI but
+    // passive on DATO cannot work: the DATO value would be overwritten from the
+    // flip-flops on the next DATI. Reject before mutating any adapter state.
+    for (unsigned r = 0; r < device.register_count; r++) {
+        qunibusdevice_register_t *reg = &(device.registers[r]);
+        if (reg->active_on_dati && !reg->active_on_dato && reg->writable_bits != 0) {
+            ERROR("device %s register idx %u misconfigured (writable, active on "
+                  "DATI, passive on DATO); refusing to install",
+                  device.name.value.c_str(), r);
+            return false;
+        }
+    }
+
     // assign to "backplane position"
     // search next free "slot"
     device_handle = 1; // reserve 0 for special use

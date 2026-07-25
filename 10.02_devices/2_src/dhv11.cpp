@@ -44,11 +44,14 @@ dhv11_c::dhv11_c() : qunibusdevice_c()
 		reg[i]->reset_value = 0;
 		reg[i]->writable_bits = 0xffff;
 	}
-	// RBUF read pops the receive FIFO; it is not written
+	// RBUF read pops the receive FIFO; it is read-only (a writable register
+	// active on DATI but passive on DATO is rejected by register_device).
 	reg[dhv_idx_rbuf]->active_on_dati = true;
 	reg[dhv_idx_rbuf]->active_on_dato = false;
+	reg[dhv_idx_rbuf]->writable_bits = 0;
 	// STAT is a read-only status word kept current by the worker
 	reg[dhv_idx_stat]->active_on_dato = false;
+	reg[dhv_idx_stat]->writable_bits = 0;
 
 	memset(chan, 0, sizeof chan);
 	csr_rx_ie = csr_tx_ie = csr_tx_act = false;

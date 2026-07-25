@@ -114,9 +114,15 @@ void qunibusdevice_c::set_default_bus_params(uint32_t _default_base_addr,
 	intr_level.set(default_intr_level);
 }
 
-void qunibusdevice_c::install(void) 
+void qunibusdevice_c::install(void)
 {
-	qunibusadapter->register_device(*this); // -> device_c ?
+	// registration is refused for a bad register configuration or an exhausted
+	// bus, rather than aborting; leave the device off the bus instead of
+	// powering on an unregistered device.
+	if (!qunibusadapter->register_device(*this)) {
+		ERROR("device %s not installed: registration refused", name.value.c_str());
+		return;
+	}
 	// now has handle
 
 	// Reset device by generating DCLO power cycle.
