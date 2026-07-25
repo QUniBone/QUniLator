@@ -38,7 +38,7 @@
 // shared with another device's request drops one device's interrupts.
 #define DZV11_SLOT   4
 #define DZV11_VECTOR 0300   // RCV +0, XMT +4
-#define DZV11_LEVEL  05
+#define DZV11_LEVEL  04     // DZV11 asserts BIRQ4 (TM: priority 200 = level 4)
 
 // Default TCP listen port base: line i listens on DZV11_TCP_PORT_BASE + i, so an
 // enabled device accepts a client on a distinct port without per-line setup.
@@ -75,6 +75,8 @@ enum dz_reg_index {
 
 // LPR bits (write at base+2)
 #define DZ_LPR_LINE   0000007  // 2..0 line number
+#define DZ_LPR_PENABLE 0000100 // 6 parity enable
+#define DZ_LPR_ODD    0000200  // 7 odd parity (with PENABLE)
 #define DZ_LPR_RXON   0010000  // 12 receiver enable for the line
 
 // TCR bits: 0..3 = transmit enable per line, 8..11 = DTR per line
@@ -83,6 +85,7 @@ enum dz_reg_index {
 
 // TDR: 7..0 transmit data, 8..11 break control per line
 #define DZ_TDR_DATA   0000377
+#define DZ_TDR_BREAK_SHIFT 8   // 8..11 force line 0..3 output to space
 
 // MSR bits (read at base+6): 0..3 = ring per line, 8..11 = carrier detect per
 // line. The driver takes carrier from the high byte to gate a line's open().
@@ -161,6 +164,11 @@ private:
 	bool tx_enabled[DZ_LINE_COUNT];   // TCR line enable
 	bool line_open[DZ_LINE_COUNT];    // this line's TCP transport is running
 
+	// per-line format, from the LPR; drives received parity/framing status
+	bool parity_enable[DZ_LINE_COUNT]; // LPR 06
+	bool odd_parity[DZ_LINE_COUNT];    // LPR 07 (with parity_enable)
+	uint8_t tx_break;                  // TDR 08..11: lines forced to space
+
 	// receiver silo (FIFO of RBUF words)
 	std::deque<uint16_t> silo;
 	unsigned silo_alarm_count;        // chars since last silo-alarm
@@ -179,8 +187,10 @@ private:
 	void eval_tcr_dato(void);
 	void eval_tdr_dato(void);
 	void set_rbuf_dati(void);         // top-of-silo -> RBUF read value
+	void silo_push(uint8_t line, uint8_t ch, uint16_t err_bits); // enqueue a rx char
 	void set_msr_dati(void);          // modem status from TCP carrier
 	bool select_next_tx_line(void);   // scanner: pick a ready enabled line
+	void scan_tx_trdy(void);          // advance TRDY state (present/drop) now
 
 	void open_lines(void);
 	void close_lines(void);

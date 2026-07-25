@@ -36,28 +36,37 @@ dzv11_c::dzv11_c() : qunibusdevice_c()
 	reg_csr->active_on_dati = false; // status polled
 	reg_csr->active_on_dato = true;
 	reg_csr->reset_value = 0;
-	reg_csr->writable_bits = 0xffff;
+	// TM Table 3-2: read/write bits are MAINT(3), CLR(4), MSE(5), RIE(6),
+	// SAE(12) and TIE(14). RDONE(7), TLINE(8-9), SA(13), TRDY(15) are read-only
+	// (recomputed in update_csr_and_INTR); 00-02 and 10-11 read as 0.
+	reg_csr->writable_bits = 0050170;
 
 	reg_rbuf_lpr = &(this->registers[dz_idx_rbuf_lpr]);
 	strcpy(reg_rbuf_lpr->name, "RBUF"); // read RBUF, write LPR
 	reg_rbuf_lpr->active_on_dati = true;  // read pops the silo
 	reg_rbuf_lpr->active_on_dato = true;  // write is LPR
 	reg_rbuf_lpr->reset_value = 0;
-	reg_rbuf_lpr->writable_bits = 0xffff;
+	// LPR (write) is line(0-1), char length(3-4), stop(5), parity(6-7),
+	// baud(8-11), receiver enable(12); the read side returns the silo entry.
+	reg_rbuf_lpr->writable_bits = 0017777;
 
 	reg_tcr = &(this->registers[dz_idx_tcr]);
 	strcpy(reg_tcr->name, "TCR");
 	reg_tcr->active_on_dati = false;
 	reg_tcr->active_on_dato = true;
 	reg_tcr->reset_value = 0;
-	reg_tcr->writable_bits = 0xffff;
+	// TM 3.2.4: line-enable(0-3) and DTR(8-11) are read/write; 04-07 and 12-15
+	// are unused and read as 0.
+	reg_tcr->writable_bits = 0007417;
 
 	reg_msr_tdr = &(this->registers[dz_idx_msr_tdr]);
 	strcpy(reg_msr_tdr->name, "MSR"); // read MSR, write TDR
 	reg_msr_tdr->active_on_dati = false; // modem status polled
 	reg_msr_tdr->active_on_dato = true;  // write is TDR
 	reg_msr_tdr->reset_value = 0;
-	reg_msr_tdr->writable_bits = 0xffff;
+	// TDR (write) is transmit data(0-7) and break(8-11); the read side returns
+	// the modem status register (ring 0-3, carrier 8-11).
+	reg_msr_tdr->writable_bits = 0007777;
 
 	memset(rx_enabled, 0, sizeof rx_enabled);
 	memset(tx_enabled, 0, sizeof tx_enabled);
@@ -247,6 +256,26 @@ void dzv11_c::set_rbuf_dati(void)
 	set_register_dati_value(reg_rbuf_lpr, val, __func__);
 }
 
+// caller holds state_mutex; enqueue a received character into the silo FIFO with
+// its line number and any error bits (TM Table 3-3). A full silo flags Overrun,
+// and every 16th entry raises the Silo Alarm when armed (SAE).
+void dzv11_c::silo_push(uint8_t line, uint8_t ch, uint16_t err_bits)
+{
+	uint16_t entry = DZ_RBUF_VALID
+			| ((uint16_t) (line & 3) << DZ_RBUF_RLINE_SHIFT) | err_bits | ch;
+	if (silo.size() >= 64) {
+		entry |= DZ_RBUF_OVR; // silo full: mark overrun on the newest kept entry
+		silo.pop_back();
+	}
+	silo.push_back(entry);
+	if (++silo_alarm_count >= 16) {
+		silo_alarm_count = 0;
+		if (csr_sae)
+			csr_sa = true;
+	}
+	set_rbuf_dati();
+}
+
 // caller holds state_mutex
 void dzv11_c::set_msr_dati(void)
 {
@@ -266,31 +295,55 @@ void dzv11_c::set_msr_dati(void)
 void dzv11_c::eval_csr_dato(void)
 {
 	uint16_t val = get_register_dato_value(reg_csr);
-	csr_tie = val & DZ_CSR_TIE;
-	csr_sae = val & DZ_CSR_SAE;
-	csr_rie = val & DZ_CSR_RIE;
-	csr_maint = val & DZ_CSR_MAINT;
-	bool new_mse = val & DZ_CSR_MSE;
 
 	if (val & DZ_CSR_CLR) {
-		// master clear: silo, scanner, status
-		silo.clear();
-		silo_alarm_count = 0;
+		// Master Clear (CSR 04) generates "initialize": TM 3.2.1 — "All bits in
+		// the CSR are cleared by ... setting device Master Clear", along with
+		// the silos, UARTs and the transmitter line-enables (TCR low byte).
+		// The other bits in this same write do not survive it. RBUF bits 00-14,
+		// the TCR high byte (DTR), and the MSR are preserved (handled by BINIT
+		// in reset(); not touched here).
+		csr_tie = csr_sae = csr_rie = csr_maint = csr_mse = false;
 		csr_sa = false;
 		csr_trdy = false;
 		csr_tline = 0;
 		tdr_pending = false;
+		silo.clear();
+		silo_alarm_count = 0;
+		memset(tx_enabled, 0, sizeof tx_enabled);
+		tx_break = 0;  // TDR/break register cleared by Master Clear (TM 3.2.6)
+		// clear the TCR line-enables in the read-back; the DTR high byte survives
+		set_register_dati_value(reg_tcr,
+				reg_tcr->pru_iopage_register->value & 0007400, __func__);
+		set_rbuf_dati();
+		return;
+	}
+
+	csr_tie = val & DZ_CSR_TIE;
+	csr_sae = val & DZ_CSR_SAE;
+	csr_rie = val & DZ_CSR_RIE;
+	csr_maint = val & DZ_CSR_MAINT;
+	bool was_mse = csr_mse;
+	csr_mse = val & DZ_CSR_MSE;
+	if (was_mse && !csr_mse) {
+		// TM 3.2.1 (CSR 05): clearing MSE clears the received-character silos
+		// (and with them Receiver Done / the Silo Alarm).
+		silo.clear();
+		silo_alarm_count = 0;
+		csr_sa = false;
 		set_rbuf_dati();
 	}
-	csr_mse = new_mse;
 }
 
 void dzv11_c::eval_lpr_dato(void)
 {
 	uint16_t val = get_register_dato_value(reg_rbuf_lpr);
 	unsigned line = val & DZ_LPR_LINE;
-	if (line < DZ_LINE_COUNT)
+	if (line < DZ_LINE_COUNT) {
 		rx_enabled[line] = (val & DZ_LPR_RXON) != 0;
+		parity_enable[line] = (val & DZ_LPR_PENABLE) != 0;
+		odd_parity[line] = (val & DZ_LPR_ODD) != 0;
+	}
 }
 
 void dzv11_c::eval_tcr_dato(void)
@@ -298,15 +351,56 @@ void dzv11_c::eval_tcr_dato(void)
 	uint16_t val = get_register_dato_value(reg_tcr);
 	for (unsigned i = 0; i < DZ_LINE_COUNT; i++)
 		tx_enabled[i] = (val & (1u << i)) != 0;
-	// DTR bits (8..11) drive modem control; not modelled on the TCP transport.
+	// TCR line-enable (00-03) and DTR (08-11) are read/write (TM Table 3-4), so
+	// the register reads back what was written. val is already masked to those
+	// bits by writable_bits. DTR does not drive the TCP transport.
+	set_register_dati_value(reg_tcr, val, __func__);
 }
 
 void dzv11_c::eval_tdr_dato(void)
 {
 	uint16_t val = get_register_dato_value(reg_msr_tdr);
-	// the character is transmitted on the line the scanner currently presents
-	tdr_char = val & DZ_TDR_DATA;
-	tdr_line = csr_tline & 3;
+	uint8_t ch = val & DZ_TDR_DATA;
+	uint8_t line = csr_tline & 3;
+
+	// TDR high byte (08-11) is the break control register (TM 3.2.6): a set bit
+	// forces that line's output to space until cleared.
+	uint8_t new_break = (uint8_t) ((val >> DZ_TDR_BREAK_SHIFT) & 0017);
+	uint8_t rising_break = new_break & ~tx_break;
+	tx_break = new_break;
+
+	if (csr_maint) {
+		// Maintenance wrap-around (TM 5.4.11): the transmitter output is routed
+		// back to the line's receiver. The receiver only assembles a character
+		// into the silo when it is enabled (LPR 12); a disabled receiver drops
+		// the wrapped data just as it drops line data.
+		if (rising_break) {
+			// A break holds the line at space, so the receiver frames a null
+			// character with a framing error (TM RBUF 13), plus a parity error
+			// when odd parity is enabled (the all-zero frame's parity bit fails
+			// the odd check). Report it on each line just put into break. The
+			// break register is independent of the transmitter scanner, so it
+			// does not consume Transmitter Ready.
+			for (unsigned i = 0; i < DZ_LINE_COUNT; i++)
+				if ((rising_break & (1u << i)) && rx_enabled[i]) {
+					uint16_t err = DZ_RBUF_FRAME;
+					if (parity_enable[i] && odd_parity[i])
+						err |= DZ_RBUF_PAR;
+					silo_push((uint8_t) i, 0, err);
+				}
+			return;
+		}
+		// A same-line wrap has matching format: the character returns cleanly.
+		// Deliver it in step with the TDR load so a program polling Receiver
+		// Done right after sees it; the transmitter took the character, so TRDY
+		// drops and the scanner re-presents it for the next one.
+		if (rx_enabled[line])
+			silo_push(line, ch, 0);
+		csr_trdy = false;
+		return;
+	}
+	tdr_char = ch;
+	tdr_line = line;
 	tdr_pending = true;
 }
 
@@ -321,6 +415,32 @@ bool dzv11_c::select_next_tx_line(void)
 		}
 	}
 	return false;
+}
+
+// caller holds state_mutex; advance the transmit-ready (TRDY) state. TRDY drops
+// when the scanner is off or the line it was presented for was disabled without
+// a character being loaded, and appears for the next ready line otherwise. The
+// hardware scanner presents TRDY within ~1.4 us of a line becoming ready, so
+// this runs synchronously from the register-write path as well as from
+// worker_xmt: a diagnostic's tight "enable line, poll TRDY" loop reads TRDY
+// before its next access, which the worker thread's scheduling latency misses.
+void dzv11_c::scan_tx_trdy(void)
+{
+	if (!csr_mse) {
+		if (csr_trdy) {
+			csr_trdy = false;
+			update_csr_and_INTR();
+		}
+		return;
+	}
+	if (csr_trdy && !tdr_pending && !tx_enabled[csr_tline]) {
+		csr_trdy = false;
+		update_csr_and_INTR();
+	}
+	if (!csr_trdy && select_next_tx_line()) {
+		csr_trdy = true;
+		update_csr_and_INTR();
+	}
 }
 
 // -------------------------------------------------------------------------
@@ -338,8 +458,9 @@ void dzv11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 	case dz_idx_csr:
 		if (unibus_control == QUNIBUS_CYCLE_DATO) {
 			eval_csr_dato();
+			scan_tx_trdy();  // MSE just changed: present or drop TRDY now
 			update_csr_and_INTR();
-			pthread_cond_signal(&xmt_cond); // MSE/scan may have changed
+			pthread_cond_signal(&xmt_cond);
 		}
 		break;
 	case dz_idx_rbuf_lpr:
@@ -357,13 +478,16 @@ void dzv11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 	case dz_idx_tcr:
 		if (unibus_control == QUNIBUS_CYCLE_DATO) {
 			eval_tcr_dato();
+			scan_tx_trdy();  // a newly enabled line becomes ready at once
 			pthread_cond_signal(&xmt_cond);
 		}
 		break;
 	case dz_idx_msr_tdr:
 		if (unibus_control == QUNIBUS_CYCLE_DATO) {
-			eval_tdr_dato();
-			pthread_cond_signal(&xmt_cond);
+			eval_tdr_dato();     // maint loopback delivers synchronously
+			scan_tx_trdy();      // re-present TRDY for the next character
+			update_csr_and_INTR();
+			pthread_cond_signal(&xmt_cond); // wake worker for a wire (non-maint) send
 		}
 		break;
 	default:
@@ -394,6 +518,9 @@ void dzv11_c::reset(void)
 	csr_trdy = false;
 	memset(rx_enabled, 0, sizeof rx_enabled);
 	memset(tx_enabled, 0, sizeof tx_enabled);
+	memset(parity_enable, 0, sizeof parity_enable);
+	memset(odd_parity, 0, sizeof odd_parity);
+	tx_break = 0;  // TDR/break register cleared by BINIT (TM 3.2.6)
 	silo.clear();
 	silo_alarm_count = 0;
 	tdr_pending = false;
@@ -440,19 +567,7 @@ void dzv11_c::worker_rcv(void)
 			uint8_t c;
 			while (tcp_line[i].poll_rcv(&c)) {
 				pthread_mutex_lock(&state_mutex);
-				uint16_t entry = DZ_RBUF_VALID | ((uint16_t) (i & 3) << DZ_RBUF_RLINE_SHIFT) | c;
-				if (silo.size() >= 64) {
-					// silo full: mark overrun on the newest kept entry
-					entry |= DZ_RBUF_OVR;
-					silo.pop_back();
-				}
-				silo.push_back(entry);
-				if (++silo_alarm_count >= 16) {
-					silo_alarm_count = 0;
-					if (csr_sae)
-						csr_sa = true;
-				}
-				set_rbuf_dati();
+				silo_push((uint8_t) i, c, 0);
 				update_csr_and_INTR();
 				pthread_mutex_unlock(&state_mutex);
 			}
@@ -467,55 +582,27 @@ void dzv11_c::worker_xmt(void)
 
 	pthread_mutex_lock(&state_mutex);
 	while (!workers_terminate) {
-		if (!csr_mse) {
-			// scanner off: the CPU cleared MSE, so TRDY must drop with it
-			if (csr_trdy) {
-				csr_trdy = false;
-				update_csr_and_INTR();
-			}
+		// present TRDY for a ready line, or drop it if the scanner went off or
+		// the presented line was disabled. The register-write path calls this
+		// too; here it catches a client (dis)connecting between accesses.
+		scan_tx_trdy();
+		if (!csr_trdy) {
+			// scanner off, or no enabled line: wait for a CSR/TCR change
 			pthread_cond_wait(&xmt_cond, &state_mutex);
 			continue;
 		}
-		// A line presented as ready that the CPU answered by disabling its
-		// transmitter (clearing its TCR bit) instead of loading a character:
-		// drop TRDY so the scanner moves on. Without this the transmit
-		// interrupt stays asserted and storms the CPU after every RTI, which
-		// starves the console and hangs the guest.
-		if (csr_trdy && !tdr_pending && !tx_enabled[csr_tline]) {
-			csr_trdy = false;
-			update_csr_and_INTR();
-		}
-		if (!csr_trdy) {
-			if (select_next_tx_line()) {
-				csr_trdy = true;
-				update_csr_and_INTR();
-			} else {
-				// no line ready to transmit: wait for TCR/CSR change
-				pthread_cond_wait(&xmt_cond, &state_mutex);
-				continue;
-			}
-		}
-		if (csr_trdy && tdr_pending) {
+		if (tdr_pending) {
+			// wire (non-maint) transmit; maint loopback is delivered
+			// synchronously in eval_tdr_dato and never sets tdr_pending.
 			uint8_t ch = tdr_char;
 			uint8_t ln = tdr_line;
-			bool maint = csr_maint;
 			tdr_pending = false;
 			csr_trdy = false; // character taken; scanner will re-present
 			update_csr_and_INTR();
-			if (maint) {
-				// maintenance loopback: the transmitted char is delivered to
-				// this line's receiver instead of the wire
-				uint16_t entry = DZ_RBUF_VALID
-						| ((uint16_t) (ln & 3) << DZ_RBUF_RLINE_SHIFT) | ch;
-				silo.push_back(entry);
-				set_rbuf_dati();
-				update_csr_and_INTR();
-			} else {
-				pthread_mutex_unlock(&state_mutex);
-				if (ln < DZ_LINE_COUNT && line_open[ln])
-					tcp_line[ln].send(ch);
-				pthread_mutex_lock(&state_mutex);
-			}
+			pthread_mutex_unlock(&state_mutex);
+			if (ln < DZ_LINE_COUNT && line_open[ln])
+				tcp_line[ln].send(ch);
+			pthread_mutex_lock(&state_mutex);
 			continue;
 		}
 		// TRDY presented, waiting for the CPU to write TDR
