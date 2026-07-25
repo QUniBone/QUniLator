@@ -1,8 +1,19 @@
-# RSX-11M+ DECnet over the emulated DELQA — NETGEN procedure
+# RSX-11M+ DECnet over the emulated DELQA — QNA-0 generation
 
 Brings RSX-11M+ DECnet up on the QBone DELQA so the PDP-11 reaches the house
-LAN. This records what the running system actually has, the one change the
-network generation needs, and the exact answers to make it.
+LAN. This records what the running system had, the one change the network
+configuration needed, and how it was made.
+
+**Outcome (2026-07-25):** done on `images/rsx11mplus-net.dsk`. The DECnet
+Ethernet line was changed from the never-loading `UNA-0` (DEUNA, CSR 774510) to
+`QNA-0` (DEQNA/DELQA, CSR 774440, vector 120, priority 5) by rebuilding the
+network configuration table `CETAB` from an edited `CETAB.MAC` using the kit's
+own assemble/build command files, and renaming the boot-time NCP line/circuit
+commands in `LB:[1,2]STARTUP.CMD`. After reboot `QNA-0` loads, the circuit comes
+up `On` automatically, and the DELQA transmits DECnet router-hello and MOP
+loopback frames onto the house LAN from the DECnet-derived station address
+`AA-00-04-00-1E-78`. The board carries a saved config **`rsx-net`** that boots
+this networked pack one apply away.
 
 ## What the running RSX system has
 
@@ -38,6 +49,11 @@ PDV$DF  <AUX,EVL,ECL,XPT,NCT,RTH,LAT,DLX>,<EPM>,<UNA>
 DDM$DF  UNA,ZF.DDM!ZF.COU!ZF.DVP!ZF.MAN!ZF.LMC,5,0,1.
 CNT$DF  0,120,174510,5,,NX     ; unit 0, vector 120, CSR 774510, prio 5
 ```
+
+`rsx11mplus-net.dsk` was found in exactly this state — a plain copy of the
+pristine pack: `NCP SHOW KNOWN LINES/CIRCUITS` reported the single `UNA-0`
+line/circuit `Cleared`, and the boot log carried the same "Network Loader
+function failed" for `NCP SET LIN UNA-0 ALL`. The work below was done on it.
 
 ## The change the network needs
 
@@ -98,64 +114,100 @@ safe, long command lines otherwise overrun the SLU and RSX answers `^U`):
 - Boot ROM Dialog: `BOOT DU0`
 - Answer the time/date prompt, `N` to Load LAT, `N` to Load TCP/IP.
 
-### Reconfigure the DECnet line to QNA
+### Reconfigure the DECnet line to QNA (CETAB rebuild)
 
-The change is a NETGEN-level one (it selects which DDM the network loads). Run
-NETGEN reusing the saved answers and change only the Ethernet line:
+The line hardware — device mnemonic, CSR, vector — lives in the network
+configuration table `CETAB`, generated from `DU0:[5,54]CETAB.MAC` and task-built
+into `CETAB.TSK`, which `NTINIT` loads at every boot (the running system loads
+the highest `[5,54]CETAB.TSK`). Changing the line is therefore an edit of the
+device macros in `CETAB.MAC` plus a rebuild of `CETAB.TSK` using the kit's own
+command files. The QNA DDM (`QNA.TSK`) is already on the pack, so this is a
+configuration rebuild, not a driver build.
 
-1. `SET /UIC=[137,10]` then `@NETGEN` (the kit's driver command file).
-2. Take the saved answers / DEC defaults where offered (`NETGEN.GEN` holds the
-   last run: "Generate ALL components", area-routing node 30.30, max address
-   1023, etc.).
-3. At the Ethernet line definition, define the line as a **DEQNA/DELQA (QNA)**:
-   - line/circuit name **`QNA-0`**
-   - controller **CSR 774440**
-   - **vector 120**
-   - priority 5
-   Remove or replace the `UNA-0` line.
-4. Let NETGEN assemble `CETAB` and build the network. The QNA DDM (`QNA.TSK`) is
-   already present, so the build is a reconfigure, not a driver build.
+The device macros differ from the DEUNA form only in the mnemonic and the CSR —
+the DDM/unit/line-table flags are the same for the two Ethernet DDMs, so two
+global substitutions suffice. Driven over the paced console (`EDT` line mode):
 
-The resulting `CETAB.MAC` should read (compare against the UNA form above):
+1. `SET /UIC=[5,54]` then `EDT DU0:[5,54]CETAB.MAC` (opens the latest version).
+2. `S/UNA/QNA/ WHOLE` — 6 substitutions (PDV$DF, SLT$DF, DDM$DF and the three
+   `EXP*` export lines).
+3. `S/174510/174440/ WHOLE` — 1 substitution (the `CNT$DF` CSR).
+4. `EXIT` — writes `CETAB.MAC;40`.
+5. Rebuild with the kit's assemble/build command files (they reference
+   `[130,10]NETLIB/ML`, `[5,10]RSXMC` and `[5,54]CETAB`, and are the same ones
+   `NETBLDNET.CMD` runs). Assign the build logicals to `SY:` first:
 
-```
-PDV$DF  <...>,<EPM>,<QNA>
-DDM$DF  QNA,...
-CNT$DF  0,120,174440,5,,NX     ; vector 120, CSR 774440
-SLT$DF  QNA,EPM,XPT,...         ; line name QNA-0
-```
+   ```
+   ASN SY:=IN:  &  ASN SY:=OU:  &  ASN SY:=LS:  &  ASN SY:=MP:
+   MAC @DU0:[5,24]CETABASM.CMD      ; -> [5,24]CETAB.OBJ;9
+   TKB @DU0:[5,24]CETABBLD.CMD      ; -> [5,54]CETAB.TSK;9 (PAR=CTBPAR)
+   ```
 
-### Bring the circuit up and make it persistent
+6. Rename the boot-time NCP commands so they name the new line. In
+   `EDT DU0:[1,2]STARTUP.CMD`: `S/UNA-0/QNA-0/ WHOLE` — 2 substitutions
+   (`NCP SET LIN QNA-0 ALL`, `NCP SET CIR QNA-0 STA ON`).
+7. Reboot (halt → boot ROM `173000G` → `B DU0`) so `NTINIT` loads the rebuilt
+   `CETAB.TSK`.
 
-At the MCR prompt after the network loads:
-
-```
-NCP SET LINE QNA-0 STATE ON
-NCP SET CIRCUIT QNA-0 STATE ON
-NCP SHOW KNOWN CIRCUITS        ; expect QNA-0 = On
-```
-
-Persist by adding the QNA line/circuit-on to the DECnet startup that
-`LB:[1,2]STARTUP.CMD` invokes (the same place the `UNA-0` block sits today), so
-it comes up on every boot.
-
-### Verify LAN reach
+The generated `DU0:[5,54]CETAB.MAC;40` device section reads (compare against the
+UNA form above — only the mnemonic and CSR changed):
 
 ```
-NCP LOOP CIRCUIT QNA-0                 ; loopback across the wire
-NCP SHOW CIRCUIT QNA-0 COUNTERS        ; frames sent/received incrementing
-NCP LOOP NODE <lan-decnet-node>        ; if a DECnet node is on the LAN
+PDV$DF  <AUX,EVL,ECL,XPT,NCT,RTH,LAT,DLX>,<EPM>,<QNA>
+SLT$DF  QNA,EPM,XPT,LF.TIM!LF.BRO,0,0,MASTER,0.,0.,15.,5.,64.
+DDM$DF  QNA,ZF.DDM!ZF.COU!ZF.DVP!ZF.MAN!ZF.LMC,5,0,1.
+CNT$DF  0,120,174440,5,,NX     ; unit 0, vector 120, CSR 774440, prio 5
+UNT$DF  0,177470,5,,3.,,3.
 ```
 
-or watch host-side traffic on `veth-pdp`/`br0` for the DECnet multicast
-`AB-00-00-03-00-00` and the node's `AA-00-04-00-…` frames.
+### Circuit up and persistent
 
-### Save the deliverable
+The circuit comes up `On` automatically at boot: `STARTUP.CMD` runs
+`@LB:[5,1]NETINS` (which loads the rebuilt `CETAB` and brings the executor `On`)
+and then the two edited lines `NCP SET LIN QNA-0 ALL` / `NCP SET CIR QNA-0 STA
+ON`. On the first boot after the rebuild the DECnet log shows `QNA-0` loading
+with no loader failure (contrast the old `UNA-0` "Network Loader function
+failed") and a `Circuit up` event for `QNA-0`. At MCR:
 
-With the circuit generated and verified, the copy `rsx11mplus-net.dsk` is the
-networked pack. Keep it under `/var/lib/bone/images/` alongside the pristine
-`rsx11mplus.dsk`, and add a saved config (e.g. `rsx-net`) that enables `uda`,
-`uda0`→`rsx11mplus-net.dsk`, `delqa`, `KW11`, and the `rl`/`rl0` exchange drive.
+```
+NCP SHOW KNOWN LINES       ; QNA-0  On
+NCP SHOW KNOWN CIRCUITS    ; Circuit = QNA-0  State = On
+```
+
+The `UNA-0` block in `STARTUP.CMD` was edited in place (§ CETAB rebuild step 6),
+so no separate persistence step is needed — a cold boot brings `QNA-0` up.
+
+### Verify LAN reach — achieved
+
+`NCP SHOW CIRCUIT QNA-0 COUNTERS` shows *Bytes/Data blocks sent* incrementing
+(router-hellos every ~15 s), `Circuit down` and `Initialization failure` both 0.
+*Bytes received* stays 0 because the house LAN has no other DECnet node to peer
+with.
+
+Host-side, `tcpdump -e -i br0` confirms the DELQA is on the wire from the
+DECnet-derived station address **`AA-00-04-00-1E-78`** (node 30.30 = area 30 /
+node 30 → 30·1024+30 = 30750 = 0x781E, little-endian):
+
+```
+aa:00:04:00:1e:78 > ab:00:00:04:00:00  DN (0x6003)  router-hello l2rout src 30.30 ...
+aa:00:04:00:1e:78 > ab:00:00:03:00:00  DN (0x6003)  router-hello l2rout src 30.30 ...
+aa:00:04:00:1e:78 > cf:00:00:00:00:00  Loopback (0x9000)  Forward Data ...   (from NCP LOOP)
+```
+
+The setup packet programmed the station address with no emulator change, as
+designed. `NCP LOOP CIRCUIT QNA-0` egresses MOP loopback frames (seen above) but
+reports "Loop failed … Receiver, Unlooped count = 1": nothing on the LAN
+reflects them, so the loop has no return — a property of the peerless LAN, not
+of the configuration. `NCP LOOP NODE` and a full DECnet conversation await a
+second DECnet node on the LAN.
+
+### The deliverable
+
+`rsx11mplus-net.dsk` (under `/var/lib/bone/images/`, alongside the pristine
+`rsx11mplus.dsk`) is the networked pack. The board carries a saved config
+**`rsx-net`** that enables `uda`, `uda0`→`rsx11mplus-net.dsk`, `delqa` (CSR
+774440, vector 120), `KW11`, and the `rl`/`rl0` exchange drive — `POST
+/api/configs/rsx-net/apply`, then boot `DU0`, and the networked machine is up.
 
 ## NETGEN answer summary
 
@@ -170,10 +222,16 @@ networked pack. Keep it under `/var/lib/bone/images/` alongside the pristine
 | routing | area-routing (unchanged) |
 | DELQA physical address | DECnet-derived `AA-00-04-00-xx-xx` (setup packet) |
 
-## Manual alternative to NETGEN
+## NETGEN as an alternative
 
-If a full NETGEN dialog is impractical over the console, the same result comes
-from editing `CETAB.MAC` directly (UNA→QNA, CSR `174510`→`174440`), reassembling
-it against the network macro library, rebuilding `CETAB.TSK`, and reloading the
-network (reboot). `VNP` edits the same database in an offline system image. Both
-are multi-step builds; NETGEN with the saved answers is the supported path.
+The CETAB rebuild above is the method used, and is well suited to the paced
+console: it is two `EDT` substitutions plus the kit's own build commands, each
+step verifiable, and reversible by re-copying the pristine pack. DEC's supported
+generator, NETGEN, produces the same `CETAB` from a dialog: `SET /UIC=[137,10]`,
+`@NETGEN`, take the saved answers (`[5,1]NETGEN.GEN`, `NETDDM.GEN`, `DECGEN.GEN`
+hold the last run — "Generate ALL components", area-routing node 30.30, max
+address 1023) and change only the Ethernet line to `QNA-0` / CSR 774440 /
+vector 120 / priority 5. The saved DDM answers (`[5,1]NETDDM.GEN`) are the
+authoritative source for the device macros — they carry the exact `DDM$DF` /
+`CNT$DF` / `UNT$DF` / `SLT$DF` lines NETGEN emits — which is what confirms the
+CETAB edit above needs only the mnemonic and CSR changed.
