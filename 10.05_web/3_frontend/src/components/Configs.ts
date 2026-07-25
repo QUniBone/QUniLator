@@ -14,9 +14,8 @@
 import { html } from '../html';
 import { useState, useEffect } from 'preact/hooks';
 import { useRoute, useLocation } from 'preact-iso';
-import { useQueryParam } from '../router';
 import { esc } from '../lib/util';
-import { confirmModal, promptModal } from '../lib/modals';
+import { confirmModal, promptModal, pickDevice } from '../lib/modals';
 import {
   loadConfigs,
   refreshDevices,
@@ -114,7 +113,7 @@ function DevRow({
   row,
   cfg,
   device,
-  showAll,
+  sub,
   onToggle,
   onParam,
   onImage,
@@ -122,7 +121,7 @@ function DevRow({
   row: Row;
   cfg: string;
   device: string;
-  showAll: boolean;
+  sub: boolean; // a controller's drive: keep its own enable toggle
   onToggle: SetEnabled;
   onParam: SetParam;
   onImage: SetImage;
@@ -147,12 +146,24 @@ function DevRow({
           : null
       }
       <span class="spacer"></span>
-      <${Chip} cls=${row.enabled ? 'ok' : 'off'}>${row.enabled ? 'enabled' : 'disabled'}</${Chip}>
-      <${Toggle} checked=${row.enabled} onChange=${(on: boolean) => onToggle(row.name, on)} />
+      ${
+        // a controller's drive is enabled/disabled in place; a top-level device
+        // is instead removed, since the list only carries added devices
+        sub
+          ? html`<${Chip} cls=${row.enabled ? 'ok' : 'off'}>${row.enabled ? 'enabled' : 'disabled'}</${Chip}>
+            <${Toggle} checked=${row.enabled} onChange=${(on: boolean) => onToggle(row.name, on)} />`
+          : null
+      }
       ${
         gridParams.length
           ? html`<button class="btn small" onClick=${toggleOpen}>${open ? 'Hide' : 'Parameters'}</button>`
           : null
+      }
+      ${
+        sub
+          ? null
+          : html`<${DelButton} label="Remove" confirmLabel="Confirm remove"
+              onConfirm=${() => onToggle(row.name, false)} />`
       }
     </div>
     ${
@@ -172,12 +183,10 @@ function DevRow({
     }
     ${
       row.enabled
-        ? (row.drives || [])
-            .filter((d) => d.enabled || showAll)
-            .map(
-              (d) => html`<${DevRow} row=${d} cfg=${cfg} device=${device} showAll=${showAll}
+        ? (row.drives || []).map(
+            (d) => html`<${DevRow} row=${d} cfg=${cfg} device=${device} sub=${true}
               onToggle=${onToggle} onParam=${onParam} onImage=${onImage} key=${d.name} />`
-            )
+          )
         : null
     }
   </div>`;
@@ -188,8 +197,6 @@ function Detail({ name }: { name: string }) {
   const loc = useLocation();
   const { params } = useRoute();
   const device = params.device ? decodeURIComponent(params.device) : '';
-  const [showQ, setShowQ] = useQueryParam('show');
-  const showAll = showQ === 'all';
   const isCurrent = name === s.configCurrent;
   const isDefault = name === s.configDefault;
 
@@ -240,7 +247,16 @@ function Detail({ name }: { name: string }) {
     : staged
     ? s.devmodel.map((d) => storedRow(d, staged))
     : [];
-  const visible = roots.filter((r) => r.enabled || showAll);
+  // the list carries only the devices this configuration has added; the rest are
+  // offered by the Add CTA
+  const visible = roots.filter((r) => r.enabled);
+  const available = roots
+    .filter((r) => !r.enabled)
+    .map((r) => ({ name: r.name, label: r.label, type: r.type }));
+  const doAdd = async () => {
+    const pick = await pickDevice('Add a device', available);
+    if (pick) (isCurrent ? liveToggle : stagedToggle)(pick, true);
+  };
 
   const doSaveAs = async () => {
     const nn = await promptModal('Save configuration as', 'Name', name, 'Save');
@@ -315,21 +331,18 @@ function Detail({ name }: { name: string }) {
           : 'Edits are staged here and reach nothing until you Save.'
       }</span>
       <span class="spacer"></span>
-      <button class=${'chip cfg-filter ' + (showAll ? 'out' : 'ok')}
-        onClick=${() => setShowQ(showAll ? '' : 'all')}>${showAll ? 'all devices' : 'enabled only'}</button>
+      <button class="btn small primary" onClick=${doAdd}>+ Add device</button>
     </div>
     <div class="cfg-editor">
       ${
         visible.length
           ? visible.map(
-              (r) => html`<${DevRow} row=${r} cfg=${name} device=${device} showAll=${showAll}
+              (r) => html`<${DevRow} row=${r} cfg=${name} device=${device} sub=${false}
                 onToggle=${isCurrent ? liveToggle : stagedToggle}
                 onParam=${isCurrent ? liveParam : stagedParam}
                 onImage=${isCurrent ? liveImage : stagedImage} key=${r.name} />`
             )
-          : html`<div class="cfg-empty muted">${
-              isCurrent ? 'No enabled devices.' : 'This configuration switches every device off.'
-            }${showAll ? '' : ' Switch to “all devices” to add one.'}</div>`
+          : html`<div class="cfg-empty muted">No devices yet — use “Add device” to add one.</div>`
       }
     </div>
   </div></div>`;
@@ -358,12 +371,19 @@ function MasterRow({ c }: { c: ConfigSummary }) {
 
 export function ConfigsPage() {
   const s = useStore();
+  const loc = useLocation();
   const { params } = useRoute();
   const name = params.name ? decodeURIComponent(params.name) : '';
   useEffect(() => {
     loadConfigs().catch(() => {});
   }, []);
   const configs = s.configs || [];
+  // land on the running configuration rather than an empty detail
+  useEffect(() => {
+    if (!name && s.configCurrent && configs.some((c) => c.name === s.configCurrent))
+      loc.route('/config/' + encodeURIComponent(s.configCurrent), true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name, s.configCurrent, configs.length]);
   const exists = configs.some((c) => c.name === name);
   return html`<section class="page active" data-page="configurations">
     <div class="cfg-layout">

@@ -5,7 +5,6 @@ import { useStore } from '../store';
 import type { HwState, Settings } from '../types';
 import { Led } from './common';
 import { Dashboard, ConsolePage } from './Dashboard';
-import { DevicesPage } from './Devices';
 import { StoragePage } from './Storage';
 import { ConfigsPage } from './Configs';
 import { MachinePage } from './Machine';
@@ -15,7 +14,6 @@ import { LogPage } from './Log';
 // path or a prefix of it (so /config/211bsd still lights "Configurations").
 const NAV: [string, string][] = [
   ['/dashboard', 'Dashboard'],
-  ['/devices', 'Devices'],
   ['/storage', 'Storage'],
   ['/config', 'Configurations'],
   ['/console', 'Console'],
@@ -52,10 +50,10 @@ function Topbar({
   connected: boolean;
 }) {
   return html`<header class="topbar"><h1>${title}</h1>
-    <span class="pill">${html`<${Led} on=${hw.dcok} sm=${true} title="DCOK" />`}DCOK</span>
-    <span class="pill">${html`<${Led} on=${hw.pok} sm=${true} title="POK" />`}POK</span>
+    <span class="pill">${html`<${Led} on=${hw.dcok} green=${true} title="DCOK" />`}DCOK</span>
+    <span class="pill">${html`<${Led} on=${hw.pok} green=${true} title="POK" />`}POK</span>
     <span class="pill mono">addr ${settings.address_width}-bit</span>
-    <span class="pill">${html`<${Led} on=${connected} sm=${true} title="link" />`}${
+    <span class="pill">${html`<${Led} on=${connected} green=${true} title="link" />`}${
       connected ? 'connected' : 'disconnected'
     }</span></header>`;
 }
@@ -82,7 +80,6 @@ export function App() {
         <${Router}>
           <${Redirect} path="/" to="/dashboard" />
           <${Dashboard} path="/dashboard" />
-          <${DevicesPage} path="/devices" />
           <${StoragePage} path="/storage" />
           <${ConfigsPage} path="/config/:name?/:device?" />
           <${ConsolePage} path="/console/:channel?" />

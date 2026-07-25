@@ -14,12 +14,11 @@ export function Chip({ cls, children }: { cls: string; children: ComponentChildr
 }
 
 // The one indicator lamp used everywhere — topbar status, the control-panel
-// PWR OK / RUN lamps, the front-panel activity LEDs. It renders a single
-// physical amber-red LED (the colour of a period DEC panel) in its own dark
-// grommet, so it reads the same on any surface. `sm` is the compact topbar
-// size; the default is the larger panel size.
-export function Led({ on, sm, title }: { on: boolean; sm?: boolean; title?: string }) {
-  return html`<span class=${'led' + (on ? ' on' : '') + (sm ? ' sm' : '')}
+// DC ON / RUN lamps, the front-panel activity LEDs. One flat LED at one size on
+// every surface. The default lens is red (the machine's own panel lamps); the
+// topbar status row passes `green`.
+export function Led({ on, green, title }: { on: boolean; green?: boolean; title?: string }) {
+  return html`<span class=${'led' + (green ? ' green' : '') + (on ? ' on' : '')}
     role="img" aria-label=${(title ? title + ' — ' : '') + (on ? 'lit' : 'dark')}
     title=${title || null}></span>`;
 }

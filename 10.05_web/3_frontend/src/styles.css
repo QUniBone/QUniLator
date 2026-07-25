@@ -47,26 +47,32 @@
   --lamp-red-hot:  #FF8A70;   /* the bright core of a lit lamp */
   --lamp-red-deep: #C21807;   /* shaded edge of the lens */
 
-  /* shared indicator LED — one physical amber-red panel lamp everywhere.
-     The colour is the lens colour, not a semantic state. */
-  --led-lit-core:  #FFCF95;   /* incandescent-warm core */
-  --led-lit:       #F5532B;   /* red-amber lens body */
-  --led-lit-edge:  #B0210A;   /* shaded lens edge */
-  --led-glow:      rgba(245, 83, 43, .5);
-  --led-dark:      #3E241D;   /* unlit red lens */
-  --led-dark-edge: #25130F;
+  /* shared indicator lamp — one flat panel LED at a single size everywhere.
+     Two lens colours: red is the machine's own panel lamps (a true red LED,
+     not amber), green is the web status row. The colour is the lens, not a
+     semantic state. */
+  --led-size:        13px;
+  --led-red:         #E11B14;   /* red lens, lit */
+  --led-red-core:    #FF6656;   /* brighter lens centre */
+  --led-red-dark:    #46140F;   /* red lens, unlit */
+  --led-red-glow:    rgba(225, 27, 20, .55);
+  --led-green:       #21B356;   /* green lens, lit */
+  --led-green-core:  #82E6A4;
+  --led-green-dark:  #123521;   /* green lens, unlit */
+  --led-green-glow:  rgba(33, 179, 86, .5);
 
-  /* PDP-11/03 control bezel: tan molded plastic, DEC-magenta band, dark
-     switch recess with a silkscreen legend */
-  --cp-bezel-hi:   #CFC3AB;
-  --cp-bezel:      #BCAE93;
-  --cp-bezel-lo:   #9C8E72;
-  --cp-recess:     #29251F;
-  --cp-legend:     #EFE9DE;
-  --dec-magenta:   #8E2F58;
-  --dec-magenta-2: #6C2242;
-  --sw-bat:        #E7E1D4;
-  --sw-bat-lo:     #B4AD9C;
+  /* PDP-11/03 panel switch: a flat dark slot with a pale bat handle. Drawn
+     2D — solid fills, one hairline, no gloss. */
+  --sw-slot:    #23262B;
+  --sw-slot-lo: #15181C;
+  --sw-bat:     #DADDE1;
+  --sw-bat-lo:  #AFB4BA;
+  --sw-legend:  var(--ink-muted);
+  /* RL02 fault / write-protect switch caps */
+  --cap-red:      #8C312A;
+  --cap-red-lit:  #EF4B3D;
+  --cap-orange:   #93803A;
+  --cap-orange-lit: #F7A427;
 
   /* type */
   --font-ui:   system-ui, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
@@ -302,97 +308,80 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 
 /* ============================ dashboard ============================ */
 
-/* ---- shared indicator LED ---- one physical amber-red panel lamp, seated in
-   its own dark grommet so it reads the same on any surface. Slightly larger and
-   with a restrained glow, unlike the earlier bright lamp. */
+/* ---- shared indicator LED ---- one flat panel lamp, a single size on every
+   surface. Solid lens colour, a hairline seat, and a soft glow when lit — no
+   dome, bevel or grommet. `green` swaps the lens for the status row. */
 .led {
-  --led-sz: 15px;
-  width: var(--led-sz); height: var(--led-sz); border-radius: 50%;
+  --lens:     var(--led-red);
+  --lens-core: var(--led-red-core);
+  --lens-dark: var(--led-red-dark);
+  --lens-glow: var(--led-red-glow);
+  width: var(--led-size); height: var(--led-size); border-radius: 50%;
   flex: 0 0 auto; display: inline-block; vertical-align: middle;
-  background: radial-gradient(circle at 50% 34%, var(--led-dark) 0%, var(--led-dark-edge) 100%);
-  box-shadow:
-    inset 0 0 0 1px rgba(0, 0, 0, .5),
-    inset 0 -1px 2px rgba(0, 0, 0, .55),
-    inset 0 1px 1px rgba(255, 255, 255, .06);
+  background: var(--lens-dark);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .3);
+}
+.led.green {
+  --lens: var(--led-green); --lens-core: var(--led-green-core);
+  --lens-dark: var(--led-green-dark); --lens-glow: var(--led-green-glow);
 }
 .led.on {
-  background: radial-gradient(circle at 50% 33%,
-    var(--led-lit-core) 0%, var(--led-lit) 52%, var(--led-lit-edge) 100%);
-  box-shadow:
-    inset 0 0 0 1px rgba(60, 10, 0, .5),
-    inset 0 -1px 2px rgba(120, 20, 0, .45),
-    0 0 5px 0 var(--led-glow);
+  background: radial-gradient(circle at 50% 42%, var(--lens-core) 0%, var(--lens) 62%);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18), 0 0 5px 0 var(--lens-glow);
 }
-.led.sm { --led-sz: 10px; }
 
-/* ---- PDP-11/03 control bezel ---- the run-state and power controls, styled as
-   the machine's own front panel: tan plastic, a DEC-magenta band, and bat-handle
-   toggles in a dark switch recess. */
-.cp-card { padding: 0; border: 0; background: transparent; box-shadow: none; }
-.cp-bezel {
-  border-radius: var(--r-md);
-  background: linear-gradient(180deg, var(--cp-bezel-hi), var(--cp-bezel) 34%, var(--cp-bezel-lo));
-  border: 1px solid var(--cp-bezel-lo);
-  box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, .28);
-  color: var(--rl-ink); padding-bottom: 16px;
+/* ---- PDP-11/03 control panel ---- the run-state and power controls on the
+   app's own card surface, laid out like the real 11/03 operator console: two
+   indicator lamps grouped on the left, three bat-handle switches grouped on the
+   right. Switches are drawn flat (2D). */
+.cp-body {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 6px 14px 16px;
 }
-.cp-band {
-  background: linear-gradient(180deg, var(--dec-magenta), var(--dec-magenta-2));
-  padding: 7px 14px; border-radius: var(--r-md) var(--r-md) 0 0;
-  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, .22);
-}
-.cp-model {
-  font-family: var(--font-mono); font-weight: 700; letter-spacing: .2em;
-  font-size: var(--fs-1); color: #F6E8EF;
-}
+.cp-lamps, .cp-switches { display: flex; align-items: flex-start; }
+.cp-lamps { gap: 16px; }
+.cp-switches { gap: 12px; }
+.cp-lamp { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .cp-leg {
   font-family: var(--font-mono); font-size: var(--fs-0); font-weight: 700;
-  letter-spacing: .06em; text-align: center; white-space: nowrap; color: var(--rl-ink);
+  letter-spacing: .04em; text-align: center; white-space: nowrap; color: var(--sw-legend);
 }
-.cp-lamps { display: flex; gap: 30px; justify-content: center; padding: 16px 14px 4px; }
-.cp-lamp { display: flex; flex-direction: column; align-items: center; gap: 7px; }
-.cp-switches {
-  display: flex; justify-content: space-around; align-items: center; gap: 6px;
-  margin: 10px 12px 0; padding: 12px 6px;
-  background: var(--cp-recess); border-radius: 6px;
-  box-shadow: inset 0 2px 6px rgba(0, 0, 0, .55);
-}
-.cp-sw { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.cp-sw .cp-leg { color: var(--cp-legend); }
+.cp-sw { display: flex; flex-direction: column; align-items: center; gap: 5px; }
 .cp-sw .cp-leg.ph { visibility: hidden; }
 .cp-toggle {
-  width: 30px; height: 46px; border-radius: 7px; padding: 0;
-  border: 1px solid #000; position: relative; cursor: pointer;
-  background: linear-gradient(180deg, #14110E, #2C2823);
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, .7), inset 0 -1px 0 rgba(255, 255, 255, .06);
+  width: 26px; height: 42px; border-radius: 4px; padding: 3px;
+  border: 1px solid var(--sw-slot-lo); position: relative; cursor: pointer;
+  background: var(--sw-slot); display: block;
 }
 .cp-bat {
-  position: absolute; left: 50%; transform: translateX(-50%);
-  width: 18px; height: 22px; border-radius: 5px 5px 7px 7px;
-  background: linear-gradient(180deg, var(--sw-bat), var(--sw-bat-lo));
-  box-shadow: 0 2px 3px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .7),
-    inset 0 -2px 2px rgba(0, 0, 0, .16);
+  position: absolute; left: 3px; right: 3px; height: 17px;
+  border-radius: 3px; background: var(--sw-bat);
+  border: 1px solid var(--sw-bat-lo); border-bottom-width: 2px;
   transition: top .12s ease;
 }
 .cp-sw[data-pos="top"] .cp-bat { top: 3px; }
-.cp-sw[data-pos="bottom"] .cp-bat { top: 21px; }
-.cp-sw[data-pos="mid"] .cp-bat { top: 12px; }
-.cp-sw.momentary .cp-toggle:active .cp-bat { top: 16px; }
-.cp-sw.off { opacity: .42; }
+.cp-sw[data-pos="bottom"] .cp-bat { top: 20px; }
+.cp-sw[data-pos="mid"] .cp-bat { top: 11px; }
+.cp-sw.momentary .cp-toggle:active .cp-bat { top: 14px; }
+.cp-sw.off { opacity: .4; }
 .cp-sw.off .cp-toggle, .cp-toggle:disabled { cursor: default; }
 
-/* ---- front panel ---- the cape's activity LEDs and DIP switches, display-only */
+/* ---- front panel ---- the cape's activity LEDs and DIP switches, display-only.
+   Each block is one centred group: the LEDs together, the switches together. */
 .frontpanel { display: flex; flex-direction: column; }
 .frontpanel .card-head { padding-bottom: 0; }
 .frontpanel .card-body {
-  flex: 1 1 auto; display: flex; flex-direction: column; gap: 16px; justify-content: center;
+  flex: 1 1 auto; display: flex; flex-direction: column; gap: 18px; justify-content: center;
 }
-.fp-block { display: flex; flex-direction: column; gap: 8px; }
+.fp-block { display: flex; flex-direction: column; gap: 9px; align-items: center; }
 .fp-k {
   font-size: var(--fs-0); text-transform: uppercase; letter-spacing: .06em;
   color: var(--ink-faint); font-weight: 600;
 }
-.fp-cells { display: flex; gap: 13px; flex-wrap: wrap; align-items: flex-end; }
+.fp-cells {
+  display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; justify-content: center;
+  padding: 4px 10px; border-radius: var(--r-sm); background: var(--surface-2);
+}
 .fp-cell { display: flex; flex-direction: column; align-items: center; gap: 5px; }
 .fp-n { font-family: var(--font-mono); font-size: var(--fs-0); color: var(--ink-faint); }
 .dip {
@@ -408,10 +397,13 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 
 /* dashboard layout: control + front panel left, terminal right, widgets below */
 .dash-top { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; }
-.dash-left { display: flex; flex-direction: column; gap: 14px; width: 272px; flex: 0 0 auto; }
+.dash-left { display: flex; flex-direction: column; gap: 14px; width: 300px; flex: 0 0 auto; }
 .dash-left .cp-card { flex: 0 0 auto; }
 .dash-left .frontpanel { flex: 1 1 auto; }
 .dash-term { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+/* the dashboard shows the live console alone — no tab bar — so its terminal is
+   rounded on all four corners rather than tucked under a tab */
+.dash-term .term { border-radius: var(--r-md); }
 .term-tabs #serial-bar { align-items: center; gap: 6px; margin-left: auto; }
 
 /* ============================ devices ============================ */
@@ -555,7 +547,6 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
   padding: 8px 14px; border-top: 1px solid var(--line-soft);
 }
 .cfg-detail-sub .spacer { margin-left: auto; }
-.cfg-filter { cursor: pointer; border: 1px solid transparent; }
 
 .cfg-editor { border-top: 1px solid var(--line-soft); }
 .cfg-editor .dev-sub { border-top: 1px solid var(--line-soft); }
@@ -622,10 +613,16 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
   letter-spacing: .04em; line-height: 1.2;
   transition: background .2s, box-shadow .2s;
 }
+/* the wide READY cap carries its unit number above the legend */
+.lampbtn .num { display: block; font-size: 1.15rem; font-weight: 800; line-height: 1.1; }
 .lampbtn.cap-yellow      { background: #93803A; }
 .lampbtn.cap-yellow.lit  { background: #F7CE3B; box-shadow: 0 0 12px #F7CE3B88; }
 .lampbtn.cap-white       { background: #BDB9AE; }
 .lampbtn.cap-white.lit   { background: #FFEED2; box-shadow: 0 0 12px #FFD99A88; }
+.lampbtn.cap-red         { background: var(--cap-red); }
+.lampbtn.cap-red.lit     { background: var(--cap-red-lit); box-shadow: 0 0 12px #EF4B3D88; }
+.lampbtn.cap-orange      { background: var(--cap-orange); }
+.lampbtn.cap-orange.lit  { background: var(--cap-orange-lit); box-shadow: 0 0 12px #F7A42788; }
 
 /* ============================ device widgets ============================ */
 /* the column is wide enough for a four-cap switch plate in one row */
@@ -650,16 +647,11 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
   line-height: 1.6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* disk widget: the drive's verbal status beside its lamp, the shared image
-   picker below */
-.disk-status { display: flex; align-items: center; gap: 12px; margin: 2px 0 4px; }
-.disk-status .led { --led-sz: 18px; }
-.disk-state { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.disk-word { font-weight: 700; font-size: var(--fs-2); color: var(--rl-ink); }
-.disk-word.st-off, .disk-word.st-idle { color: var(--rl-ink-dim); }
-.disk-role {
-  font-family: var(--font-mono); font-size: var(--fs-0); color: var(--rl-ink-dim);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+/* disk widget: one friendly title on top, a plate of labelled switch caps that
+   follow the drive's lamps, and the shared image picker in the foot */
+.disk-title {
+  font-weight: 650; font-size: var(--fs-2); color: var(--rl-ink);
+  margin-bottom: 12px; line-height: 1.25;
 }
 .disk-widget .rl-foot .imgfield { flex: 1 1 auto; }
 

@@ -159,6 +159,58 @@ export async function pickImage(
   });
 }
 
+// Pick a device to add to a configuration, from the types not already in it.
+// Resolves the chosen device handle, or null when cancelled.
+export function pickDevice(
+  title: string,
+  options: { name: string; label: string; type: string }[]
+): Promise<string | null> {
+  const rows = options.length
+    ? options
+        .map(
+          (o) =>
+            '<button class="pick-row" data-pick-name="' +
+            esc(o.name) +
+            '"><span style="flex:1">' +
+            esc(o.label) +
+            '</span><span class="muted mono" style="font-size:var(--fs-0)">' +
+            esc(o.name) +
+            '</span></button>'
+        )
+        .join('')
+    : '<div class="muted" style="padding:8px">Every device is already in this configuration.</div>';
+  return new Promise((resolve) => {
+    const host = document.createElement('div');
+    host.className = 'modal-overlay';
+    host.innerHTML =
+      '<div class="card modal-card"><div class="card-head"><h3>' +
+      esc(title) +
+      '</h3><button class="modal-close" data-pick-close aria-label="Close" title="Close">&times;</button></div>' +
+      '<div class="pick-list">' +
+      rows +
+      '</div></div>';
+    const done = (v: string | null) => {
+      host.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve(v);
+    };
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') done(null);
+    }
+    host.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      if (target === host || target.closest('[data-pick-close]')) {
+        done(null);
+        return;
+      }
+      const row = target.closest('[data-pick-name]') as HTMLElement | null;
+      if (row) done(row.dataset.pickName ?? null);
+    });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(host);
+  });
+}
+
 function setPasswordModal(minLength: number): Promise<boolean> {
   return new Promise((resolve) => {
     const host = document.createElement('div');

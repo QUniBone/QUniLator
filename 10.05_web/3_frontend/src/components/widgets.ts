@@ -5,7 +5,7 @@ import type { LiveDev, DiskStatus } from '../types';
 import { liveSetParam } from '../api';
 import { store, useStore } from '../store';
 import { enabledDevices } from '../lib/devmodel';
-import { Led, ImageField } from './common';
+import { ImageField } from './common';
 import {
   vcb01Connect,
   vcb01Blit,
@@ -50,15 +50,7 @@ function Panel({
     <div class="rl-foot">${foot}</div></div>`;
 }
 
-// ---- disk widgets: one verbal status, one image picker ----
-const STATUS_WORD: Record<DiskStatus, string> = {
-  off: 'Off',
-  idle: 'No medium',
-  loaded: 'Coming online',
-  ready: 'Ready',
-  busy: 'Busy',
-};
-
+// ---- disk widgets: the drive's front bezel as labelled switch caps ----
 // The drive's verbal state. The backend computes it and sends `status`; until
 // that is deployed the widget derives a sensible value from the parameters the
 // drive already exposes. A powered-down machine reads every drive dark.
@@ -71,19 +63,29 @@ function diskStatus(d: LiveDev): DiskStatus {
   return 'ready';
 }
 
+// The drive front: a plate of labelled caps that follow the drive's lamps. The
+// RL02/RL01 carry LOAD/READY/FAULT/WRITE-PROT; other disks (RA81, RK05) show
+// READY and ACCESS. One friendly title names the drive; the image picker below
+// changes the medium.
 function DiskWidget({ d }: { d: LiveDev }) {
+  const powered = store.hw.powered !== false;
   const st = diskStatus(d);
-  const online = st === 'ready' || st === 'busy' || st === 'loaded';
+  const lit = (v: boolean) => powered && v;
   const img = d.img || paramVal(d, 'image');
+  const unit = paramVal(d, 'unit') || d.name.replace(/\D/g, '');
+  const hasRlLamps = d.params.some((p) => p.n === 'loadlamp');
+  const readyCap = html`<${Cap} cls="cap-white" lit=${lit(st === 'ready' || st === 'busy')}>
+    <span class="num">${unit}</span>READY</${Cap}>`;
+  const caps = hasRlLamps
+    ? html`${html`<${Cap} cls="cap-yellow" lit=${lit(lampOn(d, 'loadlamp'))}>LOAD</${Cap}>`}
+        ${readyCap}
+        ${html`<${Cap} cls="cap-red" lit=${lit(lampOn(d, 'faultlamp'))}>FAULT</${Cap}>`}
+        ${html`<${Cap} cls="cap-orange" lit=${lit(lampOn(d, 'writeprotectlamp'))}>WRITE<br />PROT</${Cap}>`}`
+    : html`${readyCap}
+        ${html`<${Cap} cls="cap-yellow" lit=${lit(st === 'busy' || lampOn(d, 'accesslamp'))}>ACCESS</${Cap}>`}`;
   return html`<div class="rlpanel disk-widget">
-    <div class="plabel"><span>${d.type}</span><span>${d.name}</span></div>
-    <div class="disk-status">
-      ${html`<${Led} on=${online} title=${'drive ' + st} />`}
-      <div class="disk-state">
-        <span class=${'disk-word st-' + st}>${STATUS_WORD[st]}</span>
-        <span class="disk-role">${d.label || d.type}</span>
-      </div>
-    </div>
+    <div class="disk-title">${d.label || d.type}</div>
+    <div class="lamps">${caps}</div>
     <div class="rl-foot">${html`<${ImageField} drive=${d.name} image=${img}
       onPick=${(name: string) =>
         liveSetParam(d.name, 'image', name, name ? 'image attached' : 'image detached')} />`}</div>

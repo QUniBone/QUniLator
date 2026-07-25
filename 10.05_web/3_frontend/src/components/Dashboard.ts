@@ -2,7 +2,6 @@ import { html } from '../html';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { useRoute, useLocation } from 'preact-iso';
 import { useStore, store, emit } from '../store';
-import { useQueryParam } from '../router';
 import { liveControl, putSettings } from '../api';
 import { devEnabled } from '../lib/devmodel';
 import {
@@ -89,10 +88,10 @@ function ControlPanel() {
       : liveControl('dc_on', 'DC on — machine powered up');
 
   return html`<div class="card cp-card">
-    <div class="cp-bezel">
-      <div class="cp-band"><span class="cp-model">PDP-11/03</span></div>
+    <div class="card-head"><h3>Control panel</h3></div>
+    <div class="cp-body">
       <div class="cp-lamps">
-        <div class="cp-lamp">${html`<${Led} on=${powered} title="PWR OK" />`}<span class="cp-leg">PWR OK</span></div>
+        <div class="cp-lamp">${html`<${Led} on=${powered} title="DC ON" />`}<span class="cp-leg">DC ON</span></div>
         <div class="cp-lamp">${html`<${Led} on=${run} title="RUN" />`}<span class="cp-leg">RUN</span></div>
       </div>
       <div class="cp-switches">
@@ -211,20 +210,11 @@ export function TerminalHost() {
 }
 
 export function Dashboard() {
-  const s = useStore();
-  const [ch, setCh] = useQueryParam('console');
-  useEffect(() => {
-    if (ch && CH_TO_KEY[ch]) liveTab(CH_TO_KEY[ch]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const select = (key: TermKey) => {
-    liveTab(key);
-    setCh(KEY_TO_CH[key]);
-  };
+  useStore();
   return html`<section class="page active" data-page="dashboard">
     <div class="dash-top">
       <div class="dash-left">${html`<${ControlPanel} />`}${html`<${FrontPanel} />`}</div>
-      <div class="dash-term">${html`<${TermTabs} settings=${s.settings} select=${select} />`}${html`<${TerminalHost} />`}</div>
+      <div class="dash-term">${html`<${TerminalHost} />`}</div>
     </div>
     <div class="widget-grid" style="margin-top:14px">${html`<${Widgets} />`}</div>
   </section>`;
