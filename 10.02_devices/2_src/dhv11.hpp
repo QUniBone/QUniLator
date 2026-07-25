@@ -10,14 +10,14 @@
    block straight out of PDP-11 memory and shifts it out. Receive is a shared
    FIFO read through RBUF. Each line's bytes are carried by a serial_tcp_line_c.
 
-   IMPORTANT — fidelity note. No DHV11/DHQ11 manual (EK-DHV11-UG) is present in
-   this repo, so the register layout and control-bit semantics below are modeled
-   from the standard DHV11 register set (the eight word registers CSR, RBUF, LPR,
-   STAT, LNCTRL, TBUFFAD1, TBUFFAD2, TBUFFCT) and are NOT yet validated under
-   XXDP. The DMA transmit engine and the interrupt logic are structurally real
-   (they issue genuine bus DMA and interrupts), but the exact trigger/status bit
-   assignments must be reconciled against the manual before the CXY/DHV XXDP
-   diagnostics can be expected to pass. Each such assumption is marked TODO.
+   The register layout and control-bit semantics follow EK-DHV11-TM-002 (the
+   eight word registers CSR, RBUF, LPR, STAT, LNCTRL, TBUFFAD1, TBUFFAD2,
+   TBUFFCT). The model passes DEC's CVDHA (VDHAE0) "DHV11-M FUNC TST PART 1"
+   diagnostic under XXDP with no errors — register access, the master-reset
+   self-test timing (see the self-test note below), the ROM-version self-test
+   codes, TX.ENA gating, the level-4 interrupt, and the Background Monitor
+   Program report. The DMA transmit engine and the interrupt logic issue genuine
+   bus DMA and interrupts.
 */
 #ifndef _DHV11_HPP_
 #define _DHV11_HPP_
@@ -37,10 +37,12 @@
 #define DHV11_ADDR   0760460
 // Two arbitration slots per mux (RCV at slot, XMT at slot+1); the two-instance
 // pool spans slot..slot+3. Base 12 sits just above the DZV11 pool (4..11) and
-// clear of uda (20) and delqa (21) on level 5 — a shared slot loses interrupts.
+// clear of uda (20) and delqa (21) — a shared slot loses interrupts.
 #define DHV11_SLOT   12
 #define DHV11_VECTOR 0300   // RCV +0, XMT +4
-#define DHV11_LEVEL  05
+// The DHV11 is a Level 4 interrupt device (EK-DHV11-TM-002: "the DHV11 is a Level
+// 4 device"); CVDHA's interrupt-BR-level test checks the request line it asserts.
+#define DHV11_LEVEL  04
 
 // Default TCP listen port base: line i listens on DHV11_TCP_PORT_BASE + i, so an
 // enabled device accepts a client on a distinct port without per-line setup.
@@ -120,6 +122,13 @@ enum dhv_reg_index {
 // bits (<4:3>=11), one stop bit, parity disabled.
 #define DHV_LPR_RESET 0156430
 
+// LPR DIAG field (<2:1>): writing 01 requests a Background Monitor Program report
+// on the selected channel (§3.3.10.4). The DHV11 pushes a BMP status code to the
+// FIFO and clears DIAG when the check completes.
+#define DHV_LPR_DIAG_MASK    0000006 // <2:1> DIAG field
+#define DHV_LPR_DIAG_REQUEST 0000002 // <2:1> = 01: request a BMP report
+#define DHV_BMP_RUNNING      0305    // BMP code: DHV11 running (307 = defective)
+
 // Self-test diagnostic codes (§3.3.10). After a healthy reset the FIFO holds six
 // null codes and two ROM-version codes. A code word carries DATA.VALID, the
 // diagnostic marker <14:12>=111, the sequence number in <11:8>, and the status
@@ -134,20 +143,44 @@ enum dhv_reg_index {
 #define DHV_SELFTEST_SKIP_PATTERN 0052525
 
 // Master reset holds CSR<5> set while the self-test runs, then clears it (§3.3.1:
-// the self-test takes up to ~2.5 s; a requested skip completes quickly). The
-// hold is timed on the worker, which ticks about every 500 us.
+// the self-test takes up to ~2.5 s; a requested skip completes quickly).
 //
-// NOTE — a QBone limitation, not a fidelity gap. CVDHA times the reset by
-// counting how many times the host polls the CSR, a count calibrated to a real
-// DHV11's register-access speed. Every register access here crosses the
-// ARM-in-the-loop QBus and is far slower, so the diagnostic's self-test-timing
-// sub-tests (its Test 2 onward) cannot all be satisfied: a hold long enough to
-// clear one check's lower iteration bound overruns another's upper bound. The
-// hold below is set from the manual's self-test duration, not reverse-engineered
-// from those windows. Detection and the register-access test (which do not
-// depend on this timing) still validate the register model.
-#define DHV_SELFTEST_TICKS 3000 // ~1.5 s, within the manual's self-test range
-#define DHV_SKIP_TICKS     40   // ~20 ms once a skip is requested (§3.3.10.3)
+// The completion is measured two ways, so both a polling diagnostic and a
+// timer-driven OS driver see correct behaviour:
+//
+//   * Poll-count model (the diagnostic path). CVDHA does not time the reset by
+//     wall clock — it counts how many times its poll helper reads the CSR before
+//     CSR<5> reads 0, and requires that count to fall inside a window (Test 2/14
+//     want the bit held for >= 500 and < 3000 of its outer poll iterations; the
+//     skip tests want a skipped reset cleared between 10 and 14 iterations, with
+//     DIAG.FAIL dropping alongside CSR<5>). Each outer iteration is a fixed
+//     number of CSR reads (its inner constant, calibrated on the host CPU
+//     against the line clock). We count the CSR reads the host
+//     issues during the hold and clear CSR<5> after DHV_SELFTEST_POLLS (or
+//     DHV_SKIP_POLLS for a requested skip), placing the diagnostic's outer-
+//     iteration count squarely inside its window. Counting the same reads the
+//     diagnostic counts makes this independent of QBus speed — a wall-clock hold
+//     cannot, because the poll helper's reads cross the slow ARM-in-the-loop
+//     QBus while its iteration constant is calibrated on fast CPU/memory loops.
+//
+//   * Inactivity fallback (the non-polling-host path). When the host is not
+//     actively polling the CSR, CSR<5> instead clears after a wall-clock hold —
+//     ~2.5 s for a full self-test, ~20 ms once a skip is requested (§3.3.10.3).
+//     The fallback countdown is frozen while the host is actively polling, so it
+//     never cuts the poll-count model short.
+//
+// DHV_CVDHA_POLLS_PER_ITER is CVDHA's inner poll constant on this 11/73 (its
+// @#2376 cell). The two poll counts are placed near the centre of each window in
+// units of that constant.
+#define DHV_CVDHA_POLLS_PER_ITER 220u
+#define DHV_SELFTEST_POLLS (800u * DHV_CVDHA_POLLS_PER_ITER) // ~800 iters: window [500,3000)
+#define DHV_SKIP_POLLS     (12u  * DHV_CVDHA_POLLS_PER_ITER) // ~12 iters:  window [10,14]
+
+#define DHV_SELFTEST_FALLBACK_TICKS 5000 // ~2.5 s, the manual's self-test ceiling
+#define DHV_SKIP_FALLBACK_TICKS     40   // ~20 ms once a skip is requested (§3.3.10.3)
+// A CSR read marks the host "actively polling" for this many worker ticks (~2 ms),
+// which freezes the inactivity fallback while a diagnostic poll loop is running.
+#define DHV_POLL_ACTIVE_TICKS 4
 
 class dhv11_c: public qunibusdevice_c {
 public:
@@ -223,7 +256,10 @@ private:
 	uint8_t csr_channel;   // <3:0> selected channel for indexed registers
 	bool selftest_pending; // a master reset is running the self-test
 	bool selftest_skip;    // the host wrote the skip-self-test pattern this reset
-	int selftest_ticks;    // worker ticks remaining until the self-test completes
+	uint32_t selftest_polls;  // CSR reads counted since the master reset was issued
+	uint32_t selftest_target; // poll count at which CSR<5> clears (skip lowers it)
+	int selftest_ticks;    // inactivity-fallback ticks remaining (frozen while polling)
+	int poll_active_ticks; // >0 while the host is actively polling the CSR
 
 	// per-channel line state. The raw last-written word of each read/write indexed
 	// register is kept so the register-access test reads back what it wrote; the

@@ -4,12 +4,10 @@
    hans@huebner.org
    MIT license, see any device source header for the full text.
 
-   See dhv11.hpp — including the fidelity note: the register/bit model is built
-   from the standard DHV11 register set (no EK-DHV11-UG in the repo) and is not
-   yet XXDP-validated. The DMA transmit engine and interrupt paths are real; the
-   trigger/status bit assignments are the modeled parts to reconcile with the
-   manual. Concurrency follows the DELQA rule: the transmit worker never holds
-   state_mutex across a blocking DMA call.
+   See dhv11.hpp: the register/bit model follows EK-DHV11-TM-002 and passes DEC's
+   CVDHA (VDHAE0) diagnostic under XXDP with no errors. Concurrency follows the
+   DELQA rule: the transmit worker never holds state_mutex across a blocking DMA
+   call.
 */
 
 #include <cstring>
@@ -62,6 +60,9 @@ dhv11_c::dhv11_c() : qunibusdevice_c()
 	csr_rx_ie = csr_tx_ie = csr_tx_act = false;
 	csr_master_reset = csr_diag_fail = selftest_pending = selftest_skip = false;
 	selftest_ticks = 0;
+	selftest_polls = 0;
+	selftest_target = DHV_SELFTEST_POLLS;
+	poll_active_ticks = 0;
 	csr_tx_line = 0;
 	csr_channel = 0;
 
@@ -278,11 +279,13 @@ void dhv11_c::set_stat_dati(void)
 void dhv11_c::load_selftest_codes(void)
 {
 	// Six filler codes then the two ROM-version codes; the filler is 203 when the
-	// self-test was skipped, 201 when it ran (§3.3.10).
+	// self-test was skipped, 201 when it ran (§3.3.10). The self-test reports
+	// PROC2's ROM version (D1=1) before PROC1's (D1=0): the codes are read in
+	// sequence order and the version-number test requires PROC2 to appear first.
 	uint8_t filler = selftest_skip ? DHV_SELFTEST_SKIP : DHV_SELFTEST_NULL;
 	uint8_t code[8] = {
 		filler, filler, filler, filler, filler, filler,
-		DHV_SELFTEST_ROM1, DHV_SELFTEST_ROM2
+		DHV_SELFTEST_ROM2, DHV_SELFTEST_ROM1
 	};
 	rx_fifo.clear();
 	for (unsigned seq = 0; seq < 8; seq++)
@@ -297,6 +300,8 @@ void dhv11_c::complete_selftest(void)
 {
 	if (!csr_master_reset)
 		return;
+	DEBUG("self-test complete after %u CSR polls (skip=%d, target=%u)",
+			(unsigned) selftest_polls, (int) selftest_skip, (unsigned) selftest_target);
 	// The self-test leaves every channel at its power-up defaults regardless of
 	// any skip-pattern writes the host made during the reset (§3.3.1).
 	for (unsigned i = 0; i < DHV_LINE_COUNT; i++)
@@ -349,14 +354,23 @@ void dhv11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 	bool is_dato = (unibus_control == QUNIBUS_CYCLE_DATO);
 	unsigned c = csr_channel & DHV_CSR_CHAN_MASK;
 
+	// Any bus access while a master reset is in progress means the host is driving
+	// the DHV11 (polling the CSR, or writing the skip pattern through the control
+	// registers), so freeze the inactivity fallback. Only CSR reads count as
+	// self-test polls (below); this keeps the fallback from firing in the gap
+	// between the reset and the first poll — e.g. during the skip-writer burst.
+	if (csr_master_reset)
+		poll_active_ticks = DHV_POLL_ACTIVE_TICKS;
+
 	// §3.3.10.3: writing the skip pattern to a control register while a master
 	// reset is in progress asks the DHV11 to bypass the self-test, so it finishes
 	// quickly instead of running the full sequence.
 	if (is_dato && csr_master_reset && !selftest_skip && device_reg->index != dhv_idx_csr
 			&& get_register_dato_value(device_reg) == DHV_SELFTEST_SKIP_PATTERN) {
 		selftest_skip = true;
-		if (selftest_ticks > DHV_SKIP_TICKS)
-			selftest_ticks = DHV_SKIP_TICKS;
+		selftest_target = DHV_SKIP_POLLS;
+		if (selftest_ticks > DHV_SKIP_FALLBACK_TICKS)
+			selftest_ticks = DHV_SKIP_FALLBACK_TICKS;
 	}
 
 	switch (device_reg->index) {
@@ -368,9 +382,10 @@ void dhv11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 			csr_channel = v & DHV_CSR_CHAN_MASK;
 			if ((v & DHV_CSR_MASTER_RESET) && !csr_master_reset) {
 				// §3.3.1: reset every channel to its power-up state and start the
-				// self-test. CSR<5> stays set — and the FIFO stays empty — for a
-				// real-time interval the worker times out, at which point
-				// complete_selftest() loads the codes and drops the bit.
+				// self-test. CSR<5> stays set — and the FIFO stays empty — until the
+				// host has polled the CSR DHV_SELFTEST_POLLS times (or the inactivity
+				// fallback elapses), at which point complete_selftest() loads the
+				// codes and drops the bit.
 				csr_master_reset = true;
 				csr_diag_fail = true; // valid only after the test clears CSR<5>
 				csr_tx_act = false;
@@ -379,7 +394,10 @@ void dhv11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 					set_channel_defaults(i);
 				rx_fifo.clear();
 				set_rbuf_dati();
-				selftest_ticks = DHV_SELFTEST_TICKS;
+				selftest_polls = 0;
+				selftest_target = DHV_SELFTEST_POLLS;
+				selftest_ticks = DHV_SELFTEST_FALLBACK_TICKS;
+				poll_active_ticks = 0;
 				selftest_pending = true;
 				selftest_skip = false;
 			}
@@ -387,6 +405,15 @@ void dhv11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 			update_csr_and_INTR();
 		} else {
 			// §3.2.2.1: a CSR read clears TX.ACTION.
+			if (csr_master_reset) {
+				// A CSR read during a master reset is a self-test poll: count it and
+				// complete the self-test once the host has polled enough times that
+				// CVDHA's outer-iteration count lands inside its window (see dhv11.hpp).
+				if (++selftest_polls >= selftest_target) {
+					complete_selftest();
+					update_csr_and_INTR();
+				}
+			}
 			if (csr_tx_act) {
 				csr_tx_act = false;
 				update_csr_and_INTR();
@@ -402,9 +429,12 @@ void dhv11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 				uint8_t m = chan_maint(c);
 				if (m == DHV_MAINT_LOCAL || m == DHV_MAINT_REMOTE
 						|| m == DHV_MAINT_ECHO) {
-					// maintenance loopback: the character wraps back to the FIFO
-					// (echo/remote need the receiver enabled; local ignores it).
-					if (m == DHV_MAINT_LOCAL || chan_rx_enabled(c))
+					// Maintenance loopback wraps the character back to the FIFO. LOCAL
+					// ignores RX.ENA but TX.ENA still gates transmission (§3.2.2.6); echo
+					// and remote need the receiver enabled.
+					bool loop = (m == DHV_MAINT_LOCAL)
+							? chan_tx_ena(c) : chan_rx_enabled(c);
+					if (loop)
 						rx_fifo_push(DHV_RBUF_DATA_VALID
 								| ((uint16_t) (c & 7) << DHV_RBUF_LINE_SHIFT) | ch);
 				} else if (chan_tx_ena(c) && chan[c].open) {
@@ -422,7 +452,18 @@ void dhv11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 		break;
 	case dhv_idx_lpr:
 		if (is_dato) {
-			chan[c].lpr = get_register_dato_value(reg[dhv_idx_lpr]);
+			uint16_t v = get_register_dato_value(reg[dhv_idx_lpr]);
+			// A DIAG (LPR<2:1>) = 01 request runs the Background Monitor Program
+			// report for this channel: push its status code to the FIFO (305 =
+			// running) with the error markers set and the requesting line in <11:8>,
+			// then clear the DIAG field (§3.3.10.4).
+			if ((v & DHV_LPR_DIAG_MASK) == DHV_LPR_DIAG_REQUEST) {
+				v &= ~DHV_LPR_DIAG_MASK;
+				rx_fifo_push(DHV_RBUF_DATA_VALID | DHV_RBUF_DIAG
+						| ((uint16_t) (c & 7) << DHV_RBUF_LINE_SHIFT) | DHV_BMP_RUNNING);
+				update_csr_and_INTR();
+			}
+			chan[c].lpr = v;
 			set_register_dati_value(reg[dhv_idx_lpr], chan[c].lpr, __func__);
 		}
 		break;
@@ -496,6 +537,9 @@ void dhv11_c::reset(void)
 	selftest_pending = false;
 	selftest_skip = false;
 	selftest_ticks = 0;
+	selftest_polls = 0;
+	selftest_target = DHV_SELFTEST_POLLS;
+	poll_active_ticks = 0;
 	for (unsigned i = 0; i < DHV_LINE_COUNT; i++) {
 		bool was_open = tcp_line[i].is_open();
 		set_channel_defaults(i);
@@ -539,11 +583,20 @@ void dhv11_c::worker_rcv(void)
 			continue;
 
 		pthread_mutex_lock(&state_mutex);
-		if (selftest_pending && --selftest_ticks <= 0) {
-			// the self-test interval has elapsed (§3.3.1): load the result codes,
-			// report success and drop CSR<5> so the host's poll completes.
-			complete_selftest();
-			update_csr_and_INTR();
+		if (selftest_pending) {
+			// While the host is actively polling the CSR the poll-count model in
+			// on_after_register_access completes the self-test; freeze this
+			// wall-clock fallback so it never cuts that model short. When no poll
+			// has arrived recently (a timer-driven host, or none at all), the
+			// fallback clears CSR<5> after the manual's self-test duration.
+			if (poll_active_ticks > 0)
+				poll_active_ticks--;
+			else if (--selftest_ticks <= 0) {
+				DEBUG("self-test inactivity fallback fired after %u CSR polls (skip=%d)",
+						(unsigned) selftest_polls, (int) selftest_skip);
+				complete_selftest();
+				update_csr_and_INTR();
+			}
 		}
 		set_stat_dati();
 		pthread_mutex_unlock(&state_mutex);
