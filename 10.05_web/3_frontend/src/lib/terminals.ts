@@ -37,8 +37,13 @@ let serialReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 const serialEncoder = new TextEncoder();
 let serialDisconnectHooked = false;
 // true while the external console's replayed history is being written to xterm,
-// so the terminal's automatic answerbacks to replayed query escapes are dropped
+// so answerbacks to replayed query escapes are suppressed
 let extReplaying = false;
+// the first binary frame after connect is the retained-history replay
+let extReplayPending = false;
+// this console is the server-designated terminal answerer (only it answers the
+// guest's identification queries, so several open consoles do not each reply)
+let extAnswerer = false;
 
 export function serialConnected(): boolean {
   return serialPort != null;
@@ -179,23 +184,42 @@ function wireExtConsoleWs(): void {
     // clear before the ring replay so a reconnect repaints rather than doubling
     extWs.onopen = () => {
       const t = serialTerm();
-      // The server replays the retained history on connect. Suppress the
-      // terminal's automatic answerbacks (to DA/DECID query escapes) while that
-      // replay is written, so a refresh does not re-answer an inquiry the guest
-      // already handled — a replayed answer would land as stray input at the
-      // guest's current prompt (e.g. RSX's date/time prompt). The live stream
-      // after the replay still answers normally. Cleared once xterm has written
-      // the replayed history.
+      // The server re-evaluates the answerer on every connection and replays the
+      // retained history first. Default to not answering, and suppress
+      // answerbacks until that replay has been written, so a reconnect neither
+      // answers as a duplicate terminal nor re-answers a query already in the
+      // history (a replayed answer would land as stray input at the guest's
+      // current prompt). Cleared once xterm has written the replayed history.
+      extAnswerer = false;
       extReplaying = true;
-      // the replayed history is written in the first burst after connect; clear
-      // shortly after so only those replayed escapes are answer-suppressed and
-      // the live stream (keystrokes and genuine inquiry answerbacks) flows
-      setTimeout(() => { extReplaying = false; }, 400);
+      extReplayPending = true;
+      // safety net in case the replay write callback is never delivered
+      setTimeout(() => { extReplaying = false; }, 4000);
       if (t) t.reset();
     };
     extWs.onmessage = (e) => {
+      // control frames (answerer designation) arrive as text; terminal data is
+      // binary and the first binary frame after connect is the history replay
+      if (typeof e.data === 'string') {
+        try {
+          const msg = JSON.parse(e.data);
+          if (typeof msg.answerer === 'boolean') extAnswerer = msg.answerer;
+        } catch {
+          /* ignore malformed control frame */
+        }
+        return;
+      }
       const t = serialTerm();
-      if (t) t.write(new Uint8Array(e.data as ArrayBuffer));
+      if (!t) return;
+      const data = new Uint8Array(e.data as ArrayBuffer);
+      if (extReplayPending) {
+        extReplayPending = false;
+        t.write(data, () => {
+          extReplaying = false;
+        });
+      } else {
+        t.write(data);
+      }
     };
     extWs.onclose = () => {
       extWs = null;
@@ -278,9 +302,19 @@ export async function serialDisconnect(): Promise<void> {
 
 function wireSerial(): void {
   const t = TERMS!.serial;
+  // Answer the guest's terminal-identification queries here rather than through
+  // xterm's built-in auto-reply. Returning true from these handlers suppresses
+  // that built-in reply on every console, and only the server-designated
+  // answerer actually emits a response — so N mirrored consoles yield one answer,
+  // not N — and never for a query replayed from the retained history.
+  t.term.parser.registerCsiHandler({ final: 'c' }, () => {
+    if (extAnswerer && !extReplaying && extWs && extWs.readyState === WebSocket.OPEN)
+      extWs.send('\x1b[?1;2c'); // primary Device Attributes: VT100 with AVO
+    return true;
+  });
+  t.term.parser.registerEscHandler({ final: 'Z' }, () => true); // suppress DECID auto-reply
   t.term.onData((d) => {
     if ((store.settings.external_console || {}).source === 'ttys2') {
-      if (extReplaying) return; // drop answerbacks generated while replaying history
       if (extWs && extWs.readyState === WebSocket.OPEN) extWs.send(d);
     } else if (serialWriter) serialWriter.write(serialEncoder.encode(d));
   });
