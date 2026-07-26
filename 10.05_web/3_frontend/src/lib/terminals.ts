@@ -36,6 +36,9 @@ let serialWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
 let serialReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 const serialEncoder = new TextEncoder();
 let serialDisconnectHooked = false;
+// true while the external console's replayed history is being written to xterm,
+// so the terminal's automatic answerbacks to replayed query escapes are dropped
+let extReplaying = false;
 
 export function serialConnected(): boolean {
   return serialPort != null;
@@ -176,6 +179,18 @@ function wireExtConsoleWs(): void {
     // clear before the ring replay so a reconnect repaints rather than doubling
     extWs.onopen = () => {
       const t = serialTerm();
+      // The server replays the retained history on connect. Suppress the
+      // terminal's automatic answerbacks (to DA/DECID query escapes) while that
+      // replay is written, so a refresh does not re-answer an inquiry the guest
+      // already handled — a replayed answer would land as stray input at the
+      // guest's current prompt (e.g. RSX's date/time prompt). The live stream
+      // after the replay still answers normally. Cleared once xterm has written
+      // the replayed history.
+      extReplaying = true;
+      // the replayed history is written in the first burst after connect; clear
+      // shortly after so only those replayed escapes are answer-suppressed and
+      // the live stream (keystrokes and genuine inquiry answerbacks) flows
+      setTimeout(() => { extReplaying = false; }, 400);
       if (t) t.reset();
     };
     extWs.onmessage = (e) => {
@@ -265,6 +280,7 @@ function wireSerial(): void {
   const t = TERMS!.serial;
   t.term.onData((d) => {
     if ((store.settings.external_console || {}).source === 'ttys2') {
+      if (extReplaying) return; // drop answerbacks generated while replaying history
       if (extWs && extWs.readyState === WebSocket.OPEN) extWs.send(d);
     } else if (serialWriter) serialWriter.write(serialEncoder.encode(d));
   });
