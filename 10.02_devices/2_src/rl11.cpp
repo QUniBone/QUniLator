@@ -168,7 +168,10 @@ RL11_c::RL11_c(void) :    storagecontroller_c()
     busreg_BA->active_on_dati = false; // pure storage
     busreg_BA->active_on_dato = false;
     busreg_BA->reset_value = 0; // read default: bit 7 set
-    busreg_BA->writable_bits = 0xfffe;  // bits 15..1 writable
+    // TD-001 §5.4.1: the BAR is two DC006 binary counters that store and return
+    // all 16 bits, including bit 0. DMA transfers are word-aligned (get_qunibus_address
+    // masks bit 0), but the register itself keeps whatever bit 0 was written.
+    busreg_BA->writable_bits = 0xffff;  // full 16-bit read/write register
 
     // disk address: offset +4
     busreg_DA = &(this->registers[2]);
@@ -352,9 +355,10 @@ void RL11_c::clear_errors()
 }
 
 // busaddress <17:16> = CS<4:5>, <21:16> maybe BAE
-uint32_t RL11_c::get_qunibus_address() 
+uint32_t RL11_c::get_qunibus_address()
 {
-    return (qunibus_address_msb << 16) | get_register_dato_value(busreg_BA);
+    // BAR stores all 16 bits, but DMA data transfers are word-aligned: mask bit 0.
+    return (qunibus_address_msb << 16) | (get_register_dato_value(busreg_BA) & 0xfffe);
 }
 
 // set the changed current DMA qunibus address
