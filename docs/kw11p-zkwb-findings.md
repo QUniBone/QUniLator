@@ -1,6 +1,6 @@
 # KW11-P emulation and the ZKWB diagnostic — findings
 
-Status as of commit `c13de23` (`feat: emulate the KW11-P programmable real-time
+Status as of commit `8c6db60` (`feat: emulate the KW11-P programmable real-time
 clock`).
 
 ## TL;DR
@@ -12,10 +12,14 @@ clock`).
 - **DEC's own KW11-P test ZKWB (`ZKWBJ1.BIC`, banner `CZKWBJ KW11-P RT CLK TST`)
   does NOT pass on the Q-bus board — it HANGS** in the counter register
   self-tests.
-- The hang is a **QBus bus-cycle timing limit** (the ARM-in-the-loop cannot
-  sustain the diagnostic's back-to-back counter write/read cadence over 65536
-  tight iterations), not a register-model logic bug. This is the same class of
-  limitation seen with the DHV11 self-test timing.
+- The hang is a **rare, timing-dependent defect that is most likely fixable** —
+  not the fundamental cadence limit an earlier draft claimed (that conclusion is
+  retracted, see below). The counter readback is correct for *tens of thousands*
+  of iterations and then misses **once**, at a **different value each run**; a
+  systematic ARM-callback-latency wall would miss on the first iteration, every
+  time. Correct-almost-always-then-rarely-wrong is the signature of a cross-thread
+  race on the CTR shadow, or the active-write callback occasionally exceeding the
+  PRU's bus-stall budget — not a cadence wall.
 - **Do not read "banner then silence" as a pass.** A real pass reprints the
   banner every pass (see below).
 
@@ -93,27 +97,51 @@ Method: run the diagnostic, then sample the CPU PC — halt via
   RESET (which per the manual clears the counter), so CTR then reads 0
   permanently → a hard hang.
 
-## Why it is bus timing, not a model bug
+## What the evidence indicates (the "bus-timing limit" conclusion was wrong)
 
-- The model sets CTR correctly on every write (verified in the register trace).
-- The worker thread is idle during the walks (`running = 0`, zero worker updates
-  to CTR); no spurious `reset()` or `fire_event()`.
-- The register semantics match the manual (BUF write-only, INIT clears
-  counter/buffer, single-step, vector 104).
-- **Attempted fix that did not work:** making CTR `active_on_dati` so a read
-  computes `current_counter()` synchronously in the DATI callback (arguably more
-  faithful — the counter drives the bus at read time). It hung **identically**.
-  That rules out the passive-readback-staleness theory and points at the
-  ARM-in-the-loop serving of back-to-back active-register cycles at diagnostic
-  speed (~140 µs/iteration × 65536). This experiment was reverted (it adds a
-  round-trip per read and fixed nothing); the committed model keeps CTR passive.
+An earlier draft closed this as an un-fixable QBus timing limit. That does not
+survive its own evidence and is retracted:
 
-**Honest caveat:** the single failing bus cycle was not caught red-handed. On the
-BBB, journald lags minutes behind under any per-access logging and
-`journalctl` reads routinely time out; writing a trace file with `fflush` per
-line from inside the bus callback **crashed the service** (I/O in the RT bus
-path). So the evidence strongly indicates a bus-cycle timing race and rules out
-the obvious model bugs, but there is no single-cycle SSYN-window capture.
+- The readback is **correct for tens of thousands of iterations, then misses
+  once**, at a **different counter value each run**. A systematic limit — the ARM
+  callback for the BUF write not completing within the CPU's ~1 µs to the next
+  read — would fail on iteration 1, deterministically, not one time in tens of
+  thousands. **Correct-almost-always with a rare, non-deterministic miss is a
+  race or a budget overrun, not a cadence wall.**
+- That the write's effect IS normally visible to the immediately-following read
+  means QBone already makes an active DATO's side-effect land before the next
+  cycle (the bus is effectively held for the callback). The open question is only
+  why it *occasionally* does not.
+- "Making CTR `active_on_dati` did not help" is consistent with this: if the miss
+  is a rare race on the shared CTR shadow (or a callback overrun), changing the
+  read side alone would not fix it. It is **not** evidence of a fundamental limit.
+
+Two concrete, testable candidates for the rare miss:
+
+1. **A cross-thread race on the CTR shadow / counter state.** `kw11p_c` has a
+   `state_mutex` "to serialize state between the bus-access callback and the
+   worker," plus `counter_frozen`/`run_start_ns`/`running` and a passive `reg_ctr`
+   shadow written via `set_register_dati_value`. If any path that writes the CTR
+   shadow or the counter state runs without the mutex, or the worker touches the
+   CTR shadow while stopped, or the shadow store is not ordered before the PRU
+   serves it, a rare interleaving yields a stale served value.
+2. **The active-write callback occasionally exceeds the PRU's bus-stall budget.**
+   If the PRU holds a DATO only up to a maximum wait before releasing it (so a
+   slow ARM cannot stall the bus forever), a BUF-write callback that occasionally
+   overruns that budget (scheduling jitter, contention, a heavier path at some
+   counter values) lets the DATO complete before the CTR shadow is updated → the
+   next DATI serves stale. Mitigable by making the shadow update the earliest,
+   cheapest action on the write path.
+
+Once a single mismatch slips through, the diagnostic issues RESET (which clears
+the counter), so CTR then reads 0 permanently — turning one rare miss into the
+hard hang that is observed.
+
+**Caveat still standing:** the single failing cycle was not caught red-handed.
+Host-side per-access logging lags minutes and destabilises timing, and an
+`fflush`-per-line trace from inside the RT bus callback crashed the service. So
+the *mechanism* above is inferred from the failure signature, not yet directly
+observed — catching it is step 1 of the plan below.
 
 ## Regression (clean)
 
@@ -125,19 +153,45 @@ the obvious model bugs, but there is no single-cycle SSYN-window capture.
   CZRLH: `RLV12=3`, BUS ADDRESS, VECTOR, DRIVE, DRIVE TYPE (RL01 Y/N), BR LEVEL,
   CHANGE SW.
 
-## Picking this up later
+## Root-cause plan (pick up here)
 
-Open questions / next steps if someone wants ZKWB to actually pass:
+Goal: turn the rare miss from "inferred" into "caught", identify which candidate
+it is, fix it, and get CZKWBJ to a real reported pass — the banner reprinting
+every pass (see "how a pass is signalled"), not printing once and wedging.
 
-1. Confirm the failing cycle at the PRU level (PRU-side instrumentation, or a
-   logic capture), to turn "strongly indicated" into a proven SSYN-window
-   measurement. Host-side (ARM) logging cannot see it and destabilises timing.
-2. If it is confirmed as the active-register serving cadence, the fix would be at
-   the QBone bus/PRU layer (how fast a passive register updated as a side-effect
-   of an adjacent active DATO becomes visible to the next DATI), not in
-   `kw11p.cpp`.
-3. `active_on_dati` for CTR is available as a starting point but did not help on
-   its own.
+1. **Catch the miss without perturbing timing.** Do NOT log per access (that
+   crashed the service and adds latency). Arm a **one-shot, in-memory** capture
+   that fires only on the FIRST mismatch: in the CTR read/compare path, when the
+   value about to be served differs from the last value written to the counter,
+   snapshot into a few static variables or a small ring buffer — value written,
+   value served, `running`, `counter_frozen`, the acting thread id, and two
+   `clock_gettime(CLOCK_MONOTONIC)` stamps (write-callback entry/exit and read
+   time) — then stop capturing. Dump it after the run (a debug endpoint, or the
+   devices-menu `m e` memory peek). This distinguishes a **stale served value**
+   (race, candidate 1) from a **late write callback** (budget overrun,
+   candidate 2).
+2. **Audit `state_mutex` coverage (candidate 1).** In `kw11p.cpp`, list every site
+   that reads or writes `counter_frozen`, `running`, `run_start_ns`, and the
+   CTR/CSR/BUF shadows; confirm each holds `state_mutex`. Specifically: does the
+   worker ever call `set_register_dati_value(reg_ctr, …)` while `running == 0`
+   (racing the BUF-write callback)? Is the shadow store ordered before the PRU can
+   publish it? Fix any unguarded path or missing barrier.
+3. **Measure the write-callback budget (candidate 2).** From the step-1 stamps,
+   compare the BUF-write callback duration against the PRU's DATO stall/timeout
+   bound (find it in the qunibusadapter / PRU layer). If overruns correlate with
+   the miss, minimise the write path: publish the CTR shadow as the first, cheapest
+   action on a BUF/FIX write (one store under the lock), deferring heavier work
+   (overflow (re)scheduling, event fires) until after the shadow is published.
+4. **Re-validate.** Rebuild + deploy (`crossbuild` → scp `qbone-web` → `sudo
+   install -m755 … /usr/bin/qbone`; `crossbuild -d` does NOT install), boot XXDP,
+   run `R ZKWBJ1`, and confirm the **banner reprints every pass**. Re-check the RL
+   regression (CZRLG clean, still boots).
+5. **Only if 1–3 disprove both candidates** — the miss is genuinely the PRU
+   releasing the DATO before any achievable callback can publish the shadow — is
+   this a real bus-layer limit, and the fix moves to the qunibusadapter/PRU
+   (guaranteeing an active DATO's shadow side-effect is visible to the next DATI).
+   Prove that with the step-1 data before concluding it; do not assume it (an
+   earlier draft did, and was wrong).
 
 ### Reverse-engineering the .BIC (reusable technique)
 
