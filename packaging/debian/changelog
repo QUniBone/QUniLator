@@ -25,6 +25,11 @@ qbone (1.10.0-1) trixie; urgency=low
   * Each device carries a friendly name and a verbal status; disks report a power
     flag. Enabling a misconfigured device leaves the emulator running.
   * A workstation MCP server drives the board over its HTTP API.
+  * The web console drives the real console line reliably: bytes are paced to the
+    line's single-character receive buffer so typed input is not dropped and a
+    terminal's identification answerback reaches the guest intact, letting
+    RSX-11M+ and similar systems detect the console. Replaying the history on
+    reconnect no longer re-answers those identification queries.
 
  -- Hans Huebner <hans.huebner@gmail.com>  Sun, 26 Jul 2026 16:30:29 +0200
 
