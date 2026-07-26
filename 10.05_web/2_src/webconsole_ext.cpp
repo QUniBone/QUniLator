@@ -22,6 +22,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <deque>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -49,6 +51,42 @@ static console_channel_c channel(web_ws_console_send);
 
 static std::atomic<bool> running(false);
 static std::thread reader;
+
+// The real PDP-11 console SLU has no receive FIFO and its driver reads a byte
+// only every few ms, so bytes written to it back-to-back are lost — measured on
+// this board: a burst drops most bytes, ~5 ms/char is received cleanly. Writing
+// client input straight through therefore ate the first characters of typed
+// commands and corrupted terminal answerbacks (e.g. a terminal's ESC[?1;2c reply
+// to RSX's SET /INQUIRE), so RSX could not identify the terminal. Queue all
+// client->tty bytes and drip them out one every TX_PACE_MS instead.
+static const unsigned TX_PACE_MS = 5;
+static std::mutex tx_mutex;
+static std::condition_variable tx_cv;
+static std::deque<unsigned char> tx_queue;
+static std::thread tx_writer;
+
+static void tx_writer_loop(void) {
+	while (running) {
+		unsigned char c;
+		{
+			std::unique_lock<std::mutex> lk(tx_mutex);
+			tx_cv.wait_for(lk, std::chrono::milliseconds(50),
+					[] { return !tx_queue.empty() || !running; });
+			if (!running)
+				break;
+			if (tx_queue.empty())
+				continue;
+			c = tx_queue.front();
+			tx_queue.pop_front();
+		}
+		{
+			std::lock_guard<std::mutex> lock(port_mutex);
+			if (port_open)
+				port_io.SendBuf(&c, 1);
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(TX_PACE_MS));
+	}
+}
 
 // rs232_c prepends /dev/, so store bare tty names like the SLU serialport
 static std::string strip_dev(const std::string &p) {
@@ -126,9 +164,12 @@ static int ws_data_handler(struct mg_connection *, int opcode, char *data,
 		return 0;
 	if (len == 0)
 		return 1;
-	std::lock_guard<std::mutex> lock(port_mutex);
-	if (port_open)
-		port_io.SendBuf((unsigned char *) data, (int) len);
+	{
+		std::lock_guard<std::mutex> lk(tx_mutex);
+		for (size_t i = 0; i < len; i++)
+			tx_queue.push_back((unsigned char) data[i]);
+	}
+	tx_cv.notify_one();
 	return 1;
 }
 
@@ -141,13 +182,16 @@ void webconsole_ext_register(struct mg_context *ctx) {
 			ws_ready_handler, ws_data_handler, ws_close_handler, nullptr);
 	running = true;
 	reader = std::thread(reader_loop);
+	tx_writer = std::thread(tx_writer_loop);
 }
 
 void webconsole_ext_shutdown(void) {
 	if (!running)
 		return;
 	running = false;
+	tx_cv.notify_all();
 	reader.join();
+	tx_writer.join();
 	std::lock_guard<std::mutex> lock(port_mutex);
 	if (port_open) {
 		port_io.CloseComport();
