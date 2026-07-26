@@ -28,8 +28,10 @@ qbone (1.10.0-1) trixie; urgency=low
   * The web console drives the real console line reliably: bytes are paced to the
     line's single-character receive buffer so typed input is not dropped and a
     terminal's identification answerback reaches the guest intact, letting
-    RSX-11M+ and similar systems detect the console. Replaying the history on
-    reconnect no longer re-answers those identification queries.
+    RSX-11M+ and similar systems detect the console. Several browsers can mirror
+    one console at once; the server names one of them the answerer so the guest
+    receives a single reply to an identification query, and a reconnect replays
+    the history without re-answering.
 
  -- Hans Huebner <hans.huebner@gmail.com>  Sun, 26 Jul 2026 16:30:29 +0200
 
