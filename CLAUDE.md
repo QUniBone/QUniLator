@@ -101,6 +101,15 @@ compiler warnings or spurious language-server errors behind.
 
 ## Hardware notes
 
-The 11/73 answers across the whole 22-bit space — a full 4 MB of memory. Any
-emulated device that needs a window in bus address space collides with it until
-the memory card is reconfigured.
+The 11/73 CPU board carries no memory; a Q-bus memory card supplies it, and the
+test rig uses a **2 MB card**. So the low 2 MB of the 22-bit space is backed by
+that card, and the range from 2 MB up to the I/O page is nonexistent memory that
+answers with a bus timeout. QBone does not fill that range under `qbone.service`:
+`emulate_memory()` runs only from the interactive device-exerciser menus, never at
+service startup. An emulated device that needs a window in bus address space is
+therefore clear of memory above 2 MB and collides with the card below it; a
+different-sized card moves that boundary.
+
+An **external line clock** drives BEVNT on the Q-bus, so the line-clock interrupt
+(vector 100, BR 6) is present without enabling QBone's own emulated `KW11`
+(`ltc_c` at 777546).
