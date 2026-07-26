@@ -27,7 +27,8 @@
 
 /*** a synthetic client sink ***/
 struct mock_client {
-	std::string got;       // everything the channel sent this client
+	std::string got;       // everything the channel sent this client (binary)
+	std::string ctrl;      // control frames the channel sent this client (text)
 	bool alive = true;     // when false, every send reports dead
 	int sends = 0;         // successful send calls
 };
@@ -39,6 +40,15 @@ static int mock_send(void *client, const char *data, size_t len) {
 		return -1;
 	m->got.append(data, len);
 	m->sends++;
+	return 1;
+}
+
+// Matches console_channel_c::send_text_fn_t: records the control frame.
+static int mock_send_text(void *client, const char *data, size_t len) {
+	mock_client *m = (mock_client *) client;
+	if (!m->alive)
+		return -1;
+	m->ctrl.append(data, len);
 	return 1;
 }
 
@@ -165,6 +175,59 @@ int main(void) {
 		mock_client e;
 		ch.add_client(&e);
 		check(e.got == "keep", "the ring survives client churn");
+	}
+
+	/* 8. with a text callback the channel names exactly one answerer among the
+	      clients and promotes another when the answerer leaves */
+	{
+		const std::string ANS = "{\"answerer\":true}";
+		console_channel_c ch(mock_send, mock_send_text);
+		mock_client a, b, c;
+		ch.add_client(&a);
+		check(a.ctrl == ANS, "first client is named the answerer");
+		ch.add_client(&b);
+		ch.add_client(&c);
+		check(b.ctrl.empty() && c.ctrl.empty(), "later clients are viewers");
+
+		ch.remove_client(&a);           // the answerer leaves
+		int promoted = (b.ctrl == ANS) + (c.ctrl == ANS);
+		check(promoted == 1, "exactly one viewer is promoted when the answerer leaves");
+
+		// removing the other viewer must not re-designate the sitting answerer
+		mock_client *ansr = (b.ctrl == ANS) ? &b : &c;
+		mock_client *viewer = (ansr == &b) ? &c : &b;
+		std::string before = ansr->ctrl;
+		ch.remove_client(viewer);
+		check(ansr->ctrl == before, "removing a viewer leaves the answerer unchanged");
+
+		ch.remove_client(ansr);
+		check(ch.client_count() == 0, "all clients gone");
+		mock_client d;
+		ch.add_client(&d);
+		check(d.ctrl == ANS, "a fresh client is named answerer when none exists");
+	}
+
+	/* 9. a dead first client is not designated; the next live one is */
+	{
+		const std::string ANS = "{\"answerer\":true}";
+		console_channel_c ch(mock_send, mock_send_text);
+		ch.append("h", 1);              // non-empty ring so the dead client is detected
+		mock_client dead, live;
+		dead.alive = false;
+		ch.add_client(&dead);           // send_text reports dead -> not designated, not inserted
+		check(ch.client_count() == 0 && dead.ctrl.empty(), "dead client is not the answerer");
+		ch.add_client(&live);
+		check(live.ctrl == ANS, "the next live client becomes the answerer");
+	}
+
+	/* 10. a null text callback leaves every client a plain mirror (DL11 taps) */
+	{
+		console_channel_c ch(mock_send);   // no text callback
+		mock_client a, b;
+		ch.add_client(&a);
+		ch.add_client(&b);
+		check(a.ctrl.empty() && b.ctrl.empty(),
+				"no answerer designation without a text callback");
 	}
 
 	printf("%d checks, %d failures\n", checks, failures);

@@ -42,4 +42,11 @@ static inline int web_ws_console_send(void *client, const char *data, size_t len
 			MG_WEBSOCKET_OPCODE_BINARY, data, len);
 }
 
+// Out-of-band control message to one console client, as a TEXT frame so it is
+// distinct from the binary terminal stream. Same return convention.
+static inline int web_ws_console_send_text(void *client, const char *data, size_t len) {
+	return web_ws_try_send((struct mg_connection *) client,
+			MG_WEBSOCKET_OPCODE_TEXT, data, len);
+}
+
 #endif // _WEBWS_HPP_

@@ -12,8 +12,18 @@
 
 #include "webconsole_channel.hpp"
 
-console_channel_c::console_channel_c(send_fn_t send, size_t cap)
-	: cap_(cap), send_(send) {
+console_channel_c::console_channel_c(send_fn_t send, send_text_fn_t send_text,
+		size_t cap)
+	: cap_(cap), send_(send), send_text_(send_text) {
+}
+
+// caller holds mutex_: make client the answerer, but only once it has actually
+// received the control frame (an unwritable client is not designated, so the
+// role never lands on a client that will not hear about it).
+void console_channel_c::set_answerer_locked(void *client) {
+	static const char msg[] = "{\"answerer\":true}";
+	if (send_text_ != nullptr && send_text_(client, msg, sizeof(msg) - 1) == 1)
+		answerer_ = client;
 }
 
 // caller holds mutex_
@@ -38,18 +48,34 @@ void console_channel_c::append(const char *data, size_t len) {
 
 void console_channel_c::add_client(void *client) {
 	std::lock_guard<std::mutex> lock(mutex_);
-	// Replay the retained history first, then join the live set — both under the
-	// one lock so no byte slips between the snapshot and the insert. A client
-	// that reports dead on the snapshot is not inserted; one merely behind
-	// (skipped) still joins and picks up the live stream.
-	if (!ring_.empty() && send_(client, ring_.data(), ring_.size()) < 0)
+	// Name the answerer before the ring replay, so its small control frame hits
+	// an empty send buffer rather than queueing behind up to 256 KB of history.
+	if (answerer_ == nullptr)
+		set_answerer_locked(client);
+	// Replay the retained history, then join the live set — both under the one
+	// lock so no byte slips between the snapshot and the insert. A client that
+	// reports dead on the snapshot is not inserted; one merely behind (skipped)
+	// still joins and picks up the live stream.
+	if (!ring_.empty() && send_(client, ring_.data(), ring_.size()) < 0) {
+		if (answerer_ == client)
+			answerer_ = nullptr;
 		return;
+	}
 	clients_.insert(client);
 }
 
 void console_channel_c::remove_client(void *client) {
 	std::lock_guard<std::mutex> lock(mutex_);
 	clients_.erase(client);
+	// The answerer left: promote the first remaining client that can take it.
+	if (client == answerer_) {
+		answerer_ = nullptr;
+		for (void *c : clients_) {
+			set_answerer_locked(c);
+			if (answerer_ != nullptr)
+				break;
+		}
+	}
 }
 
 void console_channel_c::clear_clients(void) {

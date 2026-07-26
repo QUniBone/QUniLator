@@ -46,8 +46,9 @@ static std::string cur_source = "webserial";
 static std::string cur_port = "ttyS2";
 static unsigned cur_baud = 38400;
 
-// retained history + live clients for /ws/console/ext
-static console_channel_c channel(web_ws_console_send);
+// retained history + live clients for /ws/console/ext; the text callback lets
+// the channel name one client the terminal answerer (see console_channel_c)
+static console_channel_c channel(web_ws_console_send, web_ws_console_send_text);
 
 static std::atomic<bool> running(false);
 static std::thread reader;

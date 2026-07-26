@@ -37,10 +37,18 @@ public:
 	// Send len bytes to one client. Return follows web_ws_try_send:
 	//   1 = sent, 0 = skipped (client behind), -1 = dead (drop the client).
 	typedef int (*send_fn_t)(void *client, const char *data, size_t len);
+	// Send an out-of-band control message (a TEXT frame) to one client.
+	typedef int (*send_text_fn_t)(void *client, const char *data, size_t len);
 
 	static const size_t default_cap = 256 * 1024; // per-channel ring, bytes
 
-	explicit console_channel_c(send_fn_t send, size_t cap = default_cap);
+	// send_text designates the terminal "answerer": when non-null, the channel
+	// picks one client as the single terminal that answers the guest's
+	// identification queries (so N mirrored consoles do not each answer), and
+	// tells it so with a control frame. A null send_text leaves every client a
+	// plain mirror (the DL11 taps).
+	explicit console_channel_c(send_fn_t send, send_text_fn_t send_text = nullptr,
+			size_t cap = default_cap);
 
 	// Producer thread: append raw bytes to the ring and broadcast them live,
 	// dropping any client that reports dead.
@@ -62,12 +70,16 @@ public:
 
 private:
 	void trim_locked();
+	// caller holds mutex_: name client the answerer and tell it so
+	void set_answerer_locked(void *client);
 
 	std::mutex mutex_;
 	std::string ring_;             // raw bytes, at most cap_
 	size_t cap_;
 	std::set<void *> clients_;
 	send_fn_t send_;
+	send_text_fn_t send_text_;     // null: no answerer designation (plain mirror)
+	void *answerer_ = nullptr;     // the one client that answers guest queries
 };
 
 #endif // _WEBCONSOLE_CHANNEL_HPP_
