@@ -1,3 +1,33 @@
+qbone (1.10.0-1) trixie; urgency=low
+
+  * The web interface is rebuilt as a Vite + Preact + TypeScript application,
+    bundled on the development machine and served as static files by the board.
+    It adds URL routing, a PDP-11/03 front-panel dashboard, and a
+    configuration-management screen that edits a stored configuration offline and
+    then applies it. The running configuration is a first-class object, kept
+    apart from live device status.
+  * The console keeps its history on the server and replays it to each client on
+    connect; terminals dispose and recreate cleanly, and the console and the web
+    share one log stream whose level is adjustable at runtime.
+  * Emulated serial ports reach the network over TCP: the DZV11, DHV11 and DL11
+    muxes listen on assigned ports, retune their line settings while running, and
+    advertise WILL ECHO, each carrying a friendly label.
+  * The DZV11 and DHV11 are conformed to their DEC technical manuals
+    (EK-DZV11-TM-001, EK-DHV11-TM-002) and pass the VDZAD3 and CVDHA XXDP
+    diagnostics; each mux holds its own interrupt arbitration slot.
+  * The RL01/RL02 subsystem on the RLV12 is modelled to EK-RL012-TM-PRE and
+    EK-RLV12-TD-001 — the bus address register, a drive that waits for ready
+    before a transfer, the seek state machine, and a controller that defers a
+    seek to a busy drive. XXDP boots reliably from an RL pack, and the RL
+    controller and drive diagnostics (CZRLG, CZRLI, CZRLN, CZRLJ, CZRLH) pass.
+  * A KW11-P programmable real-time clock is emulated (DEC-11-HPWB-D), giving the
+    diagnostic supervisor a programmable time base.
+  * Each device carries a friendly name and a verbal status; disks report a power
+    flag. Enabling a misconfigured device leaves the emulator running.
+  * A workstation MCP server drives the board over its HTTP API.
+
+ -- Hans Huebner <hans.huebner@gmail.com>  Sun, 26 Jul 2026 16:30:29 +0200
+
 qbone (1.9.0-1) trixie; urgency=low
 
   * Name for the bus only what is built for the bus. The emulator binary, the
