@@ -36,6 +36,7 @@ RL0102_c::RL0102_c(storagecontroller_c *_controller) :    storagedrive_c(_contro
 {
     log_label = "RL0102"; // to be overwritten by RL11 on create
     status_word = 0;
+    seek_settle_pending = false;
     set_type(drive_type_e::RL02); // default
     runstop_button.value = false; // force user to load file assume drive is LOAD
     fault_lamp.value = false;
@@ -187,16 +188,30 @@ bool RL0102_c::cmd_seek(unsigned destination_cylinder, unsigned destination_head
     DEBUG_FAST("Drive start seek from cyl.head %d.%d to %d.%d", cylinder, head, destination_cylinder,
           destination_head);
 
-    // seek may stop running seek ?
-//	worker_mutex.lock() ;
     this->seek_destination_cylinder = destination_cylinder;
-    this->seek_destination_head = destination_head; // time needed to center on track
-    head = 0xff; // invalid, to get extra seek time
+    this->seek_destination_head = destination_head;
 
-    // RL11 must see "READY=false" immediately
+    // EK-RL012-TM-PRE §4.2.1: any seek command drops Drive Ready immediately for
+    // the 6.5 ms positioner-settle timeout. RL11 must see READY=false at once.
+    seek_settle_pending = true;
     update_status_word(/*drive_ready_line*/false, drive_error_line);
+
+    if (destination_cylinder == cylinder) {
+        // Zero track difference. EK-RL012-TM-PRE §4.2: the State Control Logic
+        // leaves Velocity (Seek) Mode for Position Mode only when Track Count
+        // reaches 0; with a zero difference the positioner never leaves Position
+        // Mode, so the drive stays in Lock On (state 5) and does not report Seek
+        // (state 4). Head selection is electronic within Position Mode. The drive
+        // holds Lock On and re-settles in place - state_lock_on() times the 6.5 ms
+        // Drive-Ready drop and only the selected head changes.
+        head = destination_head;
+        return true;
+    }
+
+    // Nonzero track difference: enter Velocity (Seek) Mode. state_seek() applies
+    // the head-switch settle only when the selected head actually changes, then
+    // re-enters Lock On where the 6.5 ms settle completes before Drive Ready.
     change_state(RL0102_STATE_seek);
-//	worker_mutex.unlock() ;
     return true;
 }
 
@@ -343,20 +358,16 @@ void RL0102_c::state_load_heads()
     next_sector_segment_under_heads = 12; // next header is 6
 }
 
-// DEC: seek = 100ms for 512/256 tracks
-void RL0102_c::state_seek() 
+// EK-RL012-TM-PRE seek timing. The positioner accelerates, slews and
+// decelerates across the requested cylinder distance, dwelling in Seek
+// (velocity) mode - drive state 4 - for the whole move. It then enters Position
+// mode (Lock On), where state_lock_on() applies the 6.5 ms settle before Drive
+// Ready. A head switch to the other surface is itself a servo seek (UG-005:
+// "the seek and the head switching are normally combined"), so it is folded
+// into the same move with an 8 ms floor.
+void RL0102_c::state_seek()
 {
-    // drive_ready_line = false;
-    update_status_word(/*drive_ready_line*/false, drive_error_line);
-
-    unsigned calcperiod_ms = 10;
-    // head can pass this much tracks per loop
-    // calc for RL02
-    unsigned trackmove_increment = 512 * calcperiod_ms / 100;
-    unsigned trackmove_time_ms; // time for increment seek or part of it
-    if (drive_type == drive_type_e::RL01)
-        trackmove_increment /= 2; // RL01 tracks are wider apart
-    // trackmove_increment *= emulation_speed.value;
+    update_status_word(/*drive_ready_line*/false, drive_error_line); // reports state 4
 
     if (runstop_button.value == false || fault_lamp.value == true) { // stop spinning
         change_state(RL0102_STATE_spin_down);
@@ -367,63 +378,55 @@ void RL0102_c::state_seek()
     ready_lamp.value = 0;
     writeprotect_lamp.value = writeprotect_button.value || image_is_readonly();
 
-    // need delay for head search (ZRLI, test 9)
-    // here done BEFORE cylinder search ...
-    // set cur head to "invalid" to get the extra head seek time
-    if (seek_destination_head != head) {
-        head = seek_destination_head;
-        // wait for .. say .. 3 sector passes
-        // unsigned sector_time_us = (60 * MILLION) / (full_rpm * sector_count); // = 625us
-        // trackmove_time_ms = (5 * sector_time_us) / 1000;
-        // ZRLJ test 1: any seek > 3ms
-        trackmove_time_ms = 5;
-        state_timeout.wait_ms(trackmove_time_ms); // must be > 0!
-        DEBUG_FAST("Seek: head switch to %d", head);
-        return;
-    }
+    // cylinder distance for the requested seek
+    unsigned dist = (seek_destination_cylinder > cylinder)
+                    ? (seek_destination_cylinder - cylinder)
+                    : (cylinder - seek_destination_cylinder);
 
-    // cylinder changes, velocity mode
-    trackmove_time_ms = calcperiod_ms; // default: max movement
-
-    if (seek_destination_cylinder > cylinder) {
-        DEBUG_FAST("drive seeking outward, cyl = %d", cylinder);
-        cylinder += trackmove_increment;
-        if (cylinder >= seek_destination_cylinder) {
-            // seek head outward finished
-            // proportionally reduced seek time
-            cylinder = seek_destination_cylinder;
-            trackmove_time_ms = calcperiod_ms * (seek_destination_cylinder - cylinder)
-                                / trackmove_increment;
-            DEBUG_FAST("drive seek outwards complete, cyl = %d", cylinder);
-            // DEBUG_FAST("Seek: trackmove_time_ms =%d", trackmove_time_ms);
-            state_timeout.wait_ms(trackmove_time_ms);
-            change_state(RL0102_STATE_lock_on);
-        } else
-            state_timeout.wait_ms(trackmove_time_ms);
-    } else {
-        // seek head inwards
-        if ((cylinder - seek_destination_cylinder) <= trackmove_increment) {
-            // proportionally reduced seek time
-            trackmove_time_ms = calcperiod_ms * (cylinder - seek_destination_cylinder)
-                                / trackmove_increment;
-            cylinder = seek_destination_cylinder;
-            DEBUG_FAST("drive seek inwards complete, cyl = %d", cylinder);
-            // DEBUG_FAST("Seek: trackmove_time_ms =%d", trackmove_time_ms);
-            state_timeout.wait_ms(trackmove_time_ms);
-            change_state(RL0102_STATE_lock_on);
-            return;
-        } else {
-            DEBUG_FAST("drive seeking inwards, cyl = %d", cylinder);
-            cylinder -= trackmove_increment;
-            state_timeout.wait_ms(trackmove_time_ms);
-        }
+    // Linear seek time between the TM-PRE endpoints: one-track = 5 ms,
+    // full stroke (cylinder_count-1 tracks) = 100 ms.
+    unsigned seek_ms = 0;
+    if (dist > 0) {
+        if (geometry.cylinder_count > 1)
+            seek_ms = time_seek_one_track_ms
+                      + (time_seek_full_ms - time_seek_one_track_ms) * (dist - 1)
+                        / (geometry.cylinder_count - 1);
+        else
+            seek_ms = time_seek_one_track_ms;
     }
+    // a head switch is a combined servo seek: at least the 8 ms head-switch time
+    if (seek_destination_head != head && seek_ms < time_head_switch_ms)
+        seek_ms = time_head_switch_ms;
+
+    DEBUG_FAST("Drive seek cyl %d->%d (dist %d), head %d->%d, %d ms",
+          cylinder, seek_destination_cylinder, dist, head, seek_destination_head, seek_ms);
+
+    head = seek_destination_head;
+    cylinder = seek_destination_cylinder;
+
+    // held in Seek (state 4) for the positioner move, then Lock On
+    state_timeout.wait_ms(seek_ms);
+    change_state(RL0102_STATE_lock_on);
 }
 
 void RL0102_c::state_lock_on()
 {
     if (runstop_button.value == false || fault_lamp.value == true) { // stop spinning
         change_state(RL0102_STATE_unload_heads);
+        return;
+    }
+
+    if (seek_settle_pending) {
+        // EK-RL012-TM-PRE §4.2.1: after reaching Position Mode a read/write
+        // timeout allows 6.5 ms for the positioner to settle before Drive Ready
+        // is asserted. The drive stays in Lock On (state 5) throughout, including
+        // a zero-difference seek. Hold not-ready for the settle, then re-assert.
+        update_status_word(/*drive_ready_line*/false, drive_error_line);
+        load_lamp.value = 0;
+        ready_lamp.value = 0;
+        writeprotect_lamp.value = writeprotect_button.value || image_is_readonly();
+        state_timeout.wait_us(time_seek_settle_us);
+        seek_settle_pending = false;
         return;
     }
 

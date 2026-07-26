@@ -112,8 +112,25 @@ public:
 	// ZRLI: > 200, < 300 ?
 	unsigned time_heads_out_ms = 300;
 
+	// EK-RL012-TM-PRE seek-time spec: one-cylinder/track seek 5 ms, full-stroke
+	// (whole surface) 100 ms, average 55 ms; head switch 8 ms. The positioner
+	// dwells in Seek (velocity) mode - drive state 4 - for this whole move, then
+	// enters Position mode (Lock On) for the 6.5 ms settle. Seek time scales
+	// linearly with the cylinder distance between the one-track and full-stroke
+	// endpoints, which reproduces the 55 ms average over a uniform stroke.
+	static const unsigned time_seek_one_track_ms = 5;   // TM-PRE: 5 ms max
+	static const unsigned time_seek_full_ms = 100;      // TM-PRE: 100 ms max
+	static const unsigned time_head_switch_ms = 8;      // TM-PRE: 8 ms
+
 	volatile bool volume_check; // set on "head-on-cylinder", cleared by controller
 	volatile bool error_wge; // write not execute: readonly, or other reasons
+
+	// EK-RL012-TM-PRE §4.2.1: on reaching Position Mode a read/write timeout
+	// allows 6.5 ms for the positioner to settle before Drive Ready is asserted.
+	// Any seek command drops Drive Ready for this settle time - including a
+	// zero-track-difference seek, where the drive never leaves Lock On.
+	volatile bool seek_settle_pending;
+	static const unsigned time_seek_settle_us = 6500; // TM-PRE §4.2.1: 6.5 ms
 
 	void update_status_word(void);
 	void update_status_word(bool new_drive_ready_line, bool new_drive_error_line);
