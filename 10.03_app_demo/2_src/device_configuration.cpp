@@ -123,6 +123,9 @@ device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
 
 	LTC = new ltc_c();
 
+	// KW11-P programmable real-time clock (ships disabled)
+	KW11P = new kw11p_c();
+
 #if defined(UNIBUS)
 	RX11 = new RX11_c();
 	RX211 = new RX211_c();
@@ -169,6 +172,8 @@ device_configuration_c::~device_configuration_c() {
 	delete VCB01;
 #endif
 
+	KW11P->enabled.set(false);
+	delete KW11P;
 	LTC->enabled.set(false);
 	delete LTC;
 	for (dhv11_c *d : DHV11) {

@@ -45,6 +45,7 @@ const label_entry k_table[] = {
 	{ "RA81",          "MSCP disk",              "RA81",  INST_UNIT },
 	{ "slu_c",         "Serial line unit",       "DL11",  INST_ADDR },
 	{ "ltc_c",         "Line-time clock",        "KW11",  INST_NONE },
+	{ "kw11p_c",       "Programmable clock",     "KW11-P",INST_NONE },
 	{ "RXV11",         "RX01 floppy controller", "RXV11", INST_NONE },
 	{ "RXV12",         "RX02 floppy controller", "RXV12", INST_NONE },
 	{ "RX0102uCPU",    "Floppy microcontroller", "",      INST_NONE },

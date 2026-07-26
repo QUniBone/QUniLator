@@ -47,6 +47,7 @@
 #include "rk11.hpp"
 #include "uda.hpp"
 #include "dl11w.hpp"
+#include "kw11p.hpp"
 #include "dzv11.hpp"
 #include "dhv11.hpp"
 #include "rx11211.hpp"
@@ -97,6 +98,7 @@ public:
 	std::vector<dzv11_c *> DZV11;
 	std::vector<dhv11_c *> DHV11;
 	ltc_c *LTC;
+	kw11p_c *KW11P;
 
 	// to inject characters into the SLU receivers (console scripting,
 	// web terminal)
