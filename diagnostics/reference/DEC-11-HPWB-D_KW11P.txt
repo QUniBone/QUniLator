@@ -1,0 +1,2647 @@
+DEC-11-HPWB-D
+
+KW11-P
+
+programmable
+real-time clock
+manual
+
+DIGITAL EQUIPMENT CORPORATION « MAYNARD, MASSACHUSETTS
+
+lst Edition
+
+January 1972
+
+2nd Printing (Rev) July 1972
+3rd Printing October 1972
+
+Copyright © 1972 by Digital Equipment Corporation
+
+The material in this manual is for informational purposes and is subject to change
+without notice.
+
+The following are trademarks of Digital Equipment
+Corporation, Maynard, Massachusetts:
+DEC
+
+PDP
+
+FLIP CHIP
+
+FOCAL
+
+DIGITAL
+
+COMPUTER LAB
+
+UNIBUS
+
+TABLES
+
+CONTENTS
+Page
+
+CHAPTER 1 INTRODUCTION
+
+2.1
+
+Introduction
+
+_
+
+2.2
+
+Functional Units
+
+2-1
+
+2.3
+
+Modes of Operation
+
+2-1
+
+2-1
+
+DETAILED DESCRIPTION
+
+3.1
+
+Introduction
+
+3-1
+
+3.2
+
+Address Selector and Gating Control
+
+3-1
+
+3.3
+
+Clock and Clock Control
+
+3-2
+
+3.3.1
+
+Introduction
+
+3-2
+
+3.3.2
+
+Clock
+
+3-3
+
+3.3.3
+
+Clock Selection Logic
+
+3-3
+
+3.3.4
+
+Counter Up/Down Logic
+
+3.3.5
+
+Counter Load Logic
+
+3-3
+3-4
+
+3.4
+
+Control and Status Register
+
+3-5
+
+3.5
+
+Count Set Buffer and Counter
+
+3-5
+
+3.6
+
+Interrupt Control
+
+3-6
+
+3.6.1
+
+Introduction
+
+3-6
+
+3.6.2
+
+Interrupt Operational Sequence
+
+3-7
+
+CHAPTER 4 PROGRAMMING INFORMATION
+
+4.1
+
+Introduction
+
+41
+
+ILLUSTRATIONS
+Title
+
+Art No.
+
+Page
+
+KW11-P Programmable Real-Time Clock, Simplified Block
+
+11-0662
+
+2-1
+
+Figure No.
+2-1
+
+Diagram
+
+3-1
+
+KW11-P Address Word for Counter
+
+3-2
+
+Address Selection and Gating Control, Block Diagram
+
+11-0669
+11-0663
+
+3-1
+3-1
+
+3-3
+
+Clock Selection, Simplified Logic Diagram
+RS Latch, Logic Diagram
+
+11-0664
+11-0665
+
+3-3
+3-4
+
+Control and Status Register Bit Assignments
+Input Buffer and Counter, Simplified Logic Diagram
+
+11-0668
+
+3-5
+
+11-0666
+
+3-6
+
+11-0667
+
+3-6
+
+3-4
+
+3-5
+3-6
+
+(2 Bits Only)
+
+3-7
+
+Interrupt Control, Block Diagram
+
+Title
+
+Page
+
+3-1
+
+Gating Control Signals
+
+3-2
+
+3-3
+
+Clock Rate Selection Code
+
+3-3
+
+3-4
+
+Truth Table for Clock Selector
+
+3-4
+
+3-2
+
+CHAPTER 2 GENERAL DESCRIPTION
+_.
+SO
+
+CHAPTER 3
+
+Table No.
+
+Output Signals and Functions
+
+3-2
+
+CHAPTER 1
+INTRODUCTION
+
+The KW11-P Programmable Real-Time Clock is an option for the PDP-11 System which provides a method of
+accurately measuring time intervals. The KW11-P consists of a quad-height module (M7228) that provides programmed real-time interval interrupts and interval counting in several modes of operation. Addition of this mod-
+
+ule to a PDP-11 System allows hardware interval counting which reduces program instruction time and allows
+more efficient use of computer time.
+
+Although signals are transferred between the KW1 1-P module and the Unibus©Y , this manual does not describe
+the operation of the Unibus. A detailed description of the Unibus is presented in the PDP-11 Unibus Interface
+Manual, DEC-11-HIAB-D.
+
+This manual provides the user with the theory of operation necessary to understand and maintain the KW11-P
+Programmable Real-Time Clock. The level of discussion assumes that the reader is familiar with basic digital computer theory.
+
+The manual is organized into four chapters: Introduction, General Description, Detailed Description, and Programming Information. A set of engineering logic drawings is provided with each KW11-P. The drawing set is
+
+identified as D-CS-M7228-0-1, sheets 1 through 5.
+Sheet 1 — Component Placement and Parts Reference (KW-1)
+Sheet 2 — Clock Control (KW-2)
+Sheet 3 — Counter (KW-3)
+Sheet 4 — Interrupt Control (KW-4)
+Sheet 5 — Address Control (KW-5)
+
+) Unibus is a trademark of Digital Equipment Corporation.
+1-]
+
+CHAPTER 2
+
+GENERAL DESCRIPTION
+
+2.1
+
+INTRODUCTION
+
+The KW11-P provides programmed real-time interval interrupts and interval counting in several modes of operaADDRESS
+
+A <17:01> CO1, MSYN, INIT
+
+tion. It is a quad-height module (M7228) that can be installed in either a DD11-A peripheral mounting unit or in
+
+SELECTOR
+
+one of the two PDP-11 processor small peripheral controller slots. A wide range of system programming requirements can be met with the KW11-P.
+
+CONTROL
+
+0 <15, 07:00>
+
+AND STATUS
+
+It operates in the single-interrupt mode and the repeat-interrupt mode and also functions as an external event
+counter. Four selectable clock rates include:
+
+REGISTER
+
+100 kHz, 10 kHz, line frequency, and external clock.
+
+2
+
+BD 10 <08,06,02> BG IN, BG OUT, BR,
+
+This chapter presents an overview of the KW11-P operation. The discussion is keyed to the block diagram level.
+
+z | BBSY, SSYN, SACK, INTR
+
+A detailed discussion of the KW11-P is presented in Chapter 3.
+2.2
+
+.
+
+INTERRUPT
+
+SCHMITT
+
+}*#—
+
+.
+
+TRIGGER
+
+POWER SUPPLY
+
+{OOKHz
+GATING
+
+CONTROL | 1OKHz
+
+CONTROL
+
+LINE FREQ.
+
+[COUNT FROM
+
+CONTROLLED
+CLOCK
+
+2
+
+0<15:00>
+
+FUNCTIONAL UNITS
+
+Ser
+
+fe
+
+BUFFER
+
+SCHMITT
+
+TRIGGER
+
+EXTERNAL
+
+COUNT
+
+The major functional units of the KW11-P include a 16-bit synchronous binary up/down counter, 16-bit count
+set buffer, 9-bit control and status register, clock, gating control, interrupt control, and an address selector (Fig-
+
+D<15:00>
+
+ure 2-1). The purpose of each of these functional units is as follows:
+
+COUNTER
+
+16-Bit Counter — Counts up or down at four selectable rates and can be read while operating.
+
+The interrupt sequence is initiated at zero (underflow) during a count down froma preset inter-
+
+11-0662
+
+val count. The count-up mode is used to count external events; an interrupt is initiated at zero
+
+(overflow).
+
+,
+
+Figure 2-1
+
+KW11-P Programmable Real-Time Clock, Simplified Block Diagram
+
+16-Bit Count Set Buffer — Stores the preset interval count. At underflow, depending on the op-
+
+erating mode, the buffer automatically reloads the counter or is cleared.
+9-Bit Control and Status Register — Provides various control and status signals related to the operation of the buffer and counter. These signals. are discussed in detail in Chapter 3.
+Clock — Provides two crystal-controlled signals of 100 kHz and 10 kHz to clock the counter.
+
+Two external clock signals are provided: 50/60 Hz line frequency and an analog signal input.
+
+. Gating Control — Provides input/output signal access for the functional elements of the KW1 1-P.
+Interrupt Control — Permits the KW11-P to make bus requests, gain bus control, and generate in-
+
+terrupts. Consists of circuitry to duplicate some of the functions of an M782 Interrupt Control
+Module.
+
+Address Selector — Decodes the address information from the bus and provides gating signals for
+the selected element (status register, buffer, or counter). Consists of circuitry to duplicate some
+of the functions of an M105 Address Selector Module.
+
+2.3
+
+MODES OF OPERATION
+
+The KW11-P has three program selectable modes of operation:
+
+Single-Interrupt Mode — A program specified time interval is preset and an interrupt is generated
+at the end of the interval. The time interval, represented as a specific count, is loaded into the
+counter. Count down or count up is initiated at one of four selectable rates, and at underflow or
+overflow and interrupt is generated. The clock is stopped and the counter is reset to zero.
+Repeat-Interrupt Mode — A program specified time interval is preset and repeated interrupts are
+
+generated at a rate corresponding to the time interval. The time interval, represented as a specific
+
+count, is loaded into the counter. Count down or count up is initiated, and at underflow or overflow an interrupt is generated. The counter is automatically reloaded from the count set buffer
+and the clock is restarted. At the second underflow or overflow, another interrupt is generated.
+(continued on next page)
+
+2-1
+
+The sequence is repeated to produce a series of interrupts at program specified intervals. It is possible for a non-recoverable error to occur if the counter underflows or overflows before the previ-
+
+2.4
+
+ous interrupt has been serviced.
+
+The KW11-P module plugs into a DD11-A Peripheral Mounting Panel or into a prescribed slot in any of the PDP-
+
+External-Event Counter — The external input is used to clock the counter in the count-up or
+count-down mode. The counter may be read during operation to determine the number of events
+
+11 family of computers. In each case, a wire must be installed to pick up the LTC L signal from the power supply
+
+that have occurred.
+
+The control and status register, count set buffer, and counter can be addressed. The address selector decodes a
+
+specific address. The results of the decoding operation, along with control signal BUS C01, are combined in the
+gating circuitry to provide a group of control signals that are used on the KW11-P module.
+The overall operation of the KW1 1-P is controlled by signals from the control and status register. This 9-bit regis-
+
+ter responds to programmed information from the processor. It generates signals to provide the following functions.
+
+a.
+
+Control mode operation.
+
+b.
+
+Control count up/down and count rate.
+
+c.
+
+Start counter.
+
+d.
+
+Indicate counter underflow or overflow.
+
+e.
+
+Provide an interrupt enable signal to the interrupt control logic.
+
+f.
+
+Provide an error signal if a second underflow or overflow occurs in the repeat-interrupt mode
+before the interrupt generated by the previous underflow or overflow has been serviced. This
+condition may require restarting of the operation.
+
+g.
+
+Provide a signal to single-clock the counter for maintenance purposes.
+
+The count set buffer receives the preset interval count from the bus via Unibus receivers. Coincident with a load
+pulse, all 16 bits of input data are transferred to the buffer output. The counter inputs are connected directly to
+
+the buffer outputs. The buffer load pulse asserts a counter load pulse that transfers the 16 bits of data from the
+counter inputs to the counter outputs. The counter is loaded with a preset interval count and is ready for operation. The preset interval count is also retained in the buffer. The counter outputs are connected to the bus with
+Unibus drivers. A control signal to the drivers transfers the counter output to the bus so it can be read during operation.
+
+The interrupt control contains the logic circuits that permit the KW11-P to gain control of the bus (become bus
+master) and perform an interrupt operation. Single interrupts or repeated interrupts are generated depending on
+the mode selected.
+
+The basic interval clock is a 100-kHz crystal-controlled oscillator. Its output is also divided down to provide a
+10-kHz clock signal. A signal is provided by the PDP-11 processor power supply as the line frequency (50/60 Hz)
+count rate. An external clock signal can also be used. Both the external clock and line frequency signals are con-
+
+ditioned by Schmitt triggers. A clock selector/multiplexer provides the desired clock rate in accordance with programmed information.
+
+INSTALLATION
+
+and apply it to the line frequency input of the KW11-P.
+
+When installed, the LTC L input to the KW1 1-P is located on pin CE1 of the slot into which it is plugged. Connect a piece of 30 AWG wire from this pin (CE1) to the pin designated below for each application.
+
+Application
+
+Pin Number
+
+DD11-A Peripheral Mounting Panel
+
+A03P2
+
+PDP-11/20 Computer (KA11 Processor)
+
+A13P2
+
+PDP-11/45 Computer (KC11 Processor)
+
+A13P2
+
+PDP-11/05 Computer (KD 11 Processor)
+
+CO1D1
+
+PDP-11/45 Computer (KB11 Processor)
+
+COIR1
+
+CHAPTER 3
+
+DETAILED DESCRIPTION
+
+3.1
+
+INTRODUCTION
+
+KW-5 SSYN
+
+This chapter provides a detailed description of the KW! 1-P Programmable Real-Time Clock. Each major func-
+
+BUS
+
+BUS AI7Z L
+
+tional unit is discussed separately and with regard to its interrelation with other functional units.
+
+INH L
+
+MSYN
+
+L
+
+i
+t
+
+The text refers to engineering logic drawings D-CS-M7228-0-1, sheets 1 through 5, that are referenced by the
+print prefix (KW-2, KW-3, etc.) located in the title box. A drawing list is given in Chapter 1 and a set of drawings
+is provided with each KW11-P. Simplified logic diagrams and block diagrams are used to support specific areas of
+
+|
+Y
+
+CONTROL
+
+DECODE
+
+|
+
+BUS SSYN L
+
+BUS
+
+ADDRESS
+
+i
+{
+BUS
+AOS L
+
+_
+KW-5
+SELOH
+
+et
+
+KW-5 SEL2H
+
+discussion.
+
+3.2 ADDRESS SELECTOR AND GATING CONTROL
+
+BUS AQO2 L
+
+The address selector responds to three standard device register addresses.
+
+BUS COIL
+
+GATING
+CONTROL
+
+SEL O
+
+BUS AOI L
+
+select
+hi
+
+SIGNALS
+
+~
+
+KW-5 CSR BUS H
+
+_
+
+KW-5 CSR@BUSL
+
+.
+>
+
+| KW-5 LD IN BUF L
+
+|SEL 2
+
+KW-5 BUS «CSR H
+
+SEL 4
+
+INES
+
+_—_
+>
+
+_
+»
+
+KW-5 BUS*CTR H
+
+772540 — Control and Status Register (CSR)
+772542 — Count Set Buffer (BUF)
+
+11-0663
+
+772544 — Counter (CTR)
+
+Figure 3-2
+
+Address Selection and Gating Control, Block Diagram
+
+The KW11-P address word contains 17 bits (Figure 3-1).
+
+PEE PEE DEE TT PETE TI
+Figure 3-1
+
+Unit Selected
+
+A02
+
+AOl
+
+0
+0
+
+0
+|
+
+Count Set Buffer
+
+1
+
+0
+
+Counter
+
+Control and Status Register
+
+KW11-P Address Word for Counter
+Control line C-1 is used to provide gating control signals. When C01 = 0, a data-in (DATI) bus transaction occurs;
+which, for the KW11-P, means that data is transferred from the counter or control and status register to the pro-
+
+The address information from the bus is decoded by the selector. It provides select and gating signals that determine which unit has been selected and whether it is to perform an input or output function. A block diagram of
+the address selector and gating control is shown in Figure 3-2. The detailed logic is shown in drawing KW-5.
+
+The KW11-P uses 17 address lines, A(17:01); address line A00 is not used because it is the byte reference bit and
+the KW11-P deals only with complete words. Only one control line, CO1, is used to perform the gating decoding.
+Jumpers are installed in bit positions 3, 4, 7, 9, and 11 so that the selector responds only to addresses 772540,
+772542, and 772544. The first five digits of the address (77254) indicate that the KW11-P has been selected.
+The final digit, consisting of address lines AO2 and AO1, determines which unit has been selected.
+
+cessor. When CO1 = 1, a data-out (DATO) bus transaction occurs; which, for the KW11-P, means that data is
+
+transferred from the processor to the control and status register or the count set buffer. Except when the
+
+KW11-P is generating an interrupt, it operates as a slave device with the processor as master. As an example of a
+DATO transaction, assume that the count set buffer is to be loaded.
+
+a.
+
+The processor places the buffer address (772542) on address lines A(17:01), the data (count
+value) on data lines D{15:00), and asserts a 1 on control line CO1.
+
+b.
+
+| The processor asserts master sync BUS MSYNL
+
+if slave sync BUS SSYNL
+
+is clear which indi-
+
+cates that the bus is inactive.
+(continued on next page)
+
+3-1]
+
+c.
+
+The KW11-P decodes the address and responds to BUS MSYNL by taking in the data and asserting BUS SSYN L (gate E45 pin 10). All 16 data bits are placed on the input of the buffer.
+
+d.
+
+The processor receives BUS SSYN L from the KW11-P and clears BUS MSYN L, then clears
+the A, D, and C lines.
+
+with the Unibus. Detailed information on bus drivers and receivers is contained in the PDP-]] Unibus Interface
+Manual.
+
+The functions of the output signals on drawing KW-5 are shown in Table 3-2.
+
+e.
+
+The KW11-P receives the cleared BUS MSYN L which clears its BUS SSYN L.
+
+f.
+
+The processor receives the cleared BUS SSYN L which signifies the end of the bus transaction.
+
+As an example of a DATI transaction, assume that the processor desires to read the contents of the control and
+
+Table 3-1
+Gating Control Signals
+
+Master Sync
+
+Input Line
+
+Input Line
+
+Control Line
+
+1
+
+X
+
+Xx
+
+x
+
+BUS SSYN L
+
+1
+
+0
+
+0
+
+X
+
+KW-S SEL 0 H and KW-5 SELOL
+
+I
+
+0
+
+0
+
+1
+
+KW-5 CSR<BUS H and KW-5 CSR« BUS L
+
+1
+
+I
+
+0
+
+0
+
+KW-5 BUS<CTR H
+
+1
+
+0
+
+1
+
+p,¢
+
+KW-5 SEL 2H
+
+When the KW1!1-P receives BUS MSYNL it obtains the data from the control and status regis-
+
+I
+
+0
+
+I
+
+1
+
+KW-5 LD IN BUF L
+
+ter and strobes it out to the data lines with signal KW-5 BUS<CSR H via bus drivers E20 and
+
+1
+
+0
+
+0
+
+0
+
+KW-S BUS<CSR H
+
+E25 (drawing KW-2). It also asserts BUS SSYN L.
+
+x
+
+Xx
+
+Xx
+
+1
+
+KW-5 OUT H
+
+status register.
+
+a.
+
+All bus input and output signals pass through Unibus receivers and drivers to provide signal levels compatible
+
+(MSYN)
+
+The processor places the control and status register address (772540) on address lines A{17:01)
+and places a zero on control line CO1.
+
+b.
+
+The KW11-P decodes the address.
+
+If slave sync BUS SSYNL
+d.
+
+e.
+
+is clear, the processor asserts master sync BUS MSYN L.
+
+A02
+
+AOI
+
+The processor receives the data and BUS SSYN L and clears BUS MSYNL and then clears the
+
+Output Signal
+
+NOTE
+
+A and C lines.
+
+f.
+
+.
+
+Col
+
+1.
+2.
+
+The KW11-P receives the cleared BUS MSYN L which clears BUS SSYN L and the data lines;
+
+Lines A(17:13) must be all 1s (OV on Unibus).
+Lines A(12:03) are selected by jumpers.
+
+the bus is now free for other use.
+
+g.
+
+The processor receives the cleared BUS SSYN L which signifies the end of the bus transaction.
+Table 3-2
+
+The above examples are simplified in that they do not describe the built-in delays which are required to compen-
+
+Output Signals and Functions
+
+sate for data deskew, decoding, etc. Refer to the PDP-11 Unilus Interface Manual for timing details.
+
+Signal
+
+Address lines A(17:13) must be all 1s to conform to the address bounds for device registers. Decoding of lines
+
+A(12:03) is determined by jumpers on the module. If a line contains a jumper, the address selector searches for a
+0 on that line. If there is no jumper, the address selector searches for a 1.
+
+Function
+
+BUS MSYN L
+
+Initiates operation and gates address, control and data signals.
+
+BUS SSYN L
+
+Response to MSYN.
+
+KW-5 SEL 0H and L
+
+Used internally in gating logic.
+
+The decoder for lines A(16:03) consists of three type 8242 4-bit digital comparator IC packages. Each device
+
+KW-5S CSR<BUS H and L
+
+Transfers data from bus to control and status register.
+
+contains four open collector exclusive NOR gates with two inputs. Each gate produces a 1 output only when
+
+KW-5 BUS<CTR H
+
+Transfers counter output to bus.
+
+both inputs are the same. All the gate outputs are connected in common to +5V through resistor R13. The de-
+
+KW-5 SEL 2H
+
+Used on counter load logic.
+
+coder provides a 1 output only when the first five digits of the device address (77254) appear on the address lines.
+
+KW-5 LD IN BUF L
+
+Transfers data from bus to buffer. Also used in counter load logic.
+
+The output is ANDed with master sync (MSYN) in gate E40. The output of this gate is used in the gating logic
+
+KW-5 BUS<CSR H
+
+Transfers data from control and status register to bus.
+
+and is also sent through the level delay circuit (E45, R21, R22, and C59) to generate the slave sync signal (BUS
+
+KW-S INIT H and L
+
+Used as clear signals.
+
+SSYN L).
+
+Address lines AQ2 and AO1, control signal CO1, and the output of gate E40 are used to generate the gating signals
+in the logic comprising gates E31, E32, E35, E40, and E41. These gating signals primarily provide bus input/
+output access for the counter, buffer, and control and status register. Some of these signals are also used to pro-
+
+vide various functions within the KW11-P circuits. The input signals select the gating control signals as shown in
+Table 3-1.
+
+The initialize signal INIT is taken from the bus via a Unibus receiver and is inverted to supply KW-5 INIT H and
+KW-5 INIT L for use throughout the KW11-P logic primarily as a clear and reset signal.
+
+3.3
+3.3.1
+
+CLOCK AND CLOCK CONTROL
+Introduction
+
+The discussion of the clock and clock control is divided into four sections: the clock, clock selection logic,
+counter up/down logic, and counter load logic.
+
+The clock and associated clock logic are shown in drawing KW-2.
+
+3.3.2
+
+Clock
+
+The basic clock is a crystal-controlled oscillator that produces a 100-kHz square wave with an amplitude of 4V
+p-p. Two NOR gates (E13 outputs 3 and 14) are connected to operate as cascaded linear amplifiers. When +5V
+
+Bits BDO1 and BDO2 are taken from the bus via receivers (E14) and applied to the input of E21. This device is a
+type 8271 4bit shift register. The load input (LD) is held high and the shift input (SH) is held low so it operates
+only in the parallel entry mode.
+
+power is applied, the circuit oscillates at the crystal frequency of 100 kHz. Output control is provided by another dual input NOR gate (E13 output 2). The oscillator output is applied to one input (pin 7) and control signal
+
+EXTERNAL
+
+trol gate.
+
+1OKHz CLOCK
+
+Boot
+
+tne 100-kKHz clock output is sent t
+Us
+
+clack antant ie cent
+
+amen
+he input
+(pin 1) oifh;
+high-speed d
+
+th
+
+iOOKHz
+E14
+
+r-O
+
+7490) is connected to provide a symmetrical divide-by-ten count; therefore, the output (pin 12) is a 10-kHz
+square wave. Counter operation is controlled by KW-2 CRO3 H: a low signal enables the counter; a high signal
+
+KW-5
+
+BUS 002 _L
+
+Schmitt trigger provides a square wave output of the same frequency as the input. A voltage divider and filter
+
+cia
+
+\@KW-3. BOOTH
+
+y,
+
+1
+
+’
+
+1
+
+2
+
+6
+era
+Si
+
+-=|SO
+
+SICLR
+
+1
+
+{5
+
+8
+
+|3
+|,
+
+toc
+
+(TYPE
+
+———
+
+LoGic
+
+74153
+
+DATA SELECTOR/
+
+E21CSR
+
+CLK LD
+
+SH
+
+c25
+| kw-2cro2 H
+>—
+
+ul
+
+KW-2CRO3H
+
+rit
+43V
+
+UP/DN
+
+Bus D001}
+
+=
+
+E20
+
+;
+
+jp SUS DONk
+
+'
+
+=
+
+520
+
+cv
+
+13 gus DOZL
+
+_
+
+KW-5S BUS@=CSRH
+
+KW-5 CSR* BUS L
+
+Figure 3-3
+
+T>
+
+MULTIPLEXER)
+
+(TYPE 8271 4-BIT
+
+—t
+
+clock rate.
+
+14
+2
+
+E28 CLK SEL
+
+Le
+
+5]
+
+~
+SHIFT REGISTER)
+E14
+'Skw-3 8D03H 14
+
+tude of the LTC signal and eliminates noise on it to prevent erratic counts when the line frequency is used as the
+
+The clock selection logic consists of clock selector E28, shift register E21, and RUN flip-flop E36 (Figure 3-3).
+Devices E21 and E36 are part of the 9-bit control and status register: E21 handles bits 01, 02, 03, and 06; E36
+
+-
+
+KWARUN(DL
+
+KW-2RUN(1)H
+
+i
+
+network (R25, R26, and C55) is connected to the input of this Schmitt trigger. The network limits the ampli-
+
+Clock Selection Logic
+
+CLR
+
+TO GATING
+4
+LOGIC
+
+a
+
+(50/60 Hz) clipped at ground and +5V nominal and sent to the input of Schmitt trigger (E23 output 6). The
+
+signal.
+
+E56
+of 2
+
+BUS
+Do L|
+
+Signal LTC L is provided by the H720 Power Supply as the line frequency count rate. The signal is a sine wave
+
+CLOCK
+
+eo
+
+KW-5 INIT L
+
+count and external count.
+
+triggered when the input signal crosses the positive-going or negative-going threshold voltages of the device. A
+positive-going input signal selects a low output (logic 0); a high output (logic 1) is selected by a negative-going
+
+2),
+
+|
+
+KW-2 STOP L
+
+In addition to these internally generated clock signals, two other clock signals are provided: line frequency
+
+An input connector allows an external signal to be introduced into the KW11-P clock selection logic. Schmitt
+trigger E23 (output 8) is used to allow clocking from an external analog signal. Diodes D2 and D3 clamp the input signal between ground and +5V (nominal). The Schmitt trigger output is a level signal, either 0 or 1, that is
+
+BDOOH
+
+KW-5 CSR*BUS H— Jc
+
+inhibits the count inputs and simultaneously clears the counter to 0.
+
+3.3.3
+
+CLOCK
+
+LINE FREQ CLOCK —
+
+gate output remains low. A low control signal allows an inverted clock signal to appear at the output of the con-
+
+1NA
+
+>
+
+Ld
+
+KW-2 CRO3H is applied to the other input (pin 6). A high control signal inhibits the clock output; the control
+
+The
+
+>.
+
+UNIBUS
+
+-0664
+
+Clock Selection, Simplified Logic Diagram
+
+During the control and status register address
+decoding operation, control signal KW-5
+
+Table 3-3
+
+CSR<BUS L is generated. This signal is sent to
+
+the clock (CLK) input of E21 and transfers the
+
+Clock Rate Selection Code
+
+input data on pins 3 and 14 to output pins 5
+
+Bit BDO2
+
+Bit BDOL
+
+and 11. The register clock rate selection out-
+
+0
+
+0
+
+100 kHz
+
+put signals are connected directly to clock sel-
+
+0
+
+1
+
+10 kHz
+
+ector E28. This device is a type 74153 4-line-
+
+1
+
+0
+
+to-1-line data selector/multiplexer. The four
+
+1
+
+1
+
+Clock Rate
+Line Frequency
+
+External
+
+clock signals are data inputs and are sent to pins
+
+handles bit 00.
+
+6, 5, 4, and 3. The rate selection bits from E21
+
+Clock selection is independent of the selected KW11-P operating mode; therefore, its operation is discussed separately and is not related to other operational aspects of the KW] 1-P.
+
+are sent to the address inputs (pins 14 and 2). One out of four clock rates is selected and strobed to the output
+
+A KW11-P program is initiated and the processor (master) sends information to the KW11-P (slave). The processor puts the control and status register address (772540) on the address lines and puts a logic 1 (low) on the C01
+
+(pin 7) by KW-2 RUN (1) L. When the buffer and counter are loaded, the control and status register is addressed
+
+again only to set the run bit BDOO. Control signal KW-5 CSR<BUSH is also generated and it clocks RUN flipflop E36. Signal KW-3 BDOO H is true (logic 1) at the data input of E36 so it is transferred to the output on the
+
+clock transition. This flip-flop was previously cleared so its 0 output (pin 6) goes from high to low. This low sig-
+
+control line. This action selects the control and status register for a transfer of data from the bus to the register.
+Simultaneously, the master puts data on the data lines. In this discussion we are concerned only with three bits:
+
+nal (KW-2 RUN (1) L) is the clock selector strobe signal which enables the 100-kHz clock to the output. A truth
+
+and BDO2 are both zeros which select the 100-kHz clock (Table 3-3).
+
+3.3.4
+
+BDO1 and BDO2 which select the clock rate; and BDOO which gates the clock to the counter. Assume that BDO1
+
+Bit BDOO, called the run bit, must be a | to gate the clock to the counter. At this point, the processor holds the
+run bit at 0 until the buffer and counter are loaded.
+
+table for the clock selector (E28) is given in Table 3-4.
+Counter Up/Down Logic
+
+The counter up/down logic consists of UP/DN flip-flop E22; an RS latch (made from two E26 gates); and gates
+E26, E27, and E32.
+
+3-3
+
+Table 3-4
+
+Coincidentally, flip-flop E22 puts a high on one input (pin 9) of gate E26 (CLK UP). The clock signal is sent to
+
+Truth Table for Clock Selector
+Address Inputs
+
+Data Inputs
+
+the other input (pin 10), inverted by the gate, and sent to the counter.
+
+Strobe
+
+Output
+
+The clock signal is sent from the clock selector (E28) to pin 13 of gate E32. The other inputs to this gate (pins
+
+9, 10, and 12) are tied together and remain low due to the two E27 gates as long as bit BD05 (FIX) is not set (1)
+
+(SO)
+DO2
+
+(S1)
+DOo1
+
+(0)
+100 Hz
+
+(1)
+10 Hz
+
+(2)
+Line Freq.
+
+(3)
+Ext.
+
+(STB1)
+RUN (1) L
+
+Clock
+Signal
+
+X
+L
+
+xX
+L
+
+xX
+L
+
+xX
+x
+
+xX
+xX
+
+X
+xX
+
+H
+L
+
+L
+L
+
+L
+
+H
+
+L
+
+xX
+
+xX
+
+L
+
+L
+
+L
+
+H
+
+H
+
+H
+
+H
+
+L
+
+H
+
+x
+
+H
+
+X
+
+L
+
+x
+
+L
+
+H
+H
+
+x
+
+X
+
+H
+
+X
+
+xX
+
+xX
+
+xX
+
+xX
+
+x
+
+x
+
+X
+X
+
+L
+
+xX
+
+Xx
+
+L
+
+H
+
+4
+
+x
+
+and high level changes of the clock signal set and reset the latch so that an inverted clock signal appears at its out-
+
+H
+
+100 kHz
+
+put (E26 pin 3). The clock signal is inverted again by gate E26 (CLK UP) and sent to the counter.
+
+L
+
+H
+
+10 kHz
+
+When the counter is read, control signal KW-5 BUS<CTRH
+
+L
+
+H
+
+L
+
+L
+
+L
+
+H
+
+latch. The reset input (E26 pin 5) of the RS latch is kept low, as long as the counter is not addressed. The low
+
+L
+
+L
+
+X
+
+by program control. The clock signal is inverted by gate E32 and is sent to the set input (E26 pin 1) of the RS
+
+L
+
+L
+
+Line Fr
+) Ext
+
+is generated which keeps the reset input (E26 pin 5)
+
+of the RS latch high. This holds the latch output high regardless of the sense of the set input. The counter stops
+
+“4.
+
+H
+
+clocking because a level signal instead of clock pulses are being sent to its clock-up input. Single clocking of the
+counter can be accomplished under program control using this logic plus two E27 gates. The control and status
+register is addressed: control signal KW-5 CSR<BUS H
+
+is generated; bit BDOO is cleared to inhibit clock selector
+
+E28; bit BD04 is selected for a count-up or count-down operation; and bit BDOS is selected to initiate the single
+clocking operation. As described previously, flip-flop E22 conditions the clock-up or clock-down gate. Signals
+The selected clock rate is gated to the up or down input of the counter through this logic. The clock up signal
+
+(KW-2 CLK UP L) is generated at the output (pin 8) of gate E26:
+
+the output (pin 11) of gate E26 provides the
+
+clock down signal (KW-2 CLK DN L). When the counter is being clocked, the nonoperative clock input must be
+
+KW-5 CSR<BUS H and KW-3 BDOS H
+
+are both high and are inputs (pins 12 and 13) of gate E27. Previously,
+
+these signals were both low. Switching them both high causes a high-to-low level change at the output of E27
+(pin 11). The other E27 gate inverts the signal and sends it to gate E32. The clock selector is inhibited, so pin 13
+
+of E32 is low. The signal propagates through the rest of the logic to the counter as described in the normal count-
+
+held high.
+
+ing operation. This operation is a valuable maintenance tool for checking the counter and associated logic. Single
+
+The key factor in this logic is the RS latch operation. Figure 3-4 shows the latch and associated truth table.
+
+clocking can be repeated a specific number of times and then the counter can be read to verify the count.
+
+3.3.5
+S
+
+INPUT
+
+(CLOCK
+
+Counter Load Logic
+
+SIGNAL)
+
+The counter is loaded by program action or automatically upon underflow or overflow when the KW11-P is operating in repeat-interrupt mode. The counter is not addressed during a loading operation. The buffer is addressed, loaded from the bus, and in turn loads the counter. The control signal for loading the buffer (KW-5 LD
+R
+
+INPUT
+
+IN BUF L) is generated by the gating logic and in turn generates the counter load signal (KW-2 LOAD L) in the
+
+(KW-5 BUS*—CTR H}
+
+logic described below.
+
+The counter load logic consists of gates E13, E27 (output 3), E33 (output 13), E42 (output 8), and an RS latch
+
+R
+
+(made from two E42 gates).
+
+OO
+
+During a load operation initiated by program control, the following conditions apply.
+
+~-—-
+
+-~
+
+O--
+
+OF]
+
+&
+
+TRUTH TABLE
+
+NO CHANGE
+
+a.
+
+Run bit BDOO is cleared (0); therefore, signal KW-2 RUN (1) H is low from flip-flop E36.
+
+b.
+
+No counter underflow or overflow has occurred so inputs KW-3 OVRFLW L and KW-3
+
+11-0665
+
+Figure 3-4
+
+UNDRFLWL
+
+RS Latch, Logic Diagram
+c.
+
+to gate E27 (pins 1 and 2) are both high.
+
+The buffer is addressed and control line CO] is a one which generates KW-5 SEL 2 H and KW-5
+LD IN BUF L.
+
+Flip-flop E22 is part of the control and status register. It handles bit 04 which is set (1) for count up and cleared
+(0) for count down. The KW11-P operating sequence is the same as that described in Paragraph 3.3.2. The con-
+
+d.
+
+Mode bit BDO3 may be set (1) for repeated interrupts or cleared (0) for single interrupts. Its
+level is irrelevant at this time.
+
+trol and status register is selected and data is present. Bit BD04 is high to select the count-up operation. This bit
+is taken from the bus via a Unibus receiver and applied to the data input of flip-flop E22 as KW-3 BD04 H. Control signal KW-5 CSR<BUSH
+
+is generated and clocks the flip-flop to the set state. This puts a low on one input
+
+Keeping these conditions in mind, refer to the logic drawing. Both inputs (pins 11 and 12) of gate E33 are low:
+
+flip-flop E36 RUN is cleared (KW-2 RUN (1) H = 0); and buffer load signal is enabled (KW-5 LD IN BUF L = 0).
+
+(pin 13) of gate E26 (CLK DN) which disqualifies it by keeping its output high. This satisfies the requirement
+
+This puts a high on input 12 of gate E13. The output (pin 3) of gate E27 is low because KW-3 UNDRFLWL
+
+that the nonoperative clock input of the counter must remain high.
+
+KW-3 OVRFLWL
+
+3-4
+
+are both high. This puts a low on input 10 of gate E42. The output (pin 8) of E42 is high
+
+and
+
+regardless of the level (0 or 1) of the other input: this input is the mode control bit. The output of this gate rep-
+
+Function
+
+Name
+
+Bit
+
+resents the set input of the RS latch (E42 pin 12). The reset input of the latch is KW-5 SEL 2 H, which is high.
+
+Controls the strobe input of the clock selector. When set, it gates the selected
+
+With both latch inputs high, it enters a ‘no change” state. The latch output is either high or low, as determined
+
+clock rate to the clock input of the counter. Set by the program; cleared on
+
+by prior conditions, and is sent to input 11 of gate E13. Either a low (0) or high (1) drives the output of E13
+
+counter underflow in Mode 0 operation and by the program or INIT in all
+
+low, which is the enabled state of the counter load signal KW-2 LOAD L.
+
+other cases. Read/write.
+
+1 and 2
+
+RATE SELECT
+
+During a load operation initiated by a counter underflow or overflow, the following conditions apply.
+3
+a.
+
+Run bit BDOO is set (1); therefore, signal KW-2 RUN (1) H is high from flip-flop E36.
+
+b.
+
+Both KW-3 OVRFLW L and KW-3 UNDRFLWL
+
+MODE
+
+Selects one of two interrupt modes of operation. When set, it selects Mode 1
+which is the repeat-interrupt mode. When cleared, it selects Mode 0 which is
+the single-interrupt mode. Set by the program and cleared by the program or
+
+are high until an overflow or underflow oc-
+
+INIT. Read/write.
+
+curs. At that point, one signal goes low and the other remains high.
+
+4
+
+c.
+
+The buffer is not addressed so KW-5 SEL 2 H is low and KW-5 LD IN BUFL
+
+d.
+
+Mode bit BDO3 is set (1) for repeat-interrupt operation.
+
+Selects one of four clock rates. Set by the program and cleared by the program or INIT. Read/write.
+
+UP/DN
+
+Selects either the count-up or count-down input of the counter. When set, it
+
+is high.
+
+selects the count-up input. When cleared, it selects the count-down input. Set
+
+by the program and cleared by the program or INIT. Read/write.
+5
+
+FIX
+
+Selects single clocking of the counter as a maintenance aid. When set, clocks
+the counter by one count. It is clocked by program control. Write only.
+
+Keeping these new conditions in mind, refer to the logic drawing. Both inputs (pins 11 and 12) of gate E33 are
+
+6
+
+INTR ENB
+
+When set, provides a signal to the interrupt control logic that allows genera-
+
+high: flip-flop E36 is set (KW-2 RUN (1) H = 1); and buffer load signal is disabled (KW-5 LD IN BUF L = 1).
+
+tion of a bus request at counter underflow or overflow. Set by the program;
+
+This puts a low on input 12 of gate E13. The output (pin 3) of gate E27 is low because both inputs are high (no
+
+cleared by the program or INIT. Read/write.
+
+underflow or overflow initiated). This puts a low on input 10 of gate E42. The repeated interrupt mode has
+
+7
+
+been selected so KW-2 MODE 1 H (E42 pin 9) is high. The output of this gate is the set input of the RS latch
+(E42 pin 12) and it is high. Signal KW-5 SEL 2 H is the reset input of the latch and it is low.
+With the set input high and the reset input low, the latch output is low. This puts a low on input 11 of gate E13
+
+DONE
+
+Indicates that a counter underflow or overflow has occurred. Set on underflow; cleared by INIT. Read only.
+
+8—14
+
+15
+
+Not Used.
+
+ERROR
+
+Detects an error condition in Mode 1! operation when a second underflow or
+overflow occurs before the interrupt of the preceding underflow has been ser-
+
+and drives the output high, which disables the counter load signal KW-2 LOAD L.
+When an overflow or underflow occurs, the latch set input (E42 pin 12) is now low: the reset input remains low.
+The latch output now is in the high state. This puts a high on input 11 of gate E13 and drives the output low,
+which is the enabled state of the counter load signal KW-2 LOAD L.
+
+viced. Cleared when the status register is addressed or by INIT. Read only.
+
+Bits 7 (DONE) and 15 (ERROR) are not written into the control and status register from the data lines: they are
+generated by internal logic. All other bits enter the register from the data lines via Unibus receivers. All bits ex-
+
+cept bit 5 (FIX) can be read from the register via Unibus drivers (E20 and E25), The enabling signal for these
+bits is KW-5 BUS<CSR H which is generated when the control and status register is addressed (AO2 = AO] = 0)
+
+However, if the single-interrupt mode had been selected, mode bit BDO3 is cleared (0). Asa result, KW-2 MODE
+
+and control line C01 = 0.
+
+1 H puts a low on input 9 of gate E42. The output (pin 8) of gate E42 is now high despite the presence of an underflow or overflow signal. The set input of the latch is now high and the reset input remains low. The latch is
+reset (output = 0) and this signal drives the output of gate E13 high. The counter cannot be loaded when KW-2
+
+LOADL
+
+is high.
+
+3.5
+
+COUNT SET BUFFER AND COUNTER
+
+The count set buffer and counter are discussed together because their operation is interrelated. The detailed log-
+
+ic is shown in drawing KW-3. Figure 3-6 is a simplified logic diagram showing two bits of the buffer/counter, associated bus receivers and drivers, and control signals.
+
+3.4
+
+CONTROL AND STATUS REGISTER
+
+The buffer consists of four type 8271 4-bit shift registers. The load input (LD) is held high and the shift input
+(SH) is held low so it operates only in the parallel entry mode. When the buffer is addressed, AO2 = 0 and AO] =
+
+The bit assignments for the control and status register are shown in Figure 3-5.
+
+1 and control line CO1 = 1, the buffer load signal KW-5 LD IN BUF L
+
+is generated. Sixteen data bits are on the
+
+bus and KW-5 LD IN BUF L clocks them to the buffer output which is directly connected to the counter input.
+15
+ERR
+
+14
+
+13
+|
+
+12
+
+#4
+a
+
+#10
+9
+
+8
+
+7
+
+6
+INTR
+
+5
+4
+
+DONE| Ne | FIX
+
+uP
+
+on
+
+3
+MODE)
+
+2
+
+4.0
+
+:
+
+RATE
+
+oft eer
+
+[RUN
+
+11-0668
+
+The counter consists of four synchronous type 74193 4-bit up/down counters. With input data present from the
+buffer, KW-2 LOADL
+
+transfers the input data to the counter output. A preset count has been loaded into the
+
+counter and it can be selected to count up or down. A low signal is used (KW-2 CLK UP L or KW-2 CLK ON L)
+to select the direction while the unused clock input is held high. Underflow (KW-3 UNDRFLW L) and overflow
+
+Figure 3-5
+
+Control and Status Register Bit Assignments
+
+(KW-3 OVRFLW L) signals are generated at the borrow and carry outputs, respectively, of the last stage of the
+
+At counter overflow/underflow, the negative pulse at the output (pin 6) of NAND gate E27 is also sent to the
+preset input (pin 4) of DONE flip-flop E37. The resulting high signal at the one-output (pin 5) is KW-2 DONE
+
+(1) H, which indicates that a counter overflow/underflow has occurred. This signal is sent to pin 5 of bus driver
+E25 where it can be read by the processor when KW-5 BUS<CSRH
+
+e4o
+++
+
+KW-2 STOP L
+
+BUS DOIL
+
+ED
+
+cia
+
+2| CLR
+KW-3BD01
+
+ro
+bo
+
+cia
+
+E16
+
+IN BUF
+
+CTR
+
+03 00
+
+03
+00
+{TYPE
+74193
+SYNC
+4 -BIT
+
+8271
+
+4-BIT SHIFT
+REGISTER)
+
+3
+KW-3BD00 H
+
+|
+
+is asserted to place the contents of the con-
+
+trol and status register on the bus.
+
+5
+
+[CLK
+
+LD
+
+SH
+
+V6
+
+| 10
+
+{8
+
+When the KW11-P is operating in the single-interrupt mode, the buffer and counter are cleared at counter
+
+1]curR
+
+H
+
+\3
+
+i
+
+14 dis
+die
+8
+c }2
+
+7
+
+(TYPE
+BUS DOOL
+
+NEXT
+
+STAGE
+
+'
+
+\2
+
+-—O
+
+TO
+
+_
+
+COUNTER)
+DN
+
+UP
+
+4
+
+5
+
+overflow/underflow. In the repeat-interrupt mode, the buffer is not cleared and it automatically reloads the
+
+1
+
+counter. During reload, the counter clock-input is disabled. This allows the system clock to keep running and
+
+BUS DOT L
+
+avoids the necessity of inhibiting the clock selection logic.
+
+UP/DOWN
+
+15
+
+Ets
+
+3
+Lo
+
+E15
+
+4
+
+BUS DOOL
+
+3.6
+3.6.1
+
+KW-2 CLK DNL
+
+KW-5 LD IN BUFL——®
+
+INTERRUPT CONTROL
+
+oo
+
+Introduction
+
+The interrupt-control circuitry permits the KW11-P to gain control of the bus (become bus master) and perform
+
+KW-2 CLK UPL
+
+an interrupt operation. The KW11-P sends a vector address to the central processor via the bus data lines. At the
+
+end of the interrupt operation, the central processor goes into the interrupt service routine at the vector address.
+
+—
+.
+
+GATING
+
+KW-2 RUN (1)
+H
+
+LOGIC
+
+The assigned vector address for the KW11-P is 104. Circuit jumpers are used to specify the address. The jumpers
+
+KW-2 LOAD L
+
+can be changed to alter the address; however, MainDEC programs reference the assigned vector address of 104.
+
+KW-5 SEL2 H —~
+KW-5 BUS#—CTRH —
+11-0666
+
+Figure 3-6
+
+A simplified block diagram of the interrupt control is shown in Figure 3-7.
+
+Input Buffer and Counter, Simplified Logic Diagram
+(2 Bits Only)
+KW-2
+
+KW-2
+
+counter. Underflow occurs when the counter reaches zero during a count down; at all ones during a count up,
+
+INTR EN (H)
+
+\
+
+Le
+
+8G IN H————___»}
+
+overflow occurs. The counter output is connected directly to Unibus drivers. When the counter is addressed,
+A02 = 1 and AO1 = 0 and control line CO1 = 0, signal KW-5 BUS<CTR H
+
+INTR (1) H
+
+BRL
+
+BUS
+
+BBSY L
+
+OO
+
+MASTER
+
+BUS SACK L
+
+CONTROL
+
+[86 OUT WH,
+
+INTR DONE Ho
+
+is generated and the counter output is
+
+BUS
+
+enabled to the bus. In this way, the counter can be read while in operation.
+
+The buffer is cleared by KW-2 STOP L. This signal is inverted by gate E40 and clears the counter. When enabled,
+BUS INTR L
+
+INTERRUPT
+
+the counter clear input overrides data, load, and up/down inputs. Signal KW-2 STOP L also stops the clock. It is
+
+BUS 8BSY L ———————_#]
+
+generated by a BUS INITL signal and also is produced as a result of a counter overflow/underflow during Mode
+
+o
+
+Le¥s 008 L
+
+VEoe7—o
+
+[BUS_006 L
+
+V20——~o
+
+BUS 002 L
+
+veo
+
+0 (single interrupt) operation. It is inhibited during Mode 1 (repeat interrupt) because the buffer contents are
+
+BUS SSYN L ————————#
+
+kept intact for subsequent reloading into the counter. The stop signal logic is shown in drawing KW-2. The out-
+
+>
+INTR DONE He
+
+CONTROL
+
+put (pin 4) of gate E33 is the stop signal (KW-2 STOP L). One input (pin 5) of this gate is KW-5 INIT H which,
+
+when asserted, generates KW-2 STOP L. At counter overflow/underflow, either KW-3 UNDRFLW L or KW-3
+OVRFLWL
+
+41-0667
+
+is low while the other remains high. These signals are inputs to a one-shot delay that provides a
+
+Figure 3-7
+
+short negative pulse at its output (E27 pin 6) as a function of a change to a low level at one input (E27 pin 1 or
+
+Interrupt Control, Block Diagram
+
+2). The pulse width is 140 ns. This negative pulse at pin 6 of gate E27 is sent to pin 2 of gate E33. The other
+input (pin 3) of this gate is KW-2 MODE 1 H, which is high in Mode | operation and low in Mode 0 operation. If
+KW-2 MODE1 H
+
+is low, the pulse qualifies the gate and pin 1 of E33 is high. This signal is sent to pin 6 of NOR
+
+gate E33 which qualifies it and produces a low output at pin 4. This is the enabled state of KW-2 STOP L. Thus,
+in Mode 0 operation (single interrupt), a stop signal is generated at counter overflow/underflow. In Mode | operation (repeat interrupt), KW-2 MODE 1 H
+
+is high which disqualifies negative-input AND gate E33 (pin 1). This
+
+All the output signals are generated by the interrupt control circuitry: one output signal, INTR DONE H, is fed
+
+back as an input signal. The KW11-P control logic provides inputs KW-2 INTR (1) H and KW-2 INTR EN (H).
+The central processor provides inputs BG IN H, BUS BBSY L, and BUS SSYN L.
+
+The circuitry is similar to the M782 Interrupt Control Module. It consists of a modified interrupt control section
+
+signal, in turn, disqualifies NOR gate E33 and produces a high output at pin 4. This is the disabled state of KW-2
+
+and one master control section. A description of the M782 Module is contained in the PDP-11 Unibus Interface
+
+STOP L. In this case, the stop signal is inhibited.
+
+Manual.
+
+3-6
+
+3.6.2 Interrupt Operational Sequence
+
+If the KW11-P is in Mode 0 operation (single interrupt), the clock is stopped and the buffer and counter are
+
+This paragraph describes the sequence of events that occurs during an interrupt operation. It is basically a non-
+
+and status register is addressed again to provide a clock signal (KW-5 CSR<BUS H) to set the run flip-flop (E36
+
+circuit description; however, some logic elements are mentioned so reference to the engineering drawings is re-
+
+quired. Refer to drawing KW-4 for interrupt control logic and drawing KW-2 for control signals KW-2 INTR
+EN H and KW-2 INTR (1) H.
+
+Prior to initiation of the interrupt operation, the processor has transferred some data to the KW11-P to allow it
+to perform a selected operation. The control and status register bits have been set by the processor to select a
+clock rate and mode of operation (single or repeat interrupt, count down and interrupt enable). A preset count
+
+cleared at counter underflow. Another interrupt cannot be generated until the buffer is loaded and the control
+RUN).
+
+Flip-flop E36 ERR (drawing KW-2) is set when a second counter overflow/underflow occurs before the interrupt
+of the preceding overflow/underflow has been serviced. The signal can be read on bus data line D1I5 to detect
+
+this error condition. Prior to the first overflow/underflow, E36 ERR is cleared by KW-5 CSR<BUS H when the
+run flip-flop (E36 RUN) is set by the same signal. The output of E36 ERR is KW-2 ERR (1) H and it is low denoting no error. When E36 RUNis set, its output, KW-2 RUN (1) H, clocks flip-flop E37 DONE. The D-input
+
+has been loaded into the buffer and the control and status register run bit has been set. The counter is counting
+
+of this flip-flop is low so its output (pin 5) is driven low. This low signal presets flip-flop E37 INTR and its out-
+
+down and, when underflow occurs, the interrupt sequence starts. The description of the interrupt operation
+
+put KW-2 INTR (1) H is low because it is a redefined flip-flop. This puts a low on the D-input of E36 ERR.
+
+starts just prior to counter underflow.
+
+When a counter overflow/underflow occurs, the positive pulse generated at the output (pin 3) of gate E27 is sent
+
+a.
+
+b.
+
+The program has asserted KW-2 INTR EN H but KW-2 INTR (1) H is low because a counter underflow has not occurred (drawing KW-2). The interrupt control circuitry is not generating a
+
+low because it has been cleared. The same pulse from pin 3 of gate E27 passes through the one-shot delay and
+
+bus request, both E47 flip-flops are cleared, and all the output gates are disqualified.
+
+clears flip-flop E37 INTR. The output of this redefined flip-flop (KW-2 INTR (1) H) goes high which, in turn,
+
+At underflow, redefined flip-flop E37 INTR is cleared and KW-2 INTR (1) H is asserted (draw-
+
+places a high on the D-input of E36 ERR. This action occurs after E36 ERR has been clocked, so its output
+
+ing KW-2). This signal is sent to the interrupt control logic (drawing KW-4) where it is ANDed
+
+(KW-2 ERR (1) H) is still low. If another counter overflow/underflow occurs before the interrupt of the preced-
+
+with KW-2 INTR EN H
+
+ing overflow/underflow has been serviced, E36 ERR is clocked again and its output goes high which indicates an
+
+and asserts BUS BRL at pin 4 of bus driver E50. This signal is sent to
+
+the processor as a request for bus mastership.
+
+c.
+
+directly to the clock input of E36 ERR. The leading edge of the pulse clocks the flip-flop but its output remains
+
+error condition. This error condition could prevent further interrupts from occurring.
+
+| The processor examines the bus request (BR L) signal and if it has the highest priority, a bus
+grant (BG) signal is asserted. The KW1 1-P is assigned priority level 6, which is next to the highest.
+
+d.
+
+The asserted bus grant signal BG IN H is blocked in the interrupt control logic: BG OUT H is
+driven low. This prevents the asserted BG signal from reaching any following devices on the bus.
+
+e.
+
+The BG IN H
+
+signal, through a series of gates, sets the first E47 flip-flop. This action negates
+
+the BUS BRL
+
+signal and asserts the BUS SACKL signal which acknowledges the grant.
+
+The processor receives BUS SACKL and clears the bus grant signal (BG IN H) which prevents
+the issuance of further grants from the processor during this transaction.
+
+f.
+
+At this point, if the current master has completed its transaction, it clears bus busy (BUS BBSY
+L) and slave sync (BUS SSYN L). In response to this action, the second E47 flip-flop is set
+which asserts the KW11-P bus busy signal (BUS BBSY L), the interrupt signal (BUS INTR L),
+and vector address 104 on bus data lines BUS D(07:02). The selection acknowledge signal is
+also cleared (BUS SACKL is high). The KW11-P is now bus master.
+
+g.
+
+| The processor receives BUS INTR L, reads the vector address, and responds by asserting slave
+sync (BUS SSYN L).
+
+h.
+
+In response to the assertion of BUS SSYN L, the interrupt control logic asserts KW-4 INTR
+DONEH
+
+at the output (pin 8) of gate E49 which is fed back to input 12 of gate E41. This ac-
+
+tion clears the first E47 flip-flop. KW-4 INTR DONEH
+
+also clocks flip-flop E37 INTR (draw-
+
+ing KW-2). If the KW11-P is in Mode 1 operation (repeat interrupt), the D-input of E37 INTR
+is high (logic 1) and its output KW-2 INTR (1) H is now driven low, which clears the second
+
+E47 flip-flop (drawing KW-4). The interrupt control logic now clears BUS INTR L, BUS
+BBSY L, and the vector address. This constitutes active release of the bus to the processor. It
+clears BUS SSYN L when BUS INTRL
+
+is cleared and goes into the interrupt service routine at
+
+vector address 104. Being in Mode 1 (repeat interrupt), the counter is automatically reloaded
+
+and starts to count down again because the clock is still running. At underflow, KW-2 INTR
+(1) H is asserted and another bus request is generated which starts the interrupt sequence again.
+
+3-7
+
+CHAPTER 4
+PROGRAMMING INFORMATION
+
+4.1
+
+INTRODUCTION
+
+This chapter provides three sample programs for software control of the KW11-P. For detailed PDP-11 programming information, refer to the Paper Tape Software Programming Handbook, DEC-11-GGPA-D.
+
+The three sample programs have been executed on a PDP-11 System. Example | demonstrates the KW1 1-P
+single-interrupt mode of operation. Example 2 demonstrates the use of the KW11-P as an external interval timer.
+Example 3 demonstrates the use of the KW11-P as an external event counter. The three sample programs are
+listed below.
+
+:7KW11-P PROGRAMMING EXAMPLES
+
+001000
+
+.= 1000
+
+172540
+
+CSR=172540
+
+‘CONTROL AND STATUS REGISTER
+
+172542
+
+CSB=172542
+
+‘COUNT SET BUFFER
+
+172544
+
+CTR=172544
+
+;COUNTER
+
+000240
+
+NOP=240
+
+001000
+
+STACK=1000
+
+‘EXAMPLE 1
+
+:THIS DEMONSTRATES THE USE OF THE SINGLE INTERRUPT MODE TO CAUSE A
+;7PROGRAM INTERRUPT AFTER A SPECIFIED TIME INTERVAL. THE CLOCK FREQUENCY FOR
+
+;THIS CASE COULD BE EITHER INTERNAL OR EXTERNAL.
+
+001000
+
+012767
+
+001044
+
+177076
+
+001006
+
+012767
+
+000340
+
+177072
+
+001014
+
+012706
+
+001000
+
+001020
+
+012767
+
+000200
+
+EX1:
+
+MOV
+
+#EX1A,104
+
+INITIALIZE INTERRUPT RETURN
+
+MOV
+
+#340,106
+
+ANITIALIZE NEW PROCESSOR STATUS AFTER INTERRUPT
+
+MOV
+
+#STACK,%6
+
+INITIALIZE STACK POINTER
+
+176750
+
+MOV
+
+#200,177776
+
+SET PROCESSOR PRIORITY TO LEVEL 4
+
+INITIALIZE COUNT SET BUFFER TO 60 (1 SECOND AT 60HZ)
+
+001026
+
+012767
+
+000074
+
+171506
+
+MOV
+
+#60,,CSB
+
+001034
+
+012767
+
+000105
+
+171476
+
+MOV
+
+#105,CSR
+
+001042
+
+000001
+
+WAIT
+
+‘SINGLE INTERRUPT ENABLED,COUNT DOWN, 60HZ, START CLOCK
+WAIT FOR INTERRUPT (OR OTHER USER CODE HERE)
+
+;USER CODE RESUMES HERE
+001044
+
+000240
+
+001046
+
+000002
+
+EX1A:
+
+NOP
+
+‘USER CODE TO HANDLE INTERRUPT BEGINS HERE
+
+RT|
+
+‘RETURN TO PROGRAM
+
+4-1
+
+s7EXAMPLE 2
+
+;THIS DEMONSTRATES THE USE OF THE CLOCK AS AN EXTERNAL INTERVAL TIMER.
+
+‘THE INTERRUPT IS NOT ENABLED. THE COUNTER IS READ TO DETERMINE TOTAL ELAPSED TIME.
+001050
+
+005067
+
+171466
+
+001054
+
+012767
+
+000021
+
+EX2:
+171456
+
+CLR
+
+CSB
+
+‘;CLEAR COUNT SET BUFFER
+
+MOV
+
+#21,CSR
+
+‘;COUNT UP, 100KHZ, START CLOCK
+
+‘USER CODE HERE TO DETERMINE START AND FINISH OF EVENT.
+001062
+
+042767
+
+000001
+
+BIC
+
+171450
+
+#1,CSR
+
+“EVENT FINISHED, STOP CLOCK.
+
+;ELAPSED TIME IS EQUAL TO VALUE IN COUNTER MULTIPLIED BY 10 MICROSECONDS.
+;CARE SHOULD BE TAKEN TO INSURE THAT THE ELAPSED TIME !S NOT SO LONG
+iAS TO CAUSE THE COUNTER TO OVERFLOW.
+
+;EXAMPLE 3
+
+‘THIS DEMONSTRATES THE USE OF THE CLOCK AS AN EXTERNAL EVENT COUNTER.
+sTHE INTERRUPT IS NOT ENABLED. THE COUNTER IS READ TO DETERMINE TOTAL NUMBER OF EVENTS.
+001070
+
+005067
+
+171446
+
+001074
+
+012767
+
+000027
+
+EX3:
+171436
+
+CLR
+
+CSB
+
+;CLEAR COUNT SET BUFFER
+
+MOV
+
+#27,CSR
+
+;COUNT UP, EXTERNAL FREQUENCY, START CLOCK.
+
+‘USER CODE HERE TO DETERMINE INTERVAL SURROUNDING EVENTS TO BE COUNTED.
+001102
+
+042767
+
+000001
+
+171430
+
+BIC
+
+#1,CSR
+
+STOP CLOCK.
+
+TOTAL NUMBER OF EVENTS IS INDICATED BY VALUE IN COUNTER (CTR = 172544)
+000001
+
+4-2
+
+.END
+
+READER’S COMMENTS
+
+KW11-P PROGRAMMABLE REAL-TIME CLOCK
+DEC-11-HPWB-D
+
+Your comments and suggestions will help us in our continuous effort to improve the quality and usefulness of
+our publications.
+
+What is your general reaction to this manual? In your judgment is it complete, accurate, well organized, well
+written, etc.? Is it easy to use?
+
+What features are most useful?
+
+What faults do you find with the manual?
+
+Does this manual satisfy the need you think it was intended to satisfy?
+Does it satisfy your needs?
+
+Why?
+
+Would you please indicate any factual errors you have found.
+
+Please describe your position.
+
+Name
+
+Organization
+
+Street
+
+Department
+
+City
+
+State
+
+Zip or Country
+
+PSLIO SHesnyoesse~ ‘preudey
+JIIS UW OPT
+
+jusulpIEdeq voReJUAUINIOG [BOTUYyII]
+uonelodio; juswdmby yevisig
+
+:Aq pred aq [TIM 3883S0g
+SALVLS GaLINN FHL NI GATIVW dI AUVSSAOAN dNVLS JDVLSOd ON
+TIVW A1dada SSANISNG
+
+"SSVW ‘GUVNAVW
+££ ON LINUAd
+
+SSV'T) LSUId
+
+
