@@ -1,0 +1,166 @@
+	.title	bevnt
+;+
+; BEVNT presence check - standalone, no operating system.
+;
+; Verifies that the Q-bus line-time-clock event line (BEVNT) is producing
+; interrupts through vector 100 at BR 6.  The program:
+;
+;   - installs a vector-100 handler that counts each BEVNT interrupt;
+;   - probes the KW11-L status register LKS (777546): a write of INT ENB
+;     either succeeds - a clock register is present, and is now enabled -
+;     or bus-times-out to vector 4, meaning no register answers and an
+;     external clock drives BEVNT on the bus directly;
+;   - runs a fixed software-timed window at processor priority 0 so BEVNT
+;     can interrupt, then reports on the console SLU (777560 group):
+;
+;       LKS 777546 <RESPONDS|NXM>
+;       BEVNT TICKS <nnnnnn>        (octal, over the window)
+;       BEVNT <PRESENT|ABSENT>
+;
+; A nonzero tick count means BEVNT is present and interrupting.  Runs in
+; 16-bit mode with the MMU off; the I/O page reaches 777xxx directly.
+;-
+
+	lks	= 177546		; KW11-L line-clock status register
+	lksie	= 100			; LKS INT ENB (bit 6)
+	xcsr	= 177564		; console SLU transmit CSR
+	xbuf	= 177566		; console SLU transmit buffer
+
+	.macro	save
+	mov	r0,-(sp)
+	mov	r1,-(sp)
+	mov	r2,-(sp)
+	mov	r3,-(sp)
+	mov	r4,-(sp)
+	mov	r5,-(sp)
+	.endm
+	.macro	rest
+	mov	(sp)+,r5
+	mov	(sp)+,r4
+	mov	(sp)+,r3
+	mov	(sp)+,r2
+	mov	(sp)+,r1
+	mov	(sp)+,r0
+	.endm
+
+	.asect
+	.=1000
+
+start:	mov	#40000,sp
+	clr	count
+	clr	lksok
+	mov	#trap4,@#4		; bus-error vector redirects the guarded
+	mov	#340,@#6		;  LKS probe below to lksabs
+	mov	#tick,@#100		; BEVNT (line clock) vector, enter at
+	mov	#340,@#102		;  priority 7
+
+; --- probe LKS, and enable its interrupt if a register answers ---
+	mov	#lksie,@#lks		; traps to vector 4 if 777546 is absent
+	inc	lksok			; reached only when 777546 responds
+	br	lksdn
+lksabs:	clr	lksok			; entered through the trap-4 redirect
+lksdn:
+
+; --- measurement window: priority 0 lets BEVNT (BR 6) interrupt ---
+	mtps	#0
+	mov	#12.,r3			; outer loops; ~1 s on an 11/73
+1$:	clr	r4			; inner: 65536 iterations
+2$:	sob	r4,2$
+	sob	r3,1$
+	mtps	#340			; block interrupts before reporting
+
+; --- report ---
+	mov	#mlks,r1
+	call	puts
+	mov	#mnxm,r1
+	tst	lksok
+	beq	3$
+	mov	#mresp,r1
+3$:	call	puts
+	mov	#mtick,r1
+	call	puts
+	mov	count,r1
+	call	putoct
+	mov	#mverd,r1
+	call	puts
+	mov	#mabs,r1
+	tst	count
+	beq	4$
+	mov	#mpres,r1
+4$:	call	puts
+	halt
+
+; --- BEVNT interrupt handler: count, and re-arm a KW11-L if present ---
+tick:	mov	r0,-(sp)
+	inc	count
+	tst	lksok
+	beq	5$
+	mov	@#lks,r0		; a read clears the KW11-L monitor flag
+5$:	mov	(sp)+,r0
+	rtt
+
+; --- bus-error trap: send the LKS probe's return to lksabs ---
+trap4:	mov	#lksabs,(sp)		; overwrite the saved PC
+	rtt
+
+; --- console output on the 11/73's own SLU ---
+putc:
+6$:	bit	#200,@#xcsr		; the on-board SLU has no transmit FIFO,
+	beq	6$			; wait for XMIT RDY before each character
+	mov	r0,@#xbuf
+	return
+puts:	save
+7$:	movb	(r1)+,r0
+	beq	8$
+	bic	#177400,r0
+	call	putc
+	br	7$
+8$:	rest
+	return
+
+; --- print r1 as six octal digits ---
+putoct:	save
+	mov	r1,r0
+	ash	#-15.,r0		; bit 15 -> low bit
+	bic	#177776,r0
+	add	#'0,r0
+	call	putc
+	mov	#-12.,r5
+9$:	mov	r1,r0
+	ash	r5,r0			; value >> |r5|, masked next
+	bic	#177770,r0		; keep the low three bits
+	add	#'0,r0
+	call	putc
+	add	#3,r5			; -12, -9, -6, -3, 0
+	ble	9$
+	rest
+	return
+
+count:	.word	0
+lksok:	.word	0
+
+mlks:	.byte	15,12
+	.ascii	/LKS 777546 /
+	.byte	0
+	.even
+mnxm:	.ascii	/NXM/
+	.byte	15,12,0
+	.even
+mresp:	.ascii	/RESPONDS/
+	.byte	15,12,0
+	.even
+mtick:	.ascii	/BEVNT TICKS /
+	.byte	0
+	.even
+mverd:	.byte	15,12
+	.ascii	/BEVNT /
+	.byte	0
+	.even
+mabs:	.ascii	/ABSENT/
+	.byte	15,12,0
+	.even
+mpres:	.ascii	/PRESENT/
+	.byte	15,12,0
+	.even
+
+	.end	start
