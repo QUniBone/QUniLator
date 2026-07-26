@@ -781,8 +781,16 @@ void RL11_c::state_readwrite()
     assert(
         function_code == RL11_CMD_READ_DATA_WITHOUT_HEADER_CHECK || function_code == RL11_CMD_READ_DATA || function_code == RL11_CMD_WRITE_DATA || function_code == RL11_CMD_WRITE_CHECK);
 
+    // TD-001 (§2.3 "WAIT FOR DRIVE READY"; §5 OPI timer): before a data transfer
+    // the controller waits for the drive to assert DRIVE READY, up to the 550 ms
+    // nominal OPI timeout, rather than failing at once. A seek to the current
+    // cylinder issued just before READ DATA - as the boot ROM does when the pack is
+    // already parked at cylinder 0 - drops READY for the head-settle time and
+    // re-asserts it within a few ms, well inside this window.
+    for (unsigned ms = 0; !drive->drive_ready_line && ms < 550; ms++)
+        timeout.wait_ms(1);
     if (!drive->drive_ready_line) {
-        do_operation_incomplete("state_readwrite(): drive not ready"); // verified
+        do_operation_incomplete("state_readwrite(): drive not ready (OPI timeout)");
         return;
     }
 
