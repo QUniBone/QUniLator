@@ -20,6 +20,7 @@ tools/__pycache__/
 # large scanned manual PDFs (searchable .txt is committed alongside)
 diagnostics/reference/*.pdf
 
-# macro11 listings and bootable disk images built from tools/*.mac
+# macro11 listings, object files and bootable disk images built from tools/*.mac
 tools/*.lst
+tools/*.obj
 tools/*.rl02
