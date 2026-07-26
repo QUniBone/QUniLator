@@ -475,8 +475,15 @@ void RL11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
                     break;
                 case RL11_CMD_SEEK:
                     drive = selected_drive();
-                    if ((drive->status_word & 0x07) == RL0102_STATE_seek)
-                        //	if waiting for end of seek: execute seek in worker()
+                    // Execute at once only when the drive is ready. While it is
+                    // still seeking (state 4) or settling into Lock On - the
+                    // 6.5 ms Drive-Ready drop after a seek, EK-RL012-TM-PRE
+                    // 4.2.1 - defer to the worker, which waits for the drive to
+                    // become ready and then seeks. Issuing the seek now would hit
+                    // the not-ready OPI in state_seek() and silently lose it,
+                    // desynchronising a program that tracks head position across
+                    // overlapped/back-to-back seeks (CZRLK).
+                    if (!drive->drive_ready_line)
                         execute_function_delayed = true;
                     else {
                         DEBUG_FAST("cmd %d = Seek", function_code);
@@ -982,24 +989,25 @@ void RL11_c::worker(unsigned instance)
             continue;
         }
 
-        // inhibit command execution until previous seek complete (CRDY remains false)
+        // Inhibit command execution until the drive is ready: it may still be
+        // seeking (state 4) or settling into Lock On (state 5 with Drive Ready
+        // dropped for the 6.5 ms positioner settle, EK-RL012-TM-PRE 4.2.1). The
+        // wait yields (wait_ms) so the drive's own worker thread can advance and
+        // assert Drive Ready, and is bounded by the OPI timeout so an
+        // unresponsive drive fails the command in state_seek()/state_readwrite()
+        // rather than hanging the controller. Power-off was handled above.
         bool seek_wait = false;
-        // DEBUG_FAST("AAA: drive->status_word = %06o", drive->status_word) ;
-        while ((drive->status_word & 0x07) == RL0102_STATE_seek) {
+        for (unsigned ms = 0; !drive->drive_ready_line
+                              && drive->state.value != RL0102_STATE_power_off
+                              && ms < 550; ms++) {
             timeout.wait_ms(1);
             if (!seek_wait) // suppress to much output
-                DEBUG_FAST("Start drive_busy_seeking. drive->status_word = %06o",
+                DEBUG_FAST("Start drive_busy: drive->status_word = %06o",
                       drive->status_word);
             seek_wait = true;
         }
-        if (seek_wait) {
-            // wait for "DRIVE ready" after seek: race condition between RL0102 and RL11
-            while ((busreg_CS->pru_iopage_register->value & 1) == 0)
-                ;
-
-//			do_controller_status("seek busy ended") ;
-            DEBUG_FAST("End drive_busy_seeking: drive->status_word = %06o", drive->status_word);
-        }
+        if (seek_wait)
+            DEBUG_FAST("End drive_busy: drive->status_word = %06o", drive->status_word);
 
         // start execution of new command
         // produce an interrupt on any transition to ready
