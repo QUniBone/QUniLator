@@ -68,6 +68,19 @@ class Console:
                 sys.stdout.flush()
         return True
 
+    def drain(self, settle=0.7, maxwait=6.0):
+        """Swallow the history-replay burst the console channel sends on connect,
+        so expect() matches only fresh output rather than a stale prompt from an
+        earlier session. Read silently until the stream stays quiet for `settle`
+        seconds (or `maxwait` elapses), then clear the buffer."""
+        was_quiet = self.quiet
+        self.quiet = True
+        end = time.monotonic() + maxwait
+        while time.monotonic() < end and self._read(settle):
+            pass
+        self.quiet = was_quiet
+        self.buf = ""
+
     def expect(self, pattern, timeout=30.0):
         """Wait until pattern (regex) appears in the output. Returns the match."""
         rx = re.compile(pattern)
@@ -135,11 +148,22 @@ def main():
     ap.add_argument("--echo-timeout", type=float, default=2.0,
                     help="seconds to wait for a character's echo (default 2)")
     ap.add_argument("--expect-timeout", type=float, default=60.0)
+    ap.add_argument("--settle", type=float, default=0.0,
+                    help="drain the connect-time history replay: read silently "
+                         "until the stream is quiet this many seconds, then start "
+                         "matching fresh output (0 = off)")
+    ap.add_argument("--prime", action="store_true",
+                    help="after draining, send a bare CR to elicit a fresh prompt")
     ap.add_argument("--interactive", action="store_true",
                     help="after the first expect, relay stdin lines echo-driven")
     args = ap.parse_args()
 
     con = Console(args.host, load_pw(args.pw_file), echo_timeout=args.echo_timeout)
+
+    if args.settle > 0:
+        con.drain(settle=args.settle)
+    if args.prime:
+        con.send("", cr=True)   # bare CR: elicit a fresh prompt after draining
 
     # build the step list: (kind, text)
     steps = []
