@@ -1,0 +1,220 @@
+	.title	ltcmon
+;+
+; KW11-L monitor-bit characterization - standalone, no operating system.
+;
+; bevnt.mac already showed that 777546 answers and that vector-100 (BR6)
+; line-clock interrupts arrive at ~50 Hz.  This probe answers the one thing
+; bevnt did not check: does the register at LKS (777546) implement the KW11-L
+; MONITOR flag (bit 7) that XXDP's DRS clock-detection depends on?
+;
+; A full KW11-L sets LKS<7> (MON) at every line-frequency tick, independent of
+; INT ENB, and the flag clears on service (a DATI read or the next state).  If
+; the KDJ11's on-board line clock only implements INT ENB<6> and drives BEVNT,
+; but never sets MON, then XXDP declares "clock not available" even though the
+; interrupt itself works.
+;
+; Method, reported on the console SLU (777560 group):
+;
+;   MON phase - processor priority 7 (interrupts blocked), INT ENB off:
+;     poll LKS in a fixed window, count rising edges of bit 7 (MON), and keep
+;     the last raw LKS value.
+;
+;       LKS 777546 <RESPONDS|NXM>
+;       MON EDGES  <nnnnnn>     octal count of 0->1 transitions of bit 7
+;       MON RAW    <nnnnnn>     last LKS value read in the MON window
+;
+;   IE phase - INT ENB set, priority 0: count vector-100 interrupts as a
+;     cross-check that the clock still interrupts (as bevnt found).
+;
+;       IE TICKS   <nnnnnn>
+;       IE RAW     <nnnnnn>     last LKS value read after the IE window
+;
+; Reading of the three cases:
+;   MON EDGES ~= tick rate  -> full KW11-L: MON sets each tick and clears
+;   MON EDGES  = 1, MON RAW <7>=1 -> MON sets but is sticky (no per-tick clear)
+;   MON EDGES  = 0, MON RAW <7>=0 -> partial responder: MON never sets
+;
+; Runs in 16-bit mode, MMU off; the I/O page reaches 777xxx directly.
+;-
+
+	lks	= 177546		; KW11-L line-clock status register
+	lksie	= 100			; LKS INT ENB (bit 6)
+	lksmon	= 200			; LKS MONITOR (bit 7)
+	xcsr	= 177564		; console SLU transmit CSR
+	xbuf	= 177566		; console SLU transmit buffer
+
+	.macro	save
+	mov	r0,-(sp)
+	mov	r1,-(sp)
+	mov	r2,-(sp)
+	mov	r3,-(sp)
+	mov	r4,-(sp)
+	mov	r5,-(sp)
+	.endm
+	.macro	rest
+	mov	(sp)+,r5
+	mov	(sp)+,r4
+	mov	(sp)+,r3
+	mov	(sp)+,r2
+	mov	(sp)+,r1
+	mov	(sp)+,r0
+	.endm
+
+	.asect
+	.=1000
+
+start:	mov	#40000,sp
+	clr	count
+	clr	monedg
+	clr	monraw
+	clr	ieraw
+	clr	lksok
+	mov	#trap4,@#4		; bus-error vector guards the LKS probe
+	mov	#340,@#6
+	mov	#tick,@#100		; BEVNT (line clock) vector, enter at pri 7
+	mov	#340,@#102
+
+; --- probe LKS, leaving INT ENB and MON clear ---
+	mtps	#340			; block interrupts throughout the MON phase
+	mov	#0,@#lks		; traps to vector 4 if 777546 is absent
+	inc	lksok			; reached only when 777546 responds
+	br	lksdn
+lksabs:	clr	lksok			; entered through the trap-4 redirect
+lksdn:
+
+; --- MON phase: interrupts blocked, poll bit 7 for rising edges ---
+	clr	r2			; previous bit-7 state
+	mov	#14.,r3			; outer loops
+1$:	clr	r4			; inner: 65536 iterations
+2$:	mov	@#lks,r0
+	mov	r0,monraw
+	bit	#lksmon,r0
+	beq	3$			; bit 7 = 0
+	tst	r2			; bit 7 = 1: rising edge only if prev was 0
+	bne	4$
+	inc	monedg
+	mov	#1,r2
+	br	4$
+3$:	clr	r2
+4$:	sob	r4,2$
+	sob	r3,1$
+
+; --- IE phase: enable INT ENB, priority 0, count vector-100 interrupts ---
+	clr	count
+	mov	#lksie,@#lks
+	mtps	#0
+	mov	#14.,r3
+5$:	clr	r4
+6$:	sob	r4,6$
+	sob	r3,5$
+	mtps	#340
+	mov	@#lks,r0
+	mov	r0,ieraw
+
+; --- report ---
+	mov	#mlks,r1
+	call	puts
+	mov	#mnxm,r1
+	tst	lksok
+	beq	7$
+	mov	#mresp,r1
+7$:	call	puts
+	mov	#mmon,r1
+	call	puts
+	mov	monedg,r1
+	call	putoct
+	mov	#mmraw,r1
+	call	puts
+	mov	monraw,r1
+	call	putoct
+	mov	#mtick,r1
+	call	puts
+	mov	count,r1
+	call	putoct
+	mov	#miraw,r1
+	call	puts
+	mov	ieraw,r1
+	call	putoct
+	mov	#mnl,r1
+	call	puts
+	halt
+
+; --- BEVNT interrupt handler: count, read LKS to dismiss ---
+tick:	mov	r0,-(sp)
+	inc	count
+	mov	@#lks,r0		; a read dismisses the line-clock interrupt
+	mov	(sp)+,r0
+	rtt
+
+; --- bus-error trap: send the LKS probe's return to lksabs ---
+trap4:	mov	#lksabs,(sp)
+	rtt
+
+; --- console output on the 11/73's own SLU ---
+putc:
+8$:	bit	#200,@#xcsr		; the on-board SLU has no transmit FIFO
+	beq	8$
+	mov	r0,@#xbuf
+	return
+puts:	save
+9$:	movb	(r1)+,r0
+	beq	10$
+	bic	#177400,r0
+	call	putc
+	br	9$
+10$:	rest
+	return
+
+; --- print r1 as six octal digits ---
+putoct:	save
+	mov	r1,r0
+	ash	#-15.,r0		; bit 15 -> low bit
+	bic	#177776,r0
+	add	#'0,r0
+	call	putc
+	mov	#-12.,r5
+11$:	mov	r1,r0
+	ash	r5,r0
+	bic	#177770,r0		; keep the low three bits
+	add	#'0,r0
+	call	putc
+	add	#3,r5			; -12, -9, -6, -3, 0
+	ble	11$
+	rest
+	return
+
+count:	.word	0
+monedg:	.word	0
+monraw:	.word	0
+ieraw:	.word	0
+lksok:	.word	0
+
+mlks:	.byte	15,12
+	.ascii	/LKS 777546 /
+	.byte	0
+	.even
+mnxm:	.ascii	/NXM/
+	.byte	15,12,0
+	.even
+mresp:	.ascii	/RESPONDS/
+	.byte	15,12,0
+	.even
+mmon:	.ascii	/MON EDGES  /
+	.byte	0
+	.even
+mmraw:	.byte	15,12
+	.ascii	/MON RAW    /
+	.byte	0
+	.even
+mtick:	.byte	15,12
+	.ascii	/IE TICKS   /
+	.byte	0
+	.even
+miraw:	.byte	15,12
+	.ascii	/IE RAW     /
+	.byte	0
+	.even
+mnl:	.byte	15,12,0
+	.even
+
+	.end	start

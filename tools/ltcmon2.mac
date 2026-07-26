@@ -1,0 +1,147 @@
+	.title	ltcmon2
+;+
+; KW11-L monitor-bit clear/re-set characterization - standalone, no OS.
+;
+; ltcmon.mac left one thing unresolved: its MON phase only READ LKS, and a
+; real KW11-L clears the MONITOR flag (LKS<7>) on a DATO write of 0, not on a
+; DATI read.  So "one rising edge, bit 7 stuck set" is what a FULL KW11-L also
+; shows under pure polling - it does not prove a partial responder.
+;
+; This probe tests the flag the way DEC's DRS clock-detection does: with INT ENB
+; off and interrupts blocked, repeatedly
+;   - read LKS; if MON (bit 7) is set, count it and WRITE 0 to clear MON;
+;   - read LKS back and check MON actually cleared.
+; over a fixed ~1 s software window.
+;
+;   SETS   <nnnnnn>   times MON was seen set (octal)
+;   CLRFAIL <nnnnnn>  times a write of 0 did NOT clear MON
+;   LASTRAW <nnnnnn>  last LKS value read
+;
+; Reading:
+;   SETS ~= 50-100, CLRFAIL = 0     -> FULL KW11-L: MON sets each tick, write
+;                                       clears it, it re-sets next tick.
+;   SETS huge, CLRFAIL = SETS       -> PARTIAL: write never clears MON (sticky).
+;   SETS = 0                        -> PARTIAL: MON never sets.
+;
+; Runs in 16-bit mode, MMU off.
+;-
+
+	lks	= 177546		; KW11-L line-clock status register
+	lksmon	= 200			; LKS MONITOR (bit 7)
+	xcsr	= 177564		; console SLU transmit CSR
+	xbuf	= 177566		; console SLU transmit buffer
+
+	.macro	save
+	mov	r0,-(sp)
+	mov	r1,-(sp)
+	mov	r2,-(sp)
+	mov	r3,-(sp)
+	mov	r4,-(sp)
+	mov	r5,-(sp)
+	.endm
+	.macro	rest
+	mov	(sp)+,r5
+	mov	(sp)+,r4
+	mov	(sp)+,r3
+	mov	(sp)+,r2
+	mov	(sp)+,r1
+	mov	(sp)+,r0
+	.endm
+
+	.asect
+	.=1000
+
+start:	mov	#40000,sp
+	clr	sets
+	clr	clrfail
+	clr	lastrw
+
+	mtps	#340			; block interrupts; INT ENB stays 0
+	mov	#0,@#lks		; start with MON cleared, INT ENB off
+
+; --- window: read LKS; on MON set, count and write-clear; verify cleared ---
+	mov	#16.,r3			; outer loops (~1 s on an 11/73)
+1$:	mov	#40000,r4		; inner iterations (16384.)
+2$:	mov	@#lks,r0
+	mov	r0,lastrw
+	bit	#lksmon,r0
+	beq	3$			; MON = 0, keep polling
+	inc	sets
+	mov	#0,@#lks		; write 0: a real KW11-L clears MON here
+	mov	@#lks,r1		; read back
+	bit	#lksmon,r1
+	beq	3$			; cleared OK
+	inc	clrfail			; write did not clear MON
+3$:	sob	r4,2$
+	sob	r3,1$
+
+; --- report ---
+	mov	#msets,r1
+	call	puts
+	mov	sets,r1
+	call	putoct
+	mov	#mcf,r1
+	call	puts
+	mov	clrfail,r1
+	call	putoct
+	mov	#mlr,r1
+	call	puts
+	mov	lastrw,r1
+	call	putoct
+	mov	#mnl,r1
+	call	puts
+	halt
+
+; --- console output on the 11/73's own SLU ---
+putc:
+8$:	bit	#200,@#xcsr
+	beq	8$
+	mov	r0,@#xbuf
+	return
+puts:	save
+9$:	movb	(r1)+,r0
+	beq	10$
+	bic	#177400,r0
+	call	putc
+	br	9$
+10$:	rest
+	return
+
+; --- print r1 as six octal digits ---
+putoct:	save
+	mov	r1,r0
+	ash	#-15.,r0
+	bic	#177776,r0
+	add	#'0,r0
+	call	putc
+	mov	#-12.,r5
+11$:	mov	r1,r0
+	ash	r5,r0
+	bic	#177770,r0
+	add	#'0,r0
+	call	putc
+	add	#3,r5
+	ble	11$
+	rest
+	return
+
+sets:	.word	0
+clrfail:.word	0
+lastrw:	.word	0
+
+msets:	.byte	15,12
+	.ascii	/SETS    /
+	.byte	0
+	.even
+mcf:	.byte	15,12
+	.ascii	/CLRFAIL /
+	.byte	0
+	.even
+mlr:	.byte	15,12
+	.ascii	/LASTRAW /
+	.byte	0
+	.even
+mnl:	.byte	15,12,0
+	.even
+
+	.end	start
