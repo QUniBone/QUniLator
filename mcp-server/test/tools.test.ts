@@ -11,7 +11,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { MockBoard } from "./mock-board.js";
-import { QBoneClient } from "../src/qbone.js";
+import { QBoneClient, pendingPrompt, matchAnswer } from "../src/qbone.js";
 import { registerTools } from "../src/tools.js";
 import { loadConfig } from "../src/config.js";
 import type { BoardConfig } from "../src/config.js";
@@ -70,14 +70,46 @@ test("tools are all registered", async () => {
     "control",
     "get_devices",
     "get_log",
+    "get_logging",
     "get_machine_state",
     "halt",
     "images",
+    "run_xxdp_diagnostic",
     "set_device_enabled",
+    "set_log_level",
     "set_param",
+    "start_machine",
     "wait_for_console",
     "wait_for_halt",
+    "wait_for_running",
   ]);
+});
+
+test("pendingPrompt detects a '?' prompt through the trailing non-printable", () => {
+  // real console: "Change HW (L)  ? " followed by \x04
+  assert.equal(
+    pendingPrompt("DR>\r\nChange HW (L)  ? \x04"),
+    "Change HW (L)  ?",
+  );
+  assert.equal(
+    pendingPrompt("unit 0\r\nTKIP ADDRESS (O)  174500 ? \x04"),
+    "TKIP ADDRESS (O)  174500 ?",
+  );
+  // not at a prompt
+  assert.equal(pendingPrompt("TESTING UNIT 0\r\n"), null);
+  assert.equal(pendingPrompt(".\r\n"), null);
+});
+
+test("matchAnswer picks the answer whose match substring is in the prompt", () => {
+  const answers = [
+    { match: "CHANGE HW", value: "Y" },
+    { match: "UNITS", value: "1" },
+    { match: "VECTOR", value: "" },
+  ];
+  assert.equal(matchAnswer("Change HW (L)  ?", answers), "Y");
+  assert.equal(matchAnswer("# UNITS (D)  ?", answers), "1");
+  assert.equal(matchAnswer("TK VECTOR (O)  260 ?", answers), ""); // accept default
+  assert.equal(matchAnswer("SOMETHING ELSE ?", answers), undefined);
 });
 
 test("get_devices returns the backend body incl. label and status", async () => {
@@ -104,6 +136,25 @@ test("set_param writes the value to the param endpoint", async () => {
   assert.equal(req.method, "PUT");
   assert.equal(req.path, "/api/devices/uda0/params/address");
   assert.deepEqual(req.body, { value: "174400" });
+});
+
+test("set_log_level raises a source, get_logging lists sources", async () => {
+  board.setResponse("GET /api/logging", {
+    default: "warning",
+    sources: [{ label: "tqk50", level: "warning" }],
+  });
+  const client = await connectClient(cfgFor(host));
+  await client.callTool({
+    name: "set_log_level",
+    arguments: { source: "tqk50", level: "debug" },
+  });
+  const req = board.requests.at(-1)!;
+  assert.equal(req.method, "PUT");
+  assert.equal(req.path, "/api/logging/sources/tqk50");
+  assert.deepEqual(req.body, { level: "debug" });
+
+  const res = await client.callTool({ name: "get_logging", arguments: {} });
+  assert.equal(JSON.parse(textOf(res)).default, "warning");
 });
 
 test("set_device_enabled toggles the enabled param", async () => {
@@ -226,8 +277,39 @@ test("get_machine_state reads the events snapshot", async () => {
   const st = JSON.parse(textOf(res));
   assert.equal(st.powered, true);
   assert.equal(st.halt, false);
+  assert.equal(st.running, true); // derived: powered && !halt
   assert.deepEqual(st.switches, [1, 0, 1, 0]);
   assert.deepEqual(st.leds, [0, 0, 0, 0]);
+});
+
+test("get_machine_state reports running:false when the CPU is halted", async () => {
+  board.stateSnapshot = { ...board.stateSnapshot, halt: true };
+  const client = await connectClient(cfgFor(host));
+  const res = await client.callTool({ name: "get_machine_state", arguments: {} });
+  const st = JSON.parse(textOf(res));
+  assert.equal(st.halt, true);
+  assert.equal(st.running, false);
+  board.stateSnapshot = { ...board.stateSnapshot, halt: false };
+});
+
+test("start_machine issues the power-up action and confirms running", async () => {
+  const client = await connectClient(cfgFor(host));
+  const res = await client.callTool({ name: "start_machine", arguments: {} });
+  // default action is restart
+  assert.deepEqual(board.requests.at(-1)!.body, { action: "restart" });
+  const st = JSON.parse(textOf(res));
+  assert.equal(st.running, true);
+});
+
+test("start_machine accepts dc_on and wait_for_running resolves on a running snapshot", async () => {
+  const client = await connectClient(cfgFor(host));
+  await client.callTool({ name: "start_machine", arguments: { action: "dc_on" } });
+  assert.deepEqual(board.requests.at(-1)!.body, { action: "dc_on" });
+  const res = await client.callTool({
+    name: "wait_for_running",
+    arguments: { timeout_ms: 2000 },
+  });
+  assert.equal(JSON.parse(textOf(res)).running, true);
 });
 
 test("get_log collects log events over the window, filtered by level", async () => {

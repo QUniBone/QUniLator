@@ -58,8 +58,9 @@ Observation:
 | tool | wraps |
 |---|---|
 | `get_devices` | `GET /api/devices` — device set, parameters, `label`, `status` (returned as-is) |
-| `get_machine_state` | `/ws/events` opening `state` snapshot — `halt`, `powered`, `leds[]`, `switches[]` |
-| `get_log` | tails the `/ws/events` `log` stream for a window, filtered by severity |
+| `get_machine_state` | `/ws/events` opening `state` snapshot — derived `running` (powered && HALT released), plus `halt`, `powered`, `leds[]`, `switches[]`. Check `running` before booting or running anything |
+| `get_log` | tails the `/ws/events` `log` stream for a window, filtered by severity (each line: label, level, text). Sources default to `warning` — raise the one you want with `set_log_level` first |
+| `get_logging` | `GET /api/logging` — the log sources and their current levels |
 | `console_read` | connects `/ws/console/<ch>`, collects the replayed ring, returns it |
 | `console_send` | sends bytes to `/ws/console/<ch>` |
 
@@ -69,8 +70,10 @@ Control:
 |---|---|
 | `set_param` | `PUT /api/devices/<dev>/params/<param>` |
 | `set_device_enabled` | `PUT .../params/enabled` (`true`/`false`) |
-| `control` | `POST /api/control` — `powercycle`/`init`/`restart`/`dc_on`/`dc_off` |
-| `halt` / `continue` | `POST /api/control` — the run controls |
+| `set_log_level` | `PUT /api/logging/sources/<source>` — raise a source to `debug` before `get_log`, lower it after |
+| `start_machine` | bring the machine up **running** and confirm it: `restart` (default) or `dc_on`, then wait for a `state` frame reporting the CPU running. The reliable way to begin a test run — the boot ROM then auto-boots the first bootable device |
+| `control` | `POST /api/control` — `powercycle`/`init`/`restart`/`dc_on`/`dc_off`. `powercycle` does NOT release HALT (a halted CPU comes up in ODT) and re-runs the DIP→config selection, re-applying that config; `restart` comes up running keeping the applied config. Prefer `start_machine` |
+| `halt` / `continue` | `POST /api/control` — the run controls. After a `halt`, reboot with `start_machine`, not `powercycle` |
 | `configs` | `list` `GET /api/configs`; `apply`/`switch` `POST .../apply`; `save` reads `GET /api/configs?current=1` then `PUT /api/configs/<name>?from=live`; `set_default` `PUT .../default` |
 | `images` | `list` `GET /api/images`; `upload` posts a local file to `POST /api/images`; `attach` writes a drive's `image` param (empty detaches) |
 
@@ -79,6 +82,7 @@ Wait-for (client-side on the existing streams, no board endpoint blocks):
 | tool | how |
 |---|---|
 | `wait_for_halt` | holds a `/ws/events` subscription, resolves when a `state` event reports `halt` (an already-halted machine resolves at once), or times out |
+| `wait_for_running` | same, resolves when a `state` event reports the CPU running (powered with HALT released); counterpart to `wait_for_halt` |
 | `wait_for_console` | connects `/ws/console/<channel>`, which replays its ring then streams live, resolves when the accumulated output matches a regex `pattern`, or times out |
 
 Channels are `0` (DL11 @777560), `1` (@776500), and `ext` (the real console SLU

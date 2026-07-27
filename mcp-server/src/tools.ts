@@ -49,8 +49,12 @@ export function registerTools(server: McpServer, qbone: QBoneClient): void {
     {
       description:
         "Tail the QBone log stream (/ws/events) for a window and return the " +
-        "lines at or above a severity. The board keeps no server-side log " +
-        "history, so this collects what is emitted during the window.",
+        "lines at or above a severity (each line: label, level, text). The " +
+        "board keeps no server-side log history, so this collects what is " +
+        "emitted during the window. IMPORTANT: every source defaults to " +
+        "'warning', so debug/info lines appear ONLY after you raise that " +
+        "source with set_log_level (e.g. set_log_level('tqk50','debug')) — " +
+        "raise it first, then get_log with a matching level.",
       inputSchema: {
         level: z
           .enum(["fatal", "error", "warning", "info", "debug"])
@@ -64,6 +68,35 @@ export function registerTools(server: McpServer, qbone: QBoneClient): void {
       run(() =>
         qbone.getLog(level as LogLevelName, duration_ms, max_lines),
       ),
+  );
+
+  server.registerTool(
+    "get_logging",
+    {
+      description:
+        "List the log sources and their current levels (GET /api/logging), " +
+        "plus the default level. Use to find a source's label before raising it.",
+      inputSchema: {},
+    },
+    async () => run(() => qbone.getLogging()),
+  );
+
+  server.registerTool(
+    "set_log_level",
+    {
+      description:
+        "Raise or lower a log source's severity (PUT /api/logging/sources/" +
+        "<source>). Sources default to 'warning'; set the one you want to " +
+        "'debug' BEFORE capturing with get_log, then set it back to 'warning' " +
+        "when done so the stream stays quiet. Source is the label from " +
+        "get_logging / get_devices (e.g. 'tqk50', 'mscp_server').",
+      inputSchema: {
+        source: z.string(),
+        level: z.enum(["fatal", "error", "warning", "info", "debug"]),
+      },
+    },
+    async ({ source, level }) =>
+      run(() => qbone.setLogLevel(source, level)),
   );
 
   server.registerTool(
@@ -128,8 +161,12 @@ export function registerTools(server: McpServer, qbone: QBoneClient): void {
     "get_machine_state",
     {
       description:
-        "Front-panel/bus view from the /ws/events state snapshot: halt, " +
-        "powered, activity leds[], and DIP switches[].",
+        "Front-panel/bus view from the /ws/events state snapshot. Returns a " +
+        "derived `running` (CPU executing = powered && HALT released) plus the " +
+        "raw halt, powered, activity leds[] and DIP switches[] (SW0 = LSB). " +
+        "ALWAYS check `running` before trying to boot or run anything: a " +
+        "running CPU is the prerequisite. `running:false` with powered means " +
+        "the CPU is halted (in micro-ODT `@`) — use start_machine to bring it up.",
       inputSchema: {},
     },
     async () => run(() => qbone.getMachineState()),
@@ -170,11 +207,106 @@ export function registerTools(server: McpServer, qbone: QBoneClient): void {
   );
 
   server.registerTool(
+    "start_machine",
+    {
+      description:
+        "Bring the machine up RUNNING and confirm it (the reliable way to begin " +
+        "a test run). Issues restart (release HALT, then restart the CPU from " +
+        "the power-up vector) — or dc_on (logical power-on running) — then waits " +
+        "for a /ws/events frame reporting the CPU running, and returns that " +
+        "state. The boot ROM then auto-boots the first bootable device; there is " +
+        "NO boot dialog to drive. Use this instead of powercycle after a halt: " +
+        "powercycle does not release HALT, so a halted CPU comes up in ODT. " +
+        "Note: restart keeps the currently-applied config, while dc_on re-runs " +
+        "the DIP config selection (see control).",
+      inputSchema: {
+        action: z
+          .enum(["restart", "dc_on"])
+          .optional()
+          .describe("default restart; dc_on also re-runs DIP config selection"),
+        timeout_ms: z.number().int().positive().optional(),
+      },
+    },
+    async ({ action, timeout_ms }) =>
+      run(() => qbone.powerUp(action ?? "restart", timeout_ms ?? 8000)),
+  );
+
+  server.registerTool(
+    "wait_for_running",
+    {
+      description:
+        "Block until the CPU is running (powered with HALT released) or timeout. " +
+        "The opening /ws/events snapshot counts, so an already-running machine " +
+        "returns at once. Counterpart to wait_for_halt.",
+      inputSchema: { timeout_ms: z.number().int().positive() },
+    },
+    async ({ timeout_ms }) => run(() => qbone.waitForRunning(timeout_ms)),
+  );
+
+  server.registerTool(
+    "run_xxdp_diagnostic",
+    {
+      description:
+        "Run an XXDP diagnostic end-to-end and report pass/fail. Applies a " +
+        "config, applies device setup, power-cycles the machine up running " +
+        "(the boot ROM auto-boots XXDP), then over the console loads the " +
+        "diagnostic, drives the DRS Change-HW dialog from `answers`, runs it, " +
+        "and returns {passed, terminatedBy, transcript}. `diagnostic` is the " +
+        "XXDP filename with the leading class letter dropped (CZTKAE0 -> " +
+        "ZTKAE0). Each answer sends `value` when a prompt contains `match` " +
+        "(value \"\" accepts the prompt default). Typical for the TK50: " +
+        "config 'xxdp'; setup enables tqk50 and tqk500 (a scratch .tap image); " +
+        "diagnostic 'ZTKAE0'; answers [{match:'CHANGE HW',value:'Y'}, " +
+        "{match:'UNITS',value:'1'}, {match:'ADDRESS',value:''}, " +
+        "{match:'VECTOR',value:''}, {match:'UNIT NUMBER',value:''}].",
+      inputSchema: {
+        diagnostic: z.string().describe("XXDP file, e.g. ZTKAE0"),
+        config: z.string().optional().describe("config to apply first, e.g. xxdp"),
+        setup: z
+          .array(
+            z.object({
+              device: z.string(),
+              param: z.string().optional(),
+              value: z.string().optional(),
+              enabled: z.boolean().optional(),
+            }),
+          )
+          .optional()
+          .describe("device edits: {device,enabled} or {device,param,value}"),
+        answers: z
+          .array(z.object({ match: z.string(), value: z.string() }))
+          .optional()
+          .describe("DRS dialog: send value when a prompt contains match"),
+        pass_pattern: z.string().optional().describe("default 'END PASS'"),
+        run_timeout_ms: z.number().int().positive().optional(),
+      },
+    },
+    async ({ diagnostic, config, setup, answers, pass_pattern, run_timeout_ms }) =>
+      run(() =>
+        qbone.runXxdpDiagnostic({
+          diagnostic,
+          config,
+          setup,
+          answers,
+          passPattern: pass_pattern,
+          runTimeoutMs: run_timeout_ms,
+        }),
+      ),
+  );
+
+  server.registerTool(
     "control",
     {
       description:
-        "Bus/power control (POST /api/control). dc_off/powercycle are " +
-        "destructive to a running machine.",
+        "Low-level bus/power control (POST /api/control). Prefer start_machine " +
+        "to come up running. Actions: restart = release HALT then restart the " +
+        "CPU running from the power-up vector (keeps the applied config); " +
+        "dc_on = logical power-on running; dc_off = halt + clear powered; " +
+        "powercycle = DCOK/POK cycle that does NOT release HALT (a halted CPU " +
+        "comes up in micro-ODT) AND re-runs the DIP->config selection, RE-" +
+        "APPLYING that config and discarding runtime device edits (an enabled " +
+        "device, a swapped image); init = pulse BINIT. powercycle/dc_on/dc_off " +
+        "disrupt a running machine.",
       inputSchema: {
         action: z.enum(["powercycle", "init", "restart", "dc_on", "dc_off"]),
       },
@@ -185,7 +317,10 @@ export function registerTools(server: McpServer, qbone: QBoneClient): void {
   server.registerTool(
     "halt",
     {
-      description: "Assert the QBUS HALT line (POST /api/control halt).",
+      description:
+        "Assert the QBUS HALT line (POST /api/control halt); the CPU stops. To " +
+        "resume from where it stopped use continue; to reboot running use " +
+        "start_machine (NOT powercycle, which comes up halted in ODT after a halt).",
       inputSchema: {},
     },
     async () => run(() => qbone.control("halt")),
