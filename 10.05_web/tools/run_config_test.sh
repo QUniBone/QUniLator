@@ -67,7 +67,15 @@ $CXX -std=c++11 -Wall -Wextra -I "$DEV" \
 	"$DEV/serial_tcp_line.cpp" \
 	-lpthread -o "$OUT/serial_tcp_line_test"
 
+# The SIMH .tap tape image is a pure file format, PRU/logger-free, so it links
+# against nothing but its own translation unit and works on a temp file.
+$CXX -std=c++11 -Wall -Wextra -I "$DEV" \
+	"$TOOLS/simh_tape_test.cpp" \
+	"$DEV/simh_tape.cpp" \
+	-o "$OUT/simh_tape_test"
+
 "$OUT/config_test"
 "$OUT/console_channel_test"
 "$OUT/status_power_test"
 "$OUT/serial_tcp_line_test"
+"$OUT/simh_tape_test"
