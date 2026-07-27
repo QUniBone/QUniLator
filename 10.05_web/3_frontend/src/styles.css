@@ -440,6 +440,13 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 
 /* dashboard layout: the control panel and front panel share the top row at equal
    height, the terminal spans the row below, and the widgets below that */
+.dash-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.dash-cfg { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.dash-cfg-title { font-weight: 650; font-size: var(--fs-3); }
+.dash-cfg-name { font-size: var(--fs-1); color: var(--ink-faint); }
+.dash-cog { margin-left: auto; font-size: var(--fs-3); line-height: 1; padding: 3px 10px; }
+.console-card { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.console-card .card-body { display: flex; align-items: flex-start; }
 .dash-panels { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; }
 .dash-panels > .card { flex: 0 0 auto; }
 .dash-top { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; }

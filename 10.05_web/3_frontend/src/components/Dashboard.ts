@@ -1,10 +1,29 @@
 import { html } from '../html';
 import { useEffect, useRef } from 'preact/hooks';
+import { useLocation } from 'preact-iso';
 import { useStore, store, emit } from '../store';
-import { liveControl } from '../api';
+import { liveControl, loadConfigs } from '../api';
 import { initLiveTerminal, teardownTerminals } from '../lib/terminals';
-import { Led } from './common';
+import { Led, Chip } from './common';
 import { Widgets } from './widgets';
+
+// The running configuration's name and title, with a cog that jumps straight to
+// its configuration screen.
+function DashHeader() {
+  const s = useStore();
+  const loc = useLocation();
+  const name = s.configCurrent;
+  const title = (s.configs || []).find((c) => c.name === name)?.title || name;
+  return html`<div class="dash-head">
+    <div class="dash-cfg">
+      <span class="dash-cfg-title">${title || 'no configuration'}</span>
+      ${title && title !== name ? html`<span class="dash-cfg-name mono">${name}</span>` : null}
+      ${s.configModified ? html`<${Chip} cls="warn">modified</${Chip}>` : null}
+    </div>
+    <button class="btn small dash-cog" title="Configuration"
+      onClick=${() => loc.route('/config' + (name ? '/' + encodeURIComponent(name) : ''))}>⚙</button>
+  </div>`;
+}
 
 // One switch of the 11/03 bezel: a bat-handle toggle with a silkscreen legend
 // above (two-position) and/or below it. `momentary` springs back and fires on
@@ -129,15 +148,28 @@ export function TerminalHost() {
   return html`<div class="term" ref=${host} tabindex="0" aria-label="VT100 terminal, 80 columns by 24 rows"></div>`;
 }
 
+// The live console as a first-class card, so it reads like the other cards on
+// the dashboard.
+function ConsoleCard() {
+  return html`<div class="card console-card">
+    <div class="card-head"><h3>Console</h3></div>
+    <div class="card-body dash-term">${html`<${TerminalHost} />`}</div>
+  </div>`;
+}
+
 export function Dashboard() {
   useStore();
+  useEffect(() => {
+    loadConfigs().catch(() => {});
+  }, []);
   return html`<section class="page active" data-page="dashboard">
+    ${html`<${DashHeader} />`}
     <div class="dash-panels">
       ${html`<${ControlPanel} />`}
       ${html`<${FrontPanel} />`}
     </div>
     <div class="dash-top" style="margin-top:14px">
-      <div class="dash-term">${html`<${TerminalHost} />`}</div>
+      ${html`<${ConsoleCard} />`}
     </div>
     <div class="widget-grid" style="margin-top:14px">${html`<${Widgets} />`}</div>
   </section>`;
