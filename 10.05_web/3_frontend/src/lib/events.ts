@@ -2,7 +2,7 @@
 import { store, setStore, emit, emitSoon } from '../store';
 import { patchParam } from './devmodel';
 import { wsURL } from './util';
-import type { LogLevelName } from '../types';
+import type { LogLevelName, LogLine } from '../types';
 
 const LOG_LEVELS: Record<number, LogLevelName> = {
   1: 'FATAL',
@@ -29,13 +29,26 @@ export function initEvents(): void {
       if (/lamp$/.test(ev.param)) emitSoon();
       else emit();
     } else if (ev.t === 'log') {
-      store.log.push({
-        t: new Date().toTimeString().slice(0, 8),
+      // the journal assigns the id and server timestamp; append only when this
+      // line is newer than the last held, so a live frame never duplicates one
+      // already loaded from the journal page
+      const line: LogLine = {
+        id: ev.id || 0,
+        t: ev.time || new Date().toTimeString().slice(0, 8),
         lvl: LOG_LEVELS[ev.level] || 'INFO',
         src: ev.label,
         msg: String(ev.text).replace(/^\[[^\]]*\]\s*/, ''),
-      });
-      if (store.log.length > 500) store.log.shift();
+      };
+      const log = store.log;
+      if (!log.length || line.id > log[log.length - 1].id) {
+        log.push(line);
+        // bound in-memory growth from the live stream; older entries page back
+        // in from the journal on demand
+        if (log.length > 5000) {
+          log.shift();
+          store.logMore = true;
+        }
+      }
       emit();
     } else if (ev.t === 'state') {
       const hw = store.hw,

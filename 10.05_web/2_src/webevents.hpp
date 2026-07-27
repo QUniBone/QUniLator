@@ -7,6 +7,9 @@
 #ifndef _WEBEVENTS_HPP_
 #define _WEBEVENTS_HPP_
 
+#include <cstdint>
+#include <string>
+
 struct mg_context;
 
 // register /ws/events, install the parameter/logger observers,
@@ -39,5 +42,13 @@ bool webevents_is_halted(void);
 // significant bit. -1 when there is no GPIO hardware (the host build), so a
 // caller can fall back rather than treat "no switches" as switch value 0.
 int webevents_dip_value(void);
+
+// Load the persisted log journal (<dir>/log.jsonl) and open it for append.
+// Called once at startup before the log sink is installed.
+void webevents_log_init(const std::string &dir);
+
+// A page of the log journal as JSON {entries:[…newest first…], more}: up to
+// `limit` (default 200, max 1000) entries with id < `before` (0 → the latest).
+std::string webevents_log_page_json(uint64_t before, unsigned limit);
 
 #endif // _WEBEVENTS_HPP_

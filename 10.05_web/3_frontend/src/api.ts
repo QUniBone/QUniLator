@@ -10,6 +10,8 @@ import type {
   ImageInfo,
   ConfigSummary,
   ConfigSnapshot,
+  LogLine,
+  LogLevelName,
 } from './types';
 
 export interface ApiResult<T = Record<string, unknown>> {
@@ -85,6 +87,40 @@ export async function putSettings(
   toast('PUT /api/settings', warns || (res.ok ? okMsg : res.data.error || 'rejected'));
   await refreshSettings().catch(() => {});
   return res;
+}
+
+// ---- diagnostics log ----
+const LOG_LEVELS: Record<number, LogLevelName> = {
+  1: 'FATAL',
+  2: 'ERROR',
+  3: 'WARNING',
+  4: 'INFO',
+  5: 'DEBUG',
+};
+
+// A page of the persisted log journal, newest-first, for the diagnostics view.
+// `before` pages older entries (omit for the latest). Returns the entries as
+// received (newest-first) and whether older entries remain.
+export async function fetchLogPage(
+  before?: number,
+  limit = 200
+): Promise<{ entries: LogLine[]; more: boolean }> {
+  const q = new URLSearchParams();
+  if (before) q.set('before', String(before));
+  q.set('limit', String(limit));
+  const r = await fetch('/api/log?' + q.toString()).catch(() => null);
+  if (!r || !r.ok) return { entries: [], more: false };
+  const d = await r.json().catch(() => ({}));
+  const entries: LogLine[] = (d.entries || []).map(
+    (e: { id: number; time: string; level: number; label: string; text: string }) => ({
+      id: e.id,
+      t: e.time,
+      lvl: LOG_LEVELS[e.level] || 'INFO',
+      src: e.label,
+      msg: String(e.text).replace(/^\[[^\]]*\]\s*/, ''),
+    })
+  );
+  return { entries, more: !!d.more };
 }
 
 export async function refreshImages(): Promise<void> {

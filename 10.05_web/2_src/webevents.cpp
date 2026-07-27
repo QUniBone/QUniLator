@@ -15,15 +15,20 @@
    serializes the WebSocket writes, so a slow client never blocks emulation.
 */
 
+#include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <deque>
+#include <fstream>
 #include <map>
 #include <mutex>
 #include <set>
+#include <string>
 #include <vector>
 #include <thread>
 
@@ -181,12 +186,123 @@ static void on_param_changed(parameter_c *param) {
 	enqueue(event);
 }
 
+// ---- log journal: a persisted, paginated history of log lines ----
+// The live stream also appends here, so the diagnostics page loads the tail when
+// it opens and pages older entries in — the log survives a page reload and a
+// service restart. The in-memory deque is the retained window; the file is
+// trimmed to it at startup so it cannot grow without bound.
+struct log_entry_t {
+	uint64_t id;
+	std::string time; // server clock, HH:MM:SS
+	unsigned level;
+	std::string label;
+	std::string text;
+};
+static std::mutex journal_mutex;
+static std::deque<log_entry_t> journal; // ascending id; oldest dropped
+static uint64_t next_log_id = 1;
+static std::string journal_path;
+static std::ofstream journal_file;
+static const size_t JOURNAL_MAX = 20000;
+
+static picojson::value log_entry_json(const log_entry_t &e) {
+	picojson::object o;
+	o["id"] = picojson::value((double) e.id);
+	o["time"] = picojson::value(e.time);
+	o["level"] = picojson::value((double) e.level);
+	o["label"] = picojson::value(e.label);
+	o["text"] = picojson::value(e.text);
+	return picojson::value(o);
+}
+
+void webevents_log_init(const std::string &dir) {
+	journal_path = dir + "/log.jsonl";
+	std::ifstream in(journal_path.c_str());
+	std::string line;
+	while (std::getline(in, line)) {
+		if (line.empty())
+			continue;
+		picojson::value v;
+		if (!picojson::parse(v, line).empty() || !v.is<picojson::object>()
+				|| !v.get("id").is<double>())
+			continue;
+		log_entry_t e;
+		e.id = (uint64_t) v.get("id").get<double>();
+		e.time = v.get("time").is<std::string>() ? v.get("time").get<std::string>() : "";
+		e.level = v.get("level").is<double>() ? (unsigned) v.get("level").get<double>() : 4;
+		e.label = v.get("label").is<std::string>() ? v.get("label").get<std::string>() : "";
+		e.text = v.get("text").is<std::string>() ? v.get("text").get<std::string>() : "";
+		journal.push_back(e);
+		if (journal.size() > JOURNAL_MAX)
+			journal.pop_front();
+	}
+	in.close();
+	if (!journal.empty())
+		next_log_id = journal.back().id + 1;
+	// rewrite the file to the retained tail, then reopen for append
+	std::ofstream out(journal_path.c_str(), std::ios::trunc);
+	for (const log_entry_t &e : journal)
+		out << log_entry_json(e).serialize() << "\n";
+	out.close();
+	journal_file.open(journal_path.c_str(), std::ios::app);
+}
+
+// A page of the journal, newest first: up to `limit` entries with id < `before`
+// (before == 0 → the latest). "more" is true when older entries remain.
+std::string webevents_log_page_json(uint64_t before, unsigned limit) {
+	if (limit == 0 || limit > 1000)
+		limit = 200;
+	picojson::array entries;
+	bool more = false;
+	{
+		std::lock_guard<std::mutex> lock(journal_mutex);
+		for (std::deque<log_entry_t>::const_reverse_iterator it = journal.rbegin();
+				it != journal.rend(); ++it) {
+			if (before != 0 && it->id >= before)
+				continue;
+			if (entries.size() >= limit) {
+				more = true;
+				break;
+			}
+			entries.push_back(log_entry_json(*it));
+		}
+	}
+	picojson::object o;
+	o["entries"] = picojson::value(entries);
+	o["more"] = picojson::value(more);
+	return picojson::value(o).serialize();
+}
+
 static void on_log_message(unsigned msglevel, const char *label, const char *text) {
+	char ts[16] = "";
+	time_t now = time(nullptr);
+	struct tm tmv;
+	localtime_r(&now, &tmv);
+	strftime(ts, sizeof ts, "%H:%M:%S", &tmv);
+
+	log_entry_t e;
+	{
+		std::lock_guard<std::mutex> lock(journal_mutex);
+		e.id = next_log_id++;
+		e.time = ts;
+		e.level = msglevel;
+		e.label = label ? label : "";
+		e.text = text ? text : "";
+		journal.push_back(e);
+		if (journal.size() > JOURNAL_MAX)
+			journal.pop_front();
+		if (journal_file.is_open()) {
+			journal_file << log_entry_json(e).serialize() << "\n";
+			journal_file.flush();
+		}
+	}
 	picojson::object event;
 	event["t"] = picojson::value("log");
-	event["level"] = picojson::value((double) msglevel);
-	event["label"] = picojson::value(label);
-	event["text"] = picojson::value(text);
+	event["id"] = picojson::value((double) e.id);
+	event["time"] = picojson::value(e.time);
+	event["level"] = picojson::value((double) e.level);
+	event["label"] = picojson::value(e.label);
+	event["text"] = picojson::value(e.text);
 	enqueue(event);
 }
 
@@ -362,6 +478,12 @@ static void ws_close_handler(const struct mg_connection *conn, void *) {
 }
 
 void webevents_register(struct mg_context *ctx) {
+	// load the persisted log tail before the sink is installed, so live lines
+	// continue the stored id sequence
+	const char *base = getenv("QUNIBONE_DIR");
+	if (base == nullptr)
+		base = getenv("HOME");
+	webevents_log_init(std::string(base ? base : "."));
 	mg_set_websocket_handler(ctx, "/ws/events", ws_connect_handler,
 			ws_ready_handler, ws_data_handler, ws_close_handler, nullptr);
 	running = true;

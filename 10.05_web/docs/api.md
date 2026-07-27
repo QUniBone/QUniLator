@@ -428,6 +428,25 @@ Overrides one target's level. `{"level": null}` clears the override back to the
 global default. Persists. `422` for an unknown level name. Answers
 `{"ok": true}`.
 
+### `GET /api/log?before=<id>&limit=<n>`
+
+A page of the persisted log journal, **newest first**. Every log line is
+appended to `$QUNIBONE_DIR/log.jsonl` with a monotonic `id` and a server
+timestamp, so the diagnostics view reloads its history and pages older entries
+in — the log survives a page reload and a service restart. The file is bounded
+(trimmed to the most recent ~20000 lines at startup).
+
+```json
+{"entries": [{"id": 4210, "time": "20:52:04", "level": 4,
+              "label": "web", "text": "configuration \"rt11\" applied"}],
+ "more": true}
+```
+
+Entries are newest-first. `before` returns entries with a smaller `id` (omit for
+the latest); `limit` defaults to 200, max 1000. `more` is true when older
+entries remain to page in. Live lines continue to arrive on `/ws/events` with
+the same `id`/`time`, so a client merges the two by `id`.
+
 ## WebSockets
 
 ### `/ws/events`
@@ -437,7 +456,7 @@ Text frames, one JSON event each, pushed to every connected client:
 | event | payload |
 |---|---|
 | `{"t":"param","dev":…,"param":…,"value":…}` | committed parameter change (includes enable/disable, image attach, panel lamps) |
-| `{"t":"log","level":n,"label":…,"text":…}` | log message; levels 1 FATAL … 5 DEBUG |
+| `{"t":"log","id":n,"time":…,"level":n,"label":…,"text":…}` | log message; levels 1 FATAL … 5 DEBUG. `id` and `time` (server clock) match the journal ([`GET /api/log`](#get-apilogbeforeidlimitn)), so a client merges live lines with a fetched page by `id` |
 | `{"t":"state","halt":…,"powered":…,"leds":[…],"switches":[…],"init":…,"dcok":…,"pok":…}` | activity LEDs, DIP switches, HALT, the logical power flag, bus INIT/DCOK/POK — published on change (10 Hz poll); a full snapshot opens every connection. `powered` is the runtime power flag driven by `dc_on`/`dc_off`; the dashboard derives RUN from `!halt && powered` and PWR OK from `powered`. Transitions may arrive as partial `state` frames (e.g. `{"t":"state","powered":false}`), which the client merges onto the last snapshot |
 | `{"t":"config","current":…,"modified":…}` | current configuration and the live modified flag — published on apply, save, rename, and whenever the modified flag flips (10 Hz poll); a snapshot opens every connection |
 

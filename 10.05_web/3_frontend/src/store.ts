@@ -27,7 +27,8 @@ export interface Store {
   connected: boolean;
   bus: BusState;
   hw: HwState;
-  log: LogLine[];
+  log: LogLine[]; // ascending by id; newest appended, older pages prepended
+  logMore: boolean; // older entries remain in the journal to page in
   activeLevels: Set<LogLevelName>;
   termReady: boolean;
   activeTerm: TermKey;
@@ -59,6 +60,7 @@ export const store: Store = {
     dip: [false, false, false, false],
   },
   log: [],
+  logMore: false,
   activeLevels: new Set<LogLevelName>(['ERROR', 'WARNING', 'INFO']),
   termReady: false,
   activeTerm: 'slu0',

@@ -635,6 +635,8 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 
 /* ============================ diagnostics ============================ */
 .logbox { font-family: var(--font-mono); font-size: var(--fs-1); overflow-y: auto; }
+.log-empty { padding: 16px 4px; font-style: italic; }
+.log-more { padding: 8px 4px; text-align: center; font-size: var(--fs-0); }
 /* the log page is the log: its card fills the content area and only the
    entries inside it scroll */
 .page[data-page="log"].active { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }

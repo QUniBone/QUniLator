@@ -130,7 +130,8 @@ export interface ConfigSnapshot {
 // ---- log lines (assembled from /ws/events) ----
 export type LogLevelName = 'FATAL' | 'ERROR' | 'WARNING' | 'INFO' | 'DEBUG';
 export interface LogLine {
-  t: string;
+  id: number; // monotonic journal id, for ordering, dedup and paging
+  t: string; // server clock HH:MM:SS
   lvl: LogLevelName;
   src: string;
   msg: string;

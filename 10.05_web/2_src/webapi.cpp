@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <cstdint>
 #include <map>
 #include <set>
 #include <vector>
@@ -639,10 +640,39 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 }
 
 // called by webserver_c::start(); the host test build registers fixtures instead
+// GET /api/log?before=<id>&limit=<n> — a page of the log journal, newest first
+static int api_log_handler(struct mg_connection *conn, void * /*cbdata*/) {
+	const struct mg_request_info *ri = mg_get_request_info(conn);
+	if (strcmp(ri->request_method, "GET") != 0) {
+		send_error(conn, 405, "GET required");
+		return 405;
+	}
+	uint64_t before = 0;
+	unsigned limit = 200;
+	const char *q = ri->query_string;
+	if (q != nullptr) {
+		char buf[32];
+		if (mg_get_var(q, strlen(q), "before", buf, sizeof buf) > 0)
+			before = strtoull(buf, nullptr, 10);
+		if (mg_get_var(q, strlen(q), "limit", buf, sizeof buf) > 0)
+			limit = (unsigned) strtoul(buf, nullptr, 10);
+	}
+	std::string body = webevents_log_page_json(before, limit);
+	mg_printf(conn,
+			"HTTP/1.1 200 OK\r\n"
+			"Content-Type: application/json\r\n"
+			"Cache-Control: no-store\r\n"
+			"Content-Length: %u\r\n\r\n",
+			(unsigned) body.size());
+	mg_write(conn, body.c_str(), body.size());
+	return 200;
+}
+
 void webapi_register(struct mg_context *ctx) {
 	mg_set_request_handler(ctx, "/api/devices", api_devices_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/control", api_control_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/memory", api_memory_handler, nullptr);
+	mg_set_request_handler(ctx, "/api/log", api_log_handler, nullptr);
 	webstorage_register(ctx);
 	webconfigs_register(ctx);
 	websettings_register(ctx);
