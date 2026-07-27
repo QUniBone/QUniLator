@@ -36,21 +36,12 @@ function PanelSwitch({
       role=${kind === 'two' ? 'switch' : undefined}
       aria-checked=${kind === 'two' ? pos === 'top' : undefined}
       aria-label=${posLabels ? label + ' ' + posLabels[0] + '/' + posLabels[1] : label}
-      onClick=${click}><span class="cp-bat"></span></button>${
+      onClick=${click}><span class="cp-bat"></span></button></span>
+    <span class="cp-leg">${label}${
       posLabels
         ? html`<span class="cp-pos"><span>${posLabels[0]}</span><span>${posLabels[1]}</span></span>`
         : null
     }</span>
-    <span class="cp-leg">${label}</span>
-  </div>`;
-}
-
-// One indicator lamp on the bezel: a lens over a legend, on the same three-row
-// rhythm as a switch so their legends share a baseline across the row.
-function PanelLamp({ on, label }: { on: boolean; label: string }) {
-  return html`<div class="cp-ctrl cp-lamp">
-    <span class="cp-el">${html`<${Led} on=${on} title=${label} />`}</span>
-    <span class="cp-leg">${label}</span>
   </div>`;
 }
 
@@ -91,9 +82,13 @@ function ControlPanel() {
     <div class="card-head"><h3>Control panel</h3></div>
     <div class="cp-body">
       <div class="cp-lamps">
-        ${html`<${PanelLamp} on=${powered} label="PWR OK" />`}
-        ${html`<${PanelLamp} on=${run} label="RUN" />`}
+        <div class="cp-lampbezel">
+          <span class="cp-lampcell">${html`<${Led} on=${powered} title="PWR OK" />`}</span>
+          <span class="cp-lampcell">${html`<${Led} on=${run} title="RUN" />`}</span>
+        </div>
+        <div class="cp-lamplegs"><span class="cp-lampcell">PWR OK</span><span class="cp-lampcell">RUN</span></div>
       </div>
+      <img class="cp-logo" src="/digital-logo.svg" alt="digital" width="72" height="21" />
       <div class="cp-switches">
         ${html`<${PanelSwitch} kind="momentary" label="RESTART" disabled=${!powered} onFire=${restart} />`}
         ${html`<${PanelSwitch} kind="two" label="HALT"
@@ -112,13 +107,13 @@ function FrontPanel() {
   const powered = s.hw.powered !== false;
   return html`<div class="card frontpanel"><div class="card-head"><h3>Front panel</h3></div>
     <div class="card-body">
-      <div class="fp-block"><span class="fp-k">Activity</span>
-        <div class="fp-cells">${s.hw.leds.map(
+      <div class="fp-block">
+        <div class="fp-cells fp-cells-led">${s.hw.leds.map(
           (v, i) => html`<div class="fp-cell">${html`<${Led} on=${powered && v} title=${'Activity ' + i} />`}
             <span class="fp-n">${i}</span></div>`
         )}</div></div>
-      <div class="fp-block"><span class="fp-k">DIP switches</span>
-        <div class="fp-cells">${s.hw.dip.map(
+      <div class="fp-block">
+        <div class="fp-cells fp-cells-sw">${s.hw.dip.map(
           (v, i) => html`<div class="fp-cell"><span class=${'dip' + (v ? ' on' : '')}></span>
             <span class="fp-n">${i + 1}</span></div>`
         )}</div></div>
@@ -137,8 +132,11 @@ export function TerminalHost() {
 export function Dashboard() {
   useStore();
   return html`<section class="page active" data-page="dashboard">
-    <div class="dash-top">
-      <div class="dash-left">${html`<${ControlPanel} />`}${html`<${FrontPanel} />`}</div>
+    <div class="dash-panels">
+      ${html`<${ControlPanel} />`}
+      ${html`<${FrontPanel} />`}
+    </div>
+    <div class="dash-top" style="margin-top:14px">
       <div class="dash-term">${html`<${TerminalHost} />`}</div>
     </div>
     <div class="widget-grid" style="margin-top:14px">${html`<${Widgets} />`}</div>

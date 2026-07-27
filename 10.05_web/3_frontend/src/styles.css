@@ -334,16 +334,37 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 }
 
 /* ---- PDP-11/03 control panel ---- the run-state and power controls on the
-   app's own card surface, laid out like the real 11/03 operator console: two
-   indicator lamps grouped on the left, three bat-handle switches grouped on the
-   right. Switches are drawn flat (2D). */
+   app's own card surface, laid out like the real 11/03 operator console in one
+   wide bezel: a large recessed lamp window on the left (PWR OK, RUN), the
+   digital logo in the middle, and the three bat-handle switches on the right.
+   Switches are drawn flat (2D). */
+/* the bezel wraps its own contents, keeping the real console's compact
+   landscape proportions rather than stretching the dashboard width */
+.cp-card { width: fit-content; max-width: 100%; }
 .cp-body {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
-  padding: 6px 30px 16px 12px; /* extra right room for AUX's ON/OFF marker */
+  display: flex; align-items: flex-start; gap: 18px;
+  padding: 12px 34px 18px 24px; /* extra right room for AUX's ON/OFF marker */
 }
-.cp-lamps, .cp-switches { display: flex; align-items: flex-start; }
-.cp-lamps { gap: 16px; }
-.cp-switches { gap: 10px; }
+/* the large recessed lamp window holds the left block of the bezel: the two
+   indicators sit at its left edge and the dark window runs on past them */
+.cp-lamps { display: flex; flex-direction: column; gap: 7px; }
+.cp-lampbezel {
+  display: flex; align-items: center; justify-content: flex-start;
+  min-width: 230px; height: 42px; padding: 0 8px; border-radius: 6px; background: var(--bezel);
+}
+.cp-lampbezel .led:not(.on) { background: var(--bezel); box-shadow: none; }
+.cp-lamplegs { display: flex; padding: 0 8px; }
+/* one fixed-width cell for every lamp and its legend, so each caption centres on
+   its indicator and the two never crowd each other */
+.cp-lampcell {
+  width: 56px; display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: var(--fs-0); font-weight: 700;
+  letter-spacing: .04em; white-space: nowrap; color: var(--sw-legend);
+}
+/* the digital logo, next to the window and centred on the lamp band */
+.cp-logo { display: block; align-self: flex-start; margin-top: 11px; height: 21px; width: auto; }
+/* the three switches follow the logo, set a little apart from it */
+.cp-switches { margin-left: 30px; display: flex; align-items: flex-start; gap: 26px; }
 /* every lamp and switch shares one three-row rhythm — an upper position legend,
    the element in a fixed band, and the lower legend — so the elements sit on one
    line and every legend beneath them aligns on a common baseline */
@@ -352,27 +373,25 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
   justify-items: center; align-items: center;
 }
 .cp-el { position: relative; display: flex; align-items: center; justify-content: center; height: 42px; }
+/* every legend gets the two-line height of AUX's ON/OFF marker and is centred
+   in it, so the single legends drop to sit level with AUX, which itself centres
+   on its ON/OFF pair */
 .cp-leg {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 2.05em;
   font-family: var(--font-mono); font-size: var(--fs-0); font-weight: 700;
-  letter-spacing: .04em; text-align: center; white-space: nowrap; color: var(--sw-legend);
+  letter-spacing: .04em; white-space: nowrap; color: var(--sw-legend);
 }
-/* AUX carries an ON/OFF position marker (on over off) beside its paddle, like
-   the real console; every other control's legend sits alone under the row */
+/* AUX carries an ON/OFF position marker (on over off) beside its legend; the
+   pair sits in the flow so "AUX ON/OFF" centres under the switch as one unit */
 .cp-pos {
-  position: absolute; left: calc(100% + 6px); top: 0; height: 100%;
-  display: flex; flex-direction: column; justify-content: space-between;
-  padding: 2px 0; font-family: var(--font-mono); font-size: var(--fs-0); font-weight: 700;
-  letter-spacing: .04em; color: var(--sw-legend);
+  display: inline-flex; flex-direction: column; line-height: 1.02; text-align: center;
 }
 .cp-toggle {
-  width: 34px; height: 42px; border-radius: 4px; padding: 3px;
+  width: 48px; height: 42px; border-radius: 4px; padding: 3px;
   border: 1px solid var(--sw-slot-lo); position: relative; cursor: pointer;
   background: var(--sw-slot); display: block;
 }
-/* control-panel lamps sit behind a dark mask, so the lens is invisible until it
-   is lit and glows through — like the recessed lamps on the real console */
-.cp-lamp .cp-el { width: 28px; height: 26px; border-radius: 5px; background: var(--bezel); }
-.cp-lamp .led:not(.on) { background: var(--bezel); box-shadow: none; }
 .cp-bat {
   position: absolute; left: 3px; right: 3px; height: 17px;
   border-radius: 3px; background: var(--sw-bat);
@@ -386,26 +405,28 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 .cp-sw.off { opacity: .4; }
 .cp-sw.off .cp-toggle, .cp-toggle:disabled { cursor: default; }
 
-/* ---- front panel ---- the cape's activity LEDs and DIP switches, display-only.
-   Each block is one centred group: the LEDs together, the switches together. */
+/* ---- front panel ---- the cape's activity LEDs and DIP switches, display-only:
+   the LED group on the left over a grey panel, the switch group on the right
+   over a red panel. */
 .frontpanel { display: flex; flex-direction: column; }
 .frontpanel .card-head { padding-bottom: 0; }
 .frontpanel .card-body {
-  flex: 1 1 auto; display: flex; flex-direction: column; gap: 18px; justify-content: center;
+  flex: 1 1 auto; display: flex; flex-direction: row; gap: 22px;
+  justify-content: center; align-items: center;
 }
-.fp-block { display: flex; flex-direction: column; gap: 9px; align-items: center; }
-.fp-k {
-  font-size: var(--fs-0); text-transform: uppercase; letter-spacing: .06em;
-  color: var(--ink-faint); font-weight: 600;
-}
+.fp-block { display: flex; flex-direction: column; align-items: center; }
 .fp-cells {
   display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; justify-content: center;
   padding: 8px 12px; border-radius: var(--r-sm);
-  /* a stronger, darker panel so the lamps and switches read against it */
-  background: var(--bezel); border: 1px solid var(--bezel-2);
 }
+/* the LEDs read against a grey panel, the switches against a red one */
+.fp-cells-led { background: #656B73; border: 1px solid #757C85; }
+.fp-cells-sw { background: #A83630; border: 1px solid #BE433C; }
 .fp-cell { display: flex; flex-direction: column; align-items: center; gap: 5px; }
-.fp-n { font-family: var(--font-mono); font-size: var(--fs-0); color: rgba(220, 226, 232, .55); }
+/* a lamp is shorter than a switch, so sit it at the bottom of a switch-height
+   slot: the grey panel then matches the red one and the lamps bottom-align */
+.fp-cells-led .led { margin-top: 17px; }
+.fp-n { font-family: var(--font-mono); font-size: var(--fs-0); color: rgba(255, 255, 255, .8); }
 .dip {
   width: 16px; height: 30px; border-radius: 3px;
   background: var(--sw-slot-lo); position: relative; border: 1px solid #3a414b;
@@ -417,11 +438,11 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 }
 .dip.on::after { top: 3px; }
 
-/* dashboard layout: control + front panel left, terminal right, widgets below */
+/* dashboard layout: the control panel and front panel share the top row at equal
+   height, the terminal spans the row below, and the widgets below that */
+.dash-panels { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; }
+.dash-panels > .card { flex: 0 0 auto; }
 .dash-top { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; }
-.dash-left { display: flex; flex-direction: column; gap: 14px; width: 300px; flex: 0 0 auto; }
-.dash-left .cp-card { flex: 0 0 auto; }
-.dash-left .frontpanel { flex: 1 1 auto; }
 .dash-term { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
 /* the dashboard shows the live console alone — no tab bar — so its terminal is
    rounded on all four corners rather than tucked under a tab */
