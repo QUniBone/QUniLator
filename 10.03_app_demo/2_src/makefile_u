@@ -123,6 +123,7 @@ OBJECTS = $(OBJDIR)/application.o	\
     $(OBJDIR)/rf11.o    \
     $(OBJDIR)/rs11.o    \
 	$(OBJDIR)/uda.o         \
+	$(OBJDIR)/mscp_port.o   \
 	$(OBJDIR)/mscp_server.o \
 	$(OBJDIR)/mscp_drive.o \
 	$(OBJDIR)/rx0102drive.o	\
@@ -353,6 +354,9 @@ $(OBJDIR)/rx0102drive.o :  $(DEVICE_SRC_DIR)/rx0102drive.cpp $(DEVICE_SRC_DIR)/r
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/uda.o :   $(DEVICE_SRC_DIR)/uda.cpp $(DEVICE_SRC_DIR)/uda.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/mscp_port.o :   $(DEVICE_SRC_DIR)/mscp_port.cpp $(DEVICE_SRC_DIR)/mscp_port.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/mscp_server.o :   $(DEVICE_SRC_DIR)/mscp_server.cpp $(DEVICE_SRC_DIR)/mscp_server.hpp

@@ -10,8 +10,9 @@
 #include <stdint.h>
 #include <memory>
 
-class uda_c;
+class mscp_port_c;
 class Message;
+class storagedrive_c;
 class mscp_drive_c;
 
 // Builds a uint32_t containing the status, flags, and endcode for a response message,
@@ -74,11 +75,18 @@ struct ControlMessageHeader
 #define HEADER_SIZE  12
 
 //
+// mscp_server_base implements the transport-independent MSCP server:
+// the polling thread, the command-ring pump, header framing, credits,
+// response posting, and the generic (transport-level) commands.
+// Command semantics for a particular medium are supplied by a subclass
+// through dispatch_command().
+//
 // This inherits from device_c solely so the logging macros work.
 //
-class mscp_server : public device_c
+class mscp_server_base : public device_c
 {
-	// enums scoped to mscp_server
+protected:
+	// enums scoped to the MSCP server
     enum Opcodes
     {
         ABORT = 0x1,
@@ -162,11 +170,8 @@ class mscp_server : public device_c
     };
 
 public:
-
-
-
-    mscp_server(uda_c *port);
-    ~mscp_server();
+    mscp_server_base(mscp_port_c *port);
+    virtual ~mscp_server_base();
     bool on_param_changed(parameter_c *param) override ;
 
 public:
@@ -181,41 +186,41 @@ public:
     }
     void on_init_changed(void) override {}
 
-private:
-    uint32_t Abort(void);
-    uint32_t Access(std::shared_ptr<Message> message, uint16_t unitNumber);
-    uint32_t Available(uint16_t unitNumber, uint16_t modifiers);
-    uint32_t CompareHostData(std::shared_ptr<Message> message, uint16_t unitNumber);
-    uint32_t DetermineAccessPaths(uint16_t unitNumber);
-    uint32_t Erase(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
-    uint32_t GetCommandStatus(std::shared_ptr<Message> message);
-    uint32_t GetUnitStatus(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
-    uint32_t Online(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
-    uint32_t SetControllerCharacteristics(std::shared_ptr<Message> message);
-    uint32_t SetUnitCharacteristics(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
-    uint32_t Read(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
-    uint32_t Replace(std::shared_ptr<Message> message, uint16_t unitNumber);
-    uint32_t Write(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
-
-    uint32_t SetUnitCharacteristicsInternal(
+protected:
+    //
+    // dispatch_command() executes a non-transport (medium-specific) command.
+    // Returns the command status (as built by STATUS()).  *handled is set
+    // false for an opcode the subclass does not implement, so the caller can
+    // report an Invalid Command.
+    //
+    virtual uint32_t dispatch_command(
+        uint8_t opcode,
         std::shared_ptr<Message> message,
         uint16_t unitNumber,
         uint16_t modifiers,
-        bool bringOnline);
-    uint32_t DoDiskTransfer(uint16_t operation, std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
-    uint8_t* GetParameterPointer(std::shared_ptr<Message> message);
-    mscp_drive_c* GetDrive(uint32_t unitNumber);
+        bool *handled) = 0;
 
-private:
+    //
+    // reset_drives() releases every attached drive on controller reset.
+    //
+    virtual void reset_drives(void) = 0;
+
+protected:
+    uint32_t Abort(void);
+    uint32_t GetCommandStatus(std::shared_ptr<Message> message);
+    uint32_t SetControllerCharacteristics(std::shared_ptr<Message> message);
+
+    uint8_t* GetParameterPointer(std::shared_ptr<Message> message);
+    storagedrive_c* GetDrive(uint32_t unitNumber);
+
     void StartPollingThread(void);
     void AbortPollingThread(void);
 
-private:
+protected:
     uint32_t _hostTimeout;
     uint32_t _controllerFlags;
 
-private:
-    uda_c* _port;
+    mscp_port_c* _port;
 
     enum PollingState
     {
@@ -236,3 +241,49 @@ private:
     uint8_t _credits;
 };
 
+//
+// mscp_disk_server implements the MSCP disk command set on top of the
+// transport-independent mscp_server_base.
+//
+class mscp_disk_server : public mscp_server_base
+{
+public:
+    mscp_disk_server(mscp_port_c *port);
+    virtual ~mscp_disk_server();
+
+protected:
+    uint32_t dispatch_command(
+        uint8_t opcode,
+        std::shared_ptr<Message> message,
+        uint16_t unitNumber,
+        uint16_t modifiers,
+        bool *handled) override;
+
+    void reset_drives(void) override;
+
+private:
+    uint32_t Access(std::shared_ptr<Message> message, uint16_t unitNumber);
+    uint32_t Available(uint16_t unitNumber, uint16_t modifiers);
+    uint32_t CompareHostData(std::shared_ptr<Message> message, uint16_t unitNumber);
+    uint32_t DetermineAccessPaths(uint16_t unitNumber);
+    uint32_t Erase(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
+    uint32_t GetUnitStatus(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
+    uint32_t Online(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
+    uint32_t SetUnitCharacteristics(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
+    uint32_t Read(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
+    uint32_t Replace(std::shared_ptr<Message> message, uint16_t unitNumber);
+    uint32_t Write(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
+
+    uint32_t SetUnitCharacteristicsInternal(
+        std::shared_ptr<Message> message,
+        uint16_t unitNumber,
+        uint16_t modifiers,
+        bool bringOnline);
+    uint32_t DoDiskTransfer(uint16_t operation, std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
+
+    mscp_drive_c* GetDiskDrive(uint32_t unitNumber);
+};
+
+// The disk server is the concrete MSCP server in use today.  Retain the old
+// name so external references (device identification in the web layer) resolve.
+using mscp_server = mscp_disk_server;
