@@ -128,12 +128,13 @@ static picojson::value param_to_json(parameter_c *p) {
 
 // infrastructure: part of the bridge or of a controller's implementation,
 // not of the emulated configuration — not exposed to the web interface.
-// mscp_server is the UDA50's protocol engine, a device_c only so the
-// logging macros work.
+// mscp_disk_server / mscp_tape_server are the MSCP/TMSCP protocol engines,
+// device_c only so the logging macros work.
 static bool device_is_infrastructure(device_c *d) {
 	return dynamic_cast<qunibusadapter_c *>(d) != nullptr
 			|| dynamic_cast<paneldriver_c *>(d) != nullptr
-			|| dynamic_cast<mscp_server *>(d) != nullptr;
+			|| dynamic_cast<mscp_disk_server *>(d) != nullptr
+			|| dynamic_cast<mscp_tape_server *>(d) != nullptr;
 }
 
 // caller holds device_c::mydevices_mutex

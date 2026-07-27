@@ -14,6 +14,7 @@ class mscp_port_c;
 class Message;
 class storagedrive_c;
 class mscp_drive_c;
+class mscp_tape_c;
 
 // Builds a uint32_t containing the status, flags, and endcode for a response message,
 // used to simplify returning the appropriate status bits from command functions.
@@ -287,3 +288,86 @@ private:
 // The disk server is the concrete MSCP server in use today.  Retain the old
 // name so external references (device identification in the web layer) resolve.
 using mscp_server = mscp_disk_server;
+
+//
+// mscp_tape_server implements the TMSCP tape command set (TQK50/TK50) on top
+// of the transport-independent mscp_server_base. It drives a simh_tape_c record
+// layer per unit rather than a block device: commands map onto reading, writing
+// and spacing over records and tape marks.
+//
+class mscp_tape_server : public mscp_server_base
+{
+public:
+    mscp_tape_server(mscp_port_c *port);
+    virtual ~mscp_tape_server();
+
+protected:
+    uint32_t dispatch_command(
+        uint8_t opcode,
+        std::shared_ptr<Message> message,
+        uint16_t unitNumber,
+        uint16_t modifiers,
+        bool *handled) override;
+
+    void reset_drives(void) override;
+
+private:
+    // TMSCP-specific opcodes not carried in the shared Opcodes enum.
+    enum TapeOpcodes
+    {
+        FLUSH = 0x13,           // 19: flush - nop
+        ERASE_GAP = 0x16,       // 22: erase gap - nop
+        WRITE_TAPE_MARK = 0x24, // 36
+        REPOSITION = 0x25,      // 37
+    };
+
+    // TMSCP status codes (from pdp11_mscp.h) beyond the shared Status enum.
+    enum TapeStatus
+    {
+        BOT = 13,               // ST_BOT: BOT encountered
+        TAPE_MARK = 14,         // ST_TMK: tape mark encountered
+        RECORD_TRUNCATED = 16,  // ST_RDT: record truncated
+        POSITION_LOST = 17,     // ST_POL: position lost
+    };
+
+    // End flags packed into the response Flags byte.
+    enum TapeEndFlags
+    {
+        EF_SERIOUS_EXCEPTION = 0x10,    // EF_SXC
+        EF_END_OF_TAPE = 0x08,          // EF_EOT
+        EF_POSITION_LOST = 0x04,        // EF_PLS
+    };
+
+    // Write-protect status subcodes (raw, shifted <<5 by STATUS()).
+    enum WriteProtectSubcodes
+    {
+        SW_WRITE_LOCK = 128,    // SB_WPR_SW
+        HW_WRITE_LOCK = 256,    // SB_WPR_HW
+    };
+
+    // TK50 tape format and menu (TF_CTP | TF_CTP_LO).
+    static const uint16_t TAPE_FORMAT = 0x0201;
+    // Largest record the controller reports it can transfer.
+    static const uint32_t MAX_RECORD_SIZE = 0x0000FFFF;
+
+    uint32_t GetUnitStatus(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
+    uint32_t Available(uint16_t unitNumber, std::shared_ptr<Message> message);
+    uint32_t Online(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
+    uint32_t SetUnitCharacteristics(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
+    uint32_t Erase(std::shared_ptr<Message> message, uint16_t unitNumber);
+    uint32_t Flush(std::shared_ptr<Message> message, uint16_t unitNumber);
+    uint32_t EraseGap(std::shared_ptr<Message> message, uint16_t unitNumber);
+    uint32_t Read(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
+    uint32_t Write(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
+    uint32_t WriteTapeMark(std::shared_ptr<Message> message, uint16_t unitNumber);
+    uint32_t Reposition(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
+
+    // ONLINE and SET UNIT CHARACTERISTICS share a status layout.
+    uint32_t SetUnitCharacteristicsInternal(
+        std::shared_ptr<Message> message,
+        uint16_t unitNumber,
+        uint16_t modifiers,
+        bool bringOnline);
+
+    mscp_tape_c *GetTapeDrive(uint32_t unitNumber);
+};

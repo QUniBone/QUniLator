@@ -34,6 +34,8 @@
 */
 #include <assert.h>
 #include <cstddef>
+#include <cstring>
+#include <algorithm>
 #include <pthread.h>
 #include <stdio.h>
 #include <memory>
@@ -43,6 +45,7 @@
 #include "utils.hpp"
 
 #include "mscp_drive.hpp"
+#include "mscp_tape.hpp"
 #include "mscp_server.hpp"
 #include "mscp_port.hpp"
 
@@ -1245,4 +1248,755 @@ mscp_disk_server::DoDiskTransfer(
     params->LBN = 0;
 
     return STATUS(Status::SUCCESS, 0, 0);
+}
+
+//
+// mscp_tape_server: the TMSCP tape command set (TQK50/TK50).
+//
+// Command modifiers used by the tape commands (from pdp11_mscp.h).
+#define MD_TAPE_REV     0x0008      // t rd, pos: reverse
+#define MD_TAPE_SWP     0x0004      // suc: enable set write protect
+#define MD_TAPE_OBC     0x0004      // pos: object count = tape marks
+#define MD_TAPE_RWD     0x0002      // pos: rewind
+#define MD_TAPE_NXU     0x0001      // gus: next unit
+
+// Unit flags reported for a write-protected tape.
+#define UF_TAPE_WPS     0x1000      // software write protect
+#define UF_TAPE_WPH     0x2000      // hardware write protect
+
+mscp_tape_server::mscp_tape_server(
+    mscp_port_c *port) :
+        mscp_server_base(port)
+{
+    StartPollingThread();
+}
+
+mscp_tape_server::~mscp_tape_server()
+{
+    AbortPollingThread();
+}
+
+//
+// GetTapeDrive():
+//  Returns the mscp_tape_c object for the specified unit number, or nullptr.
+//
+mscp_tape_c*
+mscp_tape_server::GetTapeDrive(
+    uint32_t unitNumber)
+{
+    return dynamic_cast<mscp_tape_c*>(GetDrive(unitNumber));
+}
+
+//
+// reset_drives():
+//  Takes every attached tape drive offline.
+//
+void
+mscp_tape_server::reset_drives(void)
+{
+    for (uint32_t i = 0; i < _port->GetDriveCount(); i++)
+    {
+        mscp_tape_c *drive = GetTapeDrive(i);
+        if (drive != nullptr)
+            drive->SetOffline();
+    }
+}
+
+//
+// dispatch_command():
+//  Maps a TMSCP tape opcode to its handler.
+//
+uint32_t
+mscp_tape_server::dispatch_command(
+    uint8_t opcode,
+    std::shared_ptr<Message> message,
+    uint16_t unitNumber,
+    uint16_t modifiers,
+    bool *handled)
+{
+    *handled = true;
+
+    switch (opcode)
+    {
+        case Opcodes::GET_UNIT_STATUS:
+            return GetUnitStatus(message, unitNumber, modifiers);
+
+        case Opcodes::AVAILABLE:
+            return Available(unitNumber, message);
+
+        case Opcodes::ONLINE:
+            return Online(message, unitNumber, modifiers);
+
+        case Opcodes::SET_UNIT_CHARACTERISTICS:
+            return SetUnitCharacteristics(message, unitNumber, modifiers);
+
+        case Opcodes::ERASE:
+            return Erase(message, unitNumber);
+
+        case TapeOpcodes::FLUSH:
+            return Flush(message, unitNumber);
+
+        case TapeOpcodes::ERASE_GAP:
+            return EraseGap(message, unitNumber);
+
+        case Opcodes::READ:
+            return Read(message, unitNumber, modifiers);
+
+        case Opcodes::WRITE:
+            return Write(message, unitNumber, modifiers);
+
+        case TapeOpcodes::WRITE_TAPE_MARK:
+            return WriteTapeMark(message, unitNumber);
+
+        case TapeOpcodes::REPOSITION:
+            return Reposition(message, unitNumber, modifiers);
+
+        default:
+            *handled = false;
+            return 0;
+    }
+}
+
+//
+// GetUnitStatus():
+//  Returns the tape unit's status block (GUS_LNT_T = 44 bytes).
+//
+uint32_t
+mscp_tape_server::GetUnitStatus(
+    std::shared_ptr<Message> message,
+    uint16_t unitNumber,
+    uint16_t modifiers)
+{
+    #pragma pack(push,1)
+    struct GetUnitStatusResponseParameters
+    {
+        uint16_t MultiUnitCode;         // w8
+        uint16_t UnitFlags;             // w9
+        uint32_t Reserved0;             // w10-11
+        uint32_t UnitIdDeviceNumber;    // w12-13
+        uint16_t UnitIdUnused;          // w14
+        uint16_t UnitIdClassModel;      // w15
+        uint32_t MediaTypeIdentifier;   // w16-17
+        uint16_t Format;                // w18
+        uint16_t Speed;                 // w19
+        uint16_t Menu;                  // w20
+        uint16_t Capacity;              // w21
+        uint16_t FormatterVersion;      // w22
+        uint16_t UnitVersion;           // w23
+    };
+    #pragma pack(pop)
+
+    DEBUG_FAST("TMSCP GET UNIT STATUS drive %d", unitNumber);
+
+    message->MessageLength = sizeof(GetUnitStatusResponseParameters) + HEADER_SIZE;
+
+    ControlMessageHeader* header =
+        reinterpret_cast<ControlMessageHeader*>(message->Message);
+
+    if (modifiers & MD_TAPE_NXU)
+    {
+        // Next Unit: return the requested unit, wrapping to 0 past the last.
+        if (unitNumber >= _port->GetDriveCount())
+        {
+            unitNumber = 0;
+            header->UnitNumber = 0;
+        }
+    }
+
+    mscp_tape_c* drive = GetTapeDrive(unitNumber);
+
+    GetUnitStatusResponseParameters* params =
+        reinterpret_cast<GetUnitStatusResponseParameters*>(
+            GetParameterPointer(message));
+
+    memset(params, 0, sizeof(GetUnitStatusResponseParameters));
+
+    if (nullptr == drive || !drive->IsAvailable())
+    {
+        // No such drive or no tape mounted: report offline with the UnitId zeroed.
+        return STATUS(Status::UNIT_OFFLINE, UnitOfflineSubcodes::NO_VOLUME, 0);
+    }
+
+    uint16_t unitFlags = 0;
+    if (drive->IsHardwareWriteProtected())
+        unitFlags |= UF_TAPE_WPH;
+    if (drive->IsWriteProtected())
+        unitFlags |= UF_TAPE_WPS;
+
+    params->MultiUnitCode = 0;
+    params->UnitFlags = unitFlags;
+    params->UnitIdDeviceNumber = drive->GetDeviceNumber();
+    params->UnitIdUnused = 0;
+    params->UnitIdClassModel = drive->GetClassModel();
+    params->MediaTypeIdentifier = drive->GetMediaID();
+    params->Format = TAPE_FORMAT;
+    params->Speed = 0;
+    params->Menu = TAPE_FORMAT;
+    params->Capacity = 0;
+    params->FormatterVersion = 0;
+    params->UnitVersion = 0;
+
+    if (drive->IsOnline())
+        return STATUS(Status::SUCCESS, 0, 0);
+    else
+        return STATUS(Status::UNIT_AVAILABLE, 0, 0);
+}
+
+//
+// Available():
+//  Takes the unit offline (AVL_LNT = 12, header only).
+//
+uint32_t
+mscp_tape_server::Available(
+    uint16_t unitNumber,
+    std::shared_ptr<Message> message)
+{
+    DEBUG_FAST("TMSCP AVAILABLE drive %d", unitNumber);
+
+    message->MessageLength = HEADER_SIZE;
+
+    mscp_tape_c* drive = GetTapeDrive(unitNumber);
+
+    if (nullptr == drive || !drive->IsAvailable())
+        return STATUS(Status::UNIT_OFFLINE, UnitOfflineSubcodes::UNIT_UNKNOWN, 0);
+
+    drive->SetOffline();
+
+    return STATUS(Status::SUCCESS, 0, 0);
+}
+
+//
+// Online():
+//  Brings the unit online (ONL_LNT = 44), performing a SET UNIT CHARACTERISTICS.
+//
+uint32_t
+mscp_tape_server::Online(
+    std::shared_ptr<Message> message,
+    uint16_t unitNumber,
+    uint16_t modifiers)
+{
+    DEBUG_FAST("TMSCP ONLINE drive %d", unitNumber);
+    return SetUnitCharacteristicsInternal(message, unitNumber, modifiers, true);
+}
+
+//
+// SetUnitCharacteristics():
+//  Sets unit flags without changing the online state (SUC_LNT = 44).
+//
+uint32_t
+mscp_tape_server::SetUnitCharacteristics(
+    std::shared_ptr<Message> message,
+    uint16_t unitNumber,
+    uint16_t modifiers)
+{
+    DEBUG_FAST("TMSCP SET UNIT CHARACTERISTICS drive %d", unitNumber);
+    return SetUnitCharacteristicsInternal(message, unitNumber, modifiers, false);
+}
+
+//
+// SetUnitCharacteristicsInternal():
+//  Shared status layout for ONLINE and SET UNIT CHARACTERISTICS.
+//
+uint32_t
+mscp_tape_server::SetUnitCharacteristicsInternal(
+    std::shared_ptr<Message> message,
+    uint16_t unitNumber,
+    uint16_t modifiers,
+    bool bringOnline)
+{
+    #pragma pack(push,1)
+    struct OnlineResponseParameters
+    {
+        uint16_t MultiUnitCode;         // w8
+        uint16_t UnitFlags;             // w9
+        uint32_t Reserved0;             // w10-11
+        uint32_t UnitIdDeviceNumber;    // w12-13
+        uint16_t UnitIdUnused;          // w14
+        uint16_t UnitIdClassModel;      // w15
+        uint32_t MediaTypeIdentifier;   // w16-17
+        uint16_t Format;                // w18
+        uint16_t Speed;                 // w19
+        uint32_t MaxRecordSize;         // w20-21
+        uint16_t NoiseRecord;           // w22
+        uint16_t Reserved1;             // w23
+    };
+    #pragma pack(pop)
+
+    message->MessageLength = sizeof(OnlineResponseParameters) + HEADER_SIZE;
+
+    mscp_tape_c* drive = GetTapeDrive(unitNumber);
+
+    if (nullptr == drive || !drive->IsAvailable())
+        return STATUS(Status::UNIT_OFFLINE, UnitOfflineSubcodes::UNIT_UNKNOWN, 0);
+
+    // The host may enable the software write lock through SET UNIT CHARACTERISTICS.
+    if (modifiers & MD_TAPE_SWP)
+        drive->SetSoftwareWriteProtect(true);
+
+    OnlineResponseParameters* params =
+        reinterpret_cast<OnlineResponseParameters*>(
+            GetParameterPointer(message));
+
+    uint16_t unitFlags = 0;
+    if (drive->IsHardwareWriteProtected())
+        unitFlags |= UF_TAPE_WPH;
+    if (drive->IsWriteProtected())
+        unitFlags |= UF_TAPE_WPS;
+
+    params->MultiUnitCode = 0;
+    params->UnitFlags = unitFlags;
+    params->Reserved0 = 0;
+    params->UnitIdDeviceNumber = drive->GetDeviceNumber();
+    params->UnitIdUnused = 0;
+    params->UnitIdClassModel = drive->GetClassModel();
+    params->MediaTypeIdentifier = drive->GetMediaID();
+    params->Format = TAPE_FORMAT;
+    params->Speed = 0;
+    params->MaxRecordSize = MAX_RECORD_SIZE;
+    params->NoiseRecord = 0;
+    params->Reserved1 = 0;
+
+    if (bringOnline)
+    {
+        bool alreadyOnline = drive->IsOnline();
+        drive->SetOnline();
+        return STATUS(Status::SUCCESS,
+            (alreadyOnline ? SuccessSubcodes::ALREADY_ONLINE : SuccessSubcodes::NORMAL), 0);
+    }
+    else
+    {
+        return STATUS(Status::SUCCESS, 0, 0);
+    }
+}
+
+//
+// Erase():
+//  Data-security erase: writes a tape mark at the current position, which
+//  truncates the medium after it (ERS_LNT = 12, header only).
+//
+uint32_t
+mscp_tape_server::Erase(
+    std::shared_ptr<Message> message,
+    uint16_t unitNumber)
+{
+    DEBUG_FAST("TMSCP ERASE drive %d", unitNumber);
+
+    message->MessageLength = HEADER_SIZE;
+
+    mscp_tape_c* drive = GetTapeDrive(unitNumber);
+
+    if (nullptr == drive || !drive->IsAvailable())
+        return STATUS(Status::UNIT_OFFLINE, UnitOfflineSubcodes::UNIT_UNKNOWN, 0);
+
+    if (!drive->IsOnline())
+        return STATUS(Status::UNIT_AVAILABLE, 0, 0);
+
+    if (drive->IsWriteProtected())
+        return STATUS(Status::WRITE_PROTECTED,
+            drive->IsHardwareWriteProtected() ? HW_WRITE_LOCK : SW_WRITE_LOCK,
+            EF_SERIOUS_EXCEPTION);
+
+    if (drive->tape().write_tape_mark() != simh_tape_c::R_RECORD)
+        return STATUS(Status::DRIVE_ERROR, 0, 0);
+
+    return STATUS(Status::SUCCESS, 0, 0);
+}
+
+//
+// Flush():
+//  No-op that succeeds, reporting the current position (FLU_LNT = 32).
+//
+uint32_t
+mscp_tape_server::Flush(
+    std::shared_ptr<Message> message,
+    uint16_t unitNumber)
+{
+    #pragma pack(push,1)
+    struct PositionStatus
+    {
+        uint32_t Reserved[2];   // w8-11
+        uint32_t Reserved2[2];  // w12-15
+        uint32_t Position;      // w16-17
+    };
+    #pragma pack(pop)
+
+    DEBUG_FAST("TMSCP FLUSH drive %d", unitNumber);
+
+    message->MessageLength = sizeof(PositionStatus) + HEADER_SIZE;
+
+    mscp_tape_c* drive = GetTapeDrive(unitNumber);
+
+    if (nullptr == drive || !drive->IsAvailable())
+        return STATUS(Status::UNIT_OFFLINE, UnitOfflineSubcodes::UNIT_UNKNOWN, 0);
+
+    PositionStatus* params =
+        reinterpret_cast<PositionStatus*>(GetParameterPointer(message));
+    memset(params, 0, sizeof(PositionStatus));
+    params->Position = static_cast<uint32_t>(drive->tape().position());
+
+    return STATUS(Status::SUCCESS, 0, 0);
+}
+
+//
+// EraseGap():
+//  No-op that succeeds (ERG_LNT = 12, header only).
+//
+uint32_t
+mscp_tape_server::EraseGap(
+    std::shared_ptr<Message> message,
+    uint16_t unitNumber)
+{
+    DEBUG_FAST("TMSCP ERASE GAP drive %d", unitNumber);
+
+    message->MessageLength = HEADER_SIZE;
+
+    mscp_tape_c* drive = GetTapeDrive(unitNumber);
+
+    if (nullptr == drive || !drive->IsAvailable())
+        return STATUS(Status::UNIT_OFFLINE, UnitOfflineSubcodes::UNIT_UNKNOWN, 0);
+
+    return STATUS(Status::SUCCESS, 0, 0);
+}
+
+//
+// Read():
+//  Reads one record (RW_LNT_T = 36). MD_REV reads the previous record.
+//
+uint32_t
+mscp_tape_server::Read(
+    std::shared_ptr<Message> message,
+    uint16_t unitNumber,
+    uint16_t modifiers)
+{
+    #pragma pack(push,1)
+    struct ReadWriteParameters
+    {
+        uint32_t ByteCount;                 // w8-9
+        uint32_t BufferPhysicalAddress;     // w10-11
+        uint32_t Map;                       // w12-13
+        uint32_t Reserved;                  // w14-15
+        uint32_t Position;                  // w16-17
+        uint32_t RecordSize;                // w18-19
+    };
+    #pragma pack(pop)
+
+    ReadWriteParameters* params =
+        reinterpret_cast<ReadWriteParameters*>(GetParameterPointer(message));
+
+    uint32_t byteCount = params->ByteCount;
+    uint32_t bufferAddress = params->BufferPhysicalAddress & 0x00ffffff;
+
+    DEBUG_FAST("TMSCP READ drive %d mod 0x%x pa o%o count %d",
+        unitNumber, modifiers, bufferAddress, byteCount);
+
+    message->MessageLength = sizeof(ReadWriteParameters) + HEADER_SIZE;
+
+    mscp_tape_c* drive = GetTapeDrive(unitNumber);
+
+    if (nullptr == drive || !drive->IsAvailable())
+        return STATUS(Status::UNIT_OFFLINE, UnitOfflineSubcodes::UNIT_UNKNOWN, 0);
+
+    if (!drive->IsOnline())
+        return STATUS(Status::UNIT_AVAILABLE, 0, 0);
+
+    // Buffer large enough for the requested count, rounded up to a whole word.
+    uint32_t bufSize = ((byteCount + 1) & ~1u);
+    if (bufSize == 0)
+        bufSize = 2;
+    std::unique_ptr<uint8_t[]> buf(new uint8_t[bufSize]);
+    memset(buf.get(), 0, bufSize);
+
+    uint32_t recLen = 0;
+    simh_tape_c::result_t result;
+
+    if (modifiers & MD_TAPE_REV)
+    {
+        // Reverse read: back up over the preceding record, then read it forward.
+        uint32_t spanned = 0;
+        simh_tape_c::result_t sres = drive->tape().space_reverse(&spanned);
+        if (sres == simh_tape_c::R_BEGIN_OF_TAPE)
+        {
+            params->Position = static_cast<uint32_t>(drive->tape().position());
+            params->RecordSize = 0;
+            params->ByteCount = 0;
+            return STATUS(BOT, 0, EF_POSITION_LOST);
+        }
+        if (sres == simh_tape_c::R_TAPE_MARK)
+        {
+            params->Position = static_cast<uint32_t>(drive->tape().position());
+            params->RecordSize = 0;
+            params->ByteCount = 0;
+            return STATUS(TAPE_MARK, 0, 0);
+        }
+        if (sres != simh_tape_c::R_RECORD)
+            return STATUS(Status::DRIVE_ERROR, 0, 0);
+
+        result = drive->tape().read_forward(buf.get(), byteCount, &recLen);
+    }
+    else
+    {
+        result = drive->tape().read_forward(buf.get(), byteCount, &recLen);
+    }
+
+    params->Position = static_cast<uint32_t>(drive->tape().position());
+
+    switch (result)
+    {
+        case simh_tape_c::R_RECORD:
+        {
+            uint32_t xfer = std::min(recLen, byteCount);
+            uint32_t dmaLen = ((xfer + 1) & ~1u);
+            if (dmaLen > 0 && !_port->DMAWrite(bufferAddress, dmaLen, buf.get()))
+            {
+                params->RecordSize = recLen;
+                params->ByteCount = 0;
+                return STATUS(Status::HOST_BUFFER_ACCESS_ERROR, HostBufferAccessSubcodes::NXM, 0);
+            }
+            params->RecordSize = recLen;
+            params->ByteCount = xfer;
+            if (recLen > byteCount)
+                return STATUS(RECORD_TRUNCATED, 0, 0);
+            return STATUS(Status::SUCCESS, 0, 0);
+        }
+
+        case simh_tape_c::R_TAPE_MARK:
+            params->RecordSize = 0;
+            params->ByteCount = 0;
+            return STATUS(TAPE_MARK, 0, 0);
+
+        case simh_tape_c::R_END_OF_MEDIUM:
+            params->RecordSize = 0;
+            params->ByteCount = 0;
+            return STATUS(Status::DATA_ERROR, 0, EF_END_OF_TAPE);
+
+        case simh_tape_c::R_BEGIN_OF_TAPE:
+            params->RecordSize = 0;
+            params->ByteCount = 0;
+            return STATUS(BOT, 0, EF_POSITION_LOST);
+
+        default:
+            params->RecordSize = 0;
+            params->ByteCount = 0;
+            return STATUS(Status::DRIVE_ERROR, 0, 0);
+    }
+}
+
+//
+// Write():
+//  Writes one record (RW_LNT_T = 36).
+//
+uint32_t
+mscp_tape_server::Write(
+    std::shared_ptr<Message> message,
+    uint16_t unitNumber,
+    uint16_t modifiers)
+{
+    UNUSED(modifiers);
+
+    #pragma pack(push,1)
+    struct ReadWriteParameters
+    {
+        uint32_t ByteCount;                 // w8-9
+        uint32_t BufferPhysicalAddress;     // w10-11
+        uint32_t Map;                       // w12-13
+        uint32_t Reserved;                  // w14-15
+        uint32_t Position;                  // w16-17
+        uint32_t RecordSize;                // w18-19
+    };
+    #pragma pack(pop)
+
+    ReadWriteParameters* params =
+        reinterpret_cast<ReadWriteParameters*>(GetParameterPointer(message));
+
+    uint32_t byteCount = params->ByteCount;
+    uint32_t bufferAddress = params->BufferPhysicalAddress & 0x00ffffff;
+
+    DEBUG_FAST("TMSCP WRITE drive %d pa o%o count %d",
+        unitNumber, bufferAddress, byteCount);
+
+    message->MessageLength = sizeof(ReadWriteParameters) + HEADER_SIZE;
+
+    mscp_tape_c* drive = GetTapeDrive(unitNumber);
+
+    if (nullptr == drive || !drive->IsAvailable())
+        return STATUS(Status::UNIT_OFFLINE, UnitOfflineSubcodes::UNIT_UNKNOWN, 0);
+
+    if (!drive->IsOnline())
+        return STATUS(Status::UNIT_AVAILABLE, 0, 0);
+
+    if (drive->IsWriteProtected())
+        return STATUS(Status::WRITE_PROTECTED,
+            drive->IsHardwareWriteProtected() ? HW_WRITE_LOCK : SW_WRITE_LOCK,
+            EF_SERIOUS_EXCEPTION);
+
+    if (byteCount == 0)
+        return STATUS(Status::DRIVE_ERROR, 0, 0);
+
+    uint32_t dmaLen = ((byteCount + 1) & ~1u);
+    DMABufferPtr<uint8_t> mem(_port->DMARead(bufferAddress, dmaLen, dmaLen));
+
+    if (!mem)
+        return STATUS(Status::HOST_BUFFER_ACCESS_ERROR, HostBufferAccessSubcodes::NXM, 0);
+
+    if (drive->tape().write_record(mem.get(), byteCount) != simh_tape_c::R_RECORD)
+        return STATUS(Status::DRIVE_ERROR, 0, 0);
+
+    params->Position = static_cast<uint32_t>(drive->tape().position());
+    params->RecordSize = byteCount;
+
+    return STATUS(Status::SUCCESS, 0, 0);
+}
+
+//
+// WriteTapeMark():
+//  Writes a tape mark at the current position (WTM_LNT = 32).
+//
+uint32_t
+mscp_tape_server::WriteTapeMark(
+    std::shared_ptr<Message> message,
+    uint16_t unitNumber)
+{
+    #pragma pack(push,1)
+    struct PositionStatus
+    {
+        uint32_t Reserved[2];   // w8-11
+        uint32_t Reserved2[2];  // w12-15
+        uint32_t Position;      // w16-17
+    };
+    #pragma pack(pop)
+
+    DEBUG_FAST("TMSCP WRITE TAPE MARK drive %d", unitNumber);
+
+    message->MessageLength = sizeof(PositionStatus) + HEADER_SIZE;
+
+    mscp_tape_c* drive = GetTapeDrive(unitNumber);
+
+    if (nullptr == drive || !drive->IsAvailable())
+        return STATUS(Status::UNIT_OFFLINE, UnitOfflineSubcodes::UNIT_UNKNOWN, 0);
+
+    if (!drive->IsOnline())
+        return STATUS(Status::UNIT_AVAILABLE, 0, 0);
+
+    if (drive->IsWriteProtected())
+        return STATUS(Status::WRITE_PROTECTED,
+            drive->IsHardwareWriteProtected() ? HW_WRITE_LOCK : SW_WRITE_LOCK,
+            EF_SERIOUS_EXCEPTION);
+
+    PositionStatus* params =
+        reinterpret_cast<PositionStatus*>(GetParameterPointer(message));
+    memset(params, 0, sizeof(PositionStatus));
+
+    if (drive->tape().write_tape_mark() != simh_tape_c::R_RECORD)
+        return STATUS(Status::DRIVE_ERROR, 0, 0);
+
+    params->Position = static_cast<uint32_t>(drive->tape().position());
+
+    return STATUS(Status::SUCCESS, 0, 0);
+}
+
+//
+// Reposition():
+//  Rewinds, or spaces over a count of records or tape marks (POS_LNT = 32).
+//
+uint32_t
+mscp_tape_server::Reposition(
+    std::shared_ptr<Message> message,
+    uint16_t unitNumber,
+    uint16_t modifiers)
+{
+    #pragma pack(push,1)
+    struct RepositionParameters
+    {
+        uint32_t RecordCount;       // w8-9
+        uint32_t TapeMarkCount;     // w10-11
+        uint32_t Reserved0;         // w12-13
+        uint32_t Reserved1;         // w14-15
+        uint32_t Position;          // w16-17
+    };
+    #pragma pack(pop)
+
+    RepositionParameters* params =
+        reinterpret_cast<RepositionParameters*>(GetParameterPointer(message));
+
+    uint32_t recordCount = params->RecordCount;
+    uint32_t tapeMarkCount = params->TapeMarkCount;
+
+    DEBUG_FAST("TMSCP REPOSITION drive %d mod 0x%x rec %d tm %d",
+        unitNumber, modifiers, recordCount, tapeMarkCount);
+
+    message->MessageLength = sizeof(RepositionParameters) + HEADER_SIZE;
+
+    mscp_tape_c* drive = GetTapeDrive(unitNumber);
+
+    if (nullptr == drive || !drive->IsAvailable())
+        return STATUS(Status::UNIT_OFFLINE, UnitOfflineSubcodes::UNIT_UNKNOWN, 0);
+
+    if (!drive->IsOnline())
+        return STATUS(Status::UNIT_AVAILABLE, 0, 0);
+
+    if (modifiers & MD_TAPE_RWD)
+    {
+        drive->tape().rewind();
+        params->RecordCount = 0;
+        params->TapeMarkCount = 0;
+        params->Position = 0;
+        return STATUS(Status::SUCCESS, 0, 0);
+    }
+
+    bool reverse = (modifiers & MD_TAPE_REV) != 0;
+    bool byTapeMarks = (modifiers & MD_TAPE_OBC) != 0;
+    uint32_t target = byTapeMarks ? tapeMarkCount : recordCount;
+
+    uint32_t recordsSkipped = 0;
+    uint32_t tapeMarksSkipped = 0;
+    uint32_t done = 0;
+    uint32_t status = STATUS(Status::SUCCESS, 0, 0);
+
+    while (done < target)
+    {
+        uint32_t spanned = 0;
+        simh_tape_c::result_t r = reverse
+            ? drive->tape().space_reverse(&spanned)
+            : drive->tape().space_forward(&spanned);
+
+        if (r == simh_tape_c::R_RECORD)
+        {
+            recordsSkipped++;
+            if (!byTapeMarks)
+                done++;
+        }
+        else if (r == simh_tape_c::R_TAPE_MARK)
+        {
+            tapeMarksSkipped++;
+            if (byTapeMarks)
+                done++;
+            else
+            {
+                // Spacing records terminates at a tape-mark boundary.
+                status = STATUS(TAPE_MARK, 0, 0);
+                break;
+            }
+        }
+        else if (r == simh_tape_c::R_BEGIN_OF_TAPE)
+        {
+            status = STATUS(BOT, 0, 0);
+            break;
+        }
+        else if (r == simh_tape_c::R_END_OF_MEDIUM)
+        {
+            status = STATUS(Status::SUCCESS, 0, EF_END_OF_TAPE);
+            break;
+        }
+        else
+        {
+            status = STATUS(Status::DRIVE_ERROR, 0, 0);
+            break;
+        }
+    }
+
+    params->RecordCount = recordsSkipped;
+    params->TapeMarkCount = tapeMarksSkipped;
+    params->Position = static_cast<uint32_t>(drive->tape().position());
+
+    return status;
 }

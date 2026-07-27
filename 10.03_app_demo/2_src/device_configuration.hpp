@@ -46,6 +46,7 @@
 #include "rl11.hpp"
 #include "rk11.hpp"
 #include "uda.hpp"
+#include "tqk50.hpp"
 #include "dl11w.hpp"
 #include "kw11p.hpp"
 #include "dzv11.hpp"
@@ -89,6 +90,7 @@ public:
 	vcb01_c *VCB01;
 #endif
 	uda_c *UDA50;
+	tqk50_c *TQK50;
 	slu_c *DL11, *DL11b;
 	// Fixed pools of the serial muxes, so an operator can enable several of one
 	// type at once. All instances ship disabled; each defaults to a distinct

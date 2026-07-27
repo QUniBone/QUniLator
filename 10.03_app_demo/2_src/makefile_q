@@ -127,6 +127,9 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/mscp_port.o   \
 	$(OBJDIR)/mscp_server.o \
 	$(OBJDIR)/mscp_drive.o \
+	$(OBJDIR)/tqk50.o        \
+	$(OBJDIR)/mscp_tape.o   \
+	$(OBJDIR)/simh_tape.o   \
 	$(OBJDIR)/delqa.o	\
 	$(OBJDIR)/vcb01.o	\
 	$(OBJDIR)/vcb01_render.o	\
@@ -367,6 +370,15 @@ $(OBJDIR)/mscp_server.o :   $(DEVICE_SRC_DIR)/mscp_server.cpp $(DEVICE_SRC_DIR)/
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/mscp_drive.o :   $(DEVICE_SRC_DIR)/mscp_drive.cpp $(DEVICE_SRC_DIR)/mscp_drive.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/tqk50.o :   $(DEVICE_SRC_DIR)/tqk50.cpp $(DEVICE_SRC_DIR)/tqk50.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/mscp_tape.o :   $(DEVICE_SRC_DIR)/mscp_tape.cpp $(DEVICE_SRC_DIR)/mscp_tape.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/simh_tape.o :   $(DEVICE_SRC_DIR)/simh_tape.cpp $(DEVICE_SRC_DIR)/simh_tape.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/delqa.o :   $(DEVICE_SRC_DIR)/delqa.cpp $(DEVICE_SRC_DIR)/delqa.hpp $(DEVICE_SRC_DIR)/delqa_bootrom.h $(DEVICE_SRC_DIR)/ether_bridge.hpp

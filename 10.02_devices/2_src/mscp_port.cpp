@@ -181,7 +181,9 @@ void mscp_port_c::worker(unsigned instance)
         {
             case InitializationStep::Uninitialized:
                  DEBUG_FAST("Transition to Init state Uninitialized.");
-                 // SA should already be zero but we'll be extra sure here.
+                 // After a WRITE IP or power-up the SA register reads zero until
+                 // the controller has loaded the step-1 value (EK-0TK50-TM-002
+                 // §5.4.5).
                  update_SA(0x0);
 
                  // Reset the controller: This may take some time as we must
@@ -201,7 +203,8 @@ void mscp_port_c::worker(unsigned instance)
                  // occurred.
                  //
                  DEBUG_FAST("22 bit dma is %d", _22bitDMA);
-                 update_SA(STEP1 | (_22bitDMA ? STEP1_22_BIT : 0x0));
+                 update_SA(STEP1 | step1_capability_flags() |
+                          (_22bitDMA ? STEP1_22_BIT : 0x0));
                  break;
 
             case InitializationStep::Step2:
@@ -291,7 +294,7 @@ mscp_port_c::on_after_register_access(
             {
                 // "When written with any value, it causes a hard initialization
                 //  of the port and the device controller."
-                DEBUG_FAST("Reset due to IP read");
+                DEBUG_FAST("Reset due to IP write");
                 update_SA(0x0);
                 StateTransition(InitializationStep::Uninitialized);
             }
@@ -324,8 +327,10 @@ mscp_port_c::on_after_register_access(
                     // |1|W|c rng|r rng|I| int vector  |
                     // | |R| lng | lng |E|(address / 4)|
                     // +-+-+-----+-----+-+-------------+
-                    // WR = 1 tells the port to enter diagnostic wrap
-                    // mode (which we ignore).
+                    // WR = 1 (bit 14) puts the port in diagnostic wrap mode:
+                    // it echoes the written value straight back in SA and stays
+                    // in step 1, letting a host diagnostic verify the SA data
+                    // path. A normal init write has WR clear and proceeds below.
                     //
                     // c rng lng is the number of slots (32 bits each)
                     //  in the command ring, expressed as a power of two.
@@ -339,6 +344,13 @@ mscp_port_c::on_after_register_access(
                     // by the port.  If this field is non-zero, interupts will
                     // be generated during normal operation and, if IE=1,
                     // during initialization.
+                    if (value & 0x4000)
+                    {
+                        DEBUG_FAST("Step1 diagnostic wrap: echo 0x%x", value);
+                        update_SA(value);
+                        break;
+                    }
+
                     _step1Value = value;
 
                     _interruptVector = ((value & 0x7f) << 2);
@@ -834,6 +846,17 @@ uint16_t
 mscp_port_c::controller_microcode_id(void)
 {
     return 0x0063;   // UDA50_ID
+}
+
+//
+// step1_capability_flags():
+//  Extra SA_S1C_* capability bits advertised in the step-1 SA value. None by
+//  default (the UDA50 disk value); a subclass overrides to advertise more.
+//
+uint16_t
+mscp_port_c::step1_capability_flags(void)
+{
+    return 0;
 }
 
 //

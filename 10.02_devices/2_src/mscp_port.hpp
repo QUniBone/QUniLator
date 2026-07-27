@@ -131,6 +131,11 @@ public:
     virtual uint16_t controller_class_model(void);
     // Control microcode version reported by SA in the fourth init step.
     virtual uint16_t controller_microcode_id(void);
+    // Extra capability bits OR'd into the step-1 SA value (SA_S1C_*). The
+    // default is none (the UDA50 disk value); a controller whose diagnostics
+    // require an advertised capability (e.g. the TQK50 needs extended
+    // diagnostics + mapping) overrides this.
+    virtual uint16_t step1_capability_flags(void);
 
 protected:
     //

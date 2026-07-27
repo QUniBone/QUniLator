@@ -43,6 +43,8 @@ const label_entry k_table[] = {
 	{ "RK05",          "RK05 cartridge disk",    "RK05",  INST_UNIT },
 	{ "UDA50",         "MSCP disk controller",   "UDA50", INST_NONE },
 	{ "RA81",          "MSCP disk",              "RA81",  INST_UNIT },
+	{ "TQK50",         "TMSCP tape controller",  "TQK50", INST_NONE },
+	{ "TK50",          "TK50 tape",              "TK50",  INST_UNIT },
 	{ "slu_c",         "Serial line unit",       "DL11",  INST_ADDR },
 	{ "ltc_c",         "Line-time clock",        "KW11",  INST_NONE },
 	{ "kw11p_c",       "Programmable clock",     "KW11-P",INST_NONE },
