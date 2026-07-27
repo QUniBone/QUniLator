@@ -190,6 +190,39 @@ static parameter_c::parameter_kind_e registry_param_kind(const std::string &devn
 	return parameter_c::PARAM_CONFIG;
 }
 
+// Whether an operator may set a device's parameter, by name. An unknown device
+// or parameter is treated as settable, so it is compared literally.
+static bool param_settable(const std::string &devname, const std::string &paramname) {
+	std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
+	for (device_c *dev : device_c::mydevices) {
+		if (strcasecmp(dev->name.value.c_str(), devname.c_str()) != 0)
+			continue;
+		parameter_c *p = dev->param_by_name(paramname);
+		return p == nullptr ? true : is_settable(p);
+	}
+	return true;
+}
+
+// The construction-default value of a device's parameter, by name. False when
+// the device or parameter is unknown, or its default was never captured.
+static bool param_default_value(const std::string &devname,
+		const std::string &paramname, std::string *out) {
+	std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
+	for (device_c *dev : device_c::mydevices) {
+		if (strcasecmp(dev->name.value.c_str(), devname.c_str()) != 0)
+			continue;
+		parameter_c *p = dev->param_by_name(paramname);
+		if (p == nullptr)
+			return false;
+		std::map<parameter_c *, param_default_t>::iterator it = parameter_defaults.find(p);
+		if (it == parameter_defaults.end())
+			return false;
+		*out = it->second.value;
+		return true;
+	}
+	return false;
+}
+
 // Put a device back the way it was constructed. Parameters named in "keep" are
 // left alone, the caller being about to set them.
 static void reset_to_defaults(device_c *dev, const std::set<std::string> *keep,
@@ -327,9 +360,23 @@ static picojson::value canonical(const picojson::value &snapshot) {
 			picojson::object params;
 			if (d.get("params").is<picojson::object>())
 				for (const std::pair<const std::string, picojson::value> &kv :
-						d.get("params").get<picojson::object>())
-					if (registry_param_kind(devname, kv.first) != parameter_c::PARAM_STATUS)
-						params[kv.first] = kv.second;
+						d.get("params").get<picojson::object>()) {
+					// Drop what the live snapshot never emits, so a saved file that
+					// still carries it (older logic, or hand-edited) does not read
+					// modified: running-state parameters, read-only ones (e.g. an
+					// interrupt vector now auto-assigned from the arbitration slot),
+					// and any parameter written at its construction default.
+					if (registry_param_kind(devname, kv.first) == parameter_c::PARAM_STATUS)
+						continue;
+					if (!param_settable(devname, kv.first))
+						continue;
+					std::string def;
+					if (kv.second.is<std::string>()
+							&& param_default_value(devname, kv.first, &def)
+							&& kv.second.get<std::string>() == def)
+						continue;
+					params[kv.first] = kv.second;
+				}
 			e["params"] = picojson::value(params);
 			by_name[d.get("name").get<std::string>()] = picojson::value(e);
 		}
