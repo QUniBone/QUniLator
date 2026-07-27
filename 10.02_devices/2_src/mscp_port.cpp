@@ -724,24 +724,31 @@ mscp_port_c::PostResponse(
             // We just log the behavior.
             DEBUG_FAST("Host response buffer size is zero.");
         }
-        else if (messageLength < response->MessageLength)
+        //
+        // Never write past the response slot the host allocated. The tape
+        // read/write end packet is 36 bytes; a host (e.g. the TKxx data
+        // reliability diagnostic) that allocates a smaller slot would otherwise
+        // have adjacent memory overwritten, crashing the guest at a random PC.
+        // Clamp to the host's slot; the host reads the fields that fit. A larger
+        // host slot (disk, normal drivers) is unaffected, so this never clamps
+        // the disk path.
+        //
+        uint32_t responseLength = response->MessageLength;
+        if (messageLength != 0 && messageLength < responseLength)
         {
-            //
-            // If this happens it's likely fatal since we're not fragmenting responses (see the big comment
-            // block above).  So eat flaming death.
-            // Note: the VMS bootstrap does this, so we'll just log the issue.
-            //
-            DEBUG_FAST("Response buffer 0x%x > host buffer length 0x%x", response->MessageLength, messageLength);
+            DEBUG_FAST("Response 0x%x exceeds host buffer 0x%x; clamping",
+                response->MessageLength, messageLength);
+            responseLength = messageLength;
         }
 
         //
-        // This will fit; simply copy the response message over the top
-        // of the buffer allocated on the host -- this updates the header fields
-        // as necessary and provides the actual response data to the host.
+        // Copy the response message over the top of the buffer allocated on the
+        // host -- this updates the header fields as necessary and provides the
+        // actual response data to the host.
         //
         DMAWrite(
             messageAddress - 4,
-            response->MessageLength + 4,
+            responseLength + 4,
             reinterpret_cast<uint8_t*>(response));
 
         //

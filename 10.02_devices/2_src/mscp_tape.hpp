@@ -26,6 +26,11 @@
 #define TK50_CLASS_MODEL    0x0303          // UID_TAPE(3) << 8 | TQ5_UMOD(3)
 // TK50 formatted capacity, informational only.
 #define TK50_CAPACITY       (94ull * (1ull << 20))
+// Logical end-of-tape threshold: the writable region a host may fill before the
+// controller reports end of tape and turns around (an unbounded .tap would
+// otherwise be written forever). The TK50's ~94 MB media; a faithful,
+// per-drive-configurable capacity belongs on a drive parameter.
+#define TAPE_LEOT_CAPACITY  TK50_CAPACITY
 
 class mscp_tape_c : public storagedrive_c
 {

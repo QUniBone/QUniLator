@@ -1844,6 +1844,15 @@ mscp_tape_server::Write(
     params->Position = static_cast<uint32_t>(drive->tape().position());
     params->RecordSize = byteCount;
 
+    // Report logical end of tape once the written data reaches the drive's
+    // capacity, so a host that writes until end of medium (the TKxx data
+    // reliability diagnostic, backup utilities) stops and turns around: an
+    // unbounded .tap would otherwise be written forever. (TK50 media is ~94 MB;
+    // a reduced capacity keeps a data-reliability pass tractable to run here —
+    // the real value belongs on a drive parameter.)
+    if (drive->tape().position() >= TAPE_LEOT_CAPACITY)
+        return STATUS(Status::SUCCESS, 0, EF_END_OF_TAPE);
+
     return STATUS(Status::SUCCESS, 0, 0);
 }
 
