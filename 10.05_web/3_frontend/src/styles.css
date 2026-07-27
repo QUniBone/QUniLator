@@ -203,6 +203,10 @@ button { font: inherit; color: inherit; }
 
 .content { padding: 22px 24px 60px; max-width: 1160px; width: 100%; margin: 0 auto;
   flex: 1 1 auto; overflow-y: auto; display: flex; flex-direction: column; min-height: 0; }
+/* the dashboard fills the whole area right of the sidebar and below the topbar,
+   its grid expanding and shrinking to contain the configuration's widgets */
+.content:has(.page[data-page="dashboard"].active) { max-width: none; }
+.page[data-page="dashboard"].active { display: flex; flex-direction: column; flex: 1 1 auto; }
 .page { display: none; }
 .page.active { display: block; }
 .page > .lede { color: var(--ink-muted); max-width: 65ch; margin: 0 0 18px; }
@@ -457,7 +461,11 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 .dash-grid .grid-item > .rlpanel {
   width: 100%; height: 100%; margin: 0; box-sizing: border-box; overflow: auto;
 }
-.grid-item.hidden { opacity: .4; }
+/* a hidden card in edit mode: a compact, muted placeholder */
+.hidden-card { border-style: dashed; background: var(--surface-2); opacity: .8; }
+.hidden-card .card-head { padding-bottom: 6px; }
+.hidden-card .card-head h3 { font-size: var(--fs-1); color: var(--ink-muted); }
+.hidden-info { font-size: var(--fs-0); color: var(--ink-faint); padding-top: 0; }
 /* the edit overlay captures the drag and blocks interaction with the card body */
 .grid-item .gi-edit {
   position: absolute; inset: 0; z-index: 5; cursor: move;
@@ -773,23 +781,27 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 
 /* disk widget: one friendly title on top, a plate of labelled switch caps that
    follow the drive's lamps, and the shared image picker in the foot */
-.disk-title {
-  font-weight: 650; font-size: var(--fs-2); color: var(--rl-ink);
-  margin-bottom: 12px; line-height: 1.25;
-  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+/* device widgets share the card frame: a light header with the title and verbal
+   status, over a dark faceplate body that carries the lamps / screen */
+.diskcard { display: flex; flex-direction: column; }
+.diskcard .card-head { justify-content: space-between; }
+.diskcard .card-body.diskface {
+  flex: 1 1 auto; display: flex; flex-direction: column; gap: 12px;
+  padding: 14px; color: var(--rl-ink);
+  background: var(--rl-panel); border-radius: 0 0 var(--r-md) var(--r-md);
 }
-/* the verbal drive status, right of the title */
+/* the verbal drive status, right of the title in the header */
 .disk-status {
   flex: 0 0 auto; font-size: var(--fs-0); font-weight: 600; letter-spacing: .02em;
   text-transform: uppercase; padding: 1px 7px; border-radius: 999px;
-  background: var(--rl-panel-edge); color: var(--rl-ink);
+  background: var(--surface-2); color: var(--ink-muted);
 }
 .disk-status.ok { background: var(--ok-soft); color: var(--ok); }
 .disk-status.busy { background: var(--warn-soft); color: var(--warn); }
 .disk-status.spin { background: var(--accent-soft); color: var(--accent); }
 .disk-status.load { background: var(--accent-soft); color: var(--accent); }
-.disk-status.idle { opacity: .6; }
-.rlpanel .rl-foot .imgfield { flex: 1 1 auto; min-width: 0; }
+.disk-status.idle { opacity: .7; }
+.diskface .rl-foot .imgfield { flex: 1 1 auto; min-width: 0; }
 
 /* removable-media tags on the drive foot */
 .w-tag { font-size: var(--fs-0); padding: 1px 7px; border-radius: 999px; white-space: nowrap; }

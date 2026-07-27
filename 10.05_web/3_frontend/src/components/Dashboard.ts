@@ -165,12 +165,19 @@ function ConsoleCard() {
 // ---- the arrangeable grid ----
 const CELL = 44; // px per grid square
 const GAP = 6;
-// the fixed cards and their natural size in grid cells
+// the fixed cards, their natural size in grid cells, and their titles
 const FIXED = [
-  { key: 'controlpanel', w: 12, h: 4 },
-  { key: 'frontpanel', w: 7, h: 4 },
-  { key: 'console', w: 15, h: 11 },
+  { key: 'controlpanel', w: 12, h: 4, label: 'Control panel' },
+  { key: 'frontpanel', w: 7, h: 4, label: 'Front panel' },
+  { key: 'console', w: 15, h: 11, label: 'Console' },
 ];
+const FIXED_LABEL: Record<string, string> = {
+  controlpanel: 'Control panel',
+  frontpanel: 'Front panel',
+  console: 'Console',
+};
+// a hidden card shows compact in edit mode: just enough cells for its name row
+const HIDDEN_CELLS = { w: 6, h: 2 };
 
 function renderCard(key: string, devByName: Record<string, LiveDev>) {
   if (key === 'controlpanel') return html`<${ControlPanel} />`;
@@ -178,6 +185,21 @@ function renderCard(key: string, devByName: Record<string, LiveDev>) {
   if (key === 'console') return html`<${ConsoleCard} />`;
   const d = devByName[key];
   return d ? html`<${DeviceWidget} d=${d} />` : null;
+}
+
+// A hidden widget in edit mode: represented by just its title, handle and a
+// line of basic configuration, so the operator can find and re-show it without
+// it taking a full widget's space.
+function renderHidden(key: string, devByName: Record<string, LiveDev>) {
+  const d = devByName[key];
+  const title = d ? d.label || d.name : FIXED_LABEL[key] || key;
+  const info = d ? d.img || d.type : '';
+  return html`<div class="card hidden-card">
+    <div class="card-head"><h3>${title}</h3></div>
+    <div class="card-body hidden-info">
+      <span class="mono">${key}</span>${info ? html` · <span>${info}</span>` : null}
+    </div>
+  </div>`;
 }
 
 // The dashboard as a grid of square cells. Every card — the panels, the console
@@ -227,13 +249,15 @@ function DashGrid() {
   devs.forEach((d) => (devByName[d.name] = d));
   const isHidden = (key: string) => !!layout[key]?.hidden;
 
-  // fixed cards + device widgets; widths clamped so a card never exceeds the grid
+  // fixed cards + device widgets; a hidden card shrinks to a compact tile in
+  // edit mode, and widths are clamped so a card never exceeds the grid
+  const sized = (key: string, nat: { w: number; h: number }): GridItem => {
+    const c = edit && isHidden(key) ? HIDDEN_CELLS : nat;
+    return { key, w: Math.min(c.w, cols), h: c.h };
+  };
   const allItems: GridItem[] = [
-    ...FIXED.map((f) => ({ key: f.key, w: Math.min(f.w, cols), h: f.h })),
-    ...devs.map((d) => {
-      const c = widgetCells(d);
-      return { key: d.name, w: Math.min(c.w, cols), h: c.h };
-    }),
+    ...FIXED.map((f) => sized(f.key, f)),
+    ...devs.map((d) => sized(d.name, widgetCells(d))),
   ];
   const items = allItems.filter((it) => edit || !isHidden(it.key));
   const placed = placeItems(items, layout, cols);
@@ -340,7 +364,7 @@ function DashGrid() {
           class=${'grid-item' + (hidden ? ' hidden' : '') + (pv ? ' dragging' + (pv.ok ? '' : ' bad') : '')}
           key=${p.key}
           style=${'grid-column:' + (x + 1) + '/span ' + p.w + ';grid-row:' + (y + 1) + '/span ' + p.h + ';'}>
-          ${renderCard(p.key, devByName)}
+          ${edit && hidden ? renderHidden(p.key, devByName) : renderCard(p.key, devByName)}
           ${
             edit
               ? html`<div class="gi-edit" onMouseDown=${onDown(p.key)}>

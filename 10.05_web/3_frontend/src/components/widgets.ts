@@ -75,15 +75,17 @@ function Panel({
   foot: ComponentChildren;
   panelCls?: string;
 }) {
-  return html`<div class=${'rlpanel' + (panelCls ? ' ' + panelCls : '')}>
-    <div class="disk-title">
-      <span>${d.label || d.type}</span>
+  return html`<div class=${'card diskcard' + (panelCls ? ' ' + panelCls : '')}>
+    <div class="card-head">
+      <h3>${d.label || d.type}</h3>
       ${d.status
         ? html`<span class=${'disk-status ' + (DISK_STATUS_CLS[d.status] || 'idle')}>${d.status}</span>`
         : null}
     </div>
-    <div class="lamps">${caps}</div>
-    <div class="rl-foot">${foot}</div></div>`;
+    <div class="card-body diskface">
+      <div class="lamps">${caps}</div>
+      ${foot ? html`<div class="rl-foot">${foot}</div>` : null}
+    </div></div>`;
 }
 
 // ---- disk media state ----
@@ -218,10 +220,11 @@ function Vcb01Widget({ d }: { d: LiveDev }) {
     // the socket persists across widget rebuilds; closed only when the widget is gone
     return () => {};
   }, []);
-  return html`<div class="rlpanel vcb01-widget">
-    <div class="disk-title">${d.label || d.type}</div>
-    <div class="vcb01-screen"><canvas id="vcb01-canvas" ref=${cv} tabindex="0"></canvas></div>
-    <div class="vcb01-hint">click to focus — keyboard & mouse drive the board</div></div>`;
+  return html`<div class="card diskcard vcb01-widget">
+    <div class="card-head"><h3>${d.label || d.type}</h3></div>
+    <div class="card-body diskface">
+      <div class="vcb01-screen"><canvas id="vcb01-canvas" ref=${cv} tabindex="0"></canvas></div>
+      <div class="vcb01-hint">click to focus — keyboard & mouse drive the board</div></div></div>`;
 }
 
 type Widget = (props: { d: LiveDev }) => ReturnType<typeof html>;
