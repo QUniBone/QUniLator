@@ -24,9 +24,15 @@ enum class disk_family_e {
 	rl       // RL01/RL02: distinguish loaded vs ready by the state machine
 };
 
-// Mirror of RL0102_STATE_lock_on (rl0102.hpp); webapi.cpp static_asserts the
-// two agree, so this file needs no device header.
+// Mirror of the RL0102_STATE_* values (rl0102.hpp); webapi.cpp static_asserts
+// they agree, so this file needs no device header. The pack spins up through
+// spin_up..load_heads and spins down through unload_heads..spin_down; it is
+// online only at lock_on.
+static const int DISK_STATUS_RL_SPIN_UP = 1;    // spin_up
+static const int DISK_STATUS_RL_LOAD_HEADS = 3; // load_heads (end of spin-up)
 static const int DISK_STATUS_RL_LOCK_ON = 5;
+static const int DISK_STATUS_RL_UNLOAD_HEADS = 6; // unload_heads (start of spin-down)
+static const int DISK_STATUS_RL_SPIN_DOWN = 7;
 
 // Signals read from the drive's parameters.
 struct disk_signals_c {
@@ -36,12 +42,14 @@ struct disk_signals_c {
 	int rl_state = -1;      // RL0102_STATE_* raw value; used only for family rl
 };
 
-// Verbal status, one of "off"/"idle"/"loaded"/"ready"/"busy":
-//   off    — device disabled
-//   idle   — enabled, no medium
-//   loaded — medium present, drive still coming online (spin-up/seek/load)
-//   ready  — online, ready for I/O
-//   busy   — actively transferring
+// Verbal status:
+//   off          — device disabled
+//   idle         — enabled, no medium
+//   spinning up  — RL pack coming up to speed / loading heads
+//   spinning down— RL pack unloading heads / stopping
+//   loaded       — medium present, drive coming online (seek/load), not spinning
+//   ready        — online, ready for I/O
+//   busy         — actively transferring
 const char *disk_status(disk_family_e family, const disk_signals_c &s);
 
 #endif // _DEVICE_STATUS_HPP_

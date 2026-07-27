@@ -53,6 +53,17 @@ function ReadyCap({ unit, lit, wide }: { unit: string; lit: boolean; wide?: bool
 
 // The panel body every widget shares: one friendly title, the black cap bezel,
 // and a foot for the medium and its tags.
+// The colour cue for a verbal drive status: ready reads calm, activity and spin
+// transitions stand out, an idle/off drive recedes.
+const DISK_STATUS_CLS: Record<string, string> = {
+  ready: 'ok',
+  busy: 'busy',
+  'spinning up': 'spin',
+  'spinning down': 'spin',
+  loaded: 'load',
+  idle: 'idle',
+  off: 'idle',
+};
 function Panel({
   d,
   caps,
@@ -65,7 +76,12 @@ function Panel({
   panelCls?: string;
 }) {
   return html`<div class=${'rlpanel' + (panelCls ? ' ' + panelCls : '')}>
-    <div class="disk-title">${d.label || d.type}</div>
+    <div class="disk-title">
+      <span>${d.label || d.type}</span>
+      ${d.status
+        ? html`<span class=${'disk-status ' + (DISK_STATUS_CLS[d.status] || 'idle')}>${d.status}</span>`
+        : null}
+    </div>
     <div class="lamps">${caps}</div>
     <div class="rl-foot">${foot}</div></div>`;
 }

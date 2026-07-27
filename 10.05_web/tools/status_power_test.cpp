@@ -35,8 +35,11 @@ static void check(bool ok, const char *what) {
 // is verified against the header at the board build in webapi.cpp)
 static const int RL_LOAD_CARTRIDGE = 0;
 static const int RL_SPIN_UP = 1;
+static const int RL_LOAD_HEADS = 3;
 static const int RL_SEEK = 4;
 static const int RL_LOCK_ON = 5;
+static const int RL_UNLOAD_HEADS = 6;
+static const int RL_SPIN_DOWN = 7;
 
 static disk_signals_c sig(bool enabled, bool has_image, bool activity, int rl_state) {
 	disk_signals_c s;
@@ -74,10 +77,19 @@ static void test_disk_status(void) {
 			"rl enabled, no image -> idle");
 	check(is(disk_status(r, sig(true, true, false, RL_LOAD_CARTRIDGE)), "loaded"),
 			"rl media loaded, cartridge not spun up -> loaded");
-	check(is(disk_status(r, sig(true, true, false, RL_SPIN_UP)), "loaded"),
-			"rl spinning up -> loaded");
+	check(is(disk_status(r, sig(true, true, false, RL_SPIN_UP)), "spinning up"),
+			"rl spin_up -> spinning up");
+	check(is(disk_status(r, sig(true, true, false, RL_LOAD_HEADS)), "spinning up"),
+			"rl loading heads -> spinning up");
 	check(is(disk_status(r, sig(true, true, false, RL_SEEK)), "loaded"),
 			"rl seeking -> loaded");
+	check(is(disk_status(r, sig(true, true, false, RL_UNLOAD_HEADS)), "spinning down"),
+			"rl unloading heads -> spinning down");
+	check(is(disk_status(r, sig(true, true, false, RL_SPIN_DOWN)), "spinning down"),
+			"rl spin_down -> spinning down");
+	// a spin transition outranks a stale activity flag: no transfer mid-spin
+	check(is(disk_status(r, sig(true, true, true, RL_SPIN_DOWN)), "spinning down"),
+			"rl spinning down with stale activity -> spinning down");
 	check(is(disk_status(r, sig(true, true, false, RL_LOCK_ON)), "ready"),
 			"rl locked on -> ready");
 	check(is(disk_status(r, sig(true, true, true, RL_LOCK_ON)), "busy"),

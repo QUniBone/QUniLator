@@ -25,7 +25,14 @@ export interface ApiParam {
 }
 
 // The verbal runtime state of a disk drive (GET /api/devices → status).
-export type DiskStatus = 'off' | 'idle' | 'loaded' | 'ready' | 'busy';
+export type DiskStatus =
+  | 'off'
+  | 'idle'
+  | 'spinning up'
+  | 'spinning down'
+  | 'loaded'
+  | 'ready'
+  | 'busy';
 
 export interface ApiDevice {
   name: string;

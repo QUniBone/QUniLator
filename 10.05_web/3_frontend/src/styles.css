@@ -740,7 +740,19 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 .disk-title {
   font-weight: 650; font-size: var(--fs-2); color: var(--rl-ink);
   margin-bottom: 12px; line-height: 1.25;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
 }
+/* the verbal drive status, right of the title */
+.disk-status {
+  flex: 0 0 auto; font-size: var(--fs-0); font-weight: 600; letter-spacing: .02em;
+  text-transform: uppercase; padding: 1px 7px; border-radius: 999px;
+  background: var(--rl-panel-edge); color: var(--rl-ink);
+}
+.disk-status.ok { background: var(--ok-soft); color: var(--ok); }
+.disk-status.busy { background: var(--warn-soft); color: var(--warn); }
+.disk-status.spin { background: var(--accent-soft); color: var(--accent); }
+.disk-status.load { background: var(--accent-soft); color: var(--accent); }
+.disk-status.idle { opacity: .6; }
 .rlpanel .rl-foot .imgfield { flex: 1 1 auto; min-width: 0; }
 
 /* removable-media tags on the drive foot */

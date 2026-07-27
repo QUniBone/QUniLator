@@ -12,6 +12,15 @@ const char *disk_status(disk_family_e family, const disk_signals_c &s) {
 		return "off";
 	if (!s.has_image)
 		return "idle";
+	// The RL pack's spin transitions are their own verbal states, ahead of the
+	// transfer/online split: the drive is neither transferring nor ready while
+	// the pack is coming up to speed or stopping.
+	if (family == disk_family_e::rl) {
+		if (s.rl_state >= DISK_STATUS_RL_SPIN_UP && s.rl_state <= DISK_STATUS_RL_LOAD_HEADS)
+			return "spinning up";
+		if (s.rl_state >= DISK_STATUS_RL_UNLOAD_HEADS && s.rl_state <= DISK_STATUS_RL_SPIN_DOWN)
+			return "spinning down";
+	}
 	// A transfer outranks the online/coming-online split: a drive only
 	// transfers once it is online, and the access lamp is the freshest signal.
 	if (s.activity)

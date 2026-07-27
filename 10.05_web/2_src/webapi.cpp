@@ -146,10 +146,18 @@ static device_c *find_device(const std::string &name) {
 	return nullptr;
 }
 
-// the RL lock-on state feeds the loaded/ready split; keep the mirror constant
-// in device_status.hpp honest against the device header
+// the RL state values feed the verbal status; keep the mirror constants in
+// device_status.hpp honest against the device header
 static_assert(RL0102_STATE_lock_on == DISK_STATUS_RL_LOCK_ON,
 		"DISK_STATUS_RL_LOCK_ON out of sync with rl0102.hpp");
+static_assert(RL0102_STATE_spin_up == DISK_STATUS_RL_SPIN_UP,
+		"DISK_STATUS_RL_SPIN_UP out of sync with rl0102.hpp");
+static_assert(RL0102_STATE_load_heads == DISK_STATUS_RL_LOAD_HEADS,
+		"DISK_STATUS_RL_LOAD_HEADS out of sync with rl0102.hpp");
+static_assert(RL0102_STATE_unload_heads == DISK_STATUS_RL_UNLOAD_HEADS,
+		"DISK_STATUS_RL_UNLOAD_HEADS out of sync with rl0102.hpp");
+static_assert(RL0102_STATE_spin_down == DISK_STATUS_RL_SPIN_DOWN,
+		"DISK_STATUS_RL_SPIN_DOWN out of sync with rl0102.hpp");
 
 // Computed verbal status for a disk drive, one of off/idle/loaded/ready/busy.
 // Reads only the parameters the drive already publishes and defers the mapping

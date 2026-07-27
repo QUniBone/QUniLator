@@ -93,7 +93,9 @@ from the `statusparams` collection), one of:
 |---|---|
 | `off` | device disabled |
 | `idle` | enabled, no medium attached |
-| `loaded` | medium present, drive still coming online (spin-up / seek / load) |
+| `spinning up` | RL pack coming up to speed / loading heads |
+| `spinning down` | RL pack unloading heads / stopping |
+| `loaded` | medium present, drive coming online (seek / load), not spinning |
 | `ready` | online, ready for I/O |
 | `busy` | actively transferring |
 
