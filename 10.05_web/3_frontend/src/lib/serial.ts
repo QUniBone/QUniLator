@@ -8,12 +8,13 @@
 //   "4000"       -> { role: 'listen',  host: '',    port: 4000 }  (bare port)
 //   ":4000"      -> { role: 'listen',  host: '',    port: 4000 }
 //   "box:4000"   -> { role: 'connect', host: 'box', port: 4000 }
+//   "ws"         -> { role: 'websocket', host: '', port: 0     }  (browser terminal)
 //   ""           -> { role: '',        host: '',    port: 0    }  (line off)
 //
 // format() is the inverse: it renders an endpoint back to the canonical field
 // text. It never talks to the network; it only shapes strings.
 
-export type SerialRole = 'listen' | 'connect' | '';
+export type SerialRole = 'listen' | 'connect' | 'websocket' | '';
 
 export interface SerialEndpointValue {
   role: SerialRole;
@@ -24,6 +25,9 @@ export interface SerialEndpointValue {
 function parse(text: string): SerialEndpointValue {
   const s = (text || '').trim();
   if (!s) return { role: '', host: '', port: 0 };
+  // a browser terminal over WebSocket needs no host or port
+  if (s.toLowerCase() === 'ws' || s.toLowerCase() === 'websocket')
+    return { role: 'websocket', host: '', port: 0 };
   const colon = s.lastIndexOf(':');
   if (colon < 0) {
     // a bare number listens on that port; anything else is not a port
@@ -39,7 +43,9 @@ function parse(text: string): SerialEndpointValue {
 }
 
 function format(ep: SerialEndpointValue): string {
-  if (!ep || !ep.port) return '';
+  if (!ep) return '';
+  if (ep.role === 'websocket') return 'ws';
+  if (!ep.port) return '';
   if (ep.role === 'connect' && ep.host) return ep.host + ':' + ep.port;
   return String(ep.port);
 }

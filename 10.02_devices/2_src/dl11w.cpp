@@ -132,8 +132,10 @@ bool slu_c::on_before_install(void)
 			tcp_line.role = serial_tcp_line_c::ROLE_LISTEN;
 		else if (tcp_role.value == "connect")
 			tcp_line.role = serial_tcp_line_c::ROLE_CONNECT;
+		else if (tcp_role.value == "websocket")
+			tcp_line.role = serial_tcp_line_c::ROLE_WEBSOCKET;
 		else {
-			ERROR("tcp_role must be \"listen\" or \"connect\", got \"%s\"",
+			ERROR("tcp_role must be \"listen\", \"connect\" or \"websocket\", got \"%s\"",
 					tcp_role.value.c_str());
 			return false;
 		}
@@ -253,8 +255,10 @@ void slu_c::reopen_tcp_line(const std::string &role, const std::string &host, ui
 		tcp_line.role = serial_tcp_line_c::ROLE_LISTEN;
 	else if (role == "connect")
 		tcp_line.role = serial_tcp_line_c::ROLE_CONNECT;
+	else if (role == "websocket")
+		tcp_line.role = serial_tcp_line_c::ROLE_WEBSOCKET;
 	else {
-		ERROR("tcp_role must be \"listen\" or \"connect\", got \"%s\"", role.c_str());
+		ERROR("tcp_role must be \"listen\", \"connect\" or \"websocket\", got \"%s\"", role.c_str());
 		return;
 	}
 	tcp_line.host = host;

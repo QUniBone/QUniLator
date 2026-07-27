@@ -206,6 +206,7 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/webconsole.o	\
 	$(OBJDIR)/webconsole_ext.o	\
 	$(OBJDIR)/webconsole_channel.o	\
+	$(OBJDIR)/webserial.o	\
 	$(OBJDIR)/webvcb01.o	\
 	$(OBJDIR)/webstorage.o	\
 	$(OBJDIR)/webconfigs.o	\
@@ -554,6 +555,9 @@ $(OBJDIR)/webconsole_ext.o :  $(WEB_SRC_DIR)/webconsole_ext.cpp $(WEB_SRC_DIR)/w
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webconsole_channel.o :  $(WEB_SRC_DIR)/webconsole_channel.cpp $(WEB_SRC_DIR)/webconsole_channel.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/webserial.o :  $(WEB_SRC_DIR)/webserial.cpp $(WEB_SRC_DIR)/webserial.hpp $(WEB_SRC_DIR)/webconsole_channel.hpp device_configuration.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webvcb01.o :  $(WEB_SRC_DIR)/webvcb01.cpp $(WEB_SRC_DIR)/webvcb01.hpp $(DEVICE_SRC_DIR)/vcb01_render.hpp

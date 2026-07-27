@@ -388,6 +388,38 @@ int main(void)
 		line.close();
 	}
 
+	/* 8. ROLE_WEBSOCKET: a socket-less conduit. open() binds nothing; device
+	   output flows out through data_tap, and inject_rx (always allowed, since no
+	   TCP client can hold the line) feeds device input. This is the seam the web
+	   layer bridges to a WebSocket. */
+	{
+		serial_tcp_line_c line;
+		line.role = serial_tcp_line_c::ROLE_WEBSOCKET;
+		std::string out;
+		std::string in_seen;
+		line.data_tap = [&](const uint8_t *d, size_t n, bool from_pdp) {
+			(from_pdp ? out : in_seen).append((const char *) d, n);
+		};
+		check(line.open(), "websocket line opens without a socket");
+		check(line.local_port() == 0, "websocket line binds no port");
+		check(!line.client_connected(), "websocket line has no TCP client");
+
+		// device output reaches the tap (what the web layer would send to the client)
+		line.send('H');
+		line.send('i');
+		check(out == "Hi", "device output reaches the data_tap");
+
+		// web input via inject_rx reaches the device, and also mirrors to the tap
+		check(line.inject_rx((const uint8_t *) "yo", 2), "inject_rx accepted (no TCP client ever holds a ws line)");
+		uint8_t ch = 0;
+		std::string rx;
+		while (line.poll_rcv(&ch))
+			rx.push_back((char) ch);
+		check(rx == "yo", "injected input reaches the device");
+		check(in_seen == "yo", "injected input mirrors to the data_tap");
+		line.close();
+	}
+
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures == 0 ? 0 : 1;
 }

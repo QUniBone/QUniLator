@@ -43,7 +43,11 @@
 
 class serial_tcp_line_c {
 public:
-	enum role_t { ROLE_LISTEN, ROLE_CONNECT };
+	// ROLE_WEBSOCKET opens no socket: the line is a conduit driven entirely
+	// through the data_tap (device output) and inject_rx (device input) seam, so
+	// the web layer can carry it over a WebSocket. send()/poll_rcv() work
+	// unchanged; no TCP client ever connects, so inject_rx() is always allowed.
+	enum role_t { ROLE_LISTEN, ROLE_CONNECT, ROLE_WEBSOCKET };
 
 	// RFC2217 line parameters, stored and reported but not acted upon.
 	struct line_params_t {

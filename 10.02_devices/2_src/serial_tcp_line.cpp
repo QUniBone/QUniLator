@@ -87,6 +87,14 @@ bool serial_tcp_line_c::open(void)
 {
 	if (running_)
 		return true;
+	// A WebSocket line has no socket and no I/O thread: it is a pure conduit,
+	// its bytes carried by the web layer through data_tap/inject_rx. Mark it
+	// running so is_open()/close() behave, and return; send()/poll_rcv() need
+	// neither the socket nor the thread.
+	if (role == ROLE_WEBSOCKET) {
+		running_ = true;
+		return true;
+	}
 	if (pipe(wake_pipe_) < 0)
 		return false;
 	// non-blocking read end so drain_wake never stalls

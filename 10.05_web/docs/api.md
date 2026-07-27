@@ -496,3 +496,18 @@ does not persist across a service restart; it is unrelated to the log journal.
 Binary frames bridged to the real console SLU on `/dev/ttyS2` (the external
 console bridge); no emulated device sits behind it. Same shape and same
 history replay on connect as `/ws/console/<n>`.
+
+### `/ws/serial/<dev>/<line>`
+
+Binary frames bridged to any mux or SLU serial line whose `tcp_role` is
+`websocket` — the WebSocket is that line's backend, carrying its bytes in place
+of a telnet or serial-port transport. `<dev>` is the device handle and `<line>`
+the line index (`0` for a single-line DL11), e.g. `/ws/serial/dzv11/0`. Same
+byte-transparent shape and retained-history replay as `/ws/console/<n>`. A line
+that is not in `websocket` mode is refused, so a telnet or serial-port line is
+never tapped. A serial line's backend is one of:
+
+- **`listen`** — a bare port; a host program dials in (telnet / RFC2217).
+- **`connect`** — `host:port`; the line dials out and reconnects on drop.
+- **`websocket`** — no socket; carried over this WebSocket.
+- **a serial port** (`serialport`, DL11 only) — a real `/dev/ttyS*` UART.

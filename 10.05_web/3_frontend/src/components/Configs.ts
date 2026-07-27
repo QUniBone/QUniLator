@@ -118,6 +118,7 @@ type SetImage = (name: string, image: string) => void;
 // the same pure endpoint parser the field writes with.
 function endpointHint(text: string): string {
   const ep = serialEndpoint.parse(text);
+  if (ep.role === 'websocket') return 'browser terminal (websocket)';
   if (!ep.port) return 'line off';
   return ep.role === 'connect'
     ? 'connects to ' + ep.host + ':' + ep.port
@@ -154,7 +155,7 @@ function SerialPortField({ row, line, onParam }: { row: Row; line: SerialLine; o
   };
   return html`<div class="serial-line">
     <span class="serial-line-name mono">${line.label}</span>
-    <input class="serial-line-input mono" type="text" value=${draft} placeholder="port or host:port"
+    <input class="serial-line-input mono" type="text" value=${draft} placeholder="port, host:port, or ws"
       disabled=${ro}
       onInput=${(e: Event) => setDraft((e.target as HTMLInputElement).value)}
       onChange=${commit} onBlur=${commit} />
@@ -304,7 +305,7 @@ function DevRow({
       ${
         lines.length
           ? html`<div class="serial-lines">
-          <div class="serial-lines-head">Serial lines — a bare port listens, <span class="mono">host:port</span> connects</div>
+          <div class="serial-lines-head">Serial lines — a bare port listens, <span class="mono">host:port</span> connects, <span class="mono">ws</span> is a browser terminal</div>
           ${lines.map(
             (l) => html`<${SerialPortField} row=${row} line=${l} onParam=${onParam} key=${l.roleParam} />`
           )}

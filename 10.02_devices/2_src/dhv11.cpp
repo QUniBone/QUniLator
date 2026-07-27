@@ -140,8 +140,10 @@ void dhv11_c::open_line(unsigned i, const std::string &role, const std::string &
 		ln.role = serial_tcp_line_c::ROLE_LISTEN;
 	else if (role == "connect")
 		ln.role = serial_tcp_line_c::ROLE_CONNECT;
+	else if (role == "websocket")
+		ln.role = serial_tcp_line_c::ROLE_WEBSOCKET;
 	else {
-		WARNING("line %u: tcp_role must be listen/connect, got \"%s\"", i, role.c_str());
+		WARNING("line %u: tcp_role must be listen/connect/websocket, got \"%s\"", i, role.c_str());
 		return;
 	}
 	ln.host = host;
