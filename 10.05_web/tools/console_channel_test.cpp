@@ -220,6 +220,31 @@ int main(void) {
 		check(live.ctrl == ANS, "the next live client becomes the answerer");
 	}
 
+	/* 11. the replay strips terminal-query escapes (DA/DECID/DSR) so a connecting
+	      terminal never re-answers a query buried in the history; the live stream
+	      is passed through untouched */
+	{
+		console_channel_c ch(mock_send, mock_send_text);
+		// A <DA> B <DECID> C <DSR> D, escapes interleaved with printable bytes
+		const char raw[] = { 'A', 0x1b, '[', 'c', 'B', 0x1b, 'Z', 'C',
+				0x1b, '[', '6', 'n', 'D' };
+		ch.append(raw, sizeof(raw));
+		mock_client c;
+		ch.add_client(&c);
+		check(c.got == "ABCD", "replay strips DA, DECID and DSR query escapes");
+		// a real cursor move (CSI H) is display, not a query — it must survive
+		console_channel_c ch2(mock_send, mock_send_text);
+		const char disp[] = { 'X', 0x1b, '[', 'H', 'Y' };
+		ch2.append(disp, sizeof(disp));
+		mock_client d;
+		ch2.add_client(&d);
+		check(d.got == std::string("X\x1b[HY", 5), "replay keeps non-query escapes");
+		// the live stream is not stripped: the answerer must see live queries
+		const char liveq[] = { 0x1b, '[', 'c' };
+		ch.append(liveq, sizeof(liveq));
+		check(c.got == std::string("ABCD\x1b[c", 7), "live query passes through unstripped");
+	}
+
 	/* 10. a null text callback leaves every client a plain mirror (DL11 taps) */
 	{
 		console_channel_c ch(mock_send);   // no text callback

@@ -26,6 +26,44 @@ void console_channel_c::set_answerer_locked(void *client) {
 		answerer_ = client;
 }
 
+// Remove terminal-query escapes from a copy of the history: DECID (ESC Z),
+// Device Attributes (CSI ... c) and Device Status Report (CSI ... n). These make
+// a terminal answer back; replaying them would make a connecting terminal answer
+// a query the guest already handled, and the stray answer would land as input at
+// the guest's current prompt. They render nothing, so dropping them leaves the
+// reconstructed screen unchanged. Only the replay is stripped — the live stream
+// carries the guest's real-time queries through to the answerer untouched.
+static std::string strip_query_escapes(const std::string &in) {
+	std::string out;
+	out.reserve(in.size());
+	for (size_t i = 0; i < in.size();) {
+		unsigned char c = (unsigned char) in[i];
+		if (c == 0x1b && i + 1 < in.size()) {
+			unsigned char c1 = (unsigned char) in[i + 1];
+			if (c1 == 'Z') {           // DECID
+				i += 2;
+				continue;
+			}
+			if (c1 == '[') {           // CSI: scan to the final byte
+				size_t j = i + 2;
+				while (j < in.size()) {
+					unsigned char cj = (unsigned char) in[j];
+					if (cj >= 0x40 && cj <= 0x7e)
+						break;
+					j++;
+				}
+				if (j < in.size() && (in[j] == 'c' || in[j] == 'n')) {
+					i = j + 1; // drop the whole DA / DSR query
+					continue;
+				}
+			}
+		}
+		out.push_back((char) c);
+		i++;
+	}
+	return out;
+}
+
 // caller holds mutex_
 void console_channel_c::trim_locked(void) {
 	if (ring_.size() > cap_)
@@ -52,14 +90,17 @@ void console_channel_c::add_client(void *client) {
 	// an empty send buffer rather than queueing behind up to 256 KB of history.
 	if (answerer_ == nullptr)
 		set_answerer_locked(client);
-	// Replay the retained history, then join the live set — both under the one
-	// lock so no byte slips between the snapshot and the insert. A client that
-	// reports dead on the snapshot is not inserted; one merely behind (skipped)
-	// still joins and picks up the live stream.
-	if (!ring_.empty() && send_(client, ring_.data(), ring_.size()) < 0) {
-		if (answerer_ == client)
-			answerer_ = nullptr;
-		return;
+	// Replay the retained history with query escapes stripped, then join the live
+	// set — both under the one lock so no byte slips between the snapshot and the
+	// insert. A client that reports dead on the snapshot is not inserted; one
+	// merely behind (skipped) still joins and picks up the live stream.
+	if (!ring_.empty()) {
+		std::string replay = strip_query_escapes(ring_);
+		if (!replay.empty() && send_(client, replay.data(), replay.size()) < 0) {
+			if (answerer_ == client)
+				answerer_ = nullptr;
+			return;
+		}
 	}
 	clients_.insert(client);
 }
