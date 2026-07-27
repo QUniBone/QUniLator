@@ -37,6 +37,10 @@ export interface ApiDevice {
   removable?: boolean;
   locked?: boolean;
   status?: DiskStatus;
+  // standard bus placements for this device's type (raw numeric values), the
+  // menu the config editor offers for base_addr / intr_vector
+  address_options?: number[];
+  vector_options?: number[];
   params: ApiParam[];
   // Machine-driven running state (lamps, LEDs, drive state machine, counters).
   // Read-only for display; absent on the pre-split backend.
@@ -44,7 +48,7 @@ export interface ApiDevice {
 }
 
 // ---- derived live model ----
-export type LiveParamKind = 'oct' | 'uint' | 'dbl' | 'str' | 'enum';
+export type LiveParamKind = 'oct' | 'uint' | 'dbl' | 'str' | 'enum' | 'bool';
 
 export interface LiveParam {
   n: string; // name
@@ -73,6 +77,8 @@ export interface LiveDev {
   drives: LiveDev[];
   img: string;
   activity?: boolean;
+  addressOptions?: number[]; // standard base_addr values for this device's type
+  vectorOptions?: number[]; // standard intr_vector values for this device's type
 }
 
 // ---- REST: settings ----
@@ -104,9 +110,10 @@ export interface ImageInfo {
 // One row of the master list (GET /api/configs → configs[]).
 export interface ConfigSummary {
   name: string;
+  title?: string; // operator-friendly title; falls back to the name
   mtime?: string;
   enabled?: string[];
-  default?: boolean;
+  dip_value?: number; // the DIP setting that selects it at power-on; -1 for none
 }
 export interface ConfigDeviceSnapshot {
   name: string;
@@ -116,6 +123,7 @@ export interface ConfigDeviceSnapshot {
 // The full document of one configuration (GET /api/configs/<name> and the
 // body of PUT /api/configs/<name>).
 export interface ConfigSnapshot {
+  title?: string;
   devices: ConfigDeviceSnapshot[];
 }
 

@@ -17,7 +17,10 @@
 */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <map>
+#include <set>
 #include <vector>
 #include <mutex>
 
@@ -166,11 +169,32 @@ static std::string device_status_for(device_c *d) {
 	return disk_status(fam, s);
 }
 
+// A device type's standard bus placements, gathered from the construction
+// defaults of every instance of that type in the registry (the pool the DEC
+// floating-address scheme lays down: e.g. the four DZV11 addresses). The UI
+// offers these as the address/vector menu for a device of that type.
+static picojson::array sorted_options(const std::set<uint32_t> &vals) {
+	picojson::array a;
+	for (uint32_t v : vals) // std::set iterates ascending
+		a.push_back(picojson::value((double) v));
+	return a;
+}
+
 // GET /api/devices — snapshot of the device registry
 static void devices_list(struct mg_connection *conn) {
 	picojson::array devices;
 	{
 		std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
+		// per-type standard address/vector sets, from all instances' defaults
+		std::map<std::string, std::set<uint32_t> > addr_opts, vec_opts;
+		for (device_c *d : device_c::mydevices) {
+			qunibusdevice_c *qd = dynamic_cast<qunibusdevice_c *>(d);
+			if (qd == nullptr || device_is_infrastructure(d))
+				continue;
+			addr_opts[d->type_name.value].insert(qd->default_base_addr);
+			if (qd->default_intr_vector != 0)
+				vec_opts[d->type_name.value].insert(qd->default_intr_vector);
+		}
 		for (device_c *d : device_c::mydevices) {
 			if (device_is_infrastructure(d))
 				continue;
@@ -187,8 +211,15 @@ static void devices_list(struct mg_connection *conn) {
 				}
 			}
 			uint32_t base_addr = 0;
-			if (qunibusdevice_c *qd = dynamic_cast<qunibusdevice_c *>(d))
+			if (qunibusdevice_c *qd = dynamic_cast<qunibusdevice_c *>(d)) {
 				base_addr = qd->base_addr.value;
+				// the standard address/vector menu for this device's type, so the
+				// UI offers a dropdown rather than a free octal field
+				o["address_options"] = picojson::value(
+						sorted_options(addr_opts[d->type_name.value]));
+				o["vector_options"] = picojson::value(
+						sorted_options(vec_opts[d->type_name.value]));
+			}
 			o["label"] = picojson::value(
 					device_label(d->type_name.value, d->name.value, unit, base_addr));
 			o["category"] = picojson::value(std::string(d->category()));
@@ -222,6 +253,33 @@ static void devices_list(struct mg_connection *conn) {
 		}
 	}
 	send_json(conn, 200, picojson::value(devices));
+}
+
+// The device's bus placement — where it sits in the I/O page and how it
+// interrupts. Locked while the device is on the bus (readonly), so changing one
+// re-registers the device, which is only safe with the CPU halted.
+static bool is_bus_placement_param(const std::string &n) {
+	return n == "base_addr" || n == "intr_vector" || n == "intr_level" || n == "slot";
+}
+
+// The enabled device whose register window overlaps [addr, addr + 2*count), or
+// "" when the range is free. register_device() aborts the emulator on an I/O
+// page collision, so a re-address is checked against this first.
+// Caller holds device_c::mydevices_mutex.
+static std::string address_range_owner(qunibusdevice_c *self, uint32_t addr,
+		unsigned count) {
+	uint32_t end = addr + 2 * count;
+	for (device_c *d : device_c::mydevices) {
+		if (d == self || device_is_infrastructure(d))
+			continue;
+		qunibusdevice_c *qd = dynamic_cast<qunibusdevice_c *>(d);
+		if (qd == nullptr || !qd->enabled.value)
+			continue;
+		uint32_t o = qd->base_addr.value, oend = o + 2 * qd->register_count;
+		if (addr < oend && o < end)
+			return qd->name.value;
+	}
+	return "";
 }
 
 // PUT /api/devices/<device>/params/<param> {"value": ...} — set a parameter
@@ -291,6 +349,38 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 							WEB_INFO("%s disabled with controller %s",
 									drv->name.value.c_str(), dev->name.value.c_str());
 						}
+			} else if (is_bus_placement_param(param->name)
+					&& dynamic_cast<qunibusdevice_c *>(dev) != nullptr
+					&& dev->enabled.value) {
+				// The bus placement of an installed device is locked; moving it
+				// re-registers the device on the bus, which is only safe with the
+				// CPU halted. Re-jumper by unplugging (unregister, unlock the
+				// placement fields), setting the new value, and re-plugging.
+				qunibusdevice_c *qd = dynamic_cast<qunibusdevice_c *>(dev);
+				if (!webevents_is_halted()) {
+					send_error(conn, 409,
+							"halt the CPU before changing a device's bus address or interrupt");
+					return;
+				}
+				// a colliding address would abort the emulator at registration, so
+				// refuse it here instead of re-plugging into an occupied window
+				if (param->name == "base_addr") {
+					uint32_t newaddr = (uint32_t) strtoul(value.c_str(), nullptr, 8);
+					std::string owner = address_range_owner(qd, newaddr, qd->register_count);
+					if (!owner.empty()) {
+						send_error(conn, 409, "address " + value
+								+ " overlaps device \"" + owner + "\"");
+						return;
+					}
+				}
+				dev->enabled.set(false); // unplug: unregister, unlock placement
+				param->parse(value);     // re-jumper
+				dev->enabled.set(true);  // re-plug: lock, register at the new placement
+				if (qd->handle == 0) {
+					send_error(conn, 409,
+							"device could not be re-registered at the new placement");
+					return;
+				}
 			} else {
 				if (param->name == "image") {
 					// the web interface keeps images in one directory, so a
@@ -380,6 +470,12 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		send_error(conn, 409, "machine is powered off");
 		return 409;
 	}
+
+	// A power-on re-selects the configuration the DIP switches name, so the
+	// device set is in place before the CPU comes up. apply takes its own
+	// operations lock, so it runs before the power-sequence block below.
+	if (dec.reload_config)
+		webconfigs_reload_for_dip();
 
 	{
 		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);

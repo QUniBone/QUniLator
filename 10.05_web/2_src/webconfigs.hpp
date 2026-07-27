@@ -23,19 +23,23 @@ void webconfigs_register(struct mg_context *ctx);
 void webconfigs_init(const std::string &dir);
 
 // Bring the machine up as a configuration: the --config override if given,
-// otherwise the designated default, adopting the bundled empty configuration
-// as the default when none is set or the named one is gone. Sets the current
-// pointer. Call after the web server is registered.
+// otherwise the one whose DIP value matches the board's switches, adopting the
+// bundled empty configuration (passive on the bus) when no configuration claims
+// that value. Sets the current pointer. Call after the web server is registered.
 void webconfigs_startup(const std::string &override_config);
+
+// Re-select and apply the DIP-matched configuration, as a power-on does. The
+// control API calls this after a power cycle or a dc_on, so changing the DIP
+// switches and cycling power brings up the newly-selected configuration.
+void webconfigs_reload_for_dip(void);
 
 // the configuration the running machine currently represents
 std::string webconfigs_current(void);
 
-// The current/default pointers and the live modified flag, for the config
-// event and the list endpoint. *busy is set (and *modified left at the last
+// The current configuration and the live modified flag, for the config event
+// and the list endpoint. *busy is set (and *modified left at the last
 // confidently-computed value) when the busy machine blocks the comparison.
-void webconfigs_status(std::string *current, std::string *def, bool *modified,
-		bool *busy);
+void webconfigs_status(std::string *current, bool *modified, bool *busy);
 
 // Save the live setup under <name>, which becomes the current configuration.
 bool webconfigs_save(const std::string &name, std::string *error);
@@ -54,12 +58,9 @@ bool webconfigs_write(const std::string &name, const picojson::value &document,
 bool webconfigs_rename(const std::string &from, const std::string &to,
 		std::string *error);
 
-// Delete a configuration. Refused (*status 409) for the current or the
-// default; *status 404 for an unknown name.
+// Delete a configuration. Refused (*status 409) for the current one; *status
+// 404 for an unknown name.
 bool webconfigs_delete(const std::string &name, std::string *error, int *status);
-
-// Designate <name> the startup default, persisting settings.json.
-bool webconfigs_set_default(const std::string &name, std::string *error);
 
 // the object form of GET /api/configs, serialized (used by the host test)
 std::string webconfigs_list_json(void);

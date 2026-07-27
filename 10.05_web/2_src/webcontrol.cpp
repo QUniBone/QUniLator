@@ -23,8 +23,12 @@ control_decision_c control_decide(const std::string &action, bool powered) {
 		d.known = true;
 		d.do_init = true;
 	} else if (action == "powercycle") {
+		// A power cycle re-reads the DIP switches and loads the configuration
+		// they select, so changing the switches and cycling power switches
+		// machines. A bare RESTART keeps the running device set.
 		d.known = true;
 		d.do_powercycle = true;
+		d.reload_config = true;
 	} else if (action == "restart") {
 		// Restart the machine from its power-up vector, the 11/03 RESTART. A bare
 		// bus INIT resets the devices but does not vector the CPU, so a real
@@ -44,11 +48,12 @@ control_decision_c control_decide(const std::string &action, bool powered) {
 		// power up: set the flag, release the HALT the preceding dc_off left on
 		// the bus, and bring the machine up running with a power cycle. The
 		// handler releases HALT before the cycle so the CPU comes up executing,
-		// not halted into ODT.
+		// not halted into ODT. Power-on re-selects the DIP-matched configuration.
 		d.known = true;
 		d.set_powered = 1;
 		d.do_resume = true;
 		d.do_powercycle = true;
+		d.reload_config = true;
 	} else if (action == "dc_off") {
 		// power down: halt the CPU and clear the flag
 		d.known = true;

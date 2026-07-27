@@ -112,6 +112,16 @@ void qunibusdevice_c::set_default_bus_params(uint32_t _default_base_addr,
 	priority_slot.set(default_priority_slot);
 	intr_vector.set(default_intr_vector);
 	intr_level.set(default_intr_level);
+
+	// An unplugged device may be re-jumpered: its bus placement is editable while
+	// it is off the bus, and locked again when it is installed (on_param_changed
+	// for "enabled"). This is also what makes base_addr and the interrupt fields
+	// settable in a saved configuration — the config model captures the writable
+	// state of an unplugged device.
+	base_addr.readonly = false;
+	priority_slot.readonly = false;
+	intr_vector.readonly = false;
+	intr_level.readonly = false;
 }
 
 void qunibusdevice_c::install(void)

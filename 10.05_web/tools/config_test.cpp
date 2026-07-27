@@ -144,14 +144,15 @@ bool device_c::on_param_changed(parameter_c *) {
 /*** the pieces webconfigs.cpp links against, reduced to what it uses ***/
 std::mutex device_configuration_c::operations_mutex;
 
-static std::string g_default_config; // stands in for settings.json default_config
-std::string websettings_default_config(void) { return g_default_config; }
-void websettings_set_default_config(const std::string &name) { g_default_config = name; }
-
 // weblogging.cpp persists on every write; the test keeps no settings file
 void websettings_save(void) {}
 
 void webevents_note_config(void) {} // the event stream is not part of this test
+
+// the board's DIP switches, which pick the power-on configuration; the test
+// drives the value directly to stand in for the switch hardware
+static int g_dip_value = -1;
+int webevents_dip_value(void) { return g_dip_value; }
 
 std::string webstorage_image_path(const std::string &name) { return name; }
 
@@ -266,7 +267,7 @@ static std::string dev_param(const picojson::value &snap, const std::string &dev
 
 static bool modified_now(void) {
 	bool m = false, busy = false;
-	webconfigs_status(nullptr, nullptr, &m, &busy);
+	webconfigs_status(nullptr, &m, &busy);
 	check(!busy, "machine not busy for modified check");
 	return m;
 }
@@ -317,6 +318,50 @@ int main(void) {
 		if (dctrl != nullptr)
 			check(dctrl->get("params").get<picojson::object>().count("address") == 0,
 					"cfgA rl omits the default address");
+	}
+
+	/* 1b. the operator title: stored in the file, surviving a save that omits
+	       it, and carried in the list; a configuration with none falls back to
+	       its name. Title edits are file metadata, so they leave current alone. */
+	{
+		std::string err;
+		int status = 0;
+		picojson::value doc = make_doc({ dev_entry("rl", true, {}) });
+		doc.get<picojson::object>()["title"] = picojson::value("Bench 11/73");
+		check(webconfigs_write("titled", doc, false, &err, &status),
+				"write titled with a title");
+		check(webconfigs_current() == "cfgA", "an offline write leaves current alone");
+
+		picojson::value snap;
+		check(read_json_file(cfg_path("titled"), &snap), "titled file written");
+		check(snap.get("title").is<std::string>()
+				&& snap.get("title").get<std::string>() == "Bench 11/73",
+				"title stored in the file");
+
+		// a later write that omits the title preserves the stored one
+		picojson::value doc2 = make_doc({ dev_entry("rl", true, {}),
+				dev_entry("rl0", true, {}) });
+		check(webconfigs_write("titled", doc2, false, &err, &status),
+				"rewrite titled without a title");
+		check(read_json_file(cfg_path("titled"), &snap), "titled reread");
+		check(snap.get("title").is<std::string>()
+				&& snap.get("title").get<std::string>() == "Bench 11/73",
+				"title preserved across a save that omits it");
+
+		// the list carries the title, and falls back to the name when untitled
+		picojson::value list;
+		check(picojson::parse(list, webconfigs_list_json()).empty(), "list parses");
+		std::string titled_title, cfgA_title;
+		for (const picojson::value &c : list.get("configs").get<picojson::array>()) {
+			if (c.get("name").get<std::string>() == "titled")
+				titled_title = c.get("title").get<std::string>();
+			if (c.get("name").get<std::string>() == "cfgA")
+				cfgA_title = c.get("title").get<std::string>();
+		}
+		check(titled_title == "Bench 11/73", "list carries the stored title");
+		check(cfgA_title == "cfgA", "list falls back to the name when untitled");
+
+		unlink(cfg_path("titled").c_str());
 	}
 
 	/* 2. apply switches off unnamed devices, resets to defaults, sets current */
@@ -501,12 +546,19 @@ int main(void) {
 		check(!modified_now(), "clean cfgA for the following sections");
 	}
 
-	/* 4. rename moves the file and carries the current/default pointers; the
-	      live dirty state is unaffected */
+	/* 4. rename moves the file and carries the current pointer and the DIP
+	      binding; the live dirty state is unaffected */
 	{
 		std::string err;
-		check(webconfigs_set_default("cfgA", &err), "designate cfgA default");
-		check(websettings_default_config() == "cfgA", "cfgA is default");
+		int status = 0;
+		// bind cfgA to a DIP value, so the rename can be shown to carry it
+		picojson::value doc = make_doc({ dev_entry("rl", true, {}),
+				dev_entry("rl0", true, {}) });
+		doc.get<picojson::object>()["dip_value"] = picojson::value((double) 5);
+		check(webconfigs_write("cfgA", doc, false, &err, &status), "bind cfgA to DIP 5");
+		std::vector<std::string> rej;
+		webconfigs_apply("cfgA", &rej, &err); // clean the machine against cfgA
+		check(!modified_now(), "clean cfgA before rename");
 	}
 	rl0->image.set("dirty.rl02"); // make the machine modified against cfgA
 	check(modified_now(), "modified before rename");
@@ -516,7 +568,11 @@ int main(void) {
 		check(!file_exists(cfg_path("cfgA")), "cfgA file gone after rename");
 		check(file_exists(cfg_path("cfgB")), "cfgB file present after rename");
 		check(webconfigs_current() == "cfgB", "current follows rename");
-		check(websettings_default_config() == "cfgB", "default follows rename");
+		picojson::value snap;
+		check(read_json_file(cfg_path("cfgB"), &snap)
+				&& snap.get("dip_value").is<double>()
+				&& (int) snap.get("dip_value").get<double>() == 5,
+				"DIP binding travels with the rename");
 		check(modified_now(), "still modified against the renamed config");
 	}
 	{
@@ -525,50 +581,76 @@ int main(void) {
 		webconfigs_apply("cfgB", &rej, &err); // clean the machine again
 	}
 
-	/* 5. delete refuses the current and the default */
+	/* 5. delete refuses the current one; a non-current config deletes */
 	{
 		std::string err;
 		int status = 0;
-		// cfgB is both current and default
 		check(!webconfigs_delete("cfgB", &err, &status), "delete refuses current");
 		check(status == 409, "delete of current answers 409");
 
-		// make cfgC the current, leaving cfgB the default
+		// make cfgC the current, leaving cfgB non-current
 		rl0->image.set("c.rl02");
 		check(webconfigs_save("cfgC", &err), "save cfgC");
 		check(webconfigs_current() == "cfgC", "cfgC current");
 		status = 0;
-		check(!webconfigs_delete("cfgB", &err, &status), "delete refuses default");
-		check(status == 409, "delete of default answers 409");
-
-		/* 6. default protection: reassign, then the old default can go */
-		check(webconfigs_set_default("cfgC", &err), "designate cfgC default");
-		status = 0;
-		check(webconfigs_delete("cfgB", &err, &status), "delete cfgB once neither current nor default");
+		check(webconfigs_delete("cfgB", &err, &status), "delete cfgB once not current");
 		check(!file_exists(cfg_path("cfgB")), "cfgB removed");
 	}
 
-	/* 7. startup applies the default; a missing default adopts the fallback */
-	websettings_set_default_config(""); // pretend a board that never set one
-	webconfigs_startup("");
-	check(websettings_default_config() == "default", "missing default adopts the fallback name");
-	check(webconfigs_current() == "default", "startup makes the fallback current");
-	check(file_exists(cfg_path("default")), "fallback default.json written");
-	check(!rl->enabled.value && !rl0->enabled.value, "empty fallback switches everything off");
-
-	// a set default is applied and made current
+	/* 6. the DIP switches pick the power-on configuration: the file whose
+	      dip_value matches is applied; a value no file claims brings up the
+	      empty configuration, passive on the bus. */
 	{
 		std::string err;
-		check(webconfigs_set_default("cfgC", &err), "designate cfgC default for restart");
-	}
-	webconfigs_startup("");
-	check(webconfigs_current() == "cfgC", "startup applies the designated default");
-	check(websettings_default_config() == "cfgC", "default unchanged by startup");
+		int status = 0;
+		// dipA at DIP 3 (rl on); dipB at DIP 7 (rl + rl0 on)
+		picojson::value docA = make_doc({ dev_entry("rl", true, {}) });
+		docA.get<picojson::object>()["dip_value"] = picojson::value((double) 3);
+		check(webconfigs_write("dipA", docA, false, &err, &status), "write dipA at DIP 3");
+		picojson::value docB = make_doc({ dev_entry("rl", true, {}),
+				dev_entry("rl0", true, {}) });
+		docB.get<picojson::object>()["dip_value"] = picojson::value((double) 7);
+		check(webconfigs_write("dipB", docB, false, &err, &status), "write dipB at DIP 7");
 
-	// --config overrides the default without changing it
-	webconfigs_startup("default");
-	check(webconfigs_current() == "default", "--config overrides the default");
-	check(websettings_default_config() == "cfgC", "override leaves the default alone");
+		// the list reports each file's dip_value
+		picojson::value list;
+		check(picojson::parse(list, webconfigs_list_json()).empty(), "list parses");
+		int dipA_v = -2, dipB_v = -2;
+		for (const picojson::value &c : list.get("configs").get<picojson::array>()) {
+			if (c.get("name").get<std::string>() == "dipA")
+				dipA_v = (int) c.get("dip_value").get<double>();
+			if (c.get("name").get<std::string>() == "dipB")
+				dipB_v = (int) c.get("dip_value").get<double>();
+		}
+		check(dipA_v == 3, "list reports dipA at DIP 3");
+		check(dipB_v == 7, "list reports dipB at DIP 7");
+
+		// DIP 3 → dipA (rl on, rl0 off)
+		g_dip_value = 3;
+		webconfigs_startup("");
+		check(webconfigs_current() == "dipA", "DIP 3 selects dipA at startup");
+		check(rl->enabled.value && !rl0->enabled.value, "dipA enables rl only");
+
+		// changing the switches and reloading (a power cycle) switches machines
+		g_dip_value = 7;
+		webconfigs_reload_for_dip();
+		check(webconfigs_current() == "dipB", "DIP 7 reload selects dipB");
+		check(rl->enabled.value && rl0->enabled.value, "dipB enables rl and rl0");
+
+		// a value no file claims → the empty fallback, passive on the bus
+		g_dip_value = 12;
+		webconfigs_reload_for_dip();
+		check(webconfigs_current() == "default",
+				"an unclaimed DIP value brings up the empty config");
+		check(file_exists(cfg_path("default")), "fallback default.json written");
+		check(!rl->enabled.value && !rl0->enabled.value,
+				"empty fallback switches everything off");
+	}
+
+	/* 7. --config overrides the DIP selection for bring-up and testing */
+	g_dip_value = 3; // would otherwise pick dipA
+	webconfigs_startup("dipB");
+	check(webconfigs_current() == "dipB", "--config overrides the DIP selection");
 
 	/* 8. device_label: the static per-type table renders each shape correctly.
 	      Fed the (type_name, name, unit, base_addr) triple the API extracts. */

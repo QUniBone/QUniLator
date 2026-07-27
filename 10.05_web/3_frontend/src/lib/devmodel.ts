@@ -26,7 +26,7 @@ function liveParam(p: ApiParam): LiveParam {
     out.t = 'dbl';
     out.v = String(p.value);
   } else if (p.type === 'bool') {
-    out.t = 'str';
+    out.t = 'bool';
     out.v = p.value ? '1' : '0';
   } else if (p.type === 'enum') {
     out.t = 'enum';
@@ -60,6 +60,8 @@ export function liveModel(devs: ApiDevice[]): LiveDev[] {
         statusParams: (d.statusparams || []).map(liveParam),
         drives: [] as LiveDev[],
         img: String((d.params.find((p) => p.name === 'image') || { value: '' }).value || ''),
+        addressOptions: d.address_options,
+        vectorOptions: d.vector_options,
       },
     ])
   );

@@ -99,20 +99,25 @@ static void test_power_gate(void) {
 
 	d = dec("init", true);
 	check(d.known && d.allowed && d.do_init && !d.do_powercycle
-			&& !d.do_halt && !d.do_resume && d.set_powered == -1,
+			&& !d.do_halt && !d.do_resume && d.set_powered == -1
+			&& !d.reload_config,
 			"init -> pulse INIT only");
 
+	// a power cycle re-selects the DIP-matched configuration
 	d = dec("powercycle", true);
 	check(d.known && d.allowed && d.do_powercycle && !d.do_init
-			&& d.set_powered == -1, "powercycle -> power cycle only");
+			&& d.set_powered == -1 && d.reload_config,
+			"powercycle -> power cycle and reload the DIP configuration");
 
 	// restart reboots the CPU from its power-up vector: release HALT, then power
 	// cycle. A bare INIT would not restart the CPU, so restart drives the power
-	// cycle rather than a lone bus INIT.
+	// cycle rather than a lone bus INIT. It keeps the running device set — no
+	// DIP reload.
 	d = dec("restart", true);
 	check(d.known && d.allowed && d.do_resume && d.do_powercycle
-			&& !d.do_init && !d.do_halt && d.set_powered == -1,
-			"restart -> release HALT then power cycle");
+			&& !d.do_init && !d.do_halt && d.set_powered == -1
+			&& !d.reload_config,
+			"restart -> release HALT then power cycle, no DIP reload");
 
 	d = dec("halt", true);
 	check(d.known && d.allowed && d.do_halt && !d.do_resume
@@ -132,8 +137,8 @@ static void test_power_gate(void) {
 	// up running rather than halted into ODT.
 	d = dec("dc_on", true);
 	check(d.known && d.allowed && d.do_powercycle && d.do_resume
-			&& !d.do_halt && d.set_powered == 1,
-			"dc_on -> release HALT, power cycle and set powered");
+			&& !d.do_halt && d.set_powered == 1 && d.reload_config,
+			"dc_on -> release HALT, power cycle, set powered, reload DIP configuration");
 
 	d = dec("bogus", true);
 	check(!d.known, "unknown action -> not known");

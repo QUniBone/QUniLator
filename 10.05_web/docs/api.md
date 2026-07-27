@@ -104,6 +104,13 @@ no modelled spin-up (RK05, RX, MSCP/RA81) report `ready` as soon as a medium is
 present; the RL01/RL02 pass through `loaded` while the pack spins up and reach
 `ready` at lock-on. Non-disk devices omit the field.
 
+A device that plugs into the bus (a `qunibusdevice`) also carries
+`address_options` and `vector_options` — the standard `base_addr` and
+`intr_vector` values for its type (raw numbers, ascending), gathered from the
+construction defaults of every instance of that type. The config editor offers
+these as the address/interrupt menus rather than a free octal field. A type
+with a single instance yields a single-entry list.
+
 `label` is a computed, read-only friendly name in the form `<role> (<code>)`,
 drawn from a static per-type table keyed by `type`. Instanced drives append
 their unit (`MSCP disk 0 (RA81)`); the two serial lines carry their CSR
@@ -127,6 +134,14 @@ parses it; `enabled` is switched like the CLI's `en`/`dis`. Responds with
 the parameter (as in the snapshot) after the write. Validation failures
 respond `422` with the device's message. Attaching a disk image is a
 write to the drive's `image` parameter; an empty value detaches.
+
+A device's **bus placement** — `base_addr`, `intr_vector`, `intr_level`,
+`slot` — is locked while the device is installed, since moving it re-registers
+the device on the bus. Changing one on an enabled device is refused with `409`
+unless the CPU is halted; when halted the device is unplugged, re-jumpered, and
+re-plugged at the new placement. A new `base_addr` that would overlap another
+enabled device's register window is refused with `409` (its owner is named)
+rather than colliding. On a disabled device these fields are freely settable.
 
 ## Bus control
 
@@ -216,26 +231,42 @@ a drive or referenced by a saved configuration.
 
 A configuration is a named JSON snapshot of the device setup — every
 device's enabled state and writable parameter values — stored in
-`$QUNIBONE_DIR/configs/<name>.json`.
+`$QUNIBONE_DIR/configs/<name>.json`. It may also carry a `title`, an
+operator-friendly label that reads more naturally than the file name; the name
+stays the identity used to address and rename the configuration. The title is
+file metadata, so it survives a save whose document names only devices.
 
 The running machine always represents one named configuration, the **current**
-one. It is set to the **default** at startup and updated whenever a
-configuration is applied or the live setup is saved under a name. The machine is
-**modified** when the live device set differs from the saved form of the current
-configuration; this is computed by comparison, not tracked. The default is a
-board setting (in `settings.json`), applied at startup and protected from
-deletion. Configurations capture the device set only — the console bridge and
-other board settings stay separate, so switching configurations never disturbs
-them. A device's `verbosity` (log level) is likewise not part of a snapshot; it
-belongs to the board's logging settings (see [Logging](#logging)).
+one. It is updated whenever a configuration is applied or the live setup is
+saved under a name. The machine is **modified** when the live device set differs
+from the saved form of the current configuration; this is computed by
+comparison, not tracked. Configurations capture the device set only — the
+console bridge and other board settings stay separate, so switching
+configurations never disturbs them. A device's `verbosity` (log level) is
+likewise not part of a snapshot; it belongs to the board's logging settings (see
+[Logging](#logging)).
+
+At **power-on** the configuration is chosen by the board's four DIP switches
+(read as a value 0..15): the one whose `dip_value` matches the switches is
+applied. When no configuration claims that value the bundled empty configuration
+is applied, leaving the machine passive on the bus. The selection runs at
+service startup and again on a power cycle or `dc_on` (see
+[`POST /api/control`](#post-apicontrol)), so changing the switches and cycling
+power switches machines. A configuration binds itself to a value with
+[`PUT /api/configs/<name>/dip`](#put-apiconfigsnamedip); at most one may claim a
+given value.
 
 ### `GET /api/configs`
 
 ```json
-{"current": "rt11", "default": "rt11", "modified": false,
- "configs": [{"name": "rt11", "mtime": "2026-07-16 20:52",
-              "enabled": ["RL11", "rl0"], "default": true}]}
+{"current": "rt11", "modified": false,
+ "configs": [{"name": "rt11", "title": "RT-11 bench", "mtime": "2026-07-16 20:52",
+              "enabled": ["RL11", "rl0"], "dip_value": 3}]}
 ```
+
+Each entry's `title` is the operator label; it falls back to the `name` when the
+configuration stores none. `dip_value` is the DIP setting that selects the
+configuration at power-on, or `-1` when it binds to none.
 
 `modified` is the live dirty state of the current configuration. It is omitted
 (the list still returns `200`) when the busy machine blocks the comparison.
@@ -249,10 +280,12 @@ status query that gives up rather than waiting on the device registry.
 
 ### `GET /api/configs/<name>`
 
-The full snapshot:
+The full snapshot. `title` and `dip_value` are present only when the
+configuration stores them:
 
 ```json
-{"devices": [{"name": "RL11", "enabled": true,
+{"title": "RT-11 bench", "dip_value": 3,
+ "devices": [{"name": "RL11", "enabled": true,
               "params": {"address": "174400", ...}}, ...]}
 ```
 
@@ -301,21 +334,41 @@ dropping any device enabled since the last save.
 {"name": "<new>"}
 ```
 
-Renames the file. If `<name>` is the current or the default, those pointers
-follow. Refused with `409` when the target name already exists or is invalid.
-The live device set is untouched, so a machine modified against `<name>` stays
-modified against the new name. Answers `{"ok": true}`.
+Renames the file. If `<name>` is the current one, that pointer follows; the DIP
+binding travels with the file. Refused with `409` when the target name already
+exists or is invalid. The live device set is untouched, so a machine modified
+against `<name>` stays modified against the new name. Answers `{"ok": true}`.
 
-### `PUT /api/configs/<name>/default`
+### `PUT /api/configs/<name>/title`
 
-Designates `<name>` the startup default, writing `settings.json`. Answers
-`{"ok": true}`; `404` for an unknown configuration.
+```json
+{"value": "<title>"}
+```
+
+Sets the configuration's operator-friendly title, writing the file directly. It
+is metadata only: the current pointer and the running machine are untouched, so
+the machine's `modified` state does not change. An empty value clears the title
+back to the name. A title over 128 characters is refused with `422`. Answers
+`{"ok": true, "title": "<effective title>"}`; `404` for an unknown
+configuration.
+
+### `PUT /api/configs/<name>/dip`
+
+```json
+{"value": 3}
+```
+
+Binds `<name>` to a DIP-switch value (`0`..`15`), so the board loads it at
+power-on when the switches read that value. `null` clears the binding. It is
+file metadata: the current pointer and the running machine are untouched. At
+most one configuration may claim a value — one another configuration already
+holds is refused with `409`; a value outside `0`..`15` with `422`. Answers
+`{"ok": true, "dip_value": <value or -1>}`; `404` for an unknown configuration.
 
 ### `DELETE /api/configs/<name>`
 
 Removes the snapshot. Refused with `409` when `<name>` is the current
-configuration or the default — switch the current away, or designate a
-different default, first.
+configuration — switch the current away first.
 
 ### `PUT /api/configs/<name>/devices/<device>/image`
 
@@ -386,7 +439,7 @@ Text frames, one JSON event each, pushed to every connected client:
 | `{"t":"param","dev":…,"param":…,"value":…}` | committed parameter change (includes enable/disable, image attach, panel lamps) |
 | `{"t":"log","level":n,"label":…,"text":…}` | log message; levels 1 FATAL … 5 DEBUG |
 | `{"t":"state","halt":…,"powered":…,"leds":[…],"switches":[…],"init":…,"dcok":…,"pok":…}` | activity LEDs, DIP switches, HALT, the logical power flag, bus INIT/DCOK/POK — published on change (10 Hz poll); a full snapshot opens every connection. `powered` is the runtime power flag driven by `dc_on`/`dc_off`; the dashboard derives RUN from `!halt && powered` and PWR OK from `powered`. Transitions may arrive as partial `state` frames (e.g. `{"t":"state","powered":false}`), which the client merges onto the last snapshot |
-| `{"t":"config","current":…,"default":…,"modified":…}` | current/default configuration and the live modified flag — published on apply, save, default change, rename, and whenever the modified flag flips (10 Hz poll); a snapshot opens every connection |
+| `{"t":"config","current":…,"modified":…}` | current configuration and the live modified flag — published on apply, save, rename, and whenever the modified flag flips (10 Hz poll); a snapshot opens every connection |
 
 ### `/ws/console/0`, `/ws/console/1`
 

@@ -101,7 +101,7 @@ static void enqueue(const picojson::object &event) {
 // real change
 static std::mutex config_mutex;
 static bool config_known = false;
-static std::string config_current, config_default;
+static std::string config_current;
 static bool config_modified = false;
 
 // caller holds config_mutex
@@ -109,7 +109,6 @@ static std::string config_json_locked(void) {
 	picojson::object event;
 	event["t"] = picojson::value("config");
 	event["current"] = picojson::value(config_current);
-	event["default"] = picojson::value(config_default);
 	event["modified"] = picojson::value(config_modified);
 	return picojson::value(event).serialize();
 }
@@ -118,17 +117,16 @@ static std::string config_json_locked(void) {
 // published (or force), enqueue a config event. A busy machine leaves the
 // modified flag at its last value rather than flapping it.
 static void publish_config(bool force) {
-	std::string current, def;
+	std::string current;
 	bool modified = false, busy = false;
-	webconfigs_status(&current, &def, &modified, &busy);
+	webconfigs_status(&current, &modified, &busy);
 	std::string msg;
 	{
 		std::lock_guard<std::mutex> lock(config_mutex);
 		bool changed = force || !config_known
-				|| current != config_current || def != config_default
+				|| current != config_current
 				|| (!busy && modified != config_modified);
 		config_current = current;
-		config_default = def;
 		if (!busy)
 			config_modified = modified;
 		config_known = true;
@@ -141,6 +139,19 @@ static void publish_config(bool force) {
 
 void webevents_note_config(void) {
 	publish_config(true);
+}
+
+// The DIP switches read as one 0..15 value, SW0 the least significant bit.
+// Read from the pins directly (not the cached poll sample) so a power-on
+// selection sees the switches as they stand now, even before the first poll.
+int webevents_dip_value(void) {
+	if (gpios == nullptr)
+		return -1;
+	int value = 0;
+	for (unsigned i = 0; i < 4; i++)
+		if (gpios->swtch[i] && GPIO_GETVAL(gpios->swtch[i]))
+			value |= 1 << i;
+	return value;
 }
 
 // typed value serialization, same shape as the REST snapshot

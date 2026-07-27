@@ -51,10 +51,9 @@ static const char *platform_name = "UNIBUS";
 static const char *platform_name = "HOST";
 #endif
 
-static std::mutex settings_mutex; // guards ext_console and default_config_name
+static std::mutex settings_mutex; // guards ext_console
 // port is a bare tty name (rs232_c prepends /dev/), matching the SLU convention
 static external_console_c ext_console = { "webserial", "ttyS2", 38400 };
-static std::string default_config_name; // configuration applied at startup
 static std::string settings_path;
 
 static void send_json(struct mg_connection *conn, int status, const picojson::value &val) {
@@ -104,11 +103,6 @@ static void load_settings(void) {
 		return;
 	webauth_load(v.get("admin"));
 	weblogging_load(v.get("log_levels"));
-	{
-		std::lock_guard<std::mutex> lock(settings_mutex);
-		if (v.get("default_config").is<std::string>())
-			default_config_name = v.get("default_config").get<std::string>();
-	}
 	const picojson::value &ec = v.get("external_console");
 	if (!ec.is<picojson::object>())
 		return;
@@ -126,8 +120,6 @@ static void save_settings(void) {
 	{
 		std::lock_guard<std::mutex> lock(settings_mutex);
 		root["external_console"] = external_console_json();
-		if (!default_config_name.empty())
-			root["default_config"] = picojson::value(default_config_name);
 	}
 	picojson::value admin = webauth_json();
 	if (!admin.is<picojson::null>())
@@ -157,21 +149,6 @@ void websettings_save(void) {
 external_console_c websettings_external_console(void) {
 	std::lock_guard<std::mutex> lock(settings_mutex);
 	return ext_console;
-}
-
-std::string websettings_default_config(void) {
-	std::lock_guard<std::mutex> lock(settings_mutex);
-	return default_config_name;
-}
-
-void websettings_set_default_config(const std::string &name) {
-	{
-		std::lock_guard<std::mutex> lock(settings_mutex);
-		if (default_config_name == name)
-			return;
-		default_config_name = name;
-	}
-	save_settings();
 }
 
 static void settings_get(struct mg_connection *conn) {

@@ -35,4 +35,9 @@ void webevents_note_config(void);
 // current (soft) halt state, as last set via the control API
 bool webevents_is_halted(void);
 
+// The board's 4 DIP switches (SW0..SW3) read as one value, 0..15, SW0 the least
+// significant bit. -1 when there is no GPIO hardware (the host build), so a
+// caller can fall back rather than treat "no switches" as switch value 0.
+int webevents_dip_value(void);
+
 #endif // _WEBEVENTS_HPP_

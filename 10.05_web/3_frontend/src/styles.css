@@ -462,6 +462,11 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 .dev-sub .devname { font-family: var(--font-mono); font-weight: 600; }
 .dev-sub .imgpath { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-muted); }
 .dev-sub .spacer { margin-left: auto; }
+.dev-enable {
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
+  font-size: var(--fs-1); color: var(--ink-muted); cursor: pointer;
+}
+.dev-enable input { cursor: pointer; }
 .act-led {
   width: 9px; height: 9px; border-radius: 50%; background: var(--lamp-off); flex: 0 0 auto;
 }
@@ -588,18 +593,27 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
   padding: 12px 14px;
 }
 .cfg-heading { display: flex; flex-direction: column; gap: 2px; }
-.cfg-kicker {
-  font-size: var(--fs-0); text-transform: uppercase; letter-spacing: .07em;
-  color: var(--accent); font-weight: 700;
-}
 .cfg-title { display: flex; align-items: center; gap: 8px; }
 .cfg-title .mono { font-size: var(--fs-3); font-weight: 650; }
+/* the title reads as a heading until focused, then shows its edit affordance */
+.cfg-title-input {
+  font-size: var(--fs-3); font-weight: 650; color: var(--ink);
+  background: transparent; border: 1px solid transparent; border-radius: var(--r-sm);
+  padding: 1px 5px; margin: -1px -5px; min-width: 8ch; max-width: 42ch; width: auto;
+}
+.cfg-title-input:hover { border-color: var(--line-soft); }
+.cfg-title-input:focus { border-color: var(--accent); background: var(--surface); outline: none; }
+.cfg-subid { font-size: var(--fs-0); color: var(--ink-faint); }
+.cfg-item-sub { font-size: var(--fs-0); color: var(--ink-faint); }
 .cfg-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; align-items: center; }
 .cfg-detail-sub {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 8px 14px; border-top: 1px solid var(--line-soft);
 }
 .cfg-detail-sub .spacer { margin-left: auto; }
+.cfg-dip { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-1); }
+.cfg-dip select { font-size: var(--fs-1); }
+.cfg-dip-live { font-size: var(--fs-0); }
 
 .cfg-editor { border-top: 1px solid var(--line-soft); }
 .cfg-editor .dev-sub { border-top: 1px solid var(--line-soft); }

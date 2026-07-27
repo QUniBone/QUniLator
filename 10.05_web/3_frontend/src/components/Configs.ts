@@ -14,7 +14,7 @@
 import { html } from '../html';
 import { useState, useEffect } from 'preact/hooks';
 import { useRoute, useLocation } from 'preact-iso';
-import { esc } from '../lib/util';
+import { esc, octalStr } from '../lib/util';
 import { confirmModal, promptModal, pickDevice } from '../lib/modals';
 import {
   loadConfigs,
@@ -25,14 +25,15 @@ import {
   saveConfigDoc,
   applyConfig,
   renameConfig,
-  setDefaultConfig,
+  setConfigTitle,
+  setConfigDip,
   deleteConfig,
 } from '../api';
 import { flatDevices } from '../lib/devmodel';
 import { serialEndpoint, serialLines } from '../lib/serial';
 import type { SerialLine, SerialRole } from '../lib/serial';
 import { useStore } from '../store';
-import { Toggle, Chip, ImageField, DelButton } from './common';
+import { Chip, ImageField, DelButton } from './common';
 import type { LiveDev, LiveParam, ConfigSnapshot, ConfigSummary } from '../types';
 
 // ---- staged edits of a stored document ----
@@ -68,7 +69,13 @@ interface Row {
   image: string;
   params: LiveParam[]; // settable/display params (image handled separately)
   drives: Row[];
+  addressOptions?: number[];
+  vectorOptions?: number[];
 }
+// A device's bus placement — where it sits in the I/O page and how it
+// interrupts. Editable as a menu of the type's standard values; the backend
+// gates a live change on the CPU being halted.
+const BUS_PLACEMENT = new Set(['base_addr', 'intr_vector', 'intr_level']);
 function liveRow(d: LiveDev): Row {
   return {
     name: d.name,
@@ -79,6 +86,8 @@ function liveRow(d: LiveDev): Row {
     image: d.img,
     params: d.params,
     drives: (d.drives || []).map(liveRow),
+    addressOptions: d.addressOptions,
+    vectorOptions: d.vectorOptions,
   };
 }
 function storedRow(d: LiveDev, st: Staged): Row {
@@ -90,10 +99,14 @@ function storedRow(d: LiveDev, st: Staged): Row {
     enabled: !!st.enabled[d.name],
     takesImage: d.params.some((p) => p.n === 'image'),
     image: 'image' in pv ? pv.image : d.img,
+    // bus-placement fields read back read-only on a live enabled device, but the
+    // configuration still edits them, so they are kept rather than filtered
     params: d.params
-      .filter((p) => !p.ro && p.n !== 'image')
+      .filter((p) => (!p.ro || BUS_PLACEMENT.has(p.n)) && p.n !== 'image')
       .map((p) => ({ ...p, v: p.n in pv ? pv[p.n] : p.v })),
     drives: (d.drives || []).map((c) => storedRow(c, st)),
+    addressOptions: d.addressOptions,
+    vectorOptions: d.vectorOptions,
   };
 }
 
@@ -149,8 +162,31 @@ function SerialPortField({ row, line, onParam }: { row: Row; line: SerialLine; o
   </div>`;
 }
 
+// The standard-value menu for a bus-placement parameter, formatted to match the
+// parameter's own display (octal, padded to its bitwidth). null for any other
+// parameter. The current value is always included, so a value off the standard
+// list (an operator override) stays visible and selected.
+function placementOptions(row: Row, p: LiveParam): string[] | null {
+  let nums: number[] | undefined;
+  if (p.n === 'base_addr') nums = row.addressOptions;
+  else if (p.n === 'intr_vector') nums = row.vectorOptions;
+  else if (p.n === 'intr_level') nums = [4, 5, 6, 7];
+  if (!nums) return null;
+  const strs = nums.map((n) => octalStr(n, p.bw));
+  if (!strs.includes(p.v)) strs.unshift(p.v);
+  return strs;
+}
+
 function paramControl(row: Row, p: LiveParam, onParam: SetParam) {
+  const placement = placementOptions(row, p);
+  if (placement)
+    return html`<select onChange=${(e: Event) =>
+      onParam(row.name, p.n, (e.target as HTMLSelectElement).value)}>
+      ${placement.map((s) => html`<option value=${s} selected=${s === p.v}>${s}</option>`)}</select>`;
   if (p.ro) return html`<span class="ro">${p.v}</span>`;
+  if (p.t === 'bool')
+    return html`<input type="checkbox" checked=${p.v === '1'} onChange=${(e: Event) =>
+      onParam(row.name, p.n, (e.target as HTMLInputElement).checked ? '1' : '0')} />`;
   if (p.t === 'enum')
     return html`<select onChange=${(e: Event) =>
       onParam(row.name, p.n, (e.target as HTMLSelectElement).value)}>
@@ -159,11 +195,50 @@ function paramControl(row: Row, p: LiveParam, onParam: SetParam) {
     onChange=${(e: Event) => onParam(row.name, p.n, (e.target as HTMLInputElement).value)} />`;
 }
 
+// Bus-placement conflicts among the enabled devices: two sharing an I/O-page
+// address, or a non-zero interrupt vector, collide on the bus. Advisory (the
+// backend refuses an overlapping registration authoritatively); this flags it
+// in the editor as it is configured. Returns a reason per conflicting device.
+function computeConflicts(rows: Row[]): Record<string, string> {
+  const pv = (r: Row, n: string) => {
+    const p = r.params.find((q) => q.n === n);
+    return p ? p.v : '';
+  };
+  const bump = (m: Map<string, string[]>, key: string, name: string) => {
+    const a = m.get(key);
+    if (a) a.push(name);
+    else m.set(key, [name]);
+  };
+  const addr = new Map<string, string[]>();
+  const vec = new Map<string, string[]>();
+  rows.forEach((r) => {
+    const a = pv(r, 'base_addr');
+    if (a) bump(addr, a, r.name);
+    const v = pv(r, 'intr_vector');
+    if (v && !/^0+$/.test(v)) bump(vec, v, r.name);
+  });
+  const out: Record<string, string> = {};
+  const flag = (m: Map<string, string[]>, kind: string) => {
+    m.forEach((names) => {
+      if (names.length < 2) return;
+      names.forEach((n) => {
+        const others = names.filter((x) => x !== n).join(', ');
+        const msg = kind + ' shared with ' + others;
+        out[n] = out[n] ? out[n] + '; ' + msg : msg;
+      });
+    });
+  };
+  flag(addr, 'address');
+  flag(vec, 'vector');
+  return out;
+}
+
 function DevRow({
   row,
   cfg,
   device,
   sub,
+  conflict,
   onToggle,
   onParam,
   onImage,
@@ -172,6 +247,7 @@ function DevRow({
   cfg: string;
   device: string;
   sub: boolean; // a controller's drive: keep its own enable toggle
+  conflict?: string;
   onToggle: SetEnabled;
   onParam: SetParam;
   onImage: SetImage;
@@ -194,6 +270,7 @@ function DevRow({
       <span class="dev-label">${row.label}</span>
       <span class="dev-handle mono">${row.name}</span>
       <span class="muted" style="font-size:var(--fs-0)">${row.type}</span>
+      ${conflict ? html`<span class="chip err" title=${conflict}>⚠ conflict</span>` : null}
       ${
         row.takesImage
           ? html`<${ImageField} drive=${row.name} image=${row.image}
@@ -205,8 +282,8 @@ function DevRow({
         // a controller's drive is enabled/disabled in place; a top-level device
         // is instead removed, since the list only carries added devices
         sub
-          ? html`<${Chip} cls=${row.enabled ? 'ok' : 'off'}>${row.enabled ? 'enabled' : 'disabled'}</${Chip}>
-            <${Toggle} checked=${row.enabled} onChange=${(on: boolean) => onToggle(row.name, on)} />`
+          ? html`<label class="dev-enable"><input type="checkbox" checked=${row.enabled}
+              onChange=${(e: Event) => onToggle(row.name, (e.target as HTMLInputElement).checked)} /> enabled</label>`
           : null
       }
       ${
@@ -263,13 +340,66 @@ function DevRow({
   </div>`;
 }
 
+// The configuration's operator-friendly title, edited in place. It commits on
+// blur or Enter and writes through to the file (the running machine is
+// untouched); the technical name stays the identity used to rename and address
+// the configuration.
+function TitleField({ name, title }: { name: string; title: string }) {
+  const [draft, setDraft] = useState(title);
+  useEffect(() => setDraft(title), [title]);
+  const commit = () => {
+    const v = draft.trim();
+    if (v !== title) setConfigTitle(name, v);
+  };
+  return html`<input class="cfg-title-input" type="text" value=${draft}
+    aria-label="configuration title"
+    onInput=${(e: Event) => setDraft((e.target as HTMLInputElement).value)}
+    onChange=${commit} onBlur=${commit}
+    onKeyDown=${(e: KeyboardEvent) => {
+      if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+    }} />`;
+}
+
+// Binds the configuration to a DIP-switch setting: the board loads it at
+// power-on when the four switches read that value. A value another
+// configuration already claims is shown disabled, since at most one may hold it.
+// The live switch reading is shown so the operator can see which configuration
+// the board would bring up now.
+function DipField({ name, dip }: { name: string; dip: number }) {
+  const s = useStore();
+  const liveDip = s.hw.dip.reduce((v, b, i) => v | (b ? 1 << i : 0), 0);
+  const holderOf = (v: number) =>
+    (s.configs || []).find((c) => c.name !== name && (c.dip_value ?? -1) === v);
+  const onPick = (e: Event) => {
+    const v = parseInt((e.target as HTMLSelectElement).value, 10);
+    setConfigDip(name, v < 0 ? null : v);
+  };
+  return html`<label class="cfg-dip">
+    <span class="muted">Power-on DIP</span>
+    <select onChange=${onPick}>
+      <option value="-1" selected=${dip < 0}>none</option>
+      ${Array.from({ length: 16 }, (_, v) => {
+        const h = holderOf(v);
+        return html`<option value=${v} selected=${dip === v} disabled=${!!h}>${
+          v + (h ? ' — ' + (h.title || h.name) : '')
+        }</option>`;
+      })}
+    </select>
+    <span class="cfg-dip-live muted">switches read ${liveDip}${
+      liveDip === dip && dip >= 0 ? ' — this one' : ''
+    }</span>
+  </label>`;
+}
+
 function Detail({ name }: { name: string }) {
   const s = useStore();
   const loc = useLocation();
   const { params } = useRoute();
   const device = params.device ? decodeURIComponent(params.device) : '';
   const isCurrent = name === s.configCurrent;
-  const isDefault = name === s.configDefault;
+  const summary = (s.configs || []).find((c) => c.name === name);
+  const title = summary?.title || name;
+  const dip = summary?.dip_value ?? -1;
 
   const [staged, setStaged] = useState<Staged | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -319,11 +449,31 @@ function Detail({ name }: { name: string }) {
     ? s.devmodel.map((d) => storedRow(d, staged))
     : [];
   // the list carries only the devices this configuration has added; the rest are
-  // offered by the Add CTA
+  // offered by the Add CTA. The registry pre-instantiates several controllers of
+  // some types (four DZV11s, two DL11s) at fixed addresses; the picker offers
+  // each type once and adds the next free instance, its address then set from the
+  // parameter dropdown.
   const visible = roots.filter((r) => r.enabled);
-  const available = roots
-    .filter((r) => !r.enabled)
-    .map((r) => ({ name: r.name, label: r.label, type: r.type }));
+  const available = (() => {
+    const byType = new Map<string, { name: string; label: string; type: string; count: number }>();
+    roots
+      .filter((r) => !r.enabled)
+      .forEach((r) => {
+        const g = byType.get(r.type);
+        if (g) {
+          g.count++;
+          return;
+        }
+        // drop the "@<addr>" that only disambiguates instances of one type
+        byType.set(r.type, { name: r.name, label: r.label.replace(/\s*@\d+/, ''), type: r.type, count: 1 });
+      });
+    return Array.from(byType.values()).map((g) => ({
+      name: g.name,
+      label: g.count > 1 ? g.label + ' · ' + g.count + ' available' : g.label,
+      type: g.type,
+    }));
+  })();
+  const conflicts = computeConflicts(visible);
   const doAdd = async () => {
     const pick = await pickDevice('Add a device', available);
     if (pick) (isCurrent ? liveToggle : stagedToggle)(pick, true);
@@ -374,12 +524,13 @@ function Detail({ name }: { name: string }) {
   return html`<div class="cfg-detail"><div class="card">
     <div class="cfg-detail-head">
       <div class="cfg-heading">
-        <div class="cfg-kicker">${isCurrent ? 'Current · live' : 'Stored'}</div>
         <div class="cfg-title">
-          <span class="mono">${name}</span>
+          <${TitleField} name=${name} title=${title} key=${name} />
+          ${isCurrent ? html`<${Chip} cls="ok">current</${Chip}>` : null}
           ${isCurrent && s.configModified ? html`<${Chip} cls="warn">modified</${Chip}>` : null}
-          ${isDefault ? html`<${Chip} cls="out">default</${Chip}>` : null}
+          ${dip >= 0 ? html`<${Chip} cls="out">DIP ${dip}</${Chip}>` : null}
         </div>
+        <div class="cfg-subid mono">${name}</div>
       </div>
       <div class="cfg-actions">
         ${
@@ -390,17 +541,12 @@ function Detail({ name }: { name: string }) {
             : html`<button class="btn small primary" disabled=${!dirty} onClick=${doSaveStored}>Save</button>
               <button class="btn small" onClick=${doLoad}>Load</button>`
         }
-        ${isDefault ? null : html`<button class="btn small" onClick=${() => setDefaultConfig(name)}>Set default</button>`}
         <button class="btn small" onClick=${doRename}>Rename…</button>
         <${DelButton} label="Delete" confirmLabel="Confirm delete" onConfirm=${doDelete} />
       </div>
     </div>
     <div class="cfg-detail-sub">
-      <span class="muted" style="font-size:var(--fs-1)">${
-        isCurrent
-          ? 'Edits act on the running machine immediately, so this configuration goes modified.'
-          : 'Edits are staged here and reach nothing until you Save.'
-      }</span>
+      <${DipField} name=${name} dip=${dip} />
       <span class="spacer"></span>
       <button class="btn small primary" onClick=${doAdd}>+ Add device</button>
     </div>
@@ -409,6 +555,7 @@ function Detail({ name }: { name: string }) {
         visible.length
           ? visible.map(
               (r) => html`<${DevRow} row=${r} cfg=${name} device=${device} sub=${false}
+                conflict=${conflicts[r.name]}
                 onToggle=${isCurrent ? liveToggle : stagedToggle}
                 onParam=${isCurrent ? liveParam : stagedParam}
                 onImage=${isCurrent ? liveImage : stagedImage} key=${r.name} />`
@@ -425,17 +572,20 @@ function MasterRow({ c }: { c: ConfigSummary }) {
   const { params } = useRoute();
   const selected = params.name ? decodeURIComponent(params.name) : '';
   const isCurrent = c.name === s.configCurrent;
-  const isDefault = c.name === s.configDefault;
+  const dip = c.dip_value ?? -1;
   return html`<button class=${'cfg-item' + (c.name === selected ? ' active' : '')}
     onClick=${() => loc.route('/config/' + encodeURIComponent(c.name))}>
     <span class="cfg-item-top">
-      <span class="cfg-item-name mono">${c.name}</span>
+      <span class="cfg-item-name">${c.title || c.name}</span>
       <span class="cfg-item-marks">
         ${isCurrent ? html`<${Chip} cls="ok">current</${Chip}>` : null}
         ${isCurrent && s.configModified ? html`<${Chip} cls="warn">modified</${Chip}>` : null}
-        ${isDefault ? html`<${Chip} cls="out">default</${Chip}>` : null}
+        ${dip >= 0 ? html`<${Chip} cls="out">DIP ${dip}</${Chip}>` : null}
       </span>
     </span>
+    ${c.title && c.title !== c.name
+      ? html`<span class="cfg-item-sub mono">${c.name}</span>`
+      : null}
     <span class="cfg-item-devs muted mono">${(c.enabled || []).join(' · ') || 'all devices off'}</span>
   </button>`;
 }

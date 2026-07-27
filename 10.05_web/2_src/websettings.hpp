@@ -26,12 +26,4 @@ struct external_console_c {
 };
 external_console_c websettings_external_console(void);
 
-// the configuration applied at startup. A board setting, held here rather than
-// in the configuration itself, so the default survives switching between
-// configurations. Empty when none has been designated yet.
-std::string websettings_default_config(void);
-
-// designate the startup configuration and persist settings.json
-void websettings_set_default_config(const std::string &name);
-
 #endif // _WEBSETTINGS_HPP_

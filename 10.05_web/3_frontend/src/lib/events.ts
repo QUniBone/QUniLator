@@ -51,10 +51,9 @@ export function initEvents(): void {
       if (ev.switches) ev.switches.forEach((v: boolean, i: number) => (hw.dip[i] = v));
       emit();
     } else if (ev.t === 'config') {
-      // keep the configuration master list's current/default marks and the
-      // modified badge live between full reloads
+      // keep the configuration master list's current mark and the modified
+      // badge live between full reloads
       if ('current' in ev) store.configCurrent = ev.current || '';
-      if ('default' in ev) store.configDefault = ev.default || '';
       if ('modified' in ev) store.configModified = ev.modified;
       emit();
     }

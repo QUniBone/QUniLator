@@ -94,9 +94,10 @@ export async function refreshImages(): Promise<void> {
 }
 
 // ---- configurations ----
-// GET /api/configs → {current, default, modified, configs[]}. The current /
-// default pointers and the live modified flag come straight from the backend;
-// the /ws/events "config" event keeps them fresh between loads.
+// GET /api/configs → {current, modified, configs[]}. The current pointer and
+// the live modified flag come straight from the backend; the /ws/events
+// "config" event keeps them fresh between loads. Each summary carries its
+// dip_value, the DIP setting that selects it at power-on.
 export async function loadConfigs(): Promise<void> {
   const r = await fetch('/api/configs');
   if (!r.ok) throw new Error('configs fetch failed');
@@ -105,7 +106,6 @@ export async function loadConfigs(): Promise<void> {
   setStore({
     configs,
     configCurrent: body.current || '',
-    configDefault: body.default || '',
     configModified: 'modified' in body ? body.modified : null,
   });
 }
@@ -183,11 +183,39 @@ export async function renameConfig(name: string, newName: string): Promise<boole
   return res.ok;
 }
 
-export async function setDefaultConfig(name: string): Promise<boolean> {
-  const res = await apiJSON<{ error?: string }>('/api/configs/' + encodeURIComponent(name) + '/default', {
-    method: 'PUT',
-  });
-  toast('PUT /api/configs/' + name + '/default', res.ok ? 'set as startup default' : res.data.error || 'rejected');
+// Set a configuration's operator-friendly title (file metadata only; the
+// running machine and the current pointer are untouched). An empty value
+// clears it back to the name.
+export async function setConfigTitle(name: string, title: string): Promise<boolean> {
+  const res = await apiJSON<{ error?: string }>(
+    '/api/configs/' + encodeURIComponent(name) + '/title',
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: title }),
+    }
+  );
+  toast('PUT /api/configs/' + name + '/title', res.ok ? 'title set' : res.data.error || 'rejected');
+  await loadConfigs().catch(() => {});
+  return res.ok;
+}
+
+// Bind a configuration to a DIP-switch value (0..15), so the board loads it at
+// power-on when the switches read that value; null clears the binding. At most
+// one configuration may hold a value (the backend refuses a taken one with 409).
+export async function setConfigDip(name: string, dip: number | null): Promise<boolean> {
+  const res = await apiJSON<{ error?: string }>(
+    '/api/configs/' + encodeURIComponent(name) + '/dip',
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: dip }),
+    }
+  );
+  toast(
+    'PUT /api/configs/' + name + '/dip',
+    res.ok ? (dip == null ? 'DIP binding cleared' : 'selected by DIP ' + dip) : res.data.error || 'rejected'
+  );
   await loadConfigs().catch(() => {});
   return res.ok;
 }
