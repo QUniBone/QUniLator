@@ -89,6 +89,12 @@ public:
 	// 1 = original speed, > 1: mechanics is this factor faster
 	// < 1: emulation is slower than original
 
+	// Held true on every device for the span of a configuration apply, so a timed
+	// device skips its modeled mechanics (a disk drive's spin-up/-down delay) and
+	// the new configuration settles at once instead of over physical delays. The
+	// normal simulation is restored when the apply clears it.
+	volatile bool config_apply_immediate = false;
+
 	parameter_unsigned_c verbosity = parameter_unsigned_c(NULL, "verbosity", "v", false, "",
 			"%d", "1 = fatal, 2 = error, 3 = warning, 4 = info, 5 = debug", 8, 10);
 

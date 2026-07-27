@@ -303,7 +303,7 @@ void RL0102_c::state_spin_up()
         return;
     }
 
-    if (!spinup_delay.value) {          // ready at once: skip the modeled spin-up
+    if (!spinup_delay.value || config_apply_immediate) { // skip the modeled spin-up
         rotation_umin.value = full_rpm;
         cylinder = 0;
         image_params_readonly(true);
@@ -460,6 +460,12 @@ void RL0102_c::state_spin_down()
     update_status_word(/*drive_ready_line*/false, drive_error_line);
 
     INFO("Spin down drive speed = %d", rotation_umin.value);
+
+    if (config_apply_immediate) {       // a configuration apply skips the spin-down delay
+        rotation_umin.value = 0;
+        change_state(RL0102_STATE_load_cartridge);
+        return;
+    }
 
     if (rotation_umin.value <= rpm_increment) {
         rotation_umin.value = 0;
