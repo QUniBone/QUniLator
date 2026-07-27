@@ -348,15 +348,15 @@ function Detail({ name }: { name: string }) {
   const doSaveStored = async () => {
     if (staged && (await saveConfigDoc(name, serialize(staged)))) setDirty(false);
   };
-  const doApply = async () => {
+  const doLoad = async () => {
     if (
       !s.bus.halted &&
       !(await confirmModal(
-        'Apply while the PDP-11 is running?',
-        'The CPU is running. Applying <b>' +
+        'Load while the PDP-11 is running?',
+        'The CPU is running. Loading <b>' +
           esc(name) +
           '</b> reconfigures every device — the running system will not survive it.',
-        'Apply anyway'
+        'Load anyway'
       ))
     )
       return;
@@ -388,7 +388,7 @@ function Detail({ name }: { name: string }) {
               <button class="btn small" onClick=${doSaveAs}>Save As…</button>
               <button class="btn small" onClick=${doRevert}>Revert</button>`
             : html`<button class="btn small primary" disabled=${!dirty} onClick=${doSaveStored}>Save</button>
-              <button class="btn small" onClick=${doApply}>Apply</button>`
+              <button class="btn small" onClick=${doLoad}>Load</button>`
         }
         ${isDefault ? null : html`<button class="btn small" onClick=${() => setDefaultConfig(name)}>Set default</button>`}
         <button class="btn small" onClick=${doRename}>Rename…</button>
