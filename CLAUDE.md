@@ -36,6 +36,12 @@ Useful endpoints, all under `http://qbone/api`:
 | `GET /configs`, `POST /configs/<name>/apply` | saved device snapshots |
 | `GET /images`, `POST /images` | disk images |
 
+**Begin every test run with a power cycle.** `POST /control {"action":"powercycle"}`
+re-applies the selected config's DIP binding, re-jumpers the devices, and drops
+the CPU at a clean boot ROM entry — so a fresh boot dialog is available. Do not
+try to resume a machine you have left `halt`ed or that has fallen into the boot
+ROM's ODT (`@`) prompt; power cycle and drive the boot from the top instead.
+
 ## The console
 
 **The 11/73 has an on-board console SLU, wired to the bone's `/dev/ttyS2`.**
