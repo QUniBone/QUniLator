@@ -2,6 +2,7 @@ import { html } from '../html';
 import { useEffect } from 'preact/hooks';
 import { useStore } from '../store';
 import { putSettings, refreshSettings } from '../api';
+import { serialConnect, serialDisconnect, serialConnected } from '../lib/terminals';
 
 export function MachinePage() {
   const s = useStore();
@@ -29,7 +30,7 @@ export function MachinePage() {
       </div></div></div>
     <div class="card" style="max-width:560px"><div class="card-head"><h3>External console</h3></div>
       <div class="card-body">
-        <p class="muted" style="margin:0 0 12px; font-size:var(--fs-1)">Where the real machine's console line is read. Shown as the <span class="mono">Console</span> tab on the dashboard.</p>
+        <p class="muted" style="margin:0 0 12px; font-size:var(--fs-1)">Where the real machine's console line is read; the dashboard shows that line.</p>
         <div class="set-grid">
           <div class="set-name">Source</div>
           <div class="set-val">
@@ -56,7 +57,19 @@ export function MachinePage() {
             ${['300', '1200', '2400', '4800', '9600', '19200', '38400'].map(
               (b) => html`<option value=${b}>${b}</option>`
             )}</select></div>
-          <div class="set-info">Line speed for the ttyS2 source. The dashboard's console tab carries the same selector.</div>
+          <div class="set-info">Line speed of the console line.</div>
+          ${
+            ec.source === 'webserial'
+              ? html`<div class="set-name">Connection</div>
+                <div class="set-val"><button class="btn small" onClick=${() => {
+                  if (!('serial' in navigator)) return;
+                  serialConnected()
+                    ? serialDisconnect()
+                    : serialConnect(parseInt(String(ec.baud || 38400), 10));
+                }}>${serialConnected() ? 'Disconnect' : 'Connect'}</button></div>
+                <div class="set-info">Web Serial needs a one-time grant to reach the browser machine's USB serial port.</div>`
+              : null
+          }
         </div></div></div>
   </section>`;
 }

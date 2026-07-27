@@ -4,7 +4,7 @@ import { Router, useLocation } from 'preact-iso';
 import { useStore } from '../store';
 import type { HwState, Settings } from '../types';
 import { Led } from './common';
-import { Dashboard, ConsolePage } from './Dashboard';
+import { Dashboard } from './Dashboard';
 import { StoragePage } from './Storage';
 import { ConfigsPage } from './Configs';
 import { MachinePage } from './Machine';
@@ -16,7 +16,6 @@ const NAV: [string, string][] = [
   ['/dashboard', 'Dashboard'],
   ['/storage', 'Storage'],
   ['/config', 'Configurations'],
-  ['/console', 'Console'],
   ['/machine', 'Machine'],
   ['/diagnostics', 'Diagnostics'],
 ];
@@ -82,7 +81,6 @@ export function App() {
           <${Dashboard} path="/dashboard" />
           <${StoragePage} path="/storage" />
           <${ConfigsPage} path="/config/:name?/:device?" />
-          <${ConsolePage} path="/console/:channel?" />
           <${MachinePage} path="/machine" />
           <${LogPage} path="/diagnostics" />
           <${Redirect} default to="/dashboard" />
