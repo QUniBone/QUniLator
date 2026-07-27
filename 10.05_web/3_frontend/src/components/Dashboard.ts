@@ -11,17 +11,17 @@ import { Widgets } from './widgets';
 // click; `two` reflects and sets a position.
 function PanelSwitch({
   kind,
-  top,
-  bottom,
+  label,
   pos,
+  posLabels,
   disabled,
   onFire,
   onToggle,
 }: {
   kind: 'momentary' | 'two';
-  top?: string;
-  bottom: string;
+  label: string;
   pos?: 'top' | 'bottom';
+  posLabels?: [string, string];
   disabled?: boolean;
   onFire?: () => void;
   onToggle?: () => void;
@@ -32,13 +32,16 @@ function PanelSwitch({
     else onToggle?.();
   };
   return html`<div class=${'cp-ctrl cp-sw ' + kind + (disabled ? ' off' : '')} data-pos=${pos || 'mid'}>
-    <span class=${'cp-leg' + (top ? '' : ' ph')}>${top || ''}</span>
     <span class="cp-el"><button class="cp-toggle" type="button" disabled=${!!disabled}
       role=${kind === 'two' ? 'switch' : undefined}
       aria-checked=${kind === 'two' ? pos === 'top' : undefined}
-      aria-label=${top ? top + ' / ' + bottom : bottom}
-      onClick=${click}><span class="cp-bat"></span></button></span>
-    <span class="cp-leg">${bottom}</span>
+      aria-label=${posLabels ? label + ' ' + posLabels[0] + '/' + posLabels[1] : label}
+      onClick=${click}><span class="cp-bat"></span></button>${
+      posLabels
+        ? html`<span class="cp-pos"><span>${posLabels[0]}</span><span>${posLabels[1]}</span></span>`
+        : null
+    }</span>
+    <span class="cp-leg">${label}</span>
   </div>`;
 }
 
@@ -46,7 +49,6 @@ function PanelSwitch({
 // rhythm as a switch so their legends share a baseline across the row.
 function PanelLamp({ on, label }: { on: boolean; label: string }) {
   return html`<div class="cp-ctrl cp-lamp">
-    <span class="cp-leg ph"></span>
     <span class="cp-el">${html`<${Led} on=${on} title=${label} />`}</span>
     <span class="cp-leg">${label}</span>
   </div>`;
@@ -93,10 +95,10 @@ function ControlPanel() {
         ${html`<${PanelLamp} on=${run} label="RUN" />`}
       </div>
       <div class="cp-switches">
-        ${html`<${PanelSwitch} kind="momentary" bottom="RESTART" disabled=${!powered} onFire=${restart} />`}
-        ${html`<${PanelSwitch} kind="two" top="ENABLE" bottom="HALT"
+        ${html`<${PanelSwitch} kind="momentary" label="RESTART" disabled=${!powered} onFire=${restart} />`}
+        ${html`<${PanelSwitch} kind="two" label="HALT"
           pos=${halted ? 'bottom' : 'top'} disabled=${!powered} onToggle=${setHalt} />`}
-        ${html`<${PanelSwitch} kind="two" top="AUX ON" bottom="OFF"
+        ${html`<${PanelSwitch} kind="two" label="AUX" posLabels=${['ON', 'OFF']}
           pos=${powered ? 'top' : 'bottom'} onToggle=${setPower} />`}
       </div>
     </div>

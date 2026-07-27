@@ -338,30 +338,41 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
    indicator lamps grouped on the left, three bat-handle switches grouped on the
    right. Switches are drawn flat (2D). */
 .cp-body {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
-  padding: 6px 14px 16px;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  padding: 6px 30px 16px 12px; /* extra right room for AUX's ON/OFF marker */
 }
 .cp-lamps, .cp-switches { display: flex; align-items: flex-start; }
-.cp-lamps { gap: 26px; }
-.cp-switches { gap: 18px; }
+.cp-lamps { gap: 16px; }
+.cp-switches { gap: 10px; }
 /* every lamp and switch shares one three-row rhythm — an upper position legend,
    the element in a fixed band, and the lower legend — so the elements sit on one
    line and every legend beneath them aligns on a common baseline */
 .cp-ctrl {
-  display: grid; grid-template-rows: 15px 42px auto; row-gap: 7px;
+  display: grid; grid-template-rows: 42px auto; row-gap: 7px;
   justify-items: center; align-items: center;
 }
-.cp-el { display: flex; align-items: center; justify-content: center; height: 42px; }
+.cp-el { position: relative; display: flex; align-items: center; justify-content: center; height: 42px; }
 .cp-leg {
   font-family: var(--font-mono); font-size: var(--fs-0); font-weight: 700;
   letter-spacing: .04em; text-align: center; white-space: nowrap; color: var(--sw-legend);
 }
-.cp-ctrl .cp-leg.ph { visibility: hidden; }
+/* AUX carries an ON/OFF position marker (on over off) beside its paddle, like
+   the real console; every other control's legend sits alone under the row */
+.cp-pos {
+  position: absolute; left: calc(100% + 6px); top: 0; height: 100%;
+  display: flex; flex-direction: column; justify-content: space-between;
+  padding: 2px 0; font-family: var(--font-mono); font-size: var(--fs-0); font-weight: 700;
+  letter-spacing: .04em; color: var(--sw-legend);
+}
 .cp-toggle {
-  width: 26px; height: 42px; border-radius: 4px; padding: 3px;
+  width: 34px; height: 42px; border-radius: 4px; padding: 3px;
   border: 1px solid var(--sw-slot-lo); position: relative; cursor: pointer;
   background: var(--sw-slot); display: block;
 }
+/* control-panel lamps sit behind a dark mask, so the lens is invisible until it
+   is lit and glows through — like the recessed lamps on the real console */
+.cp-lamp .cp-el { width: 28px; height: 26px; border-radius: 5px; background: var(--bezel); }
+.cp-lamp .led:not(.on) { background: var(--bezel); box-shadow: none; }
 .cp-bat {
   position: absolute; left: 3px; right: 3px; height: 17px;
   border-radius: 3px; background: var(--sw-bat);
@@ -389,13 +400,15 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 }
 .fp-cells {
   display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; justify-content: center;
-  padding: 4px 10px; border-radius: var(--r-sm); background: var(--surface-2);
+  padding: 8px 12px; border-radius: var(--r-sm);
+  /* a stronger, darker panel so the lamps and switches read against it */
+  background: var(--bezel); border: 1px solid var(--bezel-2);
 }
 .fp-cell { display: flex; flex-direction: column; align-items: center; gap: 5px; }
-.fp-n { font-family: var(--font-mono); font-size: var(--fs-0); color: var(--ink-faint); }
+.fp-n { font-family: var(--font-mono); font-size: var(--fs-0); color: rgba(220, 226, 232, .55); }
 .dip {
   width: 16px; height: 30px; border-radius: 3px;
-  background: var(--bezel); position: relative; border: 1px solid var(--bezel-2);
+  background: var(--sw-slot-lo); position: relative; border: 1px solid #3a414b;
 }
 .dip::after {
   content: ""; position: absolute; left: 3px; right: 3px; height: 11px;
