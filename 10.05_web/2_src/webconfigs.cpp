@@ -345,18 +345,19 @@ static bool read_config_devices(const std::string &name, picojson::value *out) {
 			&& out->get("devices").is<picojson::array>();
 }
 
-// Carry file-level metadata (the operator title and the DIP selection value)
-// forward across a save whose document describes only devices. A document that
-// names a field keeps its own; otherwise the field already stored under <name>
-// is preserved, so saving the live setup drops neither the title nor the DIP
-// binding the operator gave the configuration.
+// Carry file-level metadata (the operator title, the DIP selection value and the
+// dashboard layout) forward across a save whose document describes only devices.
+// A document that names a field keeps its own; otherwise the field already stored
+// under <name> is preserved, so saving the live setup drops none of the metadata
+// the operator gave the configuration.
 static void preserve_metadata(const std::string &name, picojson::value *doc) {
 	if (!doc->is<picojson::object>())
 		return;
 	picojson::object &o = doc->get<picojson::object>();
 	bool want_title = o.find("title") == o.end();
 	bool want_dip = o.find("dip_value") == o.end();
-	if (!want_title && !want_dip)
+	bool want_layout = o.find("layout") == o.end();
+	if (!want_title && !want_dip && !want_layout)
 		return;
 	picojson::value existing;
 	std::string err;
@@ -366,6 +367,8 @@ static void preserve_metadata(const std::string &name, picojson::value *doc) {
 		o["title"] = existing.get("title");
 	if (want_dip && existing.get("dip_value").is<double>())
 		o["dip_value"] = existing.get("dip_value");
+	if (want_layout && existing.get("layout").is<picojson::object>())
+		o["layout"] = existing.get("layout");
 }
 
 // The DIP value a configuration binds itself to, or -1 when it names none.
@@ -990,6 +993,46 @@ static void config_set_dip(struct mg_connection *conn, const std::string &name) 
 	send_json(conn, 200, picojson::value(res));
 }
 
+// PUT /api/configs/<name>/layout  {"value": { <widget-key>: {x,y,hidden}, … }}
+//
+// The dashboard arrangement is file metadata, stored per configuration so
+// switching machines switches layout. It is opaque here — the dashboard owns
+// its shape; this only persists it, without disturbing the current pointer or
+// the running machine. A null (or non-object) value clears the layout.
+static void config_set_layout(struct mg_connection *conn, const std::string &name) {
+	picojson::value req;
+	if (!read_json_body_full(conn, &req)) {
+		send_error(conn, 400, "body must be a JSON object with a \"value\"");
+		return;
+	}
+	const picojson::value &v = req.get("value");
+	picojson::value content;
+	std::string err;
+	if (!read_config(name, &content, &err)) {
+		send_error(conn, 404, err);
+		return;
+	}
+	if (!content.is<picojson::object>()) {
+		send_error(conn, 422, "configuration \"" + name + "\" is not a JSON object");
+		return;
+	}
+	picojson::object &root = content.get<picojson::object>();
+	if (v.is<picojson::object>())
+		root["layout"] = v;
+	else
+		root.erase("layout");
+	std::string werr;
+	if (!write_config_file(name, content.serialize(), &werr)) {
+		send_error(conn, 500, werr);
+		return;
+	}
+	WEB_INFO("configuration \"%s\" dashboard layout updated", name.c_str());
+	webevents_note_config();
+	picojson::object res;
+	res["ok"] = picojson::value(true);
+	send_json(conn, 200, picojson::value(res));
+}
+
 // POST /api/configs/<name>/apply — restore a snapshot. Devices are stored
 // in registry order (controllers before their drives), so applying in
 // order enables controllers first. Rejections are collected, not fatal.
@@ -1325,7 +1368,7 @@ static int api_configs_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	}
 
 	std::string name = rest.substr(1);
-	std::string action; // "apply", "rename", "title", "dip", or empty for the config itself
+	std::string action; // "apply", "rename", "title", "dip", "layout", or empty for the config itself
 	// /<name>/devices/<device>/image
 	std::string image_device;
 	size_t devsep = name.find("/devices/");
@@ -1346,7 +1389,7 @@ static int api_configs_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		if (sep != std::string::npos) {
 			std::string tail = name.substr(sep + 1);
 			if (tail == "apply" || tail == "rename" || tail == "title"
-					|| tail == "dip") {
+					|| tail == "dip" || tail == "layout") {
 				action = tail;
 				name = name.substr(0, sep);
 			}
@@ -1384,6 +1427,8 @@ static int api_configs_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		config_set_title(conn, name);
 	} else if (action == "dip" && method == "PUT") {
 		config_set_dip(conn, name);
+	} else if (action == "layout" && method == "PUT") {
+		config_set_layout(conn, name);
 	} else if (action.empty() && method == "PUT") {
 		const char *query = ri->query_string;
 		bool from_live = query != nullptr && strstr(query, "from=live") != nullptr;

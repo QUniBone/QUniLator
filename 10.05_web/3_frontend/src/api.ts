@@ -239,6 +239,21 @@ export async function setConfigTitle(name: string, title: string): Promise<boole
 // Bind a configuration to a DIP-switch value (0..15), so the board loads it at
 // power-on when the switches read that value; null clears the binding. At most
 // one configuration may hold a value (the backend refuses a taken one with 409).
+// Store the dashboard layout for a configuration (per-config metadata; the
+// running machine is untouched). Pass null to clear it.
+export async function setConfigLayout(name: string, layout: unknown): Promise<boolean> {
+  const res = await apiJSON<{ error?: string }>(
+    '/api/configs/' + encodeURIComponent(name) + '/layout',
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: layout }),
+    }
+  );
+  if (!res.ok) toast('PUT /api/configs/' + name + '/layout', res.data.error || 'rejected');
+  return res.ok;
+}
+
 export async function setConfigDip(name: string, dip: number | null): Promise<boolean> {
   const res = await apiJSON<{ error?: string }>(
     '/api/configs/' + encodeURIComponent(name) + '/dip',

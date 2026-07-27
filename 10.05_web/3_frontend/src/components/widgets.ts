@@ -236,8 +236,27 @@ const WIDGET_CATEGORIES: Record<string, Widget> = {
   network: NetworkWidget,
   tape: TapeWidget,
 };
-function widgetFor(d: LiveDev): Widget | null {
+export function widgetFor(d: LiveDev): Widget | null {
   return WIDGET_MODELS[d.type] || WIDGET_CATEGORIES[d.category || 'other'] || null;
+}
+
+// A device widget's natural size in dashboard grid cells (width × height). The
+// dashboard places each widget as a block of this size; tuned to fit the widget
+// content at the grid cell size.
+export function widgetCells(d: LiveDev): { w: number; h: number } {
+  if (d.type === 'VCB01') return { w: 12, h: 10 };
+  if (d.type === 'RA81') return { w: 9, h: 6 };
+  const cat = d.category || 'other';
+  if (cat === 'disk') return d.type.startsWith('RL') ? { w: 6, h: 6 } : { w: 9, h: 6 };
+  if (cat === 'network') return { w: 6, h: 4 };
+  if (cat === 'tape') return { w: 7, h: 5 };
+  return { w: 6, h: 5 };
+}
+
+// Render one device widget (used by the dashboard grid to place it as a card).
+export function DeviceWidget({ d }: { d: LiveDev }) {
+  const W = widgetFor(d);
+  return W ? html`<${W} d=${d} />` : null;
 }
 
 export function Widgets() {

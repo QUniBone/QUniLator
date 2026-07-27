@@ -1,11 +1,16 @@
 import { html } from '../html';
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import { useStore, store, emit } from '../store';
-import { liveControl, loadConfigs } from '../api';
+import { liveControl, loadConfigs, fetchConfigSnapshot, setConfigLayout } from '../api';
 import { initLiveTerminal, teardownTerminals } from '../lib/terminals';
+import { enabledDevices } from '../lib/devmodel';
+import { placeItems, gridRows, fits, occupancyExcept } from '../lib/dashlayout';
+import type { GridItem } from '../lib/dashlayout';
+import { toast } from '../lib/toast';
 import { Led, Chip } from './common';
-import { Widgets } from './widgets';
+import { widgetFor, widgetCells, DeviceWidget } from './widgets';
+import type { LiveDev, DashLayout } from '../types';
 
 // The running configuration's name and title, with a cog that jumps straight to
 // its configuration screen.
@@ -157,6 +162,200 @@ function ConsoleCard() {
   </div>`;
 }
 
+// ---- the arrangeable grid ----
+const CELL = 44; // px per grid square
+const GAP = 6;
+// the fixed cards and their natural size in grid cells
+const FIXED = [
+  { key: 'controlpanel', w: 12, h: 4 },
+  { key: 'frontpanel', w: 7, h: 4 },
+  { key: 'console', w: 15, h: 11 },
+];
+
+function renderCard(key: string, devByName: Record<string, LiveDev>) {
+  if (key === 'controlpanel') return html`<${ControlPanel} />`;
+  if (key === 'frontpanel') return html`<${FrontPanel} />`;
+  if (key === 'console') return html`<${ConsoleCard} />`;
+  const d = devByName[key];
+  return d ? html`<${DeviceWidget} d=${d} />` : null;
+}
+
+// The dashboard as a grid of square cells. Every card — the panels, the console
+// and each device widget — is a block of whole cells placed on free space.
+// An edit mode lets the operator drag cards and hide them (eye), then Save/Revert
+// the arrangement, which is stored per configuration.
+function DashGrid() {
+  const s = useStore();
+  const cfg = s.configCurrent;
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const [cols, setCols] = useState(12);
+  const [edit, setEdit] = useState(false);
+  const [layout, setLayout] = useState<DashLayout>({});
+  const [dirty, setDirty] = useState(false);
+  const drag = useRef<{ key: string; dx: number; dy: number } | null>(null);
+  const [preview, setPreview] = useState<{ key: string; x: number; y: number; ok: boolean } | null>(null);
+
+  // load the stored layout for the running configuration
+  useEffect(() => {
+    let live = true;
+    if (cfg)
+      fetchConfigSnapshot(cfg).then((doc) => {
+        if (live) {
+          setLayout((doc?.layout as DashLayout) || {});
+          setDirty(false);
+        }
+      });
+    else setLayout({});
+    return () => {
+      live = false;
+    };
+  }, [cfg]);
+
+  // columns follow the container width; the cell size is fixed
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const measure = () => setCols(Math.max(6, Math.floor((el.clientWidth + GAP) / (CELL + GAP))));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const devs = enabledDevices().filter((d) => widgetFor(d));
+  const devByName: Record<string, LiveDev> = {};
+  devs.forEach((d) => (devByName[d.name] = d));
+  const isHidden = (key: string) => !!layout[key]?.hidden;
+
+  // fixed cards + device widgets; widths clamped so a card never exceeds the grid
+  const allItems: GridItem[] = [
+    ...FIXED.map((f) => ({ key: f.key, w: Math.min(f.w, cols), h: f.h })),
+    ...devs.map((d) => {
+      const c = widgetCells(d);
+      return { key: d.name, w: Math.min(c.w, cols), h: c.h };
+    }),
+  ];
+  const items = allItems.filter((it) => edit || !isHidden(it.key));
+  const placed = placeItems(items, layout, cols);
+  const rows = gridRows(placed);
+
+  const patch = (key: string, p: Partial<DashLayout[string]>) => {
+    setLayout((L) => {
+      const cur = L[key] || { x: 0, y: 0 };
+      return { ...L, [key]: { ...cur, ...p } };
+    });
+    setDirty(true);
+  };
+
+  // The drag reads the current placement/columns and the live preview through
+  // refs so the window-level move/up listeners (attached once) always see fresh
+  // values without being re-bound every render.
+  const placedRef = useRef(placed);
+  placedRef.current = placed;
+  const colsRef = useRef(cols);
+  colsRef.current = cols;
+  const previewRef = useRef(preview);
+  previewRef.current = preview;
+
+  useEffect(() => {
+    const move = (e: MouseEvent) => {
+      const d = drag.current;
+      const el = gridRef.current;
+      if (!d || !el) return;
+      const it = placedRef.current.find((q) => q.key === d.key);
+      if (!it) return;
+      const r = el.getBoundingClientRect();
+      let x = Math.round((e.clientX - r.left - d.dx) / (CELL + GAP));
+      let y = Math.round((e.clientY - r.top - d.dy) / (CELL + GAP));
+      x = Math.max(0, Math.min(x, colsRef.current - it.w));
+      y = Math.max(0, y);
+      const ok = fits(occupancyExcept(placedRef.current, d.key), x, y, it.w, it.h, colsRef.current);
+      setPreview({ key: d.key, x, y, ok });
+    };
+    const up = () => {
+      const d = drag.current;
+      if (!d) return;
+      drag.current = null;
+      const pv = previewRef.current;
+      if (pv && pv.ok) patch(d.key, { x: pv.x, y: pv.y });
+      setPreview(null);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onDown = (key: string) => (e: MouseEvent) => {
+    if (!edit) return;
+    e.preventDefault();
+    const p = placedRef.current.find((q) => q.key === key);
+    const el = gridRef.current;
+    if (!p || !el) return;
+    const r = el.getBoundingClientRect();
+    drag.current = {
+      key,
+      dx: e.clientX - r.left - p.x * (CELL + GAP),
+      dy: e.clientY - r.top - p.y * (CELL + GAP),
+    };
+    setPreview({ key, x: p.x, y: p.y, ok: true });
+  };
+
+  const save = async () => {
+    if (await setConfigLayout(cfg, layout)) {
+      setDirty(false);
+      toast('dashboard', 'layout saved');
+    }
+  };
+  const revert = () => {
+    if (cfg)
+      fetchConfigSnapshot(cfg).then((doc) => {
+        setLayout((doc?.layout as DashLayout) || {});
+        setDirty(false);
+      });
+  };
+
+  return html`<div class="dash-toolbar">
+      ${
+        edit
+          ? html`<button class="btn small primary" disabled=${!dirty} onClick=${save}>Save layout</button>
+              <button class="btn small" onClick=${revert} disabled=${!dirty}>Revert</button>
+              <button class="btn small" onClick=${() => setEdit(false)}>Done</button>
+              <span class="muted" style="font-size:var(--fs-1)">drag a card to move it; the eye hides it</span>`
+          : html`<button class="btn small" onClick=${() => setEdit(true)}>Edit layout</button>`
+      }
+    </div>
+    <div class=${'dash-grid' + (edit ? ' editing' : '')} ref=${gridRef}
+      style=${'grid-template-columns:repeat(' + cols + ',' + CELL + 'px);grid-auto-rows:' + CELL +
+        'px;gap:' + GAP + 'px;' + (edit ? 'min-height:' + (rows + 2) * (CELL + GAP) + 'px;' : '')}>
+      ${placed.map((p) => {
+        const pv = preview && preview.key === p.key ? preview : null;
+        const x = pv ? pv.x : p.x;
+        const y = pv ? pv.y : p.y;
+        const hidden = isHidden(p.key);
+        return html`<div
+          class=${'grid-item' + (hidden ? ' hidden' : '') + (pv ? ' dragging' + (pv.ok ? '' : ' bad') : '')}
+          key=${p.key}
+          style=${'grid-column:' + (x + 1) + '/span ' + p.w + ';grid-row:' + (y + 1) + '/span ' + p.h + ';'}>
+          ${renderCard(p.key, devByName)}
+          ${
+            edit
+              ? html`<div class="gi-edit" onMouseDown=${onDown(p.key)}>
+                  <span class="gi-move mono">⠿ ${p.key}</span>
+                  <button class="gi-eye" title=${hidden ? 'show' : 'hide'}
+                    onMouseDown=${(e: Event) => e.stopPropagation()}
+                    onClick=${() => patch(p.key, { hidden: !hidden })}>${hidden ? '🙈' : '👁'}</button>
+                </div>`
+              : null
+          }
+        </div>`;
+      })}
+    </div>`;
+}
+
 export function Dashboard() {
   useStore();
   useEffect(() => {
@@ -164,13 +363,6 @@ export function Dashboard() {
   }, []);
   return html`<section class="page active" data-page="dashboard">
     ${html`<${DashHeader} />`}
-    <div class="dash-panels">
-      ${html`<${ControlPanel} />`}
-      ${html`<${FrontPanel} />`}
-    </div>
-    <div class="dash-top" style="margin-top:14px">
-      ${html`<${ConsoleCard} />`}
-    </div>
-    <div class="widget-grid" style="margin-top:14px">${html`<${Widgets} />`}</div>
+    ${html`<${DashGrid} />`}
   </section>`;
 }

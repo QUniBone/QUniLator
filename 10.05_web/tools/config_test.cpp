@@ -328,8 +328,15 @@ int main(void) {
 		int status = 0;
 		picojson::value doc = make_doc({ dev_entry("rl", true, {}) });
 		doc.get<picojson::object>()["title"] = picojson::value("Bench 11/73");
+		// a dashboard layout rides along as file metadata too
+		picojson::object lay_rl;
+		lay_rl["x"] = picojson::value(2.0);
+		lay_rl["y"] = picojson::value(1.0);
+		picojson::object layout;
+		layout["rl"] = picojson::value(lay_rl);
+		doc.get<picojson::object>()["layout"] = picojson::value(layout);
 		check(webconfigs_write("titled", doc, false, &err, &status),
-				"write titled with a title");
+				"write titled with a title and layout");
 		check(webconfigs_current() == "cfgA", "an offline write leaves current alone");
 
 		picojson::value snap;
@@ -337,16 +344,22 @@ int main(void) {
 		check(snap.get("title").is<std::string>()
 				&& snap.get("title").get<std::string>() == "Bench 11/73",
 				"title stored in the file");
+		check(snap.get("layout").is<picojson::object>()
+				&& snap.get("layout").get("rl").get("x").get<double>() == 2.0,
+				"layout stored in the file");
 
-		// a later write that omits the title preserves the stored one
+		// a later write that omits the title/layout preserves the stored ones
 		picojson::value doc2 = make_doc({ dev_entry("rl", true, {}),
 				dev_entry("rl0", true, {}) });
 		check(webconfigs_write("titled", doc2, false, &err, &status),
-				"rewrite titled without a title");
+				"rewrite titled without a title or layout");
 		check(read_json_file(cfg_path("titled"), &snap), "titled reread");
 		check(snap.get("title").is<std::string>()
 				&& snap.get("title").get<std::string>() == "Bench 11/73",
 				"title preserved across a save that omits it");
+		check(snap.get("layout").is<picojson::object>()
+				&& snap.get("layout").get("rl").get("x").get<double>() == 2.0,
+				"layout preserved across a save that omits it");
 
 		// the list carries the title, and falls back to the name when untitled
 		picojson::value list;

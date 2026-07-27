@@ -127,10 +127,19 @@ export interface ConfigDeviceSnapshot {
   enabled: boolean;
   params?: Record<string, string>;
 }
+// A dashboard card's placement: top-left grid cell, and whether it is hidden.
+export interface WidgetPlace {
+  x: number;
+  y: number;
+  hidden?: boolean;
+}
+export type DashLayout = Record<string, WidgetPlace>;
+
 // The full document of one configuration (GET /api/configs/<name> and the
 // body of PUT /api/configs/<name>).
 export interface ConfigSnapshot {
   title?: string;
+  layout?: DashLayout;
   devices: ConfigDeviceSnapshot[];
 }
 

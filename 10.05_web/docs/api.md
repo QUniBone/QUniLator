@@ -282,11 +282,12 @@ status query that gives up rather than waiting on the device registry.
 
 ### `GET /api/configs/<name>`
 
-The full snapshot. `title` and `dip_value` are present only when the
+The full snapshot. `title`, `dip_value` and `layout` are present only when the
 configuration stores them:
 
 ```json
 {"title": "RT-11 bench", "dip_value": 3,
+ "layout": {"console": {"x": 0, "y": 6}},
  "devices": [{"name": "RL11", "enabled": true,
               "params": {"address": "174400", ...}}, ...]}
 ```
@@ -366,6 +367,20 @@ file metadata: the current pointer and the running machine are untouched. At
 most one configuration may claim a value — one another configuration already
 holds is refused with `409`; a value outside `0`..`15` with `422`. Answers
 `{"ok": true, "dip_value": <value or -1>}`; `404` for an unknown configuration.
+
+### `PUT /api/configs/<name>/layout`
+
+```json
+{"value": {"controlpanel": {"x": 0, "y": 0}, "rl0": {"x": 6, "y": 0, "hidden": true}}}
+```
+
+Stores the dashboard arrangement for `<name>`: a map from card key (a device
+name, or `controlpanel` / `frontpanel` / `console`) to its top-left grid cell
+`{x, y}` and optional `hidden`. It is per-configuration metadata — switching
+configurations switches the dashboard layout — and is opaque to the backend,
+which neither validates nor interprets it. The current pointer and the running
+machine are untouched. A `null` value clears the layout. Answers `{"ok": true}`;
+`404` for an unknown configuration.
 
 ### `DELETE /api/configs/<name>`
 

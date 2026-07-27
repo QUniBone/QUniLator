@@ -447,6 +447,35 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 .dash-cog { margin-left: auto; font-size: var(--fs-3); line-height: 1; padding: 3px 10px; }
 .console-card { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
 .console-card .card-body { display: flex; align-items: flex-start; }
+
+/* the arrangeable dashboard grid: square cells, cards span whole cells */
+.dash-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.dash-grid { display: grid; align-content: start; justify-content: start; }
+.dash-grid.editing { outline: 1px dashed var(--line); border-radius: var(--r-sm); }
+.dash-grid .grid-item { position: relative; min-width: 0; min-height: 0; }
+.dash-grid .grid-item > .card,
+.dash-grid .grid-item > .rlpanel {
+  width: 100%; height: 100%; margin: 0; box-sizing: border-box; overflow: auto;
+}
+.grid-item.hidden { opacity: .4; }
+/* the edit overlay captures the drag and blocks interaction with the card body */
+.grid-item .gi-edit {
+  position: absolute; inset: 0; z-index: 5; cursor: move;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 6px;
+  padding: 5px 6px; border: 1px dashed var(--accent);
+  background: var(--accent-soft); border-radius: var(--r-sm);
+}
+.grid-item .gi-move {
+  font-size: var(--fs-0); color: var(--accent); background: var(--surface);
+  padding: 1px 6px; border-radius: 4px; max-width: 80%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.grid-item .gi-eye {
+  cursor: pointer; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 4px; font-size: var(--fs-1); line-height: 1; padding: 2px 6px;
+}
+.grid-item.dragging { z-index: 10; }
+.grid-item.dragging .gi-edit { background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent) inset; }
+.grid-item.dragging.bad .gi-edit { border-color: var(--err); background: var(--err-soft); box-shadow: 0 0 0 2px var(--err) inset; }
 .dash-panels { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; }
 .dash-panels > .card { flex: 0 0 auto; }
 .dash-top { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; }
