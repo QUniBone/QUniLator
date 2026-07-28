@@ -540,20 +540,24 @@ export class QBoneClient {
     // back before sending the next, retrying a dropped character. Empty s just
     // sends the terminating CR (accept the prompt default).
     const sendLine = async (s: string): Promise<void> => {
+      // Confirm each character is echoed before sending the next, tracking echo
+      // progress by position: a merely delayed echo (a slow console round-trip
+      // over the network) makes us wait, never resend. Resending on a delayed
+      // echo would duplicate the character -- "R ZRXBF0" arriving as
+      // "RR ZRXBF0", which the monitor rejects. Only a genuine stall past the
+      // per-character window (a dropped character: the SLU has no receive FIFO,
+      // so a character sent while the guest is not reading is lost) resends.
+      const mark = buf.length;
+      const echoedCount = () => buf.slice(mark).replace(/[\x00-\x1f]/g, "").length;
+      let confirmed = 0; // number of our characters seen echoed back so far
       for (const ch of s) {
-        let echoed = false;
-        for (let attempt = 0; attempt < 4 && !echoed; attempt++) {
-          const mark = buf.length;
+        for (let attempt = 0; attempt < 5; attempt++) {
           ws.send(Buffer.from(ch, "latin1"));
-          const end = Date.now() + 300;
-          while (Date.now() < end) {
-            if (buf.slice(mark).includes(ch)) {
-              echoed = true;
-              break;
-            }
-            await delay(15);
-          }
+          const end = Date.now() + 800;
+          while (Date.now() < end && echoedCount() <= confirmed) await delay(15);
+          if (echoedCount() > confirmed) break;
         }
+        confirmed = echoedCount();
         await delay(20);
       }
       ws.send(Buffer.from("\r"));
@@ -598,20 +602,41 @@ export class QBoneClient {
       }
       if (!atMonitor) return finish(false, "no XXDP monitor prompt after boot");
 
-      // Load the diagnostic
-      const mark0 = buf.length;
-      await sendLine("R " + opts.diagnostic);
-      const loaded = await waitFor((b) => {
-        const seg = b.slice(mark0);
-        if (/DR>/.test(seg)) return "DR";
-        if (/NOT FOUND|\?\s*$/.test(seg.replace(/[\x00-\x1f]+$/, ""))) return "fail";
-        return null;
-      }, opts.loadTimeoutMs ?? 15000);
-      if (loaded !== "DR")
-        return finish(false, `diagnostic ${opts.diagnostic} did not load (DR> not reached)`);
+      // Load the diagnostic. The monitor echoes the command; a garbled echo
+      // makes it answer "?" and return to the '.' prompt, so retry. Two console
+      // styles follow a successful load: DRS diagnostics reach a "DR>" prompt;
+      // older MAINDEC diagnostics prompt for the switch register
+      // ("SWR = ... NEW =").
+      let style: "dr" | "swr" | null = null;
+      for (let attempt = 0; attempt < 3 && style === null; attempt++) {
+        const mark0 = buf.length;
+        await sendLine("R " + opts.diagnostic);
+        const outcome = await waitFor((b) => {
+          const seg = b.slice(mark0);
+          if (/DR>/.test(seg)) return "dr";
+          if (/SWR\s*=|NEW\s*=/.test(seg)) return "swr";
+          if (/NOT FOUND/.test(seg)) return "notfound";
+          if (/\?\s*$/.test(seg.replace(/[\x00-\x1f]+$/, ""))) return "invalid";
+          return null;
+        }, opts.loadTimeoutMs ?? 15000);
+        if (outcome === "dr" || outcome === "swr") style = outcome;
+        else if (outcome === "notfound")
+          return finish(false, `diagnostic ${opts.diagnostic} not found on media`);
+        // "invalid" or timeout: retry the command
+      }
+      if (style === null)
+        return finish(false, `diagnostic ${opts.diagnostic} did not load`);
 
-      // START and drive the DRS dialog
-      await sendLine("START");
+      if (style === "dr") {
+        // DRS supervisor: START runs the diagnostic; the run loop answers the
+        // Change-HW dialog from `answers`.
+        await sendLine("START");
+      } else {
+        // Switch-register diagnostic: answer the SWR prompt (default: accept the
+        // shown value with a bare CR), then it runs.
+        await sendLine(matchAnswer("SWR NEW", answers) ?? "");
+      }
+
       const deadline = Date.now() + (opts.runTimeoutMs ?? 180000);
       let lastAnswered = "";
       while (Date.now() < deadline) {
@@ -630,7 +655,7 @@ export class QBoneClient {
         const fm = failMarkers.find((m) => tail.includes(m));
         if (fm && !prompt) return finish(false, `fail marker: ${fm.trim()}`);
       }
-      return finish(false, "timeout waiting for END PASS");
+      return finish(false, `timeout waiting for ${passPattern}`);
     } catch (err) {
       return finish(false, `error: ${String(err)}`);
     }
