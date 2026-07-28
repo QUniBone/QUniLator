@@ -533,13 +533,31 @@ export class QBoneClient {
     ws.on("message", (d: WebSocket.RawData) => {
       buf += Buffer.isBuffer(d) ? d.toString("latin1") : String(d);
     });
+    // The 11/73 console SLU has no receive FIFO, so a character sent while the
+    // guest is not reading is silently dropped -- which used to lose a digit of
+    // a multi-character dialog value at random and leave that command on its
+    // (large) default. Send one character at a time and confirm each is echoed
+    // back before sending the next, retrying a dropped character. Empty s just
+    // sends the terminating CR (accept the prompt default).
     const sendLine = async (s: string): Promise<void> => {
       for (const ch of s) {
-        ws.send(Buffer.from(ch, "latin1"));
-        await delay(30);
+        let echoed = false;
+        for (let attempt = 0; attempt < 4 && !echoed; attempt++) {
+          const mark = buf.length;
+          ws.send(Buffer.from(ch, "latin1"));
+          const end = Date.now() + 300;
+          while (Date.now() < end) {
+            if (buf.slice(mark).includes(ch)) {
+              echoed = true;
+              break;
+            }
+            await delay(15);
+          }
+        }
+        await delay(20);
       }
       ws.send(Buffer.from("\r"));
-      await delay(150);
+      await delay(200);
     };
     const waitFor = async (
       test: (b: string) => string | null,
