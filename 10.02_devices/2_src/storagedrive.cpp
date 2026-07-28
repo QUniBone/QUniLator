@@ -97,10 +97,11 @@ bool storagedrive_c::on_param_changed(parameter_c *param)
 }
 
 // free image, todo: atomic via mutex
-void storagedrive_c::image_delete() 
+void storagedrive_c::image_delete()
 {
     if (image == nullptr)
         return ;
+    medium_present = false ;
     storageimage_base_c *tmpimage = image ;
     image = nullptr ; // semi-atomic
     delete tmpimage ;
@@ -169,27 +170,31 @@ bool storagedrive_c::image_recreate_shared_on_param_change(std::string image_pat
 
 
 // wrap actual image driver
-bool storagedrive_c::image_open(bool create) 
+bool storagedrive_c::image_open(bool create)
 {
     if (image == nullptr)
         return false ;
 
     // virtual method of implementation
-    return image->open(this, create) ;
+    bool ok = image->open(this, create) ;
+    medium_present = ok && image->is_open() ;
+    return ok ;
 }
 
-void storagedrive_c::image_close(void) 
+void storagedrive_c::image_close(void)
 {
     if (image == nullptr)
         return ;
+    medium_present = false ;
     image->close() ;
 }
 
-bool storagedrive_c::image_is_open(void) 
+bool storagedrive_c::image_is_open(void)
 {
-    if (image == nullptr)
-        return false ;
-    return image->is_open() ;
+    // Report medium presence from the state tracked across open()/close(),
+    // not the live fstream: a concurrent access to the image must not make a
+    // reader momentarily see the medium as absent.
+    return medium_present ;
 }
 
 bool storagedrive_c::image_is_readonly() 

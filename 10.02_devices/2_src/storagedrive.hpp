@@ -30,6 +30,7 @@
 #include <stdint.h>
 #include <string>
 #include <fstream>
+#include <atomic>
 #include <assert.h>
 
 #include "utils.hpp"
@@ -92,6 +93,11 @@ private:
     // several implementations of the "magnetic surface" possible
     // hide from devices
     storageimage_base_c	*image = nullptr ;
+
+    // "medium present" tracked across open()/close(), so a reader (e.g. the RX
+    // uCPU worker calling image_is_open()/check_ready()) sees a stable value
+    // instead of racing the live fstream state of a concurrently accessed image.
+    std::atomic<bool> medium_present{false} ;
 
 public:
     storagecontroller_c *controller; // link to parent
