@@ -309,18 +309,18 @@ static void on_log_message(unsigned msglevel, const char *label, const char *tex
 }
 
 void webevents_note_halt(bool halted) {
-	bool running;
+	bool machine_running;
 	{
 		std::lock_guard<std::mutex> lock(state_mutex);
 		last_halt = halted;
-		running = cur_powered && !last_halt;
+		machine_running = cur_powered && !last_halt;
 		picojson::object event;
 		event["t"] = picojson::value("state");
 		event["halt"] = picojson::value(halted);
 		enqueue(event);
 	}
 	// an image attached to a running machine is read-only over the shares
-	webstorage_refresh_readonly(running);
+	webstorage_refresh_readonly(machine_running);
 }
 
 bool webevents_is_halted(void) {
@@ -329,17 +329,17 @@ bool webevents_is_halted(void) {
 }
 
 void webevents_note_powered(bool powered) {
-	bool running;
+	bool machine_running;
 	{
 		std::lock_guard<std::mutex> lock(state_mutex);
 		cur_powered = powered;
-		running = cur_powered && !last_halt;
+		machine_running = cur_powered && !last_halt;
 		picojson::object event;
 		event["t"] = picojson::value("state");
 		event["powered"] = picojson::value(powered);
 		enqueue(event);
 	}
-	webstorage_refresh_readonly(running);
+	webstorage_refresh_readonly(machine_running);
 }
 
 bool webevents_is_powered(void) {
@@ -401,10 +401,11 @@ static void poll_hardware(void) {
 	// HALT line, which is what webevents_note_halt() tracks.
 	bool cpu_halt = false, have_cpu = false;
 #if defined(UNIBUS)
-	if (device_configuration != nullptr && device_configuration->cpu != nullptr
-			&& device_configuration->cpu->enabled.value) {
+	cpu_base_c *cpu = (device_configuration == nullptr)
+			? nullptr : device_configuration->emulated_cpu();
+	if (cpu != nullptr) {
 		have_cpu = true;
-		cpu_halt = !device_configuration->cpu->runmode.value;
+		cpu_halt = !cpu->runmode.value;
 	}
 #endif
 
