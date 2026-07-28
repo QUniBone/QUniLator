@@ -51,7 +51,7 @@ by device dzv11" whatever slot had actually collided.
 
 Fixed in `10.01_base/2_src/arm/priorityrequest.cpp`.
 
-## 5. Priority slots collide across the larger UNIBUS device set — open
+## 5. Priority slots collide across the larger UNIBUS device set
 
 With the slot named correctly, a UNIBUS startup logs 12 collisions. The
 emulator holds one backplane, and the compile-time slot defaults were chosen
@@ -75,8 +75,21 @@ free — seven slots, where the two mux pools alone want twelve, so renumbering
 the pools does not fit.
 
 Slots matter for a device that is on the bus. Every device is constructed at
-startup whether or not it is enabled, and the warning fires there, so a board
-that enables neither dzv11d nor RK11 is told about their shared slot at every
-boot. Checking the slot against the *enabled* devices, at the point a device is
-enabled or its slot changes, reports the collisions that can affect arbitration
-and stays quiet about the rest.
+startup whether or not it is enabled, and the warning fired there, so a board
+that enables neither dzv11d nor RK11 was told about their shared slot at every
+boot. The slot is now checked against the devices actually on the bus, when a
+device is installed or its slot changes, and a UNIBUS startup logs nothing.
+
+Placement is settled where an operator makes it: a configuration is checked
+before it is written, and one that puts two devices on the bus in one slot is
+refused with 422 and the pair named,
+
+    dhv11b and rl both use backplane slot 15
+
+as is one that runs a device past the last slot. A device's footprint comes
+from its own requests — a mux whose receive and transmit interrupts arbitrate
+separately holds two adjacent slots — so the check needs no table of its own.
+It is bus-independent and runs on QBUS as well.
+
+Fixed in `10.01_base/2_src/arm/priorityrequest.cpp`,
+`10.01_base/2_src/arm/qunibusdevice.cpp` and `10.05_web/2_src/webconfigs.cpp`.

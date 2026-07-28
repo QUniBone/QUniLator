@@ -142,6 +142,7 @@ void qunibusdevice_c::install(void)
 		return;
 	}
 	// now has handle
+	warn_on_slot_collisions();
 
 	// Reset device by generating DCLO power cycle.
 	// Do not toggle ACLO, meant for run/stop conditions (CPU start, M9312 boot vector redirection)
@@ -281,13 +282,14 @@ void qunibusdevice_c::log_register_event(const char *change_info,
 	DEBUG_FAST(buffer);
 }
 
-// search device in global list mydevices[]				
-qunibusdevice_c *qunibusdevice_c::find_by_request_slot(uint8_t priority_slot) 
+// search device in global list mydevices[]
+qunibusdevice_c *qunibusdevice_c::find_installed_by_request_slot(uint8_t priority_slot,
+		const qunibusdevice_c *except)
 {
 	std::list<device_c *>::iterator devit;
 	for (devit = device_c::mydevices.begin(); devit != device_c::mydevices.end(); ++devit) {
 		qunibusdevice_c *ubdevice = dynamic_cast<qunibusdevice_c *>(*devit);
-		if (ubdevice) {
+		if (ubdevice && ubdevice != except && ubdevice->is_installed()) {
 			// all dma and intr requests
 			for (std::vector<dma_request_c *>::iterator reqit = ubdevice->dma_requests.begin();
 					reqit < ubdevice->dma_requests.end(); reqit++)
@@ -300,6 +302,24 @@ qunibusdevice_c *qunibusdevice_c::find_by_request_slot(uint8_t priority_slot)
 		}
 	}
 	return NULL;
+}
+
+// A slot is a backplane position, and the grant chain runs through it, so two
+// devices on the bus in one slot have no defined arbitration order between
+// them. Report that when it happens; unplugged devices share slots freely.
+void qunibusdevice_c::warn_on_slot_collisions(void)
+{
+	std::vector<priority_request_c *> requests;
+	requests.insert(requests.end(), dma_requests.begin(), dma_requests.end());
+	requests.insert(requests.end(), intr_requests.begin(), intr_requests.end());
+	for (std::vector<priority_request_c *>::iterator reqit = requests.begin();
+			reqit != requests.end(); reqit++) {
+		uint8_t slot = (*reqit)->get_priority_slot();
+		qunibusdevice_c *other = find_installed_by_request_slot(slot, this);
+		if (other)
+			WARNING("Slot %u used by device %s is also used by %s", (unsigned) slot,
+					name.value.c_str(), other->name.value.c_str());
+	}
 }
 
 // returns a string of form

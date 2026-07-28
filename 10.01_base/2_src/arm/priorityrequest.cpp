@@ -53,11 +53,18 @@ void priority_request_c::set_priority_slot(uint8_t _priority_slot)
 	assert(_priority_slot < PRIORITY_SLOT_COUNT);
 	if (priority_slot == _priority_slot)
 		return ; // called on every on_param_change()
-	qunibusdevice_c *ubdevice = qunibusdevice_c::find_by_request_slot(_priority_slot);
-	if (ubdevice && ubdevice != device) {
-            WARNING("Slot %u requested by device %s, already used by %s", (unsigned) _priority_slot,
-                      device->name.value.c_str(), ubdevice->name.value.c_str());
-		}
+	// The whole device set is constructed at startup and takes its default
+	// slots there, so an overlap between two devices that are off the bus says
+	// nothing about the machine as configured. A device on the bus is a
+	// different matter: its slot is its place in the grant chain.
+	if (device && device->enabled.value) {
+		qunibusdevice_c *ubdevice = qunibusdevice_c::find_installed_by_request_slot(
+				_priority_slot, device);
+		if (ubdevice)
+			WARNING("Slot %u requested by device %s, already used by %s",
+					(unsigned) _priority_slot, device->name.value.c_str(),
+					ubdevice->name.value.c_str());
+	}
 	priority_slot = _priority_slot;
 	// todo: check for collision with all other devices, all other requests
 }

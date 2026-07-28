@@ -87,7 +87,15 @@ typedef struct qunibusdevice_register_struct {
 
 class qunibusdevice_c: public device_c {
 public:
-	static qunibusdevice_c *find_by_request_slot(uint8_t priority_slot);
+	// The device on the bus holding this slot, other than "except". Only
+	// installed devices are searched: the whole device set is constructed at
+	// startup and takes its default slots there, while arbitration involves
+	// only the devices actually plugged in.
+	static qunibusdevice_c *find_installed_by_request_slot(uint8_t priority_slot,
+			const qunibusdevice_c *except);
+
+	// report slots this device shares with another device on the bus
+	void warn_on_slot_collisions(void);
 
 private:
 	// setup address tables, also in shared memory

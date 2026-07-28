@@ -83,6 +83,7 @@
 #include "device.hpp"
 #include "parameter.hpp"
 #include "qunibusadapter.hpp"
+#include "qunibusdevice.hpp"
 #include "panel.hpp"
 #include "mscp_server.hpp"
 #include "device_configuration.hpp"
@@ -575,6 +576,79 @@ static bool write_config_file(const std::string &name, const std::string &body,
 	return true;
 }
 
+// The backplane slots a device occupies, as offsets from its "slot" parameter.
+// A device whose receive and transmit interrupts arbitrate separately sits in
+// two adjacent slots, so the second one is taken as much as the first. The
+// offsets are read from the device's own requests rather than tabulated here.
+static std::set<int> device_slot_offsets(qunibusdevice_c *dev) {
+	std::set<int> offsets;
+	int base = (int) dev->priority_slot.value;
+	for (dma_request_c *req : dev->dma_requests)
+		offsets.insert((int) req->get_priority_slot() - base);
+	for (intr_request_c *req : dev->intr_requests)
+		offsets.insert((int) req->get_priority_slot() - base);
+	if (offsets.empty())
+		offsets.insert(0); // a device with neither DMA nor interrupts still has a place
+	return offsets;
+}
+
+// true unless the entry says otherwise: a saved document lists the devices that
+// are on the bus, and carries "enabled" for each of them
+static bool device_entry_enabled(const picojson::value &d) {
+	const picojson::value &en = d.get("enabled");
+	return !en.is<bool>() || en.get<bool>();
+}
+
+// The slot a device entry places its device in: what the document sets, or the
+// device's DEC default when it sets nothing.
+static unsigned device_entry_slot(const picojson::value &d, qunibusdevice_c *dev) {
+	if (d.get("params").is<picojson::object>()) {
+		const picojson::object &params = d.get("params").get<picojson::object>();
+		picojson::object::const_iterator it = params.find("slot");
+		if (it != params.end() && it->second.is<std::string>())
+			return (unsigned) strtoul(it->second.get<std::string>().c_str(), nullptr, 10);
+	}
+	return dev->default_priority_slot;
+}
+
+// One backplane, one card per slot: the BR/NPR grant chain runs through the
+// slots in order, so two devices sharing one have no defined priority between
+// them. Reject a configuration that places them there, whichever bus this is.
+static bool validate_config_slots(const picojson::value &doc, std::string *error) {
+	std::map<unsigned, std::string> occupied;
+	for (const picojson::value &d : doc.get("devices").get<picojson::array>()) {
+		if (!device_entry_enabled(d))
+			continue;
+		std::string devname = d.get("name").get<std::string>();
+		qunibusdevice_c *dev = nullptr;
+		for (device_c *cand : device_c::mydevices)
+			if (strcasecmp(cand->name.value.c_str(), devname.c_str()) == 0) {
+				dev = dynamic_cast<qunibusdevice_c *>(cand);
+				break;
+			}
+		if (dev == nullptr)
+			continue; // drives and other devices off the bus hold no slot
+		unsigned slot = device_entry_slot(d, dev);
+		for (int offset : device_slot_offsets(dev)) {
+			unsigned s = (unsigned) ((int) slot + offset);
+			if (s >= PRIORITY_SLOT_COUNT) {
+				*error = devname + ": backplane slot " + std::to_string(s)
+						+ " is beyond the last slot "
+						+ std::to_string(PRIORITY_SLOT_COUNT - 1);
+				return false;
+			}
+			std::map<unsigned, std::string>::iterator held = occupied.find(s);
+			if (held != occupied.end()) {
+				*error = devname + " and " + held->second
+						+ " both use backplane slot " + std::to_string(s);
+				return false;
+			}
+			occupied[s] = devname;
+		}
+	}
+	return true;
+}
+
 // Check a config document against the live device registry before it is stored,
 // so an edited file can never name a device that does not exist or a parameter
 // a device does not have or an operator may not set. The registry is only read,
@@ -618,7 +692,7 @@ static bool validate_config_document(const picojson::value &doc, std::string *er
 			}
 		}
 	}
-	return true;
+	return validate_config_slots(doc, error);
 }
 
 // the image a device entry names, empty when it names none
