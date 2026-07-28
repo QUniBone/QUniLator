@@ -300,6 +300,9 @@ void qunibusadapter_c::unregister_device(qunibusdevice_c& device)
 	    qunibusdevice_register_t *device_reg = &(device.registers[i]);
         IOPAGE_REGISTER_ENTRY(*pru_iopage_registers,device_reg->addr) = 0;
 		register_by_handle[device_reg->register_handle] = NULL  ;
+        // unlink from PRU shared RAM: the descriptor is off the bus again, so
+        // later status pushes by device logic are skipped, not misdirected.
+        device_reg->pru_iopage_register = NULL ;
 
         // register descriptor remain unchanged, also device->members
     }

@@ -283,10 +283,19 @@ void RX11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 // write current status into CS, for next read operation
 // must be done after each DATO
 // generates INTR too: on change on DONE or on change of INTENABLE
-void RX11_c::update_status(const char *debug_info) 
+void RX11_c::update_status(const char *debug_info)
 {
-    // update_status() *NOT* called both by DATI/DATO on_after_register_access() and uCPU worker thread
-    //	pthread_mutex_lock(&status_mutex);
+    // The box may be powered while the controller is off the bus (uCPU->init()
+    // runs on power-on). Registers are linked at install(), so a null
+    // pru_iopage_register means there is no QBUS presence to report status to.
+    if (busreg_RXDB->pru_iopage_register == nullptr)
+        return;
+
+    // update_status() runs on both the CPU register-access thread (via
+    // on_after_register_access) and the uCPU worker thread (via step_execute,
+    // rxdb_after_*, go, init). Serialize the RXDB/RXCS and interrupt-edge update
+    // so a DONE interrupt is not lost to a torn read-modify-write of the status.
+    pthread_mutex_lock(&status_mutex);
 
     // RXDB
     set_register_dati_value(busreg_RXDB, uCPU->rxdb, debug_info);
@@ -319,8 +328,7 @@ void RX11_c::update_status(const char *debug_info)
 
     interrupt_condition_prev = interrupt_condition ;
 
-    //	pthread_mutex_unlock(&status_mutex);
-
+    pthread_mutex_unlock(&status_mutex);
 }
 
 

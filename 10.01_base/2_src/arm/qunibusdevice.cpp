@@ -44,6 +44,14 @@ qunibusdevice_c::qunibusdevice_c() :		device_c()
 {
 	handle = 0;
 	register_count = 0;
+	// A register is linked into PRU shared RAM only by install(). Until then
+	// pru_iopage_register is null, so device logic that pushes register state
+	// before the device is on the bus is recognised and skipped rather than
+	// dereferencing an unmapped register.
+	for (unsigned i = 0; i < MAX_IOPAGE_REGISTERS_PER_DEVICE; i++) {
+		registers[i].pru_iopage_register = nullptr;
+		registers[i].register_handle = 0;
+	}
 	// device is not yet enabled, QBUS/UNIBUS properties can be set
 	base_addr.readonly = false;
     // Kristen McIntyre: reinitialize the base address's bitwidth now that we are initialized
@@ -177,6 +185,12 @@ void qunibusdevice_c::set_register_dati_value(qunibusdevice_register_t *device_r
 //	if (device_reg->active_on_dati)
 	// always set dati_flipflops, needed to restore value written with DATO
 	device_reg->active_dati_flipflops = value;
+	// The register is mapped into PRU shared RAM only while the device is
+	// installed on the bus. A device that pushes status before install (an RX
+	// box powered while its controller is disabled) has no bus presence yet;
+	// keep the latched value but skip the shared-RAM write and the dump.
+	if (device_reg->pru_iopage_register == nullptr)
+		return;
 	device_reg->pru_iopage_register->value = value;
 
 	// signal: changed by device logic
@@ -198,8 +212,10 @@ uint16_t qunibusdevice_c::get_register_dato_value(qunibusdevice_register_t *devi
 {
 	if (device_reg->active_on_dato)
 		return device_reg->active_dato_flipflops;
-	else
+	else if (device_reg->pru_iopage_register != nullptr)
 		return device_reg->pru_iopage_register->value;
+	else
+		return 0; // not installed on the bus: no mapped value to read
 }
 
 // write the reset value into all registers (helper for QBUS/UNIBUS INIT)
