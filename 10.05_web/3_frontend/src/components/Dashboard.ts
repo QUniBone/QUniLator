@@ -167,8 +167,8 @@ const CELL = 44; // px per grid square
 const GAP = 6;
 // the fixed cards, their natural size in grid cells, and their titles
 const FIXED = [
-  { key: 'controlpanel', w: 12, h: 4, label: 'Control panel' },
-  { key: 'frontpanel', w: 7, h: 4, label: 'Front panel' },
+  { key: 'controlpanel', w: 13, h: 3, label: 'Control panel' },
+  { key: 'frontpanel', w: 7, h: 3, label: 'Front panel' },
   { key: 'console', w: 15, h: 11, label: 'Console' },
 ];
 const FIXED_LABEL: Record<string, string> = {
@@ -260,8 +260,23 @@ function DashGrid() {
     ...devs.map((d) => sized(d.name, widgetCells(d))),
   ];
   const items = allItems.filter((it) => edit || !isHidden(it.key));
-  const placed = placeItems(items, layout, cols);
-  const rows = gridRows(placed);
+  // Pack against a width that honours any stored position past the visible edge,
+  // so a card the operator pushed off the right keeps its place instead of
+  // reflowing back in.
+  const storedExtent = items.reduce((m, it) => {
+    const p = layout[it.key];
+    return p && Number.isFinite(p.x) ? Math.max(m, p.x + it.w) : m;
+  }, 0);
+  const placed = placeItems(items, layout, Math.max(cols, storedExtent));
+  // The canvas grows to hold its content, plus the live drag preview, so moving
+  // a card past the right or bottom edge extends the grid rather than pinning it.
+  const dragItem = preview ? placed.find((p) => p.key === preview.key) : null;
+  const extentCols = Math.max(
+    cols,
+    placed.reduce((m, p) => Math.max(m, p.x + p.w), 0),
+    dragItem ? preview!.x + dragItem.w : 0
+  );
+  const rows = Math.max(gridRows(placed), dragItem ? preview!.y + dragItem.h : 0);
 
   const patch = (key: string, p: Partial<DashLayout[string]>) => {
     setLayout((L) => {
@@ -281,6 +296,25 @@ function DashGrid() {
   const previewRef = useRef(preview);
   previewRef.current = preview;
 
+  // While editing, every card holds an explicit position, so hiding or showing
+  // one never reflows the others into the freed space. Freeze the current
+  // placement into the layout the moment edit mode opens.
+  useEffect(() => {
+    if (!edit) return;
+    setLayout((L) => {
+      const next = { ...L };
+      let changed = false;
+      for (const p of placedRef.current) {
+        const cur = L[p.key];
+        if (!cur || cur.x !== p.x || cur.y !== p.y) {
+          next[p.key] = { ...(cur || {}), x: p.x, y: p.y };
+          changed = true;
+        }
+      }
+      return changed ? next : L;
+    });
+  }, [edit]);
+
   useEffect(() => {
     const move = (e: MouseEvent) => {
       const d = drag.current;
@@ -291,9 +325,13 @@ function DashGrid() {
       const r = el.getBoundingClientRect();
       let x = Math.round((e.clientX - r.left - d.dx) / (CELL + GAP));
       let y = Math.round((e.clientY - r.top - d.dy) / (CELL + GAP));
-      x = Math.max(0, Math.min(x, colsRef.current - it.w));
+      x = Math.max(0, x);
       y = Math.max(0, y);
-      const ok = fits(occupancyExcept(placedRef.current, d.key), x, y, it.w, it.h, colsRef.current);
+      // No right wall: bound the fit check to the card's own reach so only true
+      // overlaps are rejected, letting the operator drag a card off the edge to
+      // grow the canvas.
+      const boundCols = Math.max(colsRef.current, x + it.w);
+      const ok = fits(occupancyExcept(placedRef.current, d.key), x, y, it.w, it.h, boundCols);
       setPreview({ key: d.key, x, y, ok });
     };
     const up = () => {
@@ -331,30 +369,33 @@ function DashGrid() {
   const save = async () => {
     if (await setConfigLayout(cfg, layout)) {
       setDirty(false);
+      setEdit(false);
       toast('dashboard', 'layout saved');
     }
   };
   const revert = () => {
+    setEdit(false);
     if (cfg)
       fetchConfigSnapshot(cfg).then((doc) => {
         setLayout((doc?.layout as DashLayout) || {});
         setDirty(false);
       });
+    else setLayout({});
   };
 
   return html`<div class="dash-toolbar">
       ${
         edit
           ? html`<button class="btn small primary" disabled=${!dirty} onClick=${save}>Save layout</button>
-              <button class="btn small" onClick=${revert} disabled=${!dirty}>Revert</button>
-              <button class="btn small" onClick=${() => setEdit(false)}>Done</button>
+              <button class="btn small" onClick=${revert}>Revert</button>
               <span class="muted" style="font-size:var(--fs-1)">drag a card to move it; the eye hides it</span>`
           : html`<button class="btn small" onClick=${() => setEdit(true)}>Edit layout</button>`
       }
     </div>
     <div class=${'dash-grid' + (edit ? ' editing' : '')} ref=${gridRef}
-      style=${'grid-template-columns:repeat(' + cols + ',' + CELL + 'px);grid-auto-rows:' + CELL +
-        'px;gap:' + GAP + 'px;' + (edit ? 'min-height:' + (rows + 2) * (CELL + GAP) + 'px;' : '')}>
+      style=${'grid-template-columns:repeat(' + extentCols + ',' + CELL + 'px);grid-auto-columns:' +
+        CELL + 'px;grid-auto-rows:' + CELL + 'px;gap:' + GAP + 'px;' +
+        (edit ? 'min-height:' + (rows + 2) * (CELL + GAP) + 'px;' : '')}>
       ${placed.map((p) => {
         const pv = preview && preview.key === p.key ? preview : null;
         const x = pv ? pv.x : p.x;

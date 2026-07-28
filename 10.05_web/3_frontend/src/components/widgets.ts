@@ -205,9 +205,21 @@ function NetworkWidget({ d }: { d: LiveDev }) {
     foot=${html`<div class="rl-info">${iface || '—'} · ${mac || '—'}</div>`} />`;
 }
 
+// The TK50/TK70 cartridge drive: a READY cap carrying the unit number, a USE
+// lamp that follows tape motion (the drive's ACCESS lamp), and a WRITE PROT
+// lamp for a write-locked cartridge. The mounted .tap and its removable tag
+// sit on the foot, where the operator swaps cartridges.
 function TapeWidget({ d }: { d: LiveDev }) {
   const powered = store.hw.powered !== false;
-  return html`<${Panel} d=${d} caps=${html`<${Cap} cls="cap-white" lit=${powered && d.enabled}>TAPE</${Cap}>`} foot=${''} />`;
+  const lit = (v: boolean) => powered && v;
+  const unit = unitOf(d);
+  const loaded = !!(d.img || paramVal(d, 'image'));
+  const active = lampOn(d, 'accesslamp');
+  const wp = lampOn(d, 'writeprotectlamp');
+  const caps = html`${html`<${ReadyCap} unit=${unit} lit=${lit(loaded && !active)} />`}
+    ${html`<${Cap} cls="cap-yellow" lit=${lit(active)}>USE</${Cap}>`}
+    ${html`<${Cap} cls="cap-orange" lit=${lit(wp)}>WRITE<br />PROT</${Cap}>`}`;
+  return html`<${Panel} d=${d} caps=${caps} foot=${html`<${DiskFoot} d=${d} />`} />`;
 }
 
 function Vcb01Widget({ d }: { d: LiveDev }) {
@@ -248,11 +260,11 @@ export function widgetFor(d: LiveDev): Widget | null {
 // content at the grid cell size.
 export function widgetCells(d: LiveDev): { w: number; h: number } {
   if (d.type === 'VCB01') return { w: 12, h: 10 };
-  if (d.type === 'RA81') return { w: 9, h: 6 };
+  if (d.type === 'RA81') return { w: 9, h: 4 };
   const cat = d.category || 'other';
   if (cat === 'disk') return d.type.startsWith('RL') ? { w: 6, h: 6 } : { w: 9, h: 6 };
   if (cat === 'network') return { w: 6, h: 4 };
-  if (cat === 'tape') return { w: 7, h: 5 };
+  if (cat === 'tape') return { w: 6, h: 4 };
   return { w: 6, h: 5 };
 }
 

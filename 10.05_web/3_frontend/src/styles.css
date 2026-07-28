@@ -270,7 +270,10 @@ button { font: inherit; color: inherit; }
   padding: 12px 14px;
 }
 .card .card-body { padding: 0 14px 14px; }
-.card h3 { font-size: var(--fs-3); font-weight: 650; margin: 0; }
+.card h3 {
+  font-size: var(--fs-3); font-weight: 650; margin: 0; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 .grid { display: grid; gap: 14px; }
 .grid.cols-2 { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
@@ -454,7 +457,7 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 
 /* the arrangeable dashboard grid: square cells, cards span whole cells */
 .dash-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
-.dash-grid { display: grid; align-content: start; justify-content: start; }
+.dash-grid { display: grid; align-content: start; justify-content: start; overflow-x: auto; }
 .dash-grid.editing { outline: 1px dashed var(--line); border-radius: var(--r-sm); }
 .dash-grid .grid-item { position: relative; min-width: 0; min-height: 0; }
 .dash-grid .grid-item > .card,
