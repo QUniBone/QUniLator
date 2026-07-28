@@ -16,6 +16,7 @@ import { useState, useEffect } from 'preact/hooks';
 import { useRoute, useLocation } from 'preact-iso';
 import { esc, octalStr } from '../lib/util';
 import { confirmModal, promptModal, pickDevice } from '../lib/modals';
+import { setNavGuard, clearNavGuard, guardedRoute } from '../lib/navguard';
 import {
   loadConfigs,
   refreshDevices,
@@ -422,6 +423,31 @@ function Detail({ name }: { name: string }) {
     };
   }, [name, isCurrent]);
 
+  // Warn before leaving with staged edits that Save has not written. The guard
+  // covers in-app navigation (the sidebar, the configuration list); beforeunload
+  // covers a reload or tab close, where only the browser's own prompt is
+  // available. Current-configuration edits reach the machine live and are never
+  // staged, so they need no guard.
+  useEffect(() => {
+    if (isCurrent || !dirty) return;
+    const g = () =>
+      confirmModal(
+        'Discard unsaved changes?',
+        'This configuration has parameter changes that have not been saved. Leave and discard them?',
+        'Discard'
+      );
+    setNavGuard(g);
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      clearNavGuard(g);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+  }, [isCurrent, dirty]);
+
   // live edits reach the running machine at once; staged edits sit in the editor
   const liveToggle: SetEnabled = (dev, on) =>
     liveSetParam(dev, 'enabled', on ? '1' : '0', on ? 'device enabled' : 'device disabled');
@@ -575,7 +601,9 @@ function MasterRow({ c }: { c: ConfigSummary }) {
   const isCurrent = c.name === s.configCurrent;
   const dip = c.dip_value ?? -1;
   return html`<button class=${'cfg-item' + (c.name === selected ? ' active' : '')}
-    onClick=${() => loc.route('/config/' + encodeURIComponent(c.name))}>
+    onClick=${() => {
+      if (c.name !== selected) guardedRoute(loc, '/config/' + encodeURIComponent(c.name));
+    }}>
     <span class="cfg-item-top">
       <span class="cfg-item-name">${c.title || c.name}</span>
       <span class="cfg-item-marks">

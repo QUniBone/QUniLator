@@ -2,12 +2,14 @@
 // the store the views read.
 import { setStore, emit } from './store';
 import { toast } from './lib/toast';
+import { subURL } from './lib/util';
 import { liveModel, replayEventValues } from './lib/devmodel';
 import { updateConsoleSource } from './lib/terminals';
 import type {
   ApiDevice,
   Settings,
-  ImageInfo,
+  ImageListing,
+  ImageContents,
   ConfigSummary,
   ConfigSnapshot,
   LogLine,
@@ -126,7 +128,105 @@ export async function fetchLogPage(
 export async function refreshImages(): Promise<void> {
   const r = await fetch('/api/images');
   if (!r.ok) throw new Error('images fetch failed');
-  setStore({ images: (await r.json()) as ImageInfo[] });
+  const body = (await r.json()) as ImageListing;
+  setStore({ images: body.images || [], dirs: body.dirs || [] });
+}
+
+// Upload one or more files into `dir` (a folder subpath, "" for the root). The
+// backend reads the `dir` field first, so it is appended before the files.
+// onProgress reports overall bytes 0..1 during the transfer.
+export function uploadImages(
+  files: File[],
+  dir: string,
+  onProgress?: (frac: number) => void
+): Promise<{ ok: boolean; names: string[]; error?: string }> {
+  return new Promise((resolve) => {
+    const form = new FormData();
+    files.forEach((f) => form.append('file', f, f.name));
+    const xhr = new XMLHttpRequest();
+    // target folder is a query parameter so the server knows it before parsing
+    // the body, independent of multipart field order
+    const q = dir ? '?dir=' + encodeURIComponent(dir) : '';
+    xhr.open('POST', '/api/images' + q);
+    xhr.upload.onprogress = (ev) => {
+      if (onProgress && ev.lengthComputable) onProgress(ev.loaded / ev.total);
+    };
+    xhr.onload = () => {
+      let data: { names?: string[]; error?: string } = {};
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        /* ignore */
+      }
+      const ok = xhr.status >= 200 && xhr.status < 300;
+      const names = data.names || files.map((f) => f.name);
+      toast('POST /api/images', ok ? names.join(', ') + ' uploaded' : data.error || 'upload failed');
+      refreshImages().catch(() => {});
+      resolve({ ok, names, error: data.error });
+    };
+    xhr.onerror = () => {
+      toast('POST /api/images', 'upload failed');
+      resolve({ ok: false, names: [], error: 'network error' });
+    };
+    xhr.send(form);
+  });
+}
+
+// Read the file listing inside a disk/tape image (read-only). Returns the
+// parsed JSON on success, or an {filesystem:'unknown', error} object the caller
+// renders as the friendly note. The subpath is encoded per-segment (keeping the
+// slashes) — never double-encoded.
+export async function imageContents(subpath: string): Promise<ImageContents> {
+  try {
+    const r = await fetch(subURL('/api/images/', subpath) + '/contents');
+    const data = (await r.json().catch(() => ({}))) as ImageContents;
+    if (!r.ok)
+      return { filesystem: 'unknown', error: (data as { error?: string }).error || 'read failed' };
+    return data;
+  } catch {
+    return { filesystem: 'unknown', error: 'network error' };
+  }
+}
+
+// Delete an image file by its subpath. Refused (409) while attached or used.
+export async function deleteImage(subpath: string): Promise<boolean> {
+  const res = await apiJSON<{ error?: string }>(subURL('/api/images/', subpath), { method: 'DELETE' });
+  toast('DELETE /api/images/' + subpath, res.ok ? 'image deleted' : res.data.error || 'delete failed');
+  await refreshImages().catch(() => {});
+  return res.ok;
+}
+
+// Create a folder at a subpath.
+export async function createFolder(path: string): Promise<boolean> {
+  const res = await apiJSON<{ error?: string }>('/api/folders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  });
+  toast('POST /api/folders ' + path, res.ok ? 'folder created' : res.data.error || 'create failed');
+  await refreshImages().catch(() => {});
+  return res.ok;
+}
+
+// Remove an empty folder by its subpath. Refused (409) when not empty.
+export async function deleteFolder(path: string): Promise<boolean> {
+  const res = await apiJSON<{ error?: string }>(subURL('/api/folders/', path), { method: 'DELETE' });
+  toast('DELETE /api/folders/' + path, res.ok ? 'folder removed' : res.data.error || 'remove failed');
+  await refreshImages().catch(() => {});
+  return res.ok;
+}
+
+// Rename or move a file or folder (subpaths). Refused (409) when the source is
+// attached/used or the target exists.
+export async function moveImage(from: string, to: string): Promise<boolean> {
+  const res = await apiJSON<{ error?: string }>('/api/move', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from, to }),
+  });
+  toast('POST /api/move ' + from + ' → ' + to, res.ok ? 'moved' : res.data.error || 'move failed');
+  await refreshImages().catch(() => {});
+  return res.ok;
 }
 
 // ---- configurations ----

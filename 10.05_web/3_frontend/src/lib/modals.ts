@@ -1,8 +1,8 @@
 // Promise-based imperative overlays: confirm, image picker, first-run password.
 import { apiJSON } from '../api';
 import { toast } from './toast';
-import { esc, humanSize, imageLabel } from './util';
-import type { ImageInfo } from '../types';
+import { esc, humanSize, imageSubpath, parentDir, baseName } from './util';
+import type { ImageInfo, ImageListing } from '../types';
 
 export function confirmModal(title: string, body: string, confirmLabel: string): Promise<boolean> {
   return new Promise((resolve) => {
@@ -93,34 +93,35 @@ export function promptModal(
   });
 }
 
+// Breadcrumb trail from the root to `cwd`, as clickable segments carrying the
+// subpath each descends to (empty = root).
+function crumbHTML(cwd: string): string {
+  const segs = cwd ? cwd.split('/') : [];
+  let acc = '';
+  let out = '<button class="crumb" data-crumb="">root</button>';
+  segs.forEach((seg) => {
+    acc = acc ? acc + '/' + seg : seg;
+    out += '<span class="crumb-sep">›</span><button class="crumb" data-crumb="' + esc(acc) + '">' + esc(seg) + '</button>';
+  });
+  return '<div class="pick-crumbs">' + out + '</div>';
+}
+
+// The folder-aware image picker. Walks the image tree in place; resolves the
+// chosen file's subpath, "" for the empty option, or null when cancelled.
 export async function pickImage(
   title: string,
   emptyLabel: string,
   current: string
 ): Promise<string | null> {
-  const images: ImageInfo[] = await fetch('/api/images')
+  const listing: ImageListing = await fetch('/api/images')
     .then((r) => r.json())
-    .catch(() => []);
-  const now = imageLabel(current || '');
-  const rows =
-    images
-      .map(
-        (im) =>
-          '<button class="pick-row' +
-          (im.name === now ? ' current' : '') +
-          '" data-pick-name="' +
-          esc(im.name) +
-          '">' +
-          '<span class="mono">' +
-          esc(im.name) +
-          '</span>' +
-          (im.name === now ? '<span class="chip ok">loaded</span>' : '') +
-          '<span class="muted mono" style="font-size:var(--fs-0)">' +
-          humanSize(im.size) +
-          '</span></button>'
-      )
-      .join('') ||
-    '<div class="muted" style="padding:8px">No images uploaded — add one on the Storage page.</div>';
+    .catch(() => ({ dirs: [], images: [] }));
+  const dirs: string[] = listing.dirs || [];
+  const images: ImageInfo[] = listing.images || [];
+  const now = imageSubpath(current || '');
+  // open in the folder that holds the current medium, so the list lands on it
+  let cwd = now.includes('/') ? parentDir(now) : '';
+
   return new Promise((resolve) => {
     const host = document.createElement('div');
     host.className = 'modal-overlay';
@@ -129,14 +130,56 @@ export async function pickImage(
       esc(title) +
       '</h3>' +
       '<button class="modal-close" data-pick-close aria-label="Close" title="Close">&times;</button></div>' +
-      '<div class="pick-list">' +
-      rows +
-      '<button class="pick-row' +
-      (now ? '' : ' current') +
-      '" data-pick-name="">' +
-      '<span class="muted">' +
-      esc(emptyLabel) +
-      '</span></button></div></div>';
+      '<div class="pick-body"></div></div>';
+    const body = host.querySelector('.pick-body') as HTMLElement;
+
+    const render = () => {
+      const folders = dirs.filter((d) => parentDir(d) === cwd).sort();
+      const files = images.filter((im) => im.dir === cwd).sort((a, b) => a.name.localeCompare(b.name));
+      const folderRows = folders
+        .map(
+          (d) =>
+            '<button class="pick-row folder" data-nav-dir="' +
+            esc(d) +
+            '"><span class="pick-icon">📁</span><span class="mono">' +
+            esc(baseName(d)) +
+            '</span><span class="muted" style="font-size:var(--fs-0)">folder</span></button>'
+        )
+        .join('');
+      const fileRows = files
+        .map(
+          (im) =>
+            '<button class="pick-row' +
+            (im.path === now ? ' current' : '') +
+            '" data-pick-name="' +
+            esc(im.path) +
+            '"><span class="pick-icon">💾</span><span class="mono">' +
+            esc(im.name) +
+            '</span>' +
+            (im.path === now ? '<span class="chip ok">loaded</span>' : '') +
+            '<span class="muted mono" style="font-size:var(--fs-0)">' +
+            humanSize(im.size) +
+            '</span></button>'
+        )
+        .join('');
+      const empty =
+        !folders.length && !files.length
+          ? '<div class="muted" style="padding:8px">This folder is empty.</div>'
+          : '';
+      body.innerHTML =
+        crumbHTML(cwd) +
+        '<div class="pick-list">' +
+        folderRows +
+        fileRows +
+        empty +
+        '<button class="pick-row' +
+        (now ? '' : ' current') +
+        '" data-pick-empty><span class="pick-icon">∅</span><span class="muted">' +
+        esc(emptyLabel) +
+        '</span></button></div>';
+    };
+    render();
+
     const done = (v: string | null) => {
       host.remove();
       document.removeEventListener('keydown', onKey);
@@ -149,6 +192,22 @@ export async function pickImage(
       const target = e.target as HTMLElement;
       if (target === host || target.closest('[data-pick-close]')) {
         done(null);
+        return;
+      }
+      const crumb = target.closest('[data-crumb]') as HTMLElement | null;
+      if (crumb) {
+        cwd = crumb.dataset.crumb ?? '';
+        render();
+        return;
+      }
+      const nav = target.closest('[data-nav-dir]') as HTMLElement | null;
+      if (nav) {
+        cwd = nav.dataset.navDir ?? '';
+        render();
+        return;
+      }
+      if (target.closest('[data-pick-empty]')) {
+        done('');
         return;
       }
       const row = target.closest('[data-pick-name]') as HTMLElement | null;

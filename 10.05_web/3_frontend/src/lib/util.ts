@@ -18,14 +18,47 @@ export function humanSize(n: number): string {
   return n + ' B';
 }
 
-export function imageLabel(path: string): string {
-  if (!path) return '';
-  const pfx = store.imagesDir + '/';
-  if (store.imagesDir && path.startsWith(pfx)) {
-    const rest = path.slice(pfx.length);
-    if (rest.indexOf('/') === -1) return rest;
-  }
-  return path;
+// Normalise a stored drive image reference to an images-root-relative subpath
+// (e.g. "du/foo.dsk"). A drive's `image` param is stored as "images/<subpath>",
+// but legacy values may be "./images/foo" or an absolute path that contains the
+// images directory; strip whichever prefix is present.
+export function imageSubpath(stored: string): string {
+  if (!stored) return '';
+  let s = stored;
+  if (store.imagesDir && s.startsWith(store.imagesDir + '/')) s = s.slice(store.imagesDir.length + 1);
+  if (s.startsWith('./')) s = s.slice(2);
+  if (s.startsWith('images/')) s = s.slice('images/'.length);
+  return s;
+}
+
+// Display label for a drive's medium: its subpath within the image tree.
+export function imageLabel(stored: string): string {
+  return imageSubpath(stored);
+}
+
+// The parent folder of a subpath ("" for a top-level entry).
+export function parentDir(subpath: string): string {
+  const i = subpath.lastIndexOf('/');
+  return i < 0 ? '' : subpath.slice(0, i);
+}
+
+// The last path segment (file or folder name) of a subpath.
+export function baseName(subpath: string): string {
+  const i = subpath.lastIndexOf('/');
+  return i < 0 ? subpath : subpath.slice(i + 1);
+}
+
+// A subpath under `base`, per-segment percent-encoded but keeping the slashes,
+// so a route may hold folder separators without collapsing into one segment.
+export function subURL(base: string, subpath: string): string {
+  return (
+    base +
+    subpath
+      .split('/')
+      .filter(Boolean)
+      .map(encodeURIComponent)
+      .join('/')
+  );
 }
 
 export const wsURL = (p: string): string =>

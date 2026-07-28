@@ -169,7 +169,7 @@ const GAP = 6;
 const FIXED = [
   { key: 'controlpanel', w: 13, h: 3, label: 'Control panel' },
   { key: 'frontpanel', w: 7, h: 3, label: 'Front panel' },
-  { key: 'console', w: 15, h: 11, label: 'Console' },
+  { key: 'console', w: 15, h: 10, label: 'Console' },
 ];
 const FIXED_LABEL: Record<string, string> = {
   controlpanel: 'Control panel',

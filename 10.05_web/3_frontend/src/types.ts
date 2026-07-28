@@ -107,11 +107,44 @@ export interface ImageUse {
 }
 export interface ImageInfo {
   name: string;
-  path?: string;
+  path: string; // images-root-relative subpath, e.g. "du/foo.dsk"
+  dir: string; // parent folder subpath; "" for the root
   size: number;
+  writable?: boolean;
   mtime?: string;
   attached?: string[];
   used?: ImageUse[];
+}
+
+// GET /api/images now returns a folder tree: the flat list of folder subpaths
+// alongside the files.
+export interface ImageListing {
+  dirs: string[];
+  images: ImageInfo[];
+}
+
+// GET /api/images/<subpath>/contents — a read-only listing of the files inside
+// a disk/tape image. Field shapes vary by filesystem; the recognized values are
+// "RT-11" and "ODS-2", everything else reports "foreign" or "unknown".
+export interface ImageContentFile {
+  name: string;
+  // RT-11
+  bytes?: number;
+  blocks?: number;
+  date?: string;
+  // ODS-2
+  directory?: string;
+  size_bytes?: number | null;
+  blocks_on_volume?: number;
+  created?: string;
+}
+export interface ImageContents {
+  file?: string;
+  filesystem: string; // "RT-11" | "ODS-2" | "foreign" | "unknown"
+  image_size?: number;
+  home?: { volume_name?: string; [k: string]: unknown };
+  files?: ImageContentFile[];
+  error?: string; // set by the frontend when the fetch itself fails
 }
 
 // One row of the master list (GET /api/configs → configs[]).

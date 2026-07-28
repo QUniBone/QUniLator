@@ -5,7 +5,7 @@ import type { LiveDev } from '../types';
 import { liveSetParam } from '../api';
 import { store, useStore } from '../store';
 import { enabledDevices, statusParam } from '../lib/devmodel';
-import { ImageField } from './common';
+import { ImageField, Led } from './common';
 import {
   vcb01Connect,
   vcb01Blit,
@@ -183,8 +183,8 @@ function Ra81Widget({ d }: { d: LiveDev }) {
   return html`<${Panel} d=${d} caps=${caps} panelCls="span2" foot=${html`<${DiskFoot} d=${d} />`} />`;
 }
 
-// Every other disk (RK05, RX01/RX02, RS11): a READY cap with the unit number and
-// an ACCESS lamp that follows the drive's activity.
+// Every other disk (RK05, RS11): a READY cap with the unit number and an ACCESS
+// lamp that follows the drive's activity.
 function DiskWidget({ d }: { d: LiveDev }) {
   const powered = store.hw.powered !== false;
   const lit = (v: boolean) => powered && v;
@@ -193,6 +193,23 @@ function DiskWidget({ d }: { d: LiveDev }) {
   const caps = html`${html`<${ReadyCap} unit=${unit} lit=${lit(d.enabled && !active)} />`}
     ${html`<${Cap} cls="cap-yellow" lit=${lit(active)}>ACCESS</${Cap}>`}`;
   return html`<${Panel} d=${d} caps=${caps} panelCls="span2" foot=${html`<${DiskFoot} d=${d} />`} />`;
+}
+
+// The RX01/RX02 floppy drive, laid out like the TK50: a READY cap carrying the
+// unit number, a USE lamp that follows the drive's ACCESS activity, and a WRITE
+// PROT lamp lit for a read-only (write-protected) floppy. The mounted image and
+// its removable tag sit on the foot, where the operator swaps floppies.
+function RxWidget({ d }: { d: LiveDev }) {
+  const powered = store.hw.powered !== false;
+  const lit = (v: boolean) => powered && v;
+  const unit = unitOf(d);
+  const loaded = !!(d.img || paramVal(d, 'image'));
+  const active = lampOn(d, 'accesslamp');
+  const wp = lampOn(d, 'writeprotectlamp');
+  const caps = html`${html`<${ReadyCap} unit=${unit} lit=${lit(loaded && !active)} />`}
+    ${html`<${Cap} cls="cap-yellow" lit=${lit(active)}>USE</${Cap}>`}
+    ${html`<${Cap} cls="cap-orange" lit=${lit(wp)}>WRITE<br />PROT</${Cap}>`}`;
+  return html`<${Panel} d=${d} caps=${caps} foot=${html`<${DiskFoot} d=${d} />`} />`;
 }
 
 function NetworkWidget({ d }: { d: LiveDev }) {
@@ -239,12 +256,50 @@ function Vcb01Widget({ d }: { d: LiveDev }) {
       <div class="vcb01-hint">click to focus — keyboard & mouse drive the board</div></div></div>`;
 }
 
+// The DZV11 4-line mux, laid out like a modem panel: a black lamp window with
+// one row of signal lamps per line and a legend of the signal names beneath, in
+// the control-panel legend font. Only the signals the DZV11 carries appear:
+// RX/TX traffic, DTR (driven by the guest), CD (a connected TCP client), and RI
+// (a modem-status ring bit; unasserted, as the TCP transport has no ring). The
+// DZV11 has no RTS/CTS/DSR silicon, so those signals are absent.
+const DZ_LINES = 4;
+const DZ_SIGNALS: { key: string; label: string; live: boolean }[] = [
+  { key: 'rx', label: 'RX', live: true },
+  { key: 'tx', label: 'TX', live: true },
+  { key: 'dtr', label: 'DTR', live: true },
+  { key: 'cd', label: 'CD', live: true },
+  { key: 'ri', label: 'RI', live: false },
+];
+function DzWidget({ d }: { d: LiveDev }) {
+  const powered = store.hw.powered !== false;
+  const rows = [];
+  for (let ln = 0; ln < DZ_LINES; ln++) {
+    const cells = DZ_SIGNALS.map((s) => {
+      const on = powered && s.live && lampOn(d, s.key + ln + 'lamp');
+      return html`<span class="dz-cell"><${Led} on=${on} title=${s.label + ' line ' + ln} /></span>`;
+    });
+    rows.push(html`<div class="dz-row"><span class="dz-port">${ln}</span>${cells}</div>`);
+  }
+  const legend = html`<div class="dz-legend"><span class="dz-port"></span>${DZ_SIGNALS.map(
+    (s) => html`<span class="dz-cell">${s.label}</span>`
+  )}</div>`;
+  return html`<div class="card diskcard dzcard">
+    <div class="card-head"><h3>${d.label || d.type}</h3></div>
+    <div class="card-body dzbody">
+      <div class="dz-panel">${rows}</div>
+      ${legend}
+    </div></div>`;
+}
+
 type Widget = (props: { d: LiveDev }) => ReturnType<typeof html>;
 const WIDGET_MODELS: Record<string, Widget> = {
   RL02: RlWidget,
   RL01: RlWidget,
   RA81: Ra81Widget,
   VCB01: Vcb01Widget,
+  RX01: RxWidget,
+  RX02: RxWidget,
+  dzv11_c: DzWidget,
 };
 const WIDGET_CATEGORIES: Record<string, Widget> = {
   disk: DiskWidget,
@@ -259,7 +314,9 @@ export function widgetFor(d: LiveDev): Widget | null {
 // dashboard places each widget as a block of this size; tuned to fit the widget
 // content at the grid cell size.
 export function widgetCells(d: LiveDev): { w: number; h: number } {
-  if (d.type === 'VCB01') return { w: 12, h: 10 };
+  if (d.type === 'VCB01') return { w: 12, h: 12 };
+  if (d.type === 'dzv11_c') return { w: 5, h: 4 };
+  if (d.type === 'RX01' || d.type === 'RX02') return { w: 6, h: 4 };
   if (d.type === 'RA81') return { w: 9, h: 4 };
   const cat = d.category || 'other';
   if (cat === 'disk') return d.type.startsWith('RL') ? { w: 6, h: 6 } : { w: 9, h: 6 };

@@ -19,6 +19,7 @@ export interface Store {
   devmodel: LiveDev[];
   settings: Settings;
   images: ImageInfo[];
+  dirs: string[]; // image-folder subpaths (the tree the storage page walks)
   imagesDir: string;
   configs: ConfigSummary[] | null;
   configCurrent: string; // the running configuration's name
@@ -43,6 +44,7 @@ export const store: Store = {
     external_console: { source: 'webserial', port: 'ttyS2', baud: 38400 },
   },
   images: [],
+  dirs: [],
   imagesDir: '',
   configs: null,
   configCurrent: '',

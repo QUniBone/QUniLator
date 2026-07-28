@@ -4,6 +4,7 @@ import { Router, useLocation } from 'preact-iso';
 import { useStore } from '../store';
 import type { HwState, Settings } from '../types';
 import { Led } from './common';
+import { guardedRoute } from '../lib/navguard';
 import { Dashboard } from './Dashboard';
 import { StoragePage } from './Storage';
 import { ConfigsPage } from './Configs';
@@ -32,7 +33,7 @@ function Sidebar({ active }: { active: string }) {
       <div><span class="name">QUniLator</span><span class="sub">QBUS bridge</span></div></div>
     <nav class="nav">${NAV.map(
       ([path, label]) => html`
-      <button class=${active === path ? 'active' : ''} onClick=${() => loc.route(path)}><span>${label}</span></button>`
+      <button class=${active === path ? 'active' : ''} onClick=${() => guardedRoute(loc, path)}><span>${label}</span></button>`
     )}</nav>
   </aside>`;
 }
@@ -79,7 +80,7 @@ export function App() {
         <${Router}>
           <${Redirect} path="/" to="/dashboard" />
           <${Dashboard} path="/dashboard" />
-          <${StoragePage} path="/storage" />
+          <${StoragePage} path="/storage/:path*" />
           <${ConfigsPage} path="/config/:name?/:device?" />
           <${MachinePage} path="/machine" />
           <${LogPage} path="/diagnostics" />
