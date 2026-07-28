@@ -51,6 +51,15 @@ else
 	$(error Set MAKE_CONFIGURATION to RELEASE or DBG!)
 endif
 
+CC_CODE_FLAGS = -DUNIBUS -DBLINKENLIGHT_CLIENT
+
+# NO_PHYSICAL_BUS:
+# Special build to run UniBone without physical UNIBUS, outside a terminated backplane.
+# Then the simulation is pure virtual ... makes on sense when simulated CPU is active.
+# Intended for developers, who don't like to heat a real PDP-11 just for testing their code.
+# CC_CODE_FLAGS += -DNO_PHYSICAL_BUS
+
+# conditional compiles for ARM and PRU
 ifeq ($(MAKE_TARGET_ARCH),BBB)
 	# cross compile on x64 for BBB
 	CC=$(BBB_CC)
@@ -77,8 +86,7 @@ CCFLAGS= \
 	-I$(DEVEXER_SRC_DIR)	\
 	-I$(OBJDIR)	\
 	-I$(PRU_DEPLOY_DIR)	\
-	-DUNIBUS        \
-	-DBLINKENLIGHT_CLIENT        \
+	$(CC_CODE_FLAGS)        \
 	-c	\
 	$(CCDEFS) $(CC_DBG_FLAGS) $(OS_CCDEFS)
 # OBJDIR in includes because of $(PRU_CODE)
@@ -646,12 +654,12 @@ $(OBJDIR)/qunibusadapter.o :  $(BASE_SRC_DIR)/qunibusadapter.cpp $(BASE_SRC_DIR)
 # and converted to a C array source code by hexpru -- array
 #  $(SHARED_SRC_DIR)/*.h $(SHARED_SRC_DIR)/*.c
 $(PRU0_CODE_LIST): $(PRU0_BASE_SRC_DIR)/*.h $(PRU0_BASE_SRC_DIR)/*.c $(SHARED_SRC_DIR)/*.h
-	$(MAKE) -C $(PRU0_BASE_SRC_DIR) $@
+	$(MAKE) -C $(PRU0_BASE_SRC_DIR) CC_CODE_FLAGS="$(CC_CODE_FLAGS)" $@
 	echo PRU0 codefile $@ created
 #	cp $(PRU_DEPLOY_DIR)/$(PRU0_CODE).[hc]
 
 $(PRU1_CODE_LIST): $(PRU1_BASE_SRC_DIR)/*.h $(PRU1_BASE_SRC_DIR)/*.c $(SHARED_SRC_DIR)/*.h
-	$(MAKE) -C $(PRU1_BASE_SRC_DIR) $@
+	$(MAKE) -C $(PRU1_BASE_SRC_DIR) CC_CODE_FLAGS="$(CC_CODE_FLAGS)" $@
 	echo PRU1 codefile $@ created
 #	cp $(PRU_DEPLOY_DIR)/$(PRU0_CODE).[hc]
 

@@ -39,6 +39,10 @@ INCLUDE=--include_path=$(SUPPORTPACKAGE_DIR)/include --include_path=$(SUPPORTPAC
 STACK_SIZE=0x100
 HEAP_SIZE=0x100
 
+# defines from the command line, e.g. "make CC_CODE_FLAGS=-DUNIBUS -DNO_PHYSICAL_BUS
+# conditional compile flags, may be overridden by parent make
+CC_CODE_FLAGS ?= -DUNIBUS # always needed for this UNIBUS PRU
+
 # fiddeling with the optimizer options does not really speed up UNIBUS cycle performance
 # do not use -c_src_interlist: "negative effect on performance"? clpru v2.2
 #CFLAGS_OPTIMIZER=--opt_level=3 --auto_inline --optimizer_interlist --gen_opt_info=2
@@ -46,7 +50,7 @@ CFLAGS_OPTIMIZER=--opt_level=3 --opt_for_speed=5 --auto_inline   --c_src_interli
 #CFLAGS_OPTIMIZER=--opt_level=3 --auto_inline   --c_src_interlist --optimizer_interlist --gen_opt_info=2
 #Common compiler and linker flags (Defined in 'PRU Optimizing C/C++ Compiler User's Guide)
 CFLAGS=-v3 $(CFLAGS_OPTIMIZER) \
-        -DUNIBUS  \
+        $(CC_CODE_FLAGS)  \
 	--display_error_number --emit_warnings_as_errors --verbose_diagnostics \
 	--endian=little --hardware_mac=on --obj_directory=$(OBJ_DIR) --pp_directory=$(OBJ_DIR) -ppd -ppa
 
