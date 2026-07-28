@@ -555,7 +555,13 @@ void slu_c::worker_xmt(void)
 {
 	timeout_c timeout;
 
-	assert(!pthread_mutex_lock(&on_after_register_access_mutex));
+	// The mutex held across the loop is the one the wait below releases and the
+	// one unlocked on the way out. Taking a different mutex here left
+	// pthread_cond_wait() waiting on a mutex this thread does not own: the wake
+	// that workers_stop() sends could not be handed over reliably, the worker
+	// missed workers_terminate, and it was cancelled inside the wait — dying
+	// with the mutex locked, which deadlocks the next configuration apply.
+	assert(!pthread_mutex_lock(&on_after_xmt_register_access_mutex));
 
 	// Transmitter not time critical
 	worker_init_realtime_priority(rt_device);

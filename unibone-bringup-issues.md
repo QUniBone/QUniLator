@@ -433,3 +433,49 @@ is one, so the lamp follows the machine. A physical CPU still shows its HALT
 line.
 
 Fixed in `10.05_web/2_src/webevents.cpp`.
+
+## 18. The SLU transmit worker waited on a mutex it did not hold
+
+A configuration apply while the machine was running left the web interface
+dead — every request timing out — with the board itself healthy and the service
+still "active". The log named it:
+
+    [ERR slu] DL11.worker(1) did not return within 1000 ms: cancelling it,
+              which may leave one of its mutexes locked.
+
+`worker_xmt()` enters by locking `on_after_register_access_mutex`, waits on
+`pthread_cond_wait(&on_after_xmt_register_access_cond,
+&on_after_xmt_register_access_mutex)`, and leaves by unlocking the *xmt* mutex.
+The entry lock was the wrong one, so the wait held a mutex the thread never
+owned. `workers_stop()` signals the condition variable up to a hundred times
+before giving up — the mechanism is there and the SLU implements `worker_wake()`
+— but a wait on an unowned mutex cannot hand over reliably, so the worker never
+saw `workers_terminate` and was cancelled inside the wait. The comment beside
+that cancellation says exactly what follows: the thread re-acquires the mutex
+while unwinding and dies owning it, and every later lock blocks for the life of
+the process. The next apply took it and the civetweb threads piled up behind
+`operations_mutex`.
+
+Nothing goes wrong while the machine runs, which is why this survived: the
+mutex wrongly held belongs to the register-access path of a different class,
+so it is never contended. Only the shutdown handshake depends on ownership.
+
+The entry now locks the mutex the wait releases and the exit unlocks. A cold
+apply and RESTART of the saved machine boots XXDP with no worker cancelled.
+
+Fixed in `10.02_devices/2_src/dl11w.cpp`.
+
+## 19. The boot address was not part of the saved machine
+
+`bootaddress_label` is the MACRO-11 label the M9312 resolves to a power-on PC,
+and it is read-only while the device is on the bus — so it is set with the
+M9312 unplugged, and a configuration that omits it leaves RESTART with no
+address to load. The `pdp1120` configuration omitted it, and the restarts that
+appeared to work did so only because the PC still held 173004 from a hand-set
+boot.
+
+With `bootaddress_label = dl0n` saved, an apply resolves it:
+
+    m9312: Code label "dl0n" resolved, auto boot PC = 773004
+
+and RESTART alone boots the machine.
