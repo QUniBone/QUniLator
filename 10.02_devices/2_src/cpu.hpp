@@ -1,4 +1,4 @@
-/* cpu.hpp: PDP-11/05 CPU
+/* cpu.hpp: model independent base class for emulated PDP-11 CPUs
 
  Copyright (c) 2018, Angelo Papenhoff, Joerg Hoppe
  j_hoppe@t-online.de, www.retrocmp.com
@@ -21,20 +21,34 @@
  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
+ 24-jul-2026  JH      split model independent part off into cpu_base_c
  23-nov-2018  JH      created
+
+ cpu_base_c implements everything an emulated PDP-11 CPU needs which does not
+ depend on the CPU model: the console switches, the worker() thread driving
+ emulation, QUNIBUS data transfers, power events and diagnostics.
+
+ The actual instruction set emulation lives in a plain C "core"
+ (cpu20/ka11.c, cpu34/kd11ea.c, ...). A derived class (cpu20_c, cpu34_c) owns
+ such a core and connects it by implementing the core_*() hooks below.
+
+ Only one CPU may be installed ("enabled") at a time: the core reaches back to
+ the ARM side through global functions (see cpu_bus_adapter.h) which operate on
+ a single installed CPU. Enabling a second one is refused, see on_before_install().
  */
 #ifndef _CPU_HPP_
 #define _CPU_HPP_
 
+#include <assert.h>
+
 #include "utils.hpp"
 #include "timeout.hpp"
+#include "qunibus.h"	// QUNIBUS_CYCLE_*, used by qunibus_tracer.hpp
 //#include "qunibusadapter.hpp"
 //#include "qunibusdevice.hpp"
 #include "unibuscpu.hpp"
 #include "qunibus_tracer.hpp"
 #include "ringbuffer.hpp"
-#include "cpu20/11.h"
-#include "cpu20/ka11.h"
 
 // on etraces QUNIBUS access
 class qunibus_cycle_trace_entry_c {
@@ -73,7 +87,7 @@ public:
     }
 
     // readout non-destructive. to clear, use "clearConsumer()"
-    void dump(std::ostream *stream) 
+    void dump(std::ostream *stream)
     {
         qunibus_cycle_trace_entry_c *cte ;
         char buffer[256] ;
@@ -92,7 +106,7 @@ public:
     }
 
 
-    void dump(std::string filepath) 
+    void dump(std::string filepath)
     {
         std::ofstream file_stream;
         file_stream.open(filepath, std::ofstream::out | std::ofstream::trunc);
@@ -109,7 +123,7 @@ public:
 } ;
 
 
-class cpu_c: public unibuscpu_c {
+class cpu_base_c: public unibuscpu_c {
 private:
     //qunibusdevice_register_t *switch_reg;
     //qunibusdevice_register_t *display_reg;
@@ -123,8 +137,16 @@ private:
 
 public:
 
-    cpu_c();
-    ~cpu_c();
+	// run state of the emulation core.
+	// values identical to the cores KA11_STATE_*/KD11EA_STATE_* codes.
+	enum cpu_state_e {
+		cpu_state_halted = 0,
+		cpu_state_running = 1,
+		cpu_state_waiting = 2
+	};
+
+    cpu_base_c();
+    virtual ~cpu_base_c();
 
     bool on_before_install(void) override ;
     void on_after_uninstall(void) override ;
@@ -146,9 +168,6 @@ public:
     parameter_bool_c direct_memory = parameter_bool_c(this, "pmi", "pmi",/*readonly*/
                                      false, "Private Memory Interconnect: CPU accesses memory internally, not over UNIBUS.");
 
-    parameter_bool_c swab_vbit = parameter_bool_c(this, "swab_vbit", "swab",/*readonly*/
-                                 false, "SWAB instruction does not(=0) or does(=1) modify psw v-bit (=0 is standard 11/20 behavior)");
-
     parameter_unsigned_c pc = parameter_unsigned_c(this, "PC", "pc",/*readonly*/
                               false, "", "%06o", "program counter helper register.", 16, 8);
 
@@ -165,9 +184,6 @@ public:
             "If set, CPU cycle trace is active and dumped to file on HALT.") ;
 
 
-    struct Bus bus; // UNIBUS interface of CPU
-    struct KA11 ka11; // Angelos CPU state
-
     void start(void);
     void stop(const char * info, int show_options=show_none);
 
@@ -178,7 +194,34 @@ public:
     void on_after_register_access(qunibusdevice_register_t *device_reg, uint8_t unibus_control, DATO_ACCESS access)
     override;
 
-    void on_interrupt(uint16_t vector);
+    void on_interrupt(uint16_t vector) override;
+
+    /*** interface to the CPU model specific emulation core ***/
+    // implemented by cpu20_c, cpu34_c, ... by forwarding to their C core.
+
+    // execute one instruction, if the core is RUNNING (or WAITING with work pending)
+    virtual void core_condstep(void) = 0;
+    // power-up/console START: clear the cores state
+    virtual void core_reset(void) = 0;
+    // an INTR vector was received from the bus. Called from a foreign thread!
+    virtual void core_setintr(uint16_t vector) = 0;
+    // ACLO active while running: trap through vector 24
+    virtual void core_pwrfail_trap(void) = 0;
+    // ACLO inactive: load PC and PSW from vector 24
+    virtual void core_pwrup_vector_fetch(void) = 0;
+    // diagnostic dumps of the cores registers
+    virtual void core_printstate(void) = 0;
+    virtual void core_tracestate(void) = 0;
+
+    virtual enum cpu_state_e core_get_state(void) = 0;
+    virtual void core_set_state(enum cpu_state_e state) = 0;
+    virtual uint16_t core_get_pc(void) = 0;
+    virtual void core_set_pc(uint16_t value) = 0;
+    // console switch register, readable by the CPU
+    virtual void core_set_switches(uint16_t value) = 0;
+    // copy CPU model specific option parameters into the core.
+    // called on every worker() loop, most models have none.
+    virtual void core_apply_options(void) { }
 
     //diagnostic
     trigger_c	trigger ;

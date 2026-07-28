@@ -128,7 +128,11 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/memoryimage.o	\
 	$(OBJDIR)/rom.o	\
 	$(OBJDIR)/cpu.o	\
+	$(OBJDIR)/cpu20.o	\
 	$(OBJDIR)/ka11.o	\
+	$(OBJDIR)/cpu34.o	\
+	$(OBJDIR)/kd11ea.o	\
+	$(OBJDIR)/kt11d.o	\
 	$(OBJDIR)/rl0102.o	\
     $(OBJDIR)/rl11.o	\
     $(OBJDIR)/rk11.o        \
@@ -339,8 +343,22 @@ $(OBJDIR)/devexer_rl.o :  $(DEVEXER_SRC_DIR)/devexer_rl.cpp $(DEVEXER_SRC_DIR)/d
 $(OBJDIR)/cpu.o :  $(DEVICE_SRC_DIR)/cpu.cpp $(DEVICE_SRC_DIR)/cpu.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/ka11.o :  $(DEVICE_SRC_DIR)/cpu20/ka11.c $(DEVICE_SRC_DIR)/cpu20/ka11.h
-	$(CC) $(CCFLAGS) -x c++ -Wno-parentheses -Wno-misleading-indentation -Wno-implicit-fallthrough $< -o $@
+$(OBJDIR)/ka11.o :  $(DEVICE_SRC_DIR)/cpu20/ka11.c $(DEVICE_SRC_DIR)/cpu20/ka11.h $(DEVICE_SRC_DIR)/cpu_core.h
+	$(CC) $(CCFLAGS) -x c++ -Wno-parentheses $< -o $@
+
+$(OBJDIR)/cpu20.o :  $(DEVICE_SRC_DIR)/cpu20.cpp $(DEVICE_SRC_DIR)/cpu20.hpp $(DEVICE_SRC_DIR)/cpu_core.h
+	$(CC) $(CCFLAGS) $< -o $@
+
+# kt11d.h in both: a KD11EA holds a KT11D by value, and cpu34.cpp allocates the
+# core, so both need the memory management unit's layout.
+$(OBJDIR)/cpu34.o :  $(DEVICE_SRC_DIR)/cpu34.cpp $(DEVICE_SRC_DIR)/cpu34.hpp $(DEVICE_SRC_DIR)/cpu_core.h $(DEVICE_SRC_DIR)/cpu34/kd11ea.h $(DEVICE_SRC_DIR)/cpu34/kt11d.h
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/kd11ea.o :  $(DEVICE_SRC_DIR)/cpu34/kd11ea.c $(DEVICE_SRC_DIR)/cpu34/kd11ea.h $(DEVICE_SRC_DIR)/cpu_core.h $(DEVICE_SRC_DIR)/cpu34/kt11d.h
+	$(CC) $(CCFLAGS) -x c++ -Wno-parentheses $< -o $@
+
+$(OBJDIR)/kt11d.o :  $(DEVICE_SRC_DIR)/cpu34/kt11d.c $(DEVICE_SRC_DIR)/cpu34/kt11d.h $(DEVICE_SRC_DIR)/cpu_core.h
+	$(CC) $(CCFLAGS) -x c++ -Wno-parentheses $< -o $@
 
 $(OBJDIR)/rl0102.o :  $(DEVICE_SRC_DIR)/rl0102.cpp $(DEVICE_SRC_DIR)/rl0102.hpp
 	$(CC) $(CCFLAGS) $< -o $@

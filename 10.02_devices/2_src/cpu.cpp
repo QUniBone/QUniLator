@@ -1,4 +1,4 @@
-/* cpu.cpp: PDP-11/05 CPU
+/* cpu.cpp: model independent base class for emulated PDP-11 CPUs
 
  Copyright (c) 2018, Angelo Papenhoff, Joerg Hoppe
 
@@ -20,11 +20,12 @@
  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
+ 24-jul-2026  JH     split model independent part off into cpu_base_c
  16-oct-2020  JH     merged VBIT changes by github jks-prv
  23-nov-2018  JH      created
 
- In worker() Angelos 11/05 CPU is  running.
- Can do bus amster DAGTIDATO.
+ In worker() the emulation core of the derived class is running.
+ Can do bus master DATI/DATO.
  */
 
 #include <string.h>
@@ -39,6 +40,7 @@
 #include "qunibusadapter.hpp"
 #include "qunibusdevice.hpp"	// definition of class device_c
 #include "cpu.hpp"
+#include "cpu_bus_adapter.h"
 
 /* If CPU_CONTROLLED_TIME,
    then time base for all devices, also KW11 50Hz, are
@@ -49,20 +51,19 @@
  */
 #undef CPU_CONTROLLED_TIME
 
-int dbg = 0;
 
+/*** functions to be used by the emulation cores ***/
 
-
-/*** functions to be used by Angelos CPU emulator ***/
-
-/* Adapter procs to Angelos CPU are not members of cpu_c class
+/* Adapter procs to the C emulation cores are not members of cpu_base_c
  and need one global reference.
+ Set on install(), so several CPU models may be instantiated in parallel,
+ but only one may be enabled. See cpu_base_c::on_before_install().
  */
-static cpu_c *unibone_cpu = NULL;
+static cpu_base_c *unibone_cpu = NULL;
 
 // route "trace()" to unibone_cpu->logger
 void unibone_log(unsigned msglevel, const char *srcfilename, unsigned srcline, const char *fmt,
-                 ...) 
+                 ...)
 {
     // gate on the CPU source's verbosity like logger_c::log does, so the trace
     // obeys the same per-source level as every other source in the one log
@@ -74,7 +75,7 @@ void unibone_log(unsigned msglevel, const char *srcfilename, unsigned srcline, c
     va_end(arg_ptr);
 }
 
-void unibone_logdump(void) 
+void unibone_logdump(void)
 {
 //	logger->dump(logger->default_filepath);
     logger->dump(); // stdout
@@ -83,16 +84,23 @@ void unibone_logdump(void)
 // called before opcode fetch of next instruction
 // This is the point in time were INTR requests are checked and GRANTed
 // (PRU implementation may limit NPR GRANTs also to this time)
-void unibone_grant_interrupts(void) 
+void unibone_grant_interrupts(void)
 {
     // after that the CPU should check for received INTR vectors
     // in its microcode service() step.c
     // allow PRU do to produce GRANT for device requests
-    mailbox_execute (ARM2PRU_ARB_GRANT_INTR_REQUESTS);
-    // Block CPU thread
+    if (!mailbox_execute (ARM2PRU_ARB_GRANT_INTR_REQUESTS))
+        return; // PRU not responding, reported by mailbox_execute()
+    // Block CPU thread, often 60-80 us of idle spinning.
+    // Bounded: if the PRU is stopped or restarted mid-instruction, an
+    // unbounded spin would hang the CPU worker thread beyond recovery.
+    uint64_t starttime_ns = timeout_c::abstime_ns();
     while (mailbox->arbitrator.ifs_intr_arbitration_pending) {
-// often 60-80 us, So just idle loop the CPU thread
-//		timeout_c::wait_us(1);
+        if (timeout_c::abstime_ns() - starttime_ns > 100000000ull) {
+            logger->log(unibone_cpu, LL_ERROR, false, __FILE__, __LINE__,
+                        "unibone_grant_interrupts(): PRU arbitration pending for >100ms - PRU stopped or hung?");
+            return;
+        }
     }
 }
 
@@ -109,7 +117,7 @@ void unibone_grant_interrupts(void)
 #define UNIBUS_ACCESS_NS	1000
 // "real world" time for bus access. emulated timeout is stepped by this on every cycle.
 
-int unibone_dato(unsigned addr, unsigned data) 
+int unibone_dato(unsigned addr, unsigned data)
 {
     bool success ;
 
@@ -122,12 +130,9 @@ int unibone_dato(unsigned addr, unsigned data)
         ddrmem->pmi_deposit(addr, data);
         success = true;
     } else {
-        dbg = 1;
         qunibusadapter->cpu_DATA_transfer(unibone_cpu->data_transfer_request,
                                           QUNIBUS_CYCLE_DATO, addr, &wordbuffer);
-        dbg = 0;
         success = unibone_cpu->data_transfer_request.success;
-        //printf("DATO; ba=%o, data=%o, success=%u\n", addr, data, (int)success) ;
     }
 
     // trace bus access
@@ -137,7 +142,7 @@ int unibone_dato(unsigned addr, unsigned data)
     return success;
 }
 
-int unibone_datob(unsigned addr, unsigned data) 
+int unibone_datob(unsigned addr, unsigned data)
 {
     bool success ;
     unibone_cpu->trigger.probe(addr, QUNIBUS_CYCLE_DATO) ; // register access for trigger system
@@ -157,13 +162,10 @@ int unibone_datob(unsigned addr, unsigned data)
         success = true;
     } else {
         // TODO DATOB als 1 byte-DMA !
-        dbg = 1;
         uint16_t w = (uint16_t) data;
         qunibusadapter->cpu_DATA_transfer(unibone_cpu->data_transfer_request,
                                           QUNIBUS_CYCLE_DATOB, addr, &w);
-        dbg = 0;
         success = unibone_cpu->data_transfer_request.success;
-        //printf("DATOB; ba=%o, data=%o, success=%u\n", addr, data, (int)success) ;
     }
 
     // trace bus access
@@ -173,7 +175,7 @@ int unibone_datob(unsigned addr, unsigned data)
     return success;
 }
 
-int unibone_dati(unsigned addr, unsigned *data) 
+int unibone_dati(unsigned addr, unsigned *data)
  {
     bool success ;
     uint16_t w;
@@ -191,13 +193,10 @@ int unibone_dati(unsigned addr, unsigned *data)
         *data = w;
         success = true;
     } else {
-        dbg = 1;
         qunibusadapter->cpu_DATA_transfer(unibone_cpu->data_transfer_request,
                                           QUNIBUS_CYCLE_DATI, addr, &w);
         *data = w;
-        dbg = 0;
         success = unibone_cpu->data_transfer_request.success;
-        //printf("DATI; ba=%o, data=%o, success=%u\n", addr, *data, (int)success) ;
     }
 
     // trace bus access
@@ -211,39 +210,40 @@ int unibone_dati(unsigned addr, unsigned *data)
 // if this is called as result of INTR fector PC and PSW fetch,
 // mailbox->arbitrator.cpu_priority_level was CPU_PRIORITY_LEVEL_FETCHING
 // In that case, PRU is allowed now to grant BGs again.
-void unibone_prioritylevelchange(uint8_t level) 
+void unibone_prioritylevelchange(uint8_t level)
 {
     mailbox->arbitrator.ifs_priority_level = level;
 }
 
 // CPU executes RESET opcode -> pulses INIT line
-void unibone_bus_init() 
+void unibone_bus_init()
 {
     qunibus->init();
 }
 
 
-// selective tracing of EXEC cycles
-bool unibone_trace_enabled() 
+// Is trace() output live at all? trace() records at LL_DEBUG, so this is the
+// logger level gate. The cores cache the answer in cpu->tracing once per
+// instruction: with tracing off, all their per-cycle trace sites cost one
+// flag test each instead of a call chain into the logger.
+bool unibone_trace_enabled()
 {
-    return unibone_cpu->tracer.enabled ;
+    return !logger->ignored(unibone_cpu, LL_DEBUG) ;
 }
 
-// shell and address be traced?
-bool unibone_trace_addr(uint16_t a) 
+// shall this address be traced? Only consulted when tracing is live;
+// with the address filter disabled, everything is traced.
+bool unibone_trace_addr(uint16_t a)
 {
     return !unibone_cpu->tracer.enabled || unibone_cpu->tracer.addr[a] ;
 }
 
 
 
-cpu_c::cpu_c() :
+cpu_base_c::cpu_base_c() :
     unibuscpu_c()  // super class constructor
 {
-    // static config
-    name.value = "CPU20";
-    type_name.value = "PDP-11/20";
-    log_label = "cpu";
+    // static config, derived classes set name/type_name/log_label
     default_base_addr = 0;  // none
     default_intr_vector = 0;
     default_intr_level = 0;
@@ -258,11 +258,9 @@ cpu_c::cpu_c() :
     direct_memory.value = false;
     emulation_speed.value = 0.1 ; // non-PMI speed,  see on_param_changed() also
 
-
-    // current CPU does not publish registers to the bus
+    // current CPUs do not publish registers to the bus
     // must be qunibusdevice_c then!
     register_count = 0;
-    swab_vbit.value = false;
 
     // Running state, not configuration: the RUN LED, the live program counter
     // the CPU writes back, and the executed-opcode count.
@@ -278,27 +276,30 @@ cpu_c::cpu_c() :
     halt_switch.kind = parameter_c::PARAM_STATUS;
     start_switch.kind = parameter_c::PARAM_STATUS;
     continue_switch.kind = parameter_c::PARAM_STATUS;
-
-    memset(&bus, 0, sizeof(bus));
-    memset(&ka11, 0, sizeof(ka11));
-    ka11.bus = &bus;
-
-    // link to global instance ptr
-    assert(unibone_cpu == NULL);// only one possible
-    unibone_cpu = this;	// Singleton
 }
 
-cpu_c::~cpu_c() 
+cpu_base_c::~cpu_base_c()
 {
     // restore
     the_flexi_timeout_controller->set_mode(flexi_timeout_c::world_time);
-    unibone_cpu = NULL;
+    if (unibone_cpu == this)
+        unibone_cpu = NULL; // deleted without "disable" before
 }
 
 // called when "enabled" goes true, before registers plugged to UNIBUS
 // result false: configuration error, do not install
-bool cpu_c::on_before_install(void) 
+bool cpu_base_c::on_before_install(void)
 {
+    // The emulation cores reach the ARM side through the global unibone_*()
+    // functions, which work on a single installed CPU. And qunibusadapter
+    // accepts only one registered CPU too.
+    if (unibone_cpu != NULL && unibone_cpu != this) {
+        ERROR("%s can not be enabled: CPU %s is already active, disable it first.",
+              name.value.c_str(), unibone_cpu->name.value.c_str());
+        return false; // qunibusdevice_c aborts the "enable"
+    }
+    unibone_cpu = this; // Singleton, while installed
+
     halt_switch.value = false;
 // all other switches parsed synchronically in worker()
     start_switch.value = false;
@@ -308,20 +309,22 @@ bool cpu_c::on_before_install(void)
     return true;
 }
 
-void cpu_c::on_after_uninstall(void) 
+void cpu_base_c::on_after_uninstall(void)
 {
 // all other switches parsed synchronically in worker()
     start_switch.value = false;
     halt_switch.value = true;
     // HALT disabled CPU
     stop(NULL, show_none);
+
+    unibone_cpu = NULL; // another CPU model may be enabled now
 }
 
-bool cpu_c::on_param_changed(parameter_c *param) 
+bool cpu_base_c::on_param_changed(parameter_c *param)
 {
     if (param == &direct_memory) {
         // speed feedback, as measured
-        // see cpu_c() also
+        // see cpu_base_c() also
         emulation_speed.value = direct_memory.new_value ? 0.5 : 0.1 ;
     } else if (param == &cycle_tracefilepath) {
 	    cycle_trace_buffer.active = ! cycle_tracefilepath.new_value.empty() ;
@@ -330,37 +333,20 @@ bool cpu_c::on_param_changed(parameter_c *param)
 }
 
 // start CPU logic on PRU and switch arbitration mode
-void cpu_c::start() 
+void cpu_base_c::start()
 {
-// stop on an ZRXB test before error output starts, to watch CPU trace
+    // For debugging, trigger conditions and tracer address ranges can be set
+    // here before the CPU starts, see qunibus_tracer.hpp:
+    //	trigger.condition_add(trigger_condition_c(0777170, TRIGGER_DATO)) ;
+    //	tracer.enable(026276, 026400) ;
     trigger.conditions_clear() ;
-    /* Earlier use cases left as example: *
-    trigger.condition_add(trigger_condition_c(0777170, TRIGGER_DATO)) ; // ZRXF, start test by write into RXCS
-    trigger.condition_add(trigger_condition_c(0003576, TRIGGER_DATI)) ; // ZRXA, SEEKER
-
-    cycle_trace_buffer.active = true ;
-
-// now: trace on
-//trigger.condition_add(trigger_condition_c(0034500, TRIGGER_DATI)) ; // ZRXF, test 36 end
-//trigger.condition_add(trigger_condition_c(0010560, TRIGGER_DATI)) ; // for mov wc,rxdb
-//trigger.print(stdout) ;
-*/
-#ifdef ENABLE_TRIGGERS
-    	// code flow tracing: only trace EXEC in this range, when trace_exec_addr_from > 0
-    //	tracer.enable(0177170,0177173) ; // RX01/02
-    	tracer.enable(026276,026400) ; // ZRXF main level of test 17
-    	tracer.enable(034246,034500) ; // ZRXF main level of test 36
-    	tracer.enable(010626,010742) ; // ZRXF EMPBUF subr
-    	tracer.enable(011610,011632) ; // ZRXF WAIT
-    //	tracer.enable(012032,012106) ; // ZRXF AWDN wait for done
-#endif
 
     runmode.value = true;
     mailbox->param = 1;
     mailbox_execute(ARM2PRU_CPU_ENABLE);
     qunibus->set_arbitrator_active(true);
     pc.readonly = true; // can only be set on stopped CPU
-    ka11.state = KA11_STATE_RUNNING;
+    core_set_state(cpu_state_running);
     // time base of all device emulators now based on CPU opcode execution
 #ifdef CPU_CONTROLLED_TIME
     // only point to switch
@@ -374,14 +360,14 @@ void cpu_c::start()
 }
 
 // stop CPU logic on PRU and switch arbitration mode
-void cpu_c::stop(const char * info, int show_options) 
+void cpu_base_c::stop(const char * info, int show_options)
 {
     // time base of all device emulators now based on "real world" time
     the_flexi_timeout_controller->set_mode(flexi_timeout_c::world_time);
 
-    ka11.state = KA11_STATE_HALTED;
+    core_set_state(cpu_state_halted);
     pc.readonly = false;
-    pc.value = ka11.r[7]; // update for editing
+    pc.value = core_get_pc(); // update for editing
 
     runmode.value = false;
     mailbox->param = 0;
@@ -389,57 +375,45 @@ void cpu_c::stop(const char * info, int show_options)
     qunibus->set_arbitrator_active(false);
 
     if (info && strlen(info)) {
-        if (show_options & show_pc) {
-            char buff[256];
-            strcpy(buff, info);
-            strcat(buff, " at %06o");
-            INFO(buff, ka11.r[7]);
-        } else
-            INFO(info);
+        // "info" is caller text: always an argument, never a format string
+        if (show_options & show_pc)
+            INFO("%s at %06o", info, core_get_pc());
+        else
+            INFO("%s", info);
     }
 	if (show_options & show_trigger) {
 		trigger.print(stdout) ;
 	}
 	if (show_options & show_state) {
-		ka11_printstate(&ka11) ;
-		ka11_tracestate(&ka11) ; // DEBUG_FAST log
+		core_printstate() ;
+		core_tracestate() ; // DEBUG_FAST log
 	}
 	if ((show_options & show_cycletrace) && !cycle_tracefilepath.value.empty()) {
 		cycle_trace_buffer.dump(cycle_tracefilepath.value) ;
 	}
-	
+
 }
 
 // background worker.
 // Started/stopped on param "enable"
-void cpu_c::worker(unsigned instance) 
+void cpu_base_c::worker(unsigned instance)
 {
     UNUSED(instance); // only one
     timeout_c timeout;
-// bool nxm;
-// unsigned pc = 0;
-//unsigned dr = 0760102;
-    unsigned opcode = 0;
-    (void) opcode;
 
     power_event_ACLO_active = power_event_ACLO_inactive = power_event_DCLO_active = false;
 
 // run with lowest priority, but without wait()
 // => get all remaining CPU power
     worker_init_realtime_priority(none_rt);
-//worker_init_realtime_priority(device_rt);
 
     timeout.wait_us(1);
 
     while (!workers_terminate) {
-        // speed control is difficult, force to use more ARM cycles
-//			if (runmode.value != (ka11.state != 0))
-//				ka11.state = runmode.value;
-
         // RUN led
-        runmode.value = (ka11.state > 0); // RUNNING, WAITING
+        runmode.value = (core_get_state() > 0); // RUNNING, WAITING
         if (runmode.value)
-            pc.value = ka11.r[7]; // update for display
+            pc.value = core_get_pc(); // update for display
 
         // CONT starts
         // if HALT+CONT: only one single step
@@ -448,14 +422,13 @@ void cpu_c::worker(unsigned instance)
         }
         continue_switch.value = false; // momentary action
 
-        ka11.sw = swreg.value & 0xffff;
+        core_set_switches(swreg.value & 0xffff);
 
         if (!runmode.value && start_switch.value) {
             // START, or HALT+START: reset system
-            ka11.r[7] = pc.value & 0xffff;
-//            ka11.sw = swreg.value & 0xffff;
+            core_set_pc(pc.value & 0xffff);
             qunibus->init();
-            ka11_reset(&ka11);
+            core_reset();
             if (!halt_switch.value) {
                 // START without HALT
                 start(); // HALTED -> RUNNING
@@ -463,56 +436,49 @@ void cpu_c::worker(unsigned instance)
         }
         start_switch.value = false; // momentary action
 
-        int prev_ka11_state = ka11.state;
-        // ARM_DEBUG_PIN(0,1) ; // measure pmi gain
-        ka11_condstep(&ka11);
-        // ARM_DEBUG_PIN(0,0) ;
-        if (ka11.state != KA11_STATE_HALTED && trigger.has_triggered()) {
+        enum cpu_state_e prev_core_state = core_get_state();
+        core_condstep();
+        if (core_get_state() != cpu_state_halted && trigger.has_triggered()) {
             stop("Halted by trigger conditions:", show_pc+show_trigger+show_state+show_cycletrace);
-        } else  if (breakpoint.value && ka11.state != KA11_STATE_HALTED && breakpoint.value == ka11.r[7]) {
+        } else  if (breakpoint.value && core_get_state() != cpu_state_halted && breakpoint.value == core_get_pc()) {
             stop("CPU HALT by breakpoint", show_pc+show_state+show_cycletrace);
-        } else  if (prev_ka11_state > 0 && ka11.state == KA11_STATE_HALTED) {
+        } else  if (prev_core_state > 0 && core_get_state() == cpu_state_halted) {
             // CPU run on HALT, sync runmode
             stop("CPU HALT by opcode", show_pc+show_state+show_cycletrace);
         }
         // running CPU: produce emulated time for all devices
-        if (ka11.state == KA11_STATE_RUNNING) {
+        if (core_get_state() == cpu_state_running) {
             cycle_count.value++;
-        } else if (ka11.state == KA11_STATE_WAITING)
+        } else if (core_get_state() == cpu_state_waiting)
             // we should us "world" time here, but want to avoid permanent time-source switching
             // so just assume this here is called every 500ns (estimated average worker loop time)
             the_flexi_timeout_controller->emu_step_ns(500);
-        // if KA11_STATE_HALTED: world time is used, see start() / stop()
+        // if cpu_state_halted: world time is used, see start() / stop()
 
         // serialize asynchronous power events
         // ACLO inactive & no HALT: reboot
         // ACLO inactive & HALT: boot on CONT
-//if (power_event)	DEBUG_FAST("power_event=%d", power_event) ;
         // ACLO: power fail trap, if running.
         if (runmode.value && power_event_ACLO_active) {
-            ka11_pwrfail_trap(&unibone_cpu->ka11);
+            core_pwrfail_trap();
         }
         power_event_ACLO_active = false; // processed
 
         // DCLO: halt, like "enable = 0"
         if (runmode.value && power_event_DCLO_active) {
             stop("CPU HALT by DCLO", show_pc);
-//			ka11_reset(&ka11);
         }
         power_event_DCLO_active = false; // processed
         if (power_event_ACLO_inactive) {
             // Reboot
-            // if HALT switch active: no action, event remains pending
-//			if (!halt_switch.value) {
             stop("ACLO", show_pc);
             // execute this with real-world time, else lock (CPU not step() ing here)
             qunibus->init();		// reset devices
             start();		// start CPU logic on PRU, is bus master now
             INFO("ACLO inactive: fetch vector");
-            ka11_reset(&unibone_cpu->ka11);
-            ka11_pwrup_vector_fetch(&unibone_cpu->ka11);
+            core_reset();
+            core_pwrup_vector_fetch();
             // M9312 logic here: vectror redirection for 300ms
-//			}
             power_event_ACLO_inactive = false;		// processed
         }
 
@@ -525,7 +491,7 @@ void cpu_c::worker(unsigned instance)
             stop("CPU HALT by switch", show_pc+show_state+show_cycletrace);
         }
 
-        ka11.swab_vbit = (swab_vbit.value == true);
+        core_apply_options();
 
         // A running CPU is meant to take the core it is given: every pass
         // executes an instruction. A halted one steps nothing, and this loop
@@ -533,7 +499,7 @@ void cpu_c::worker(unsigned instance)
         // board that starves everything else in userspace, ssh included, and
         // the machine goes unreachable while looking alive to the network.
         // Poll at a rate no operator pressing START can notice.
-        if (ka11.state == KA11_STATE_HALTED)
+        if (core_get_state() == cpu_state_halted)
             timeout.wait_ms(1);
     }
 }
@@ -545,8 +511,8 @@ void cpu_c::worker(unsigned instance)
 //
 // UNIBUS DATO cycles let dati_flipflops "flicker" outside of this proc:
 //      do not read back dati_flipflops.
-void cpu_c::on_after_register_access(qunibusdevice_register_t *device_reg,
-                                     uint8_t unibus_control, DATO_ACCESS access) 
+void cpu_base_c::on_after_register_access(qunibusdevice_register_t *device_reg,
+                                     uint8_t unibus_control, DATO_ACCESS access)
  {
 // nothing todo
     UNUSED(device_reg);
@@ -560,12 +526,12 @@ void cpu_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 // CPU fetches PSW and calls unibone_prioritylevelchange(), which
 // sets mailbox->arbitrator.cpu_priority_level and
 // PRU is allowed now to grant BGs again.
-void cpu_c::on_interrupt(uint16_t vector) {
+void cpu_base_c::on_interrupt(uint16_t vector) {
 // CPU sequence:
 // push PSW to stack
 // push PC to stack
 // PC := *vector
 // PSW := *(vector+2)
-    ka11_setintr(&unibone_cpu->ka11, vector);
+    core_setintr(vector);
 }
 

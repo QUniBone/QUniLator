@@ -64,7 +64,10 @@
 #if defined(UNIBUS)
 #include "m9312.hpp"
 #endif
-#include "cpu.hpp"
+#if defined(UNIBUS)
+#include "cpu20.hpp"
+#include "cpu34.hpp"
+#endif
 #include "device_configuration.hpp"
 
 /*** handle loading of memory content  from macro-11 listing ***/

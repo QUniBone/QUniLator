@@ -479,10 +479,11 @@ static bool control_apply_to_emulated_cpu(const std::string &action) {
 	// with them, so those keep the path below.
 	if (action != "halt" && action != "continue" && action != "restart")
 		return false;
-	if (device_configuration == nullptr || device_configuration->cpu == nullptr
-			|| !device_configuration->cpu->enabled.value)
+	if (device_configuration == nullptr)
 		return false;
-	cpu_c *cpu = device_configuration->cpu;
+	cpu_base_c *cpu = device_configuration->emulated_cpu();
+	if (cpu == nullptr)
+		return false;
 	std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
 
 	if (action == "halt") {

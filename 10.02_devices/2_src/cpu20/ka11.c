@@ -1,41 +1,17 @@
-#include "11.h"
+/* ka11.c: PDP-11/20 (KA11) CPU emulation core, Angelo Papenhoff's KA11.
+
+ All symbols are either static or prefixed ka11_/KA11: this core is linked
+ into the same binary as the KD11-EA core of the 11/34 (cpu34/kd11ea.c).
+ */
+
+#include "cpu_core.h"
 #include "ka11.h"
 
-#include "gpios.hpp" // ARM_DEBUG_PIN*
+#include "cpu_debug_pins.h" // ARM_DEBUG_PIN*, no-ops off the BBB
 
-void unibone_grant_interrupts(void) ;
-int unibone_dato(unsigned addr, unsigned data);
-int unibone_datob(unsigned addr, unsigned data);
-int unibone_dati(unsigned addr, unsigned *data);
-void unibone_prioritylevelchange(uint8_t level);
-void unibone_bus_init() ;
+// unibone_*() declared in cpu_bus_adapter.h, included via cpu_core.h
 
-bool unibone_trace_addr(uint16_t a) ;
-
-
-int
-dati_bus(Bus *bus)
-{
-	unsigned int data;
-	if(!unibone_dati(bus->addr, &data))
-		return 1;
-	bus->data = data;
-	return 0;
-}
-
-int
-dato_bus(Bus *bus)
-{
-	return !unibone_dato(bus->addr, bus->data);
-}
-
-int
-datob_bus(Bus *bus)
-{
-	return !unibone_datob(bus->addr, bus->data);
-}
-
-void
+static void
 levelchange(word psw)
 {
 	unibone_prioritylevelchange(psw>>5);
@@ -56,23 +32,18 @@ enum {
 enum {
 	TRAP_STACK = 1,
 	TRAP_PWR = 2,
-	TRAP_BR7 = 4,
-	TRAP_BR6 = 010,
-	TRAP_BR5 = 040,
-	TRAP_BR4 = 0100,
-	TRAP_CSTOP = 01000	// can't happen?
 };
 
 #define ISSET(f) ((cpu->psw&(f)) != 0)
 
 
-word
+static word
 sgn(word w)
 {
 	return (w>>15)&1;
 }
 
-word
+static word
 sxt(byte b)
 {
 	return (word)(int8_t)b;
@@ -114,23 +85,33 @@ ka11_printstate(KA11 *cpu)
 		cpu->ba, cpu->ir, cpu->psw);
 }
 
-// only to be called from ka11_condstep() thread
+// to be called once when the object holding the KA11 is created, before any
+// other thread can call ka11_setintr(). ka11_reset() must never touch the
+// mutex again: it runs on every RESET opcode, and re-initializing a mutex the
+// qunibusadapter thread holds in ka11_setintr() is undefined behavior.
+void
+ka11_init(KA11 *cpu)
+{
+	pthread_mutex_init(&cpu->mutex, NULL);
+}
+
+// only to be called from ka11_condstep() thread.
+// The devices on the bus are reset by unibone_bus_init(), which the RESET
+// opcode pulses separately; there is no core-internal device list.
 void
 ka11_reset(KA11 *cpu)
 {
-	Busdev *bd;
-
 	cpu->traps = 0;
+	pthread_mutex_lock(&cpu->mutex) ;
 	cpu->external_intr = 0;
-	cpu->mutex = PTHREAD_MUTEX_INITIALIZER ;
-
-	for(bd = cpu->bus->devs; bd; bd = bd->next)
-		bd->reset(bd->dev);
+	pthread_mutex_unlock(&cpu->mutex) ;
 }
 
-int
+static int
 dati(KA11 *cpu, int b)
 {
+	unsigned int d;
+
 	if(!b && cpu->ba&1)
 		goto be;
 
@@ -138,27 +119,27 @@ dati(KA11 *cpu, int b)
 	if((cpu->ba&0177400) == 0177400){
 		switch(cpu->ba&0377){
 		case 0170: case 0171:
-			cpu->bus->data = cpu->sw;
+			cpu->bdata = cpu->sw;
 			goto ok;
 		case 0376:
-			cpu->bus->data = cpu->psw;
+			cpu->bdata = cpu->psw;
 			goto ok;
 		case 0377:
-		    goto be;
+			goto be;
 
 		/* respond but don't return real data */
 		case 0147:
-			cpu->bus->data = 0;
+			cpu->bdata = 0;
 			goto ok;
 		}
 	}
 
-	cpu->bus->addr = ubxt(cpu->ba)&~1;
-	if(dati_bus(cpu->bus))
+	if(!unibone_dati(ubxt(cpu->ba)&~1, &d))
 		goto be;
+	cpu->bdata = W(d);
 ok:
-if (unibone_trace_addr(cpu->ba))
- 	trace("DATI [%06o] => %06o\n", cpu->ba, cpu->bus->data);
+	if(cpu->tracing && unibone_trace_addr(cpu->ba))
+		trace("DATI [%06o] => %06o\n", cpu->ba, cpu->bdata);
 	cpu->be = 0;
 	return 0;
 be:
@@ -167,11 +148,11 @@ be:
 	return 1;
 }
 
-int
+static int
 dato(KA11 *cpu, int b)
 {
-if (unibone_trace_addr(cpu->ba)) // default: all
-trace("%s [%06o] <= %06o\n", b? "DATOB":"DATO", cpu->ba, cpu->bus->data);
+	if(cpu->tracing && unibone_trace_addr(cpu->ba))
+		trace("%s [%06o] <= %06o\n", b? "DATOB":"DATO", cpu->ba, cpu->bdata);
 	if(!b && cpu->ba&1)
 		goto be;
 
@@ -184,21 +165,19 @@ trace("%s [%06o] <= %06o\n", b? "DATOB":"DATO", cpu->ba, cpu->bus->data);
 		case 0376:
 			/* writes 0 for the odd byte.
 			   I think this is correct. */
-			cpu->psw = cpu->bus->data;
+			cpu->psw = cpu->bdata;
 			levelchange(cpu->psw);
 			goto ok;
 		case 0377:
-		    goto be;
+			goto be;
 		}
 	}
 
 	if(b){
-		cpu->bus->addr = ubxt(cpu->ba);
-		if(datob_bus(cpu->bus))
+		if(!unibone_datob(ubxt(cpu->ba), cpu->bdata))
 			goto be;
 	}else{
-		cpu->bus->addr = ubxt(cpu->ba)&~1;
-		if(dato_bus(cpu->bus))
+		if(!unibone_dato(ubxt(cpu->ba)&~1, cpu->bdata))
 			goto be;
 	}
 ok:
@@ -207,27 +186,6 @@ ok:
 be:
 	cpu->be++;
 	return 1;
-}
-
-static void
-svc(KA11 *cpu, Bus *bus)
-{
-	int l;
-	Busdev *bd;
-	static int brtraps[4] = { TRAP_BR4, TRAP_BR5, TRAP_BR6, TRAP_BR7 };
-	for(l = 0; l < 4; l++){
-		cpu->br[l].bg = nil;
-		cpu->br[l].dev = nil;
-	}
-	cpu->traps &= ~(TRAP_BR4|TRAP_BR5|TRAP_BR6|TRAP_BR7);
-	for(bd = bus->devs; bd; bd = bd->next){
-		l = bd->svc(bus, bd->dev);
-		if(l >= 4 && l <= 7 && cpu->br[l-4].bg == nil){
-			cpu->br[l-4].bg = bd->bg;
-			cpu->br[l-4].dev = bd->dev;
-			cpu->traps |= brtraps[l-4];
-		}
-	}
 }
 
 static int
@@ -259,12 +217,12 @@ addrop(KA11 *cpu, int m, int b)
 		cpu->ba = cpu->r[7];
 		cpu->r[7] += 2;
 		if(dati(cpu, 0)) return 1;
-		cpu->b = cpu->ba = cpu->bus->data + cpu->r[r];
+		cpu->b = cpu->ba = cpu->bdata + cpu->r[r];
 		break;
 	}
 	if(m&1){
 		if(dati(cpu, 0)) return 1;
-		cpu->b = cpu->ba = cpu->bus->data;
+		cpu->b = cpu->ba = cpu->bdata;
 	}
 	return 0;
 
@@ -279,7 +237,7 @@ fetchop(KA11 *cpu, int t, int m, int b)
 		cpu->r[t] = cpu->r[r];
 	else{
 		if(dati(cpu, b)) return 1;
-		cpu->r[t] = cpu->bus->data;
+		cpu->r[t] = cpu->bdata;
 		if(b && cpu->ba&1) cpu->r[t] = cpu->r[t]>>8;
 	}
 	if(b) cpu->r[t] = sxt(cpu->r[t]);
@@ -302,7 +260,7 @@ writedest(KA11 *cpu, word v, int b)
 		else cpu->r[d] = v;
 	}else{
 		if(cpu->ba&1) v <<= 8;
-		cpu->bus->data = v;
+		cpu->bdata = v;
 		if(dato(cpu, b)) return 1;
 	}
 	return 0;
@@ -316,7 +274,7 @@ setnz(KA11 *cpu, word w)
 	if(w == 0) cpu->psw |= PSW_Z;
 }
 
-void
+static void
 step(KA11 *cpu)
 {
 	uint by;
@@ -327,9 +285,6 @@ step(KA11 *cpu)
 	word mask, sign;
 	int inhov;
 	byte oldpsw;
-
-//	printf("fetch from %06o\n", cpu->r[7]);
-//	printstate(cpu);
 
 #define SP	cpu->r[6]
 #define PC	cpu->r[7]
@@ -365,30 +320,30 @@ step(KA11 *cpu)
 #define CBR(c)	if(((c)>>(cpu->psw&017)) & 1) BR
 #define PUSH	SP -= 2; if(!inhov && (SP&~0377) == 0) cpu->traps |= TRAP_STACK
 #define POP	SP += 2
-#define OUT(a,d)	cpu->ba = (a); cpu->bus->data = (d); if(dato(cpu, 0)) goto be
-#define IN(d)	if(dati(cpu, 0)) goto be; d = cpu->bus->data
-#define INA(a,d)	cpu->ba = a; if(dati(cpu, 0)) goto be; d = cpu->bus->data
-#define TR(m)	if (unibone_trace_addr(PC-2)) trace("EXEC [%06o] "#m"\n", PC-2)
-#define TRB(m)	if (unibone_trace_addr(PC-2)) trace("EXEC [%06o] "#m"%s\n", PC-2, by ? "B" : "")
-//#define TR(m)	trace("EXEC [%06o] "#m"\n", PC-2)
-//#define TRB(m)	trace("EXEC [%06o] "#m"%s\n", PC-2, by ? "B" : "")
+#define OUT(a,d)	cpu->ba = (a); cpu->bdata = (d); if(dato(cpu, 0)) goto be
+#define IN(d)	if(dati(cpu, 0)) goto be; d = cpu->bdata
+#define INA(a,d)	cpu->ba = a; if(dati(cpu, 0)) goto be; d = cpu->bdata
+#define TR(m)	if (cpu->tracing && unibone_trace_addr(PC-2)) trace("EXEC [%06o] "#m"\n", PC-2)
+#define TRB(m)	if (cpu->tracing && unibone_trace_addr(PC-2)) trace("EXEC [%06o] "#m"%s\n", PC-2, by ? "B" : "")
 
 	inhov = 0;
 
-	{
-		// external interrupt from parallel threads?
+	// external interrupt from parallel threads? The unlocked read is the
+	// fast path: the flag is only ever raised by the other thread, so a
+	// stale 0 read here just takes the interrupt one instruction later -
+	// no different from the interrupt arriving a moment later. A raised
+	// flag is confirmed under the mutex before it is consumed.
+	if (cpu->external_intr) {
 		pthread_mutex_lock(&cpu->mutex) ;
 		bool external_intr = cpu->external_intr ;
 		word external_intrvec = cpu->external_intrvec ;
 		cpu->external_intr = 0 ;
 		pthread_mutex_unlock(&cpu->mutex) ;
 		if (external_intr){
-			//ARM_DEBUG_PIN1(0);	// INTR processed
 			cpu->state = KA11_STATE_RUNNING ;
 			TRAP(external_intrvec);
-		}	
+		}
 	}
-
 
 	oldpsw = PSW;
 	INA(PC, cpu->ir);
@@ -410,7 +365,7 @@ step(KA11 *cpu)
 		RD_B; CLV;
 		b = SR; NZ;
 		if(dm==0) cpu->r[df] = SR;
-		else writedest(cpu, SR, by);
+		else if(writedest(cpu, SR, by)) goto be;
 		SVC;
 	case 0120000: case 0020000:	TRB(CMP);
 		RD_B; CLCV;
@@ -441,8 +396,14 @@ step(KA11 *cpu)
 		NZ; WR; SVC;
 
 	/* Reserved instructions */
-	case 0170000: case 0070000: goto ri;
+	case 0170000:
+        goto ri;
+
+	case 0070000:
+		// EIS (MUL, DIV, ASH, ASHC, XOR, SOB): not implemented by the 11/20.
+		goto ri;
 	}
+	//-- remaining here is ir=x0xxxx
 
 	/* Unary */
 	switch(cpu->ir & 0007700){
@@ -505,12 +466,13 @@ step(KA11 *cpu)
 		NZ; if((PSW>>3^PSW)&1) SEV;
 		WR; SVC;
 
+	// MTPS/MFPS (0006400/0006700) are 11/34 and LSI-11 instructions,
+	// the 11/20 has no such opcodes.
 	case 0006400:
 	case 0006500:
 	case 0006600:
 	case 0006700:
 		goto ri;
-
 	}
 
 	switch(cpu->ir & 0107400){
@@ -566,6 +528,10 @@ step(KA11 *cpu)
             goto ri;
         case 040: case 050:	TR(CCC); PSW &= ~(cpu->ir&017); SVC;
         case 060: case 070:	TR(SEC); PSW |= cpu->ir&017; SVC;
+        // the mask leaves eight values and each case above transfers control,
+        // so this is unreachable. It names the trap the encodings without an
+        // instruction take, and keeps the group from running into SWAB.
+        default:	goto ri;
         }
 	case 0300:	TR(SWAB);
 		RD_U;
@@ -607,8 +573,8 @@ be:	if(cpu->be > 1){
 	TRAP(4);
 
 trap:
-	if (unibone_trace_addr(PC-2)) 
-	trace("TRAP %o\n", TV);
+	if (cpu->tracing && unibone_trace_addr(PC-2))
+		trace("TRAP %o\n", TV);
 	PUSH; OUT(SP, PSW);
 	PUSH; OUT(SP, PC);
 	INA(TV, PC);
@@ -617,13 +583,12 @@ trap:
 	/* no trace trap after a trap */
 	oldpsw = PSW;
 
-	if (unibone_trace_addr(PC-2)) 
-	ka11_tracestate(cpu);
+	if (cpu->tracing && unibone_trace_addr(PC-2))
+		ka11_tracestate(cpu);
 	return;		// TODO: is this correct?
 //	SVC;
 
 service:
-	c = PSW >> 5;
 	if(oldpsw & PSW_T){
 		oldpsw &= ~PSW_T;
 		TRAP(014);
@@ -634,18 +599,6 @@ service:
 	}else if(cpu->traps & TRAP_PWR){
 		cpu->traps &= ~TRAP_PWR;
 		TRAP(024);
-	}else if(c < 7 && cpu->traps & TRAP_BR7){
-		cpu->traps &= ~TRAP_BR7;
-		TRAP(cpu->br[3].bg(cpu->br[3].dev));
-	}else if(c < 6 && cpu->traps & TRAP_BR6){
-		cpu->traps &= ~TRAP_BR6;
-		TRAP(cpu->br[2].bg(cpu->br[2].dev));
-	}else if(c < 5 && cpu->traps & TRAP_BR5){
-		cpu->traps &= ~TRAP_BR5;
-		TRAP(cpu->br[1].bg(cpu->br[1].dev));
-	}else if(c < 4 && cpu->traps & TRAP_BR4){
-		cpu->traps &= ~TRAP_BR4;
-		TRAP(cpu->br[0].bg(cpu->br[0].dev));
 	}else
 	// TODO? console stop
 		/* fetch next instruction */
@@ -661,8 +614,6 @@ ka11_setintr(KA11 *cpu, unsigned vec)
 	cpu->external_intr = true;
 	cpu->external_intrvec = vec;
 	trace("INTR vec=%03o\n", vec) ;
-//	if (cpu->state == KA11_STATE_WAITING) // atomically
-//		cpu->state = KA11_STATE_RUNNING ;
 	pthread_mutex_unlock(&cpu->mutex) ;
 }
 
@@ -681,6 +632,7 @@ ka11_pwrup_vector_fetch(KA11 *cpu)
 {
 	// caller must have issued reset()
 	// cpu->traps &= ~TRAP_PWR; // no, would be a fix
+	cpu->tracing = unibone_trace_enabled();
 	INA(024, PC);
 	INA(024+2, PSW);
 	return ;
@@ -694,7 +646,7 @@ ka11_condstep(KA11 *cpu)
 {
 	if(cpu->state == KA11_STATE_RUNNING || cpu->state == KA11_STATE_WAITING)
 		// GRANT Interrupts before opcode fetch, or when CPU is on WAIT
-	unibone_grant_interrupts() ;
+		unibone_grant_interrupts() ;
 
 	if((cpu->state == KA11_STATE_RUNNING) ||
 	   (cpu->state == KA11_STATE_WAITING && cpu->traps)
@@ -702,19 +654,9 @@ ka11_condstep(KA11 *cpu)
 		cpu->state = KA11_STATE_RUNNING;
 		// external_intr WAIT handled atomically in ka11_setintr() !
 
-		svc(cpu, cpu->bus);
+		// is trace() output live at all? Cached once per instruction so
+		// the trace sites cost a flag test each when it is not.
+		cpu->tracing = unibone_trace_enabled();
 		step(cpu);
 	}
-}
-
-void
-run(KA11 *cpu)
-{
-	cpu->state = KA11_STATE_RUNNING;
-	
-	while(cpu->state != KA11_STATE_HALTED){
-		ka11_condstep(cpu);
-	}
-
-	ka11_printstate(cpu);
 }

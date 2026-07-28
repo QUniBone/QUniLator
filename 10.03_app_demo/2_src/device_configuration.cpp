@@ -135,10 +135,16 @@ device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
 	m9312 = new m9312_c();
 	KE11A = new ke11_c();
 	DEUNA = new deuna_c();
-	cpu = NULL;
+	CPU20 = NULL;
+	CPU34 = NULL;
 	if (with_emulated_CPU) {
-		cpu = new cpu_c();
-		cpu->enabled.set(true);
+		// Both models exist as devices, so either can be picked from the web
+		// UI or the devices menu. CPU20 comes up enabled, so a machine started
+		// with an emulated CPU has one running without further operator action;
+		// selecting the 11/34 means disabling it and enabling CPU34.
+		CPU20 = new cpu20_c();
+		CPU34 = new cpu34_c();
+		CPU20->enabled.set(true);
 	}
 #elif defined(QBUS)
 	RX11 = new RXV11_c();
@@ -151,9 +157,13 @@ device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
 
 device_configuration_c::~device_configuration_c() {
 #if defined(UNIBUS)
-	if (cpu != NULL) {
-		cpu->enabled.set(false);
-		delete cpu;
+	if (CPU20 != NULL) {
+		CPU20->enabled.set(false);
+		delete CPU20;
+	}
+	if (CPU34 != NULL) {
+		CPU34->enabled.set(false);
+		delete CPU34;
 	}
 	m9312->enabled.set(false);
 	delete m9312;
@@ -209,3 +219,13 @@ device_configuration_c::~device_configuration_c() {
 	blinkenbone->enabled.set(false);
 	delete blinkenbone;
 }
+
+#if defined(UNIBUS)
+cpu_base_c *device_configuration_c::emulated_cpu() const {
+	if (CPU20 != NULL && CPU20->enabled.value)
+		return CPU20;
+	if (CPU34 != NULL && CPU34->enabled.value)
+		return CPU34;
+	return NULL;
+}
+#endif

@@ -60,7 +60,8 @@
 #include "m9312.hpp"
 #include "ke11.hpp"
 #include "deuna.hpp"
-#include "cpu.hpp"
+#include "cpu20.hpp"
+#include "cpu34.hpp"
 #endif
 
 class device_configuration_c {
@@ -80,7 +81,13 @@ public:
 	m9312_c *m9312;
 	ke11_c *KE11A;
 	deuna_c *DEUNA;
-	cpu_c *cpu; // only set with_emulated_CPU, else NULL
+	// The emulated CPU models, both only set with_emulated_CPU, else NULL.
+	// Both ship disabled: the operator picks a model by enabling it, and the
+	// second one is refused while the first is enabled, since the emulation
+	// cores reach the bus through one installed CPU. emulated_cpu() names
+	// whichever is running.
+	cpu20_c *CPU20;
+	cpu34_c *CPU34;
 #elif defined(QBUS)
 	RLV12_c *RL11;
 	rkv11_c *RK11;
@@ -109,6 +116,11 @@ public:
 
 	device_configuration_c(bool with_emulated_CPU);
 	~device_configuration_c();
+
+#if defined(UNIBUS)
+	// the enabled CPU model, or NULL when the machine runs on a physical CPU
+	cpu_base_c *emulated_cpu() const;
+#endif
 };
 
 // non-NULL while a device set exists
