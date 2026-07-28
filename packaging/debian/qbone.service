@@ -22,8 +22,10 @@ ExecStartPre=/bin/sh -c 'i=0; while [ $i -lt 100 ]; do [ -e /sys/bus/platform/de
 # through the web interface, applied at startup. Configurations are saved from
 # the web interface and live in /var/lib/qunilator/configs. "--config <name>"
 # overrides the default for bring-up and testing.
-ExecStart=/usr/bin/qbone --port 80 --webroot /usr/share/qunilator/frontend \
-    --addresswidth 22
+# The address width is left at the binary's own default for the bus it was
+# built for: 22 bit on QBUS, 18 on the UNIBUS. "--addresswidth <n>" sets a
+# QBUS board up for a 16 or 18 bit CPU.
+ExecStart=/usr/bin/qbone --port 80 --webroot /usr/share/qunilator/frontend
 # The bus engine runs at realtime priority and the PRU driver wants physical
 # memory, so this stays privileged.
 LimitRTPRIO=99

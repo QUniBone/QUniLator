@@ -73,16 +73,16 @@ done
 # the provisioning tools, their units, and the paths under /etc, /var/lib and
 # /usr/share - are named "qunilator" whichever bus the cape bridges.
 if [ "$SUFFIX" = _u ]; then
-    NAME=unibone; DISPLAY=UniBone; OTHER=qbone
+    NAME=unibone; DISPLAY=UniBone; OTHER=qbone; BUS=Unibus
 else
-    NAME=qbone;   DISPLAY=QBone;   OTHER=unibone
+    NAME=qbone;   DISPLAY=QBone;   OTHER=unibone; BUS=Qbus
 fi
 
-# Carry the board brand into the emulator's unit, which names its binary, and
-# rewrite any board-brand token that lingers in a web asset. Everything else is
-# installed as it is in the repository.
+# Carry the board brand and its bus into the emulator's unit, which names its
+# binary, and rewrite any board-brand token that lingers in a web asset.
+# Everything else is installed as it is in the repository.
 rebrand() {
-    sed -e "s/qbone/$NAME/g" -e "s/QBone/$DISPLAY/g"
+    sed -e "s/qbone/$NAME/g" -e "s/QBone/$DISPLAY/g" -e "s/Qbus/$BUS/g"
 }
 
 BINARY=10.03_app_demo/4_deploy$SUFFIX/qbone-web

@@ -88,7 +88,7 @@ void qunibus_c::set_addr_width(unsigned _addr_width)
         break;
 #endif
     default:
-        FATAL("Address width of %d bits invalid!", addr_width);
+        FATAL("Address width of %d bits invalid!", _addr_width);
     }
     addr_width = _addr_width;
     addr_space_byte_count = 2 * addr_space_word_count;

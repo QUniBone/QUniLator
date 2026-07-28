@@ -58,7 +58,11 @@ static void usage(const char *progname)
 	printf("usage: %s [options]\n", progname);
 	printf("  --port <n>          TCP port of the web interface (default 80)\n");
 	printf("  --webroot <dir>     directory holding the frontend\n");
-	printf("  --addresswidth <n>  " QUNIBUS_NAME " address width: 16, 18 or 22\n");
+#if defined(QBUS)
+	printf("  --addresswidth <n>  " QUNIBUS_NAME " address width: 16, 18 or 22 (default 22)\n");
+#else
+	printf("  --addresswidth <n>  " QUNIBUS_NAME " address width: 18\n");
+#endif
 	printf("  --config <name>     saved configuration to apply at startup\n");
 	printf("  --loglevel <n>      %d fatal, %d error, %d warning, %d info (default), %d debug\n",
 			LL_FATAL, LL_ERROR, LL_WARNING, LL_INFO, LL_DEBUG);
@@ -69,7 +73,11 @@ int main(int argc, char *argv[])
 {
 	unsigned port = 80;
 	std::string webroot;
+#if defined(QBUS)
 	unsigned addresswidth = 22; // QBUS default of this cape
+#else
+	unsigned addresswidth = 18; // the UNIBUS is 18 bit
+#endif
 	unsigned loglevel = LL_INFO;
 	std::string startup_config;
 
@@ -114,10 +122,19 @@ int main(int argc, char *argv[])
 
 	// The address width decides the layout of the IO page, so the emulation
 	// needs it before the PRU is started.
-	if (addresswidth != 16 && addresswidth != 18 && addresswidth != 22) {
+	bool addresswidth_valid = (addresswidth == 18);
+#if defined(QBUS)
+	addresswidth_valid = addresswidth_valid || addresswidth == 16 || addresswidth == 22;
+	if (!addresswidth_valid) {
 		WEB_ERROR("Address width must be 16, 18 or 22 bits, not %u.", addresswidth);
 		return 2;
 	}
+#else
+	if (!addresswidth_valid) {
+		WEB_ERROR("The " QUNIBUS_NAME " is 18 bit; address width %u is invalid.", addresswidth);
+		return 2;
+	}
+#endif
 	qunibus->set_addr_width(addresswidth);
 	WEB_INFO("Address width %u bit.", qunibus->addr_width);
 
