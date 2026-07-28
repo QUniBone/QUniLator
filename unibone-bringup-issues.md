@@ -5,7 +5,96 @@ This log records what the first UniBone board turned up, and how each was
 fixed. The board is `unibone.huebner.org`, a BeagleBone Black carrying a
 UniBone cape in a PDP-11 Unibus machine.
 
-## 1. The service passed a QBUS address width
+Entries are grouped by what is left to do, and numbered in the order they were
+found. The numbers are cited from commit messages and from each other, so they
+stay put when an entry moves between the sections.
+
+## Open
+
+### 12. A halted emulated CPU spun a core and took the board with it
+
+Twice the board went unreachable: answering ping, with sshd unable to finish a
+handshake. The first time it looked like a newly installed binary refusing to
+start — it was the previous instance refusing to die, systemd still delivering
+SIGKILL to its threads six minutes after the stop, `TimeoutStopSec` being no
+help when the process starving the machine outranks the one trying to kill it.
+
+The cause is in `cpu_c::worker()`, which has no wait anywhere:
+
+    while (!workers_terminate) {
+        ...
+        ka11_condstep(&ka11);   // steps nothing while halted
+        ...
+    }
+
+A running CPU is meant to take the core it is given — every pass executes an
+instruction. A halted one steps nothing and spins at full speed polling the
+switches, and on this single-core board that starves userspace. Both incidents
+had the CPU enabled and halted: once during a stop, once after the double bus
+error of a boot attempt.
+
+The worker now waits a millisecond per pass while halted, which no operator
+pressing START can notice. With the fix the CPU sits enabled and halted at a
+load of 1.1 with ssh answering instantly, and XXDP boots with the board staying
+responsive throughout.
+
+Fixed in `10.02_devices/2_src/cpu.cpp`, for a halted CPU: it now waits a
+millisecond per pass, and the board sits at a load of 1.1 with ssh answering
+instantly while the CPU is enabled and stopped.
+
+What remains open is the teardown. This entry used to claim that stopping the
+service with the CPU *running* wedges the board regardless; that claim predates
+issue 18, whose leaked mutex explains the stops that hung far better, and a stop
+with XXDP running completed in two seconds during the diagnostic run of issue
+16. It has not been re-tested since, so the honest state is: unknown, and
+probably fixed by 18.
+
+Two things behind it are unresolved either way. `workers_stop()` joins a worker
+that may be inside a bus cycle with nothing bounding the wait. And
+`qunibusadapter` runs SCHED_FIFO at priority 60 on a single core, so any thread
+that fails to yield takes the whole board out of reach rather than merely
+slowing it — which is what turned each of these into a power cycle instead of a
+misbehaving service.
+
+### Open questions
+
+**Can an emulated CPU on a physical bus reach the board's own emulated
+devices?** Issue 11 says no — the CPU took a bus timeout at the RL11 CSR — but
+that was measured on a bench board with no backplane and no terminators, so the
+cycle may have failed electrically rather than logically. It decides what a
+UniBone standing in for a dead CPU can use: the real cards only, or those plus
+its own emulated disks. One reading of 774400 from a board in a terminated
+backplane, running the physical firmware with the emulated RL11 enabled,
+settles it.
+
+**Does the SLU poll floor actually stop the spin?** The fix in issue 16 is
+supported rather than demonstrated: the kernel named that thread repeatedly, it
+holds the only unbounded-poll path, and its divisor is zero both before an open
+and after a close. But the spin was never reproduced with the floor in place,
+because enabling a DL11 whose port cannot open is refused before the worker
+starts. The remaining way in is a port closed under a running worker.
+
+### Design note: one CPU device, not one per model
+
+From Jörg, on the CPU20 device: the shape should be a single generic bus CPU
+whose model is a parameter, `type = KA11` for the 11/20, `KD11-E` for the
+11/34 Frits has, rather than a device class per machine. The module codes:
+
+| model | CPU | model | CPU |
+|---|---|---|---|
+| 11/20 | KA11 | 11/45 | KB11-A |
+| 11/05 | KD11-B | 11/34 | KD11-E |
+| 11/04 | KD11-D | 11/60 | KD11-K |
+| 11/40 | KD11-A | 11/70 | KB11-B |
+| 11/44 | KD11-Z | | |
+
+QBUS: LSI-11 is KD11, F-11 is KDF11, J-11 is KDJ11. VAX: the 11/730, 750 and
+780 by name; for the MicroVAXen, CVAX covers the family, with KD32 (MicroVAX I),
+KA630 (II), KA640, KA650, KA655, KA660, KA670 and KA680.
+
+## Closed
+
+### 1. The service passed a QBUS address width
 
     unibone[730]: QUniLator web service starting, UNIBUS emulation.
     unibone[730]: FATAL QUNIBUS: Address width of 18 bits invalid!
@@ -23,7 +112,7 @@ a QBUS board fronting a 16 or 18 bit CPU. The unit passes no width at all.
 Fixed in `main_qbone_web.cpp` (per-bus default and validation) and
 `packaging/debian/qbone.service`.
 
-## 2. The rejected width was reported as the current one
+### 2. The rejected width was reported as the current one
 
 The FATAL above named 18 bits, which is the *valid* width — the argument was
 22. `set_addr_width()` printed its member `addr_width`, already set to 18 by
@@ -31,7 +120,7 @@ the UNIBUS constructor, instead of the `_addr_width` it was refusing.
 
 Fixed in `10.01_base/2_src/arm/qunibus.cpp`.
 
-## 3. The UniBone package described itself as a Qbus emulator
+### 3. The UniBone package described itself as a Qbus emulator
 
 `build-deb.sh` rebrands `qbone`/`QBone` to `unibone`/`UniBone` when it packages
 the UNIBUS build, but the bus name was not among the tokens it rewrote, so the
@@ -42,7 +131,7 @@ emulator" on a Unibus board.
 
 Fixed in `packaging/build-deb.sh`.
 
-## 4. The priority-slot warning named the wrong slot
+### 4. The priority-slot warning named the wrong slot
 
 `set_priority_slot()` reported its member `priority_slot` — the slot the
 request held before the call, 255 while still uninitialized — instead of the
@@ -51,7 +140,7 @@ by device dzv11" whatever slot had actually collided.
 
 Fixed in `10.01_base/2_src/arm/priorityrequest.cpp`.
 
-## 5. Priority slots collide across the larger UNIBUS device set
+### 5. Priority slots collide across the larger UNIBUS device set
 
 With the slot named correctly, a UNIBUS startup logs 12 collisions. The
 emulator holds one backplane, and the compile-time slot defaults were chosen
@@ -94,7 +183,7 @@ It is bus-independent and runs on QBUS as well.
 Fixed in `10.01_base/2_src/arm/priorityrequest.cpp`,
 `10.01_base/2_src/arm/qunibusdevice.cpp` and `10.05_web/2_src/webconfigs.cpp`.
 
-## 6. The UNIBUS controllers had no label
+### 6. The UNIBUS controllers had no label
 
 The label table is keyed by type name and carried the Q-bus variants alone, so
 the device list showed the raw handle — `rl`, `rk`, `rx`, `ry`, `deuna`,
@@ -103,7 +192,7 @@ RX11, RY211, DEUNA, KE11 and the M9312 are now in the table.
 
 Fixed in `10.05_web/2_src/device_label.cpp`.
 
-## 7. The emulated PDP-11/20 was unreachable from the web service
+### 7. The emulated PDP-11/20 was unreachable from the web service
 
 The KA11 emulation (`cpu_c` over `10.02_devices/2_src/cpu20`) is built into the
 UNIBUS binary, but `main_qbone_web.cpp` called `devices_startup(false)`, so the
@@ -129,7 +218,7 @@ fetches from emulated memory and halts on the zero word:
 Added in `main_qbone_web.cpp`, `10.05_web/2_src/websettings.cpp`,
 `device_label.cpp` and the frontend's `widgets.ts`.
 
-## 8. The console switches were configuration
+### 8. The console switches were configuration
 
 HALT, START and CONTINUE were `PARAM_CONFIG`, so a machine saved with HALT
 asserted carried `halt_switch` into the configuration, and applying it left the
@@ -144,7 +233,7 @@ register stays configuration, being operator data the running program reads.
 
 Fixed in `10.02_devices/2_src/cpu.cpp` and the frontend's `widgets.ts`.
 
-## 9. The M9312 PROM listings were not packaged
+### 9. The M9312 PROM listings were not packaged
 
 The emulated CPU has nothing to boot from without them. The listings sit in the
 source at `10.02_devices/4_deploy` and the package now installs them to
@@ -153,7 +242,7 @@ boot PROMs, `23-751A9.lst` being the RL11 one.
 
 Fixed in `packaging/build-deb.sh`.
 
-## 10. The emulated CPU needs PMI to reach memory and the ROM
+### 10. The emulated CPU needs PMI to reach memory and the ROM
 
 A board that runs the KA11 emulates the memory as well, and serves it from the
 same PRU that drives the CPU's bus cycles — a board cannot answer its own
@@ -169,7 +258,7 @@ So a self-contained machine needs `pmi` on. It ships off, which is right for a
 CPU driving a real backplane, and there is nothing yet that says so when the
 emulated CPU is the one running.
 
-## 11. The emulated CPU cannot reach the board's own emulated devices
+### 11. The emulated CPU cannot reach the board's own emulated devices
 
 With PMI on and the M9312 holding the RL11 boot PROM, the CPU runs the ROM and
 stops at the first device register. Its own cycle trace:
@@ -235,46 +324,7 @@ DL11, M9312 with the console and DL PROMs, and CPU20 with `pmi` on.
 arbitrator — so a program can be loaded into memory and started from the
 console without any of it existing in hardware.
 
-## 12. A halted emulated CPU spun a core and took the board with it
-
-Twice the board went unreachable: answering ping, with sshd unable to finish a
-handshake. The first time it looked like a newly installed binary refusing to
-start — it was the previous instance refusing to die, systemd still delivering
-SIGKILL to its threads six minutes after the stop, `TimeoutStopSec` being no
-help when the process starving the machine outranks the one trying to kill it.
-
-The cause is in `cpu_c::worker()`, which has no wait anywhere:
-
-    while (!workers_terminate) {
-        ...
-        ka11_condstep(&ka11);   // steps nothing while halted
-        ...
-    }
-
-A running CPU is meant to take the core it is given — every pass executes an
-instruction. A halted one steps nothing and spins at full speed polling the
-switches, and on this single-core board that starves userspace. Both incidents
-had the CPU enabled and halted: once during a stop, once after the double bus
-error of a boot attempt.
-
-The worker now waits a millisecond per pass while halted, which no operator
-pressing START can notice. With the fix the CPU sits enabled and halted at a
-load of 1.1 with ssh answering instantly, and XXDP boots with the board staying
-responsive throughout.
-
-Fixed in `10.02_devices/2_src/cpu.cpp` — for a halted CPU. A *running* one
-still takes the board down with the service: a third wedge came from stopping
-the service while XXDP was running. The teardown disables the CPU first, but
-`workers_stop()` joins a worker that may be inside a bus cycle, and nothing
-bounds that wait. Until it does, halt the CPU and confirm `run_led: false`
-before any stop, restart or package install — dpkg restarts the service.
-
-Behind all three wedges is one property: `qunibusadapter` runs SCHED_FIFO at
-priority 60 on a single core, so anything that fails to yield takes the whole
-board out of reach rather than merely slowing it. A thread that yielded would
-make each of these a misbehaving service instead of a power cycle.
-
-## 13. The package does not record which bus it was built for
+### 13. The package does not record which bus it was built for
 
 `build-deb.sh` packages whatever binary is in the deploy directory, and nothing
 in the package says whether that binary drives a physical bus or keeps it
@@ -286,7 +336,10 @@ symptom that was supposedly closed.
 The two are different products for different boards, and the package should say
 which one it is.
 
-## 14. The console card showed a terminal with nothing behind it
+Closed by issue 20: the bus mode became a setting, both firmwares ship in one
+binary, and there is no longer a wrong package to install.
+
+### 14. The console card showed a terminal with nothing behind it
 
 The dashboard's console card carried three terminals — the two emulated SLUs
 and a Web Serial port — and picked one at mount:
@@ -318,25 +371,7 @@ carries the console.
 Fixed in `10.05_web/3_frontend/src/lib/terminals.ts`, `components/Dashboard.ts`,
 `store.ts`, `types.ts` and `styles.css`.
 
-## Design note: one CPU device, not one per model
-
-From Jörg, on the CPU20 device: the shape should be a single generic bus CPU
-whose model is a parameter, `type = KA11` for the 11/20, `KD11-E` for the
-11/34 Frits has, rather than a device class per machine. The module codes:
-
-| model | CPU | model | CPU |
-|---|---|---|---|
-| 11/20 | KA11 | 11/45 | KB11-A |
-| 11/05 | KD11-B | 11/34 | KD11-E |
-| 11/04 | KD11-D | 11/60 | KD11-K |
-| 11/40 | KD11-A | 11/70 | KB11-B |
-| 11/44 | KD11-Z | | |
-
-QBUS: LSI-11 is KD11, F-11 is KDF11, J-11 is KDJ11. VAX: the 11/730, 750 and
-780 by name; for the MicroVAXen, CVAX covers the family, with KD32 (MicroVAX I),
-KA630 (II), KA640, KA650, KA655, KA660, KA670 and KA680.
-
-## 15. The control panel and the CPU's switches were two panels on one machine
+### 15. The control panel and the CPU's switches were two panels on one machine
 
 `POST /api/control` was written for a physical CPU on the bus, and its run
 controls are bus signals:
@@ -370,7 +405,7 @@ On the board, against a running XXDP:
 
 Fixed in `10.05_web/2_src/webapi.cpp`.
 
-## 16. The SLU worker polls on a zero interval and spins at realtime priority
+### 16. The SLU worker polls on a zero interval and spins at realtime priority
 
 Four times the board went unreachable: answering ping, sshd unable to finish a
 handshake. Sampling every thread across a service stop, at a realtime priority
@@ -419,7 +454,7 @@ single core carrying several SCHED_FIFO-60 device threads has no headroom, so
 any thread that fails to yield takes the machine out of reach rather than
 merely slowing it down.
 
-## 17. The panel's RUN lamp showed operator intent, not the machine
+### 17. The panel's RUN lamp showed operator intent, not the machine
 
 The control panel's RUN lamp is `powered && !halted`, where `halted` moves only
 when an operator presses HALT or CONTINUE — it reflects the HALT line, which is
@@ -434,7 +469,7 @@ line.
 
 Fixed in `10.05_web/2_src/webevents.cpp`.
 
-## 18. The SLU transmit worker waited on a mutex it did not hold
+### 18. The SLU transmit worker waited on a mutex it did not hold
 
 A configuration apply while the machine was running left the web interface
 dead — every request timing out — with the board itself healthy and the service
@@ -465,7 +500,7 @@ apply and RESTART of the saved machine boots XXDP with no worker cancelled.
 
 Fixed in `10.02_devices/2_src/dl11w.cpp`.
 
-## 19. The boot address was not part of the saved machine
+### 19. The boot address was not part of the saved machine
 
 `bootaddress_label` is the MACRO-11 label the M9312 resolves to a power-on PC,
 and it is read-only while the device is on the bus — so it is set with the
@@ -480,7 +515,7 @@ With `bootaddress_label = dl0n` saved, an apply resolves it:
 
 and RESTART alone boots the machine.
 
-## 20. The bus mode is a setting, not a build
+### 20. The bus mode is a setting, not a build
 
 `NO_PHYSICAL_BUS` was a compile-time switch, so the internal bus meant a
 separate binary — and a package that records nothing about which one it holds
