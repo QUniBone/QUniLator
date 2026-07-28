@@ -18,13 +18,13 @@
 #
 # environment:
 #   QUNILATOR_HOST   ssh destination of the device (default hans@qbone.huebner.org)
-#   QUNILATOR_REMOTE_DIR  QUniBone directory on the device (default ~/QUniBone)
+#   QUNILATOR_REMOTE_DIR  checkout directory on the device (default ~/QUniLator)
 
 set -e
 cd "$(dirname "$0")"
 
 QUNILATOR_HOST=${QUNILATOR_HOST:-hans@qbone.huebner.org}
-QUNILATOR_REMOTE_DIR=${QUNILATOR_REMOTE_DIR:-QUniBone}
+QUNILATOR_REMOTE_DIR=${QUNILATOR_REMOTE_DIR:-QUniLator}
 IMAGE=qunibone-crossbuild
 PRU_IMAGE=qunibone-pru-cgt
 
