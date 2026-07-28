@@ -166,6 +166,11 @@ install -m 644 packaging/debian/default-config.json $STAGE/usr/share/qunilator/d
 # to list the files inside an RT-11 / Files-11 image
 install -d -m 755 $STAGE/usr/share/qunilator/decoders
 install -m 644 packaging/decoders/*.py $STAGE/usr/share/qunilator/decoders/
+# the M9312 PROM listings (ak6dn.com), the console/diagnostic ROM and the
+# per-controller boot ROMs. The M9312 loads a socket from one of these files, so
+# a board with an emulated CPU has something to boot from.
+install -d -m 755 $STAGE/usr/share/qunilator/roms
+install -m 644 10.02_devices/4_deploy/*.lst $STAGE/usr/share/qunilator/roms/
 # DNS-SD advertisement for the web interface. A template: qunilator-setup substitutes
 # the board's name and identifier and installs it under /etc/avahi/services, so
 # the file under /etc is generated rather than a conffile every board would show

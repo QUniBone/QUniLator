@@ -128,3 +128,76 @@ fetches from emulated memory and halts on the zero word:
 
 Added in `main_qbone_web.cpp`, `10.05_web/2_src/websettings.cpp`,
 `device_label.cpp` and the frontend's `widgets.ts`.
+
+## 8. The console switches were configuration
+
+HALT, START and CONTINUE were `PARAM_CONFIG`, so a machine saved with HALT
+asserted carried `halt_switch` into the configuration, and applying it left the
+CPU unable to run with nothing on screen to say why:
+
+    {"devices":[{"enabled":true,"name":"CPU20","params":{"halt_switch":"1"}}]}
+
+START and CONTINUE are momentary — the worker acts on them and clears them in
+the same pass — so what they hold is never a setting either. All three are
+status now, which keeps them writable and out of every snapshot. The switch
+register stays configuration, being operator data the running program reads.
+
+Fixed in `10.02_devices/2_src/cpu.cpp` and the frontend's `widgets.ts`.
+
+## 9. The M9312 PROM listings were not packaged
+
+The emulated CPU has nothing to boot from without them. The listings sit in the
+source at `10.02_devices/4_deploy` and the package now installs them to
+`/usr/share/qunilator/roms`: the console/diagnostic PROM and the per-controller
+boot PROMs, `23-751A9.lst` being the RL11 one.
+
+Fixed in `packaging/build-deb.sh`.
+
+## 10. The emulated CPU needs PMI to reach memory and the ROM
+
+A board that runs the KA11 emulates the memory as well, and serves it from the
+same PRU that drives the CPU's bus cycles — a board cannot answer its own
+cycle. Every fetch therefore ended in a bus timeout, and the CPU died in a
+double bus error at whatever address it started from, which reads exactly like
+a HALT opcode in a zeroed machine.
+
+`pmi` (Private Memory Interconnect) is the switch for it: the CPU then reaches
+memory and emulated ROM cells in DDR directly, and only device registers go
+over the bus. With it on, the KA11 executes the M9312 DL boot PROM.
+
+So a self-contained machine needs `pmi` on. It ships off, which is right for a
+CPU driving a real backplane, and there is nothing yet that says so when the
+emulated CPU is the one running.
+
+## 11. The emulated CPU cannot reach the board's own emulated devices — open
+
+With PMI on and the M9312 holding the RL11 boot PROM, the CPU runs the ROM and
+stops at the first device register. Its own cycle trace:
+
+    773004 DATI 000261        sec
+    773006 DATI 012700        mov #0,r0
+    773012 DATI 012701        mov #rlcsr,r1
+    773014 DATI 174400
+    773034 DATI 010311        mov r3,(r1)
+    774400 DATI 000000 nxm=1  the RL11 CSR: bus timeout
+    777766 DATO 000004 nxm=1  the CPU error register, also nxm
+
+The ROM is correct and the CPU is correct. What fails is the RL11 register
+access: emulated device registers live in PRU RAM and are answered by the PRU's
+slave logic during a physical bus cycle, and the same PRU is driving that cycle
+as master for the CPU.
+
+Memory and ROM avoid this because PMI reaches them in DDR without a bus cycle;
+device registers have no such path. So the emulated CPU drives *physical*
+peripherals on a real UNIBUS, and a wholly self-contained machine — emulated
+CPU with emulated disks — stops here.
+
+The same limit shows in `GET /api/memory`, which reads by DMA and so needs an
+arbitrator: on a board whose only CPU is the emulated one, it answers "bus
+timeout reading memory" whenever that CPU is halted, including for addresses
+inside the emulated range.
+
+Closing it means giving device registers the same direct path PMI gives memory:
+the ARM can reach the PRU's iopage cells, but a register access is not a load
+or a store — it has to run the device's DATI/DATO event, the one the PRU raises
+today, or the read clears no flag and the write starts no seek.
