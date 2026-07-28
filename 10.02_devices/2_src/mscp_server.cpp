@@ -1254,6 +1254,7 @@ mscp_disk_server::DoDiskTransfer(
 // mscp_tape_server: the TMSCP tape command set (TQK50/TK50).
 //
 // Command modifiers used by the tape commands (from pdp11_mscp.h).
+#define MD_TAPE_CSE     0x2000      // b: clear serious exception
 #define MD_TAPE_REV     0x0008      // t rd, pos: reverse
 #define MD_TAPE_SWP     0x0004      // suc: enable set write protect
 #define MD_TAPE_OBC     0x0004      // pos: object count = tape marks
@@ -1316,6 +1317,42 @@ mscp_tape_server::dispatch_command(
 {
     *handled = true;
 
+    // A command with the clear-serious-exception modifier clears a latched
+    // exception so the host can continue. The clear happens first, so a command
+    // carrying the modifier both clears the latch and executes.
+    if (modifiers & MD_TAPE_CSE)
+    {
+        mscp_tape_c* d = GetTapeDrive(unitNumber);
+        if (d != nullptr)
+            d->ClearSeriousException();
+    }
+
+    // While a serious exception is latched (raised when a read/access crosses a
+    // tape mark), a motion command is refused with ST_SXC until the host
+    // acknowledges it with the clear-serious-exception modifier -- matching the
+    // reference controller's tq_mot_valid. This is how the data reliability
+    // test's read-back recognizes a tape mark it spaced over rather than
+    // treating it as a data fault. Non-motion commands (status, online) are
+    // unaffected so the host can still query the unit.
+    switch (opcode)
+    {
+        case Opcodes::READ:
+        case Opcodes::ACCESS:
+        case Opcodes::WRITE:
+        case TapeOpcodes::WRITE_TAPE_MARK:
+        case TapeOpcodes::REPOSITION:
+        case Opcodes::ERASE:
+        case TapeOpcodes::ERASE_GAP:
+        {
+            mscp_tape_c* d = GetTapeDrive(unitNumber);
+            if (d != nullptr && d->HasSeriousException())
+                return STATUS(TapeStatus::SERIOUS_EXCEPTION, 0, d->EndFlags());
+            break;
+        }
+        default:
+            break;
+    }
+
     switch (opcode)
     {
         case Opcodes::GET_UNIT_STATUS:
@@ -1341,6 +1378,9 @@ mscp_tape_server::dispatch_command(
 
         case Opcodes::READ:
             return Read(message, unitNumber, modifiers);
+
+        case Opcodes::ACCESS:
+            return Access(message, unitNumber, modifiers);
 
         case Opcodes::WRITE:
             return Write(message, unitNumber, modifiers);
@@ -1632,7 +1672,7 @@ mscp_tape_server::Flush(
     PositionStatus* params =
         reinterpret_cast<PositionStatus*>(GetParameterPointer(message));
     memset(params, 0, sizeof(PositionStatus));
-    params->Position = static_cast<uint32_t>(drive->tape().position());
+    params->Position = static_cast<uint32_t>(drive->tape().object_position());
 
     return STATUS(Status::SUCCESS, 0, 0);
 }
@@ -1716,17 +1756,18 @@ mscp_tape_server::Read(
         simh_tape_c::result_t sres = drive->tape().space_reverse(&spanned);
         if (sres == simh_tape_c::R_BEGIN_OF_TAPE)
         {
-            params->Position = static_cast<uint32_t>(drive->tape().position());
+            params->Position = static_cast<uint32_t>(drive->tape().object_position());
             params->RecordSize = 0;
             params->ByteCount = 0;
             return STATUS(BOT, 0, EF_POSITION_LOST);
         }
         if (sres == simh_tape_c::R_TAPE_MARK)
         {
-            params->Position = static_cast<uint32_t>(drive->tape().position());
+            params->Position = static_cast<uint32_t>(drive->tape().object_position());
             params->RecordSize = 0;
             params->ByteCount = 0;
-            return STATUS(TAPE_MARK, 0, 0);
+            drive->SetSeriousException();
+            return STATUS(TAPE_MARK, 0, EF_SERIOUS_EXCEPTION);
         }
         if (sres != simh_tape_c::R_RECORD)
             return STATUS(Status::DRIVE_ERROR, 0, 0);
@@ -1738,7 +1779,20 @@ mscp_tape_server::Read(
         result = drive->tape().read_forward(buf.get(), byteCount, &recLen);
     }
 
-    params->Position = static_cast<uint32_t>(drive->tape().position());
+    params->Position = static_cast<uint32_t>(drive->tape().object_position());
+
+    // The first command that leaves the head past the drive's EOT marker reports
+    // "success, end of tape encountered" (ST_SUC | SB_SUC_EOT, status word
+    // 02000). Reading back the last burst, the host watches the read/access
+    // status for this value: it latches an end-of-tape flag from it and stops
+    // spacing before the trailing tape mark. The report is one-shot -- repeating
+    // it on the following commands re-arms the host stop logic and spins the DRS
+    // supervisor -- so a single crossing yields a single 02000. The subcode
+    // carries it (a bare EF_END_OF_TAPE flag is a different field the host's
+    // test does not read).
+    uint32_t successStatus = drive->TakeEndOfTapeReport()
+        ? STATUS(Status::SUCCESS, SB_SUC_EOT, EF_END_OF_TAPE)
+        : STATUS(Status::SUCCESS, 0, 0);
 
     switch (result)
     {
@@ -1756,13 +1810,14 @@ mscp_tape_server::Read(
             params->ByteCount = xfer;
             if (recLen > byteCount)
                 return STATUS(RECORD_TRUNCATED, 0, 0);
-            return STATUS(Status::SUCCESS, 0, 0);
+            return successStatus;
         }
 
         case simh_tape_c::R_TAPE_MARK:
             params->RecordSize = 0;
             params->ByteCount = 0;
-            return STATUS(TAPE_MARK, 0, 0);
+            drive->SetSeriousException();
+            return STATUS(TAPE_MARK, 0, EF_SERIOUS_EXCEPTION);
 
         case simh_tape_c::R_END_OF_MEDIUM:
             params->RecordSize = 0;
@@ -1777,6 +1832,87 @@ mscp_tape_server::Read(
         default:
             params->RecordSize = 0;
             params->ByteCount = 0;
+            return STATUS(Status::DRIVE_ERROR, 0, 0);
+    }
+}
+
+//
+// Access():
+//  Positions over one record like a read, but transfers no data to the host
+//  (the reported transfer count is zero). The TKxx data reliability test uses
+//  it to walk records without reading them back into memory. Reverse access
+//  spaces backward over the preceding record.
+//
+uint32_t
+mscp_tape_server::Access(
+    std::shared_ptr<Message> message,
+    uint16_t unitNumber,
+    uint16_t modifiers)
+{
+    #pragma pack(push,1)
+    struct ReadWriteParameters
+    {
+        uint32_t ByteCount;                 // w8-9
+        uint32_t BufferPhysicalAddress;     // w10-11
+        uint32_t Map;                       // w12-13
+        uint32_t Reserved;                  // w14-15
+        uint32_t Position;                  // w16-17
+        uint32_t RecordSize;                // w18-19
+    };
+    #pragma pack(pop)
+
+    ReadWriteParameters* params =
+        reinterpret_cast<ReadWriteParameters*>(GetParameterPointer(message));
+
+    DEBUG_FAST("TMSCP ACCESS drive %d mod 0x%x", unitNumber, modifiers);
+
+    message->MessageLength = sizeof(ReadWriteParameters) + HEADER_SIZE;
+
+    mscp_tape_c* drive = GetTapeDrive(unitNumber);
+
+    if (nullptr == drive || !drive->IsAvailable())
+        return STATUS(Status::UNIT_OFFLINE, UnitOfflineSubcodes::UNIT_UNKNOWN, 0);
+
+    if (!drive->IsOnline())
+        return STATUS(Status::UNIT_AVAILABLE, 0, 0);
+
+    uint32_t recLen = 0;
+    simh_tape_c::result_t result = (modifiers & MD_TAPE_REV)
+        ? drive->tape().space_reverse(&recLen)
+        : drive->tape().space_forward(&recLen);
+
+    params->Position = static_cast<uint32_t>(drive->tape().object_position());
+    params->ByteCount = 0;      // access transfers no data
+
+    // The first command past the EOT marker carries ST_SUC | SB_SUC_EOT (status
+    // word 02000), reported once per crossing (see Read): the reliability test
+    // spaces records with ACCESS and watches for it to recognise the end zone
+    // and stop before it spaces onto the trailing tape mark.
+    uint32_t successStatus = drive->TakeEndOfTapeReport()
+        ? STATUS(Status::SUCCESS, SB_SUC_EOT, EF_END_OF_TAPE)
+        : STATUS(Status::SUCCESS, 0, 0);
+
+    switch (result)
+    {
+        case simh_tape_c::R_RECORD:
+            params->RecordSize = recLen;
+            return successStatus;
+
+        case simh_tape_c::R_TAPE_MARK:
+            params->RecordSize = 0;
+            drive->SetSeriousException();
+            return STATUS(TAPE_MARK, 0, EF_SERIOUS_EXCEPTION);
+
+        case simh_tape_c::R_END_OF_MEDIUM:
+            params->RecordSize = 0;
+            return STATUS(Status::DATA_ERROR, 0, EF_END_OF_TAPE);
+
+        case simh_tape_c::R_BEGIN_OF_TAPE:
+            params->RecordSize = 0;
+            return STATUS(BOT, 0, EF_POSITION_LOST);
+
+        default:
+            params->RecordSize = 0;
             return STATUS(Status::DRIVE_ERROR, 0, 0);
     }
 }
@@ -1841,17 +1977,22 @@ mscp_tape_server::Write(
     if (drive->tape().write_record(mem.get(), byteCount) != simh_tape_c::R_RECORD)
         return STATUS(Status::DRIVE_ERROR, 0, 0);
 
-    params->Position = static_cast<uint32_t>(drive->tape().position());
+    params->Position = static_cast<uint32_t>(drive->tape().object_position());
     params->RecordSize = byteCount;
 
-    // Report logical end of tape once the written data reaches the drive's
-    // capacity, so a host that writes until end of medium (the TKxx data
-    // reliability diagnostic, backup utilities) stops and turns around: an
-    // unbounded .tap would otherwise be written forever. (TK50 media is ~94 MB;
-    // a reduced capacity keeps a data-reliability pass tractable to run here —
-    // the real value belongs on a drive parameter.)
-    if (drive->tape().position() >= TAPE_LEOT_CAPACITY)
-        return STATUS(Status::SUCCESS, 0, EF_END_OF_TAPE);
+    // The first record written at or past the drive capacity is stored and
+    // succeeds, and its end packet reports "success, end of tape encountered"
+    // (ST_SUC | SB_SUC_EOT, status word 02000). A host that streams records
+    // until end of medium (the TKxx data reliability fill commands) watches for
+    // this exact status to stop issuing writes and turn around to read back.
+    // It is reported ONCE per crossing (shared with read-back, see Read): the
+    // status sets the host's stop flag, and a repeat on a following command
+    // re-arms that flag and spins the DRS supervisor. Writes already queued
+    // behind the crossing complete as plain success so the in-flight burst
+    // drains. Count-bounded writes complete before capacity and never report it;
+    // the latch clears once the position is back below capacity (after a rewind).
+    if (drive->TakeEndOfTapeReport())
+        return STATUS(Status::SUCCESS, SB_SUC_EOT, EF_END_OF_TAPE);
 
     return STATUS(Status::SUCCESS, 0, 0);
 }
@@ -1898,7 +2039,7 @@ mscp_tape_server::WriteTapeMark(
     if (drive->tape().write_tape_mark() != simh_tape_c::R_RECORD)
         return STATUS(Status::DRIVE_ERROR, 0, 0);
 
-    params->Position = static_cast<uint32_t>(drive->tape().position());
+    params->Position = static_cast<uint32_t>(drive->tape().object_position());
 
     return STATUS(Status::SUCCESS, 0, 0);
 }
@@ -1946,6 +2087,7 @@ mscp_tape_server::Reposition(
     if (modifiers & MD_TAPE_RWD)
     {
         drive->tape().rewind();
+        drive->TakeEndOfTapeReport();   // back at BOT: clear the EOT one-shot
         params->RecordCount = 0;
         params->TapeMarkCount = 0;
         params->Position = 0;
@@ -1953,13 +2095,21 @@ mscp_tape_server::Reposition(
     }
 
     bool reverse = (modifiers & MD_TAPE_REV) != 0;
-    bool byTapeMarks = (modifiers & MD_TAPE_OBC) != 0;
-    uint32_t target = byTapeMarks ? tapeMarkCount : recordCount;
+
+    // MD_TAPE_OBC selects object mode: the record-count field is a count of
+    // objects -- records AND tape marks alike -- so a tape mark counts toward
+    // the target and does not stop the motion. Without it, the command spaces
+    // over that many records (a tape mark ends the motion) or, when no record
+    // count is given, over that many tape marks.
+    bool objectMode = (modifiers & MD_TAPE_OBC) != 0;
+    bool spacingRecords = objectMode || (recordCount != 0);
+    uint32_t target = spacingRecords ? recordCount : tapeMarkCount;
 
     uint32_t recordsSkipped = 0;
     uint32_t tapeMarksSkipped = 0;
     uint32_t done = 0;
-    uint32_t status = STATUS(Status::SUCCESS, 0, 0);
+    const uint32_t plainSuccess = STATUS(Status::SUCCESS, 0, 0);
+    uint32_t status = plainSuccess;
 
     while (done < target)
     {
@@ -1971,17 +2121,18 @@ mscp_tape_server::Reposition(
         if (r == simh_tape_c::R_RECORD)
         {
             recordsSkipped++;
-            if (!byTapeMarks)
+            if (spacingRecords)
                 done++;
         }
         else if (r == simh_tape_c::R_TAPE_MARK)
         {
             tapeMarksSkipped++;
-            if (byTapeMarks)
-                done++;
+            if (objectMode || !spacingRecords)
+                done++;     // a tape mark is an object, and it is what tape-mark
+                            // spacing counts
             else
             {
-                // Spacing records terminates at a tape-mark boundary.
+                // Spacing records (not objects) terminates at a tape-mark boundary.
                 status = STATUS(TAPE_MARK, 0, 0);
                 break;
             }
@@ -2005,7 +2156,13 @@ mscp_tape_server::Reposition(
 
     params->RecordCount = recordsSkipped;
     params->TapeMarkCount = tapeMarksSkipped;
-    params->Position = static_cast<uint32_t>(drive->tape().position());
+    params->Position = static_cast<uint32_t>(drive->tape().object_position());
+
+    // A plain-success reposition that left the head past the EOT marker reports
+    // ST_SUC | SB_SUC_EOT (status word 02000) once per crossing, the same
+    // end-of-tape indication the read and access commands carry there (see Read).
+    if (status == plainSuccess && drive->TakeEndOfTapeReport())
+        status = STATUS(Status::SUCCESS, SB_SUC_EOT, EF_END_OF_TAPE);
 
     return status;
 }

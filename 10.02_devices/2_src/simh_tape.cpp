@@ -100,22 +100,27 @@ simh_tape_c::result_t simh_tape_c::read_forward(uint8_t *buf, uint32_t max_len,
 		*rec_len = 0;
 	if (!open_)
 		return R_ERROR;
-	// physical end of file reads as end of medium
-	if (pos_ >= size_)
-		return R_END_OF_MEDIUM;
+	// Skip any erase gaps, then read the record they precede. Iterating (rather
+	// than recursing) bounds the scan by the file size, so a long run of gap
+	// markers cannot overflow the stack.
 	uint32_t marker;
-	if (!read_marker(pos_, &marker))
-		return R_END_OF_MEDIUM;
+	for (;;) {
+		// physical end of file reads as end of medium
+		if (pos_ >= size_)
+			return R_END_OF_MEDIUM;
+		if (!read_marker(pos_, &marker))
+			return R_END_OF_MEDIUM;
+		if (marker != MTR_GAP)
+			break;
+		pos_ += 4; // erase gap: skip and keep scanning forward
+	}
 	if (marker == MTR_TMK) {
 		pos_ += 4;
+		objp_++;
 		return R_TAPE_MARK;
 	}
 	if (marker == MTR_EOM)
 		return R_END_OF_MEDIUM;
-	if (marker == MTR_GAP) {
-		pos_ += 4;
-		return read_forward(buf, max_len, rec_len); // erase gap: skip and retry
-	}
 	uint32_t len = marker & MTR_MAXLEN;
 	if (rec_len != nullptr)
 		*rec_len = len;
@@ -129,6 +134,7 @@ simh_tape_c::result_t simh_tape_c::read_forward(uint8_t *buf, uint32_t max_len,
 			return R_ERROR;
 	}
 	pos_ = data_at + padded(len) + 4; // data (padded) + trailing marker
+	objp_++;
 	return (marker & MTR_ERF) ? R_ERROR : R_RECORD;
 }
 
@@ -143,21 +149,26 @@ simh_tape_c::result_t simh_tape_c::space_reverse(uint32_t *rec_len)
 		*rec_len = 0;
 	if (!open_)
 		return R_ERROR;
-	if (pos_ == 0)
-		return R_BEGIN_OF_TAPE;
-	if (pos_ < 4)
-		return R_ERROR;
-	// the record just behind us ends with a trailing marker copy
+	// Skip any erase gaps behind us, then space over the record they follow.
+	// Iterating bounds the scan by the current position, so a long run of gap
+	// markers cannot overflow the stack.
 	uint32_t marker;
-	if (!read_marker(pos_ - 4, &marker))
-		return R_ERROR;
+	for (;;) {
+		if (pos_ == 0)
+			return R_BEGIN_OF_TAPE;
+		if (pos_ < 4)
+			return R_ERROR;
+		// the record just behind us ends with a trailing marker copy
+		if (!read_marker(pos_ - 4, &marker))
+			return R_ERROR;
+		if (marker != MTR_GAP)
+			break;
+		pos_ -= 4; // erase gap: skip and keep scanning backward
+	}
 	if (marker == MTR_TMK) {
 		pos_ -= 4;
+		if (objp_ > 0) objp_--;
 		return R_TAPE_MARK;
-	}
-	if (marker == MTR_GAP) {
-		pos_ -= 4;
-		return space_reverse(rec_len); // erase gap: skip and retry
 	}
 	uint32_t len = marker & MTR_MAXLEN;
 	if (rec_len != nullptr)
@@ -166,6 +177,7 @@ simh_tape_c::result_t simh_tape_c::space_reverse(uint32_t *rec_len)
 	if (span > pos_)
 		return R_ERROR;
 	pos_ -= span;
+	if (objp_ > 0) objp_--;
 	return (marker & MTR_ERF) ? R_ERROR : R_RECORD;
 }
 
@@ -190,6 +202,7 @@ simh_tape_c::result_t simh_tape_c::write_record(const uint8_t *buf, uint32_t len
 	if (!write_marker(trailer_at, len))
 		return R_ERROR;
 	pos_ = trailer_at + 4;
+	objp_++;
 	f_.flush();
 	// a write is the new logical end of tape: drop anything beyond
 	truncate_here();
@@ -205,6 +218,7 @@ simh_tape_c::result_t simh_tape_c::write_tape_mark()
 	if (!write_marker(pos_, MTR_TMK))
 		return R_ERROR;
 	pos_ += 4;
+	objp_++;
 	f_.flush();
 	truncate_here();
 	return R_RECORD;

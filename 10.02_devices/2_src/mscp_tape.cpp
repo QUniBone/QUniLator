@@ -27,8 +27,11 @@ mscp_tape_c::mscp_tape_c(storagecontroller_c *ctrl, uint32_t driveNumber) :
     type_name.value = "TK50";
     type_name.readonly = true;
 
-    // TK50 formatted capacity (informational).
+    // TK50 media capacity. Settable so a shorter tape can be modelled (e.g. to
+    // bound a data-reliability diagnostic pass); the write path reports end of
+    // tape at this many bytes.
     capacity.value = TK50_CAPACITY;
+    capacity.readonly = false;
 
     // MSCP unit device number: one-based, matching the disk convention.
     _unitDeviceNumber = driveNumber + 1;

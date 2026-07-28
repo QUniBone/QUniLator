@@ -51,7 +51,12 @@ public:
 	uint64_t file_size() const { return size_; }
 	uint64_t position() const { return pos_; }
 
-	void rewind() { pos_ = 0; }         // to beginning of tape (BOT)
+	// The object position: the count of objects (records and tape marks) passed
+	// since BOT. This is what a TMSCP controller reports in the position field of
+	// a read/write/access end packet, distinct from the byte offset above.
+	uint64_t object_position() const { return objp_; }
+
+	void rewind() { pos_ = 0; objp_ = 0; }  // to beginning of tape (BOT)
 	bool at_bot() const { return pos_ == 0; }
 
 	// Read the next record forward. On R_RECORD up to `max_len` bytes are copied to
@@ -83,6 +88,7 @@ private:
 	bool open_ = false;
 	bool readonly_ = false;
 	uint64_t pos_ = 0;  // current byte offset in the file (the "tape position")
+	uint64_t objp_ = 0; // object position: records + tape marks passed since BOT
 	uint64_t size_ = 0; // file size in bytes
 
 	static uint32_t padded(uint32_t len) { return (len + 1) & ~1u; } // even byte count

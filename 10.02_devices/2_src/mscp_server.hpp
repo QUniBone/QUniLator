@@ -328,6 +328,10 @@ private:
         TAPE_MARK = 14,         // ST_TMK: tape mark encountered
         RECORD_TRUNCATED = 16,  // ST_RDT: record truncated
         POSITION_LOST = 17,     // ST_POL: position lost
+        SERIOUS_EXCEPTION = 18, // ST_SXC: a serious exception is latched; motion
+                                // commands are refused until the host clears it
+        LEOT_DETECTED = 19,     // ST_LED: logical end of tape (a soft end the
+                                // host turns around on, not a hard error)
     };
 
     // End flags packed into the response Flags byte.
@@ -336,6 +340,16 @@ private:
         EF_SERIOUS_EXCEPTION = 0x10,    // EF_SXC
         EF_END_OF_TAPE = 0x08,          // EF_EOT
         EF_POSITION_LOST = 0x04,        // EF_PLS
+    };
+
+    // Success subcode: end of tape encountered on a successful write. STATUS()
+    // shifts this <<5, giving the status word 0x400 (02000 octal) = ST_SUC |
+    // SB_SUC_EOT -- the "success, EOT encountered" completion a real TK50
+    // returns. The TKxx data-reliability fill command watches for exactly this
+    // status word to stop streaming records and turn around to read-back.
+    enum TapeSuccessSubcodes
+    {
+        SB_SUC_EOT = 0x20,
     };
 
     // Write-protect status subcodes (raw, shifted <<5 by STATUS()).
@@ -358,6 +372,7 @@ private:
     uint32_t Flush(std::shared_ptr<Message> message, uint16_t unitNumber);
     uint32_t EraseGap(std::shared_ptr<Message> message, uint16_t unitNumber);
     uint32_t Read(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
+    uint32_t Access(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
     uint32_t Write(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
     uint32_t WriteTapeMark(std::shared_ptr<Message> message, uint16_t unitNumber);
     uint32_t Reposition(std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);

@@ -603,7 +603,7 @@ mscp_port_c::GetNextCommand(bool* error)
                     return nullptr;
                 }
 
-                if (previousDescriptor->Word1.Fields.Ownership)
+                if (previousDescriptor && previousDescriptor->Word1.Fields.Ownership)
                 {
                     // We own the previous descriptor, so the ring was previously
                     // full.
@@ -674,7 +674,14 @@ mscp_port_c::PostResponse(
                 sizeof(Descriptor),
                 sizeof(Descriptor))));
 
-    // TODO: if NULL is returned assume a bus error and handle it appropriately.
+    // A null descriptor means the read of the response ring failed (NXM or a
+    // bad ring address). Report it and leave the response unposted rather than
+    // dereferencing a null pointer.
+    if (!cmdDescriptor)
+    {
+        PortError(PORT_ERROR_PACKET_READ);
+        return false;
+    }
 
     //
     // Check owner bit: if set, ownership has been passed to us, in which case
@@ -725,21 +732,17 @@ mscp_port_c::PostResponse(
             DEBUG_FAST("Host response buffer size is zero.");
         }
         //
-        // Never write past the response slot the host allocated. The tape
-        // read/write end packet is 36 bytes; a host (e.g. the TKxx data
-        // reliability diagnostic) that allocates a smaller slot would otherwise
-        // have adjacent memory overwritten, crashing the guest at a random PC.
-        // Clamp to the host's slot; the host reads the fields that fit. A larger
-        // host slot (disk, normal drivers) is unaffected, so this never clamps
-        // the disk path.
+        // Write the full response the controller built. The host's declared
+        // slot length is advisory: a real controller writes every field of the
+        // end packet regardless, and the TKxx data reliability diagnostic reads
+        // the record-size field (the last word of the 36-byte tape read/access
+        // end packet) even when it declared a shorter slot. Clamping to the
+        // declared slot dropped that trailing field, so the diagnostic read a
+        // stale record size and failed with RECORD LENGTH SHORT. The DMA length
+        // must be even.
         //
         uint32_t responseLength = response->MessageLength;
-        if (messageLength != 0 && messageLength < responseLength)
-        {
-            DEBUG_FAST("Response 0x%x exceeds host buffer 0x%x; clamping",
-                response->MessageLength, messageLength);
-            responseLength = messageLength;
-        }
+        responseLength &= ~1u;
 
         //
         // Copy the response message over the top of the buffer allocated on the
@@ -782,7 +785,7 @@ mscp_port_c::PostResponse(
                             sizeof(Descriptor),
                             sizeof(Descriptor))));
 
-                if (previousDescriptor->Word1.Fields.Ownership)
+                if (previousDescriptor && previousDescriptor->Word1.Fields.Ownership)
                 {
                     // We own the previous descriptor, so the ring was previously
                     // full.
@@ -1037,8 +1040,20 @@ mscp_port_c::DMAWrite(
     size_t lengthInBytes,
     uint8_t* buffer)
 {
-    assert ((lengthInBytes % 2) == 0);
-    assert (address < 2* qunibus->addr_space_word_count); // exceeds address space? test for IOpage too?
+    //
+    // A malformed transfer (odd length, or an address past the machine's
+    // memory) is reported to the caller as a failed DMA rather than aborting
+    // the process. On the board this runs with asserts live, so an odd length
+    // or a bad guest buffer pointer from a host command must not take the
+    // whole controller down -- the caller turns a false return into an NXM /
+    // host-buffer-access error.
+    //
+    if ((lengthInBytes % 2) != 0 ||
+        address >= 2 * qunibus->addr_space_word_count)
+    {
+        DEBUG_FAST("DMAWrite rejected: address o%o length %zu", address, lengthInBytes);
+        return false;
+    }
 
     qunibusadapter->DMA(dma_request, true,
             QUNIBUS_CYCLE_DATO,
@@ -1062,15 +1077,28 @@ mscp_port_c::DMARead(
     size_t lengthInBytes,
     size_t bufferSize)
 {
-    assert (bufferSize >= lengthInBytes);
-    assert((lengthInBytes % 2) == 0);
-    assert (address < 2* qunibus->addr_space_word_count); // exceeds address space? test for IOpage too?
+    //
+    // Reject a malformed transfer (odd length, buffer smaller than the
+    // transfer, or an address past the machine's memory) by returning nullptr,
+    // which the caller reports as an NXM / host-buffer-access error. With
+    // asserts live on the board, aborting here would take the controller down
+    // on a bad guest buffer pointer supplied by a host command.
+    //
+    if (bufferSize < lengthInBytes ||
+        (lengthInBytes % 2) != 0 ||
+        address >= 2 * qunibus->addr_space_word_count)
+    {
+        DEBUG_FAST("DMARead rejected: address o%o length %zu buffer %zu",
+            address, lengthInBytes, bufferSize);
+        return nullptr;
+    }
 
-    uint16_t* buffer = new uint16_t[bufferSize >> 1];
+    // Allocate whole words, rounding an odd buffer size up so the fill below
+    // stays within the allocation.
+    size_t bufferWords = (bufferSize + 1) >> 1;
+    uint16_t* buffer = new uint16_t[bufferWords];
 
-    assert(buffer);
-
-    memset(reinterpret_cast<uint8_t*>(buffer), 0xc3, bufferSize);
+    memset(reinterpret_cast<uint8_t*>(buffer), 0xc3, bufferWords << 1);
 
     qunibusadapter->DMA(dma_request, true,
                 QUNIBUS_CYCLE_DATI,
