@@ -264,13 +264,20 @@ cpu_c::cpu_c() :
     register_count = 0;
     swab_vbit.value = false;
 
-    // running state the CPU drives as it executes, not configuration: the RUN
-    // LED, the live program counter it writes back, and the executed-opcode
-    // count. The console switches (halt/start/continue, switch_reg) stay
-    // configuration — the operator sets them.
+    // Running state, not configuration: the RUN LED, the live program counter
+    // the CPU writes back, and the executed-opcode count.
     runmode.kind = parameter_c::PARAM_STATUS;
     pc.kind = parameter_c::PARAM_STATUS;
     cycle_count.kind = parameter_c::PARAM_STATUS;
+    // The console switches are console state too. START and CONTINUE are
+    // momentary: the worker acts on them and clears them again, so what they
+    // hold is never a setting. HALT is a switch position, and a configuration
+    // that restored it would leave the machine unable to run with nothing on
+    // screen to say why. The switch register is different — it is operator
+    // data the running program reads, so it stays configuration.
+    halt_switch.kind = parameter_c::PARAM_STATUS;
+    start_switch.kind = parameter_c::PARAM_STATUS;
+    continue_switch.kind = parameter_c::PARAM_STATUS;
 
     memset(&bus, 0, sizeof(bus));
     memset(&ka11, 0, sizeof(ka11));

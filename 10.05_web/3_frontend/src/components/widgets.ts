@@ -298,7 +298,7 @@ function DzWidget({ d }: { d: LiveDev }) {
 function CpuWidget({ d }: { d: LiveDev }) {
   const powered = store.hw.powered !== false;
   const running = powered && lampOn(d, 'run_led');
-  const halted = paramVal(d, 'halt_switch') === '1';
+  const halted = lampOn(d, 'halt_switch');
   const pc = statusParam(d, 'PC');
   const cycles = statusParam(d, 'cycle_count');
   const [swr, setSwr] = useState<string | null>(null);
