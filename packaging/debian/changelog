@@ -1,3 +1,24 @@
+qbone (1.11.0-1) trixie; urgency=low
+
+  * A TQK50/TK50 cartridge-tape subsystem runs on a shared MSCP port and server
+    base alongside the disk controller. It is backed by SIMH .tap images with a
+    record layer for read and write, reports end-of-tape, and passes the CZTKBD0
+    data-reliability diagnostic with zero errors. The dashboard shows the drive
+    with READY, USE and WRITE PROT front-panel lamps that follow tape motion and
+    the cartridge's write-lock state.
+  * The dashboard grid is arrangeable: every card occupies whole grid cells, the
+    operator drags cards and hides them, and the arrangement is stored per
+    configuration. The layout editor holds each card's position steady while
+    editing, so hiding a card leaves the others in place, and a card dragged past
+    the right or bottom edge extends the canvas. Card titles clamp to one line.
+  * Emulated mux and SLU serial lines carry over a WebSocket backend.
+  * The workstation MCP server reports observable run state, verifies power-up,
+    adjusts the log level, and runs XXDP diagnostics. It drives the real console
+    one character at a time and confirms each echo, so a multi-character dialog
+    value reaches the guest intact.
+
+ -- Hans Huebner <hans.huebner@gmail.com>  Tue, 28 Jul 2026 07:00:00 +0200
+
 qbone (1.10.0-1) trixie; urgency=low
 
   * The web interface is rebuilt as a Vite + Preact + TypeScript application,
