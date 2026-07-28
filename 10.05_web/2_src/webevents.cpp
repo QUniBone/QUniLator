@@ -11,7 +11,7 @@
      {"t":"state","halt":…,"leds":[…],"switches":[…]}   hardware, on change
 
    Producers (parameter_c::change_hook on device threads, the logger sink
-   under its fifo mutex) only append to a bounded queue; a broadcast thread
+   under its fifo mutex) only append to a bounded event_queue; a broadcast thread
    serializes the WebSocket writes, so a slow client never blocks emulation.
 */
 
@@ -42,6 +42,7 @@
 #include "parameter.hpp"
 #include "qunibus.h"
 #include "qunibusadapter.hpp"
+#include "device_configuration.hpp"
 
 #include "webevents.hpp"
 #include "webconfigs.hpp"
@@ -51,10 +52,10 @@
 static std::mutex clients_mutex;
 static std::set<struct mg_connection *> clients;
 
-// bounded event queue, oldest dropped on overflow
+// bounded event event_queue, oldest dropped on overflow
 static std::mutex queue_mutex;
 static std::condition_variable queue_cv;
-static std::deque<std::string> queue;
+static std::deque<std::string> event_queue;
 static const size_t queue_max = 1000;
 
 static std::atomic<bool> running(false);
@@ -91,9 +92,9 @@ static std::string state_json(void) {
 static void enqueue_str(const std::string &msg) {
 	{
 		std::lock_guard<std::mutex> lock(queue_mutex);
-		if (queue.size() >= queue_max)
-			queue.pop_front();
-		queue.push_back(msg);
+		if (event_queue.size() >= queue_max)
+			event_queue.pop_front();
+		event_queue.push_back(msg);
 	}
 	queue_cv.notify_one();
 }
@@ -393,6 +394,20 @@ static void poll_hardware(void) {
 		if (gpios->swtch[i] && GPIO_GETVAL(gpios->swtch[i]))
 			switches |= 1 << i;
 	}
+	// A machine whose CPU is emulated reports whether it is running, instead of
+	// leaving the panel to infer it from a HALT line an operator pulled: the RUN
+	// lamp then follows the CPU through the halts it takes on its own — a HALT
+	// opcode, a breakpoint, a double bus error. A physical CPU shows only its
+	// HALT line, which is what webevents_note_halt() tracks.
+	bool cpu_halt = false, have_cpu = false;
+#if defined(UNIBUS)
+	if (device_configuration != nullptr && device_configuration->cpu != nullptr
+			&& device_configuration->cpu->enabled.value) {
+		have_cpu = true;
+		cpu_halt = !device_configuration->cpu->runmode.value;
+	}
+#endif
+
 	bool line_init = false, dcok = false, pok = false;
 	if (qunibusadapter != nullptr) {
 		line_init = qunibusadapter->line_INIT;
@@ -400,24 +415,36 @@ static void poll_hardware(void) {
 		pok = !qunibusadapter->line_ACLO;  // ACLO asserted = AC power failing
 	}
 
-	std::lock_guard<std::mutex> lock(state_mutex);
-	if (!first && leds == cur_leds && switches == cur_switches
-			&& line_init == cur_init && dcok == cur_dcok && pok == cur_pok)
-		return;
-	first = false;
-	cur_leds = leds;
-	cur_switches = switches;
-	cur_init = line_init;
-	cur_dcok = dcok;
-	cur_pok = pok;
-	std::string msg = state_json();
+	bool halt_changed = false, machine_running = false;
 	{
-		std::lock_guard<std::mutex> qlock(queue_mutex);
-		if (queue.size() >= queue_max)
-			queue.pop_front();
-		queue.push_back(msg);
+		std::lock_guard<std::mutex> lock(state_mutex);
+		bool halt = have_cpu ? cpu_halt : last_halt;
+		if (!first && leds == cur_leds && switches == cur_switches
+				&& line_init == cur_init && dcok == cur_dcok && pok == cur_pok
+				&& halt == last_halt)
+			return;
+		first = false;
+		halt_changed = (halt != last_halt);
+		last_halt = halt;
+		machine_running = cur_powered && !last_halt;
+		cur_leds = leds;
+		cur_switches = switches;
+		cur_init = line_init;
+		cur_dcok = dcok;
+		cur_pok = pok;
+		std::string msg = state_json();
+		{
+			std::lock_guard<std::mutex> qlock(queue_mutex);
+			if (event_queue.size() >= queue_max)
+				event_queue.pop_front();
+			event_queue.push_back(msg);
+		}
 	}
 	queue_cv.notify_one();
+	// an image attached to a running machine is read-only over the shares, so a
+	// CPU that halted or resumed on its own moves the shares with it
+	if (halt_changed)
+		webstorage_refresh_readonly(machine_running);
 }
 
 static void broadcast_loop(void) {
@@ -426,7 +453,7 @@ static void broadcast_loop(void) {
 		{
 			std::unique_lock<std::mutex> lock(queue_mutex);
 			queue_cv.wait_for(lock, std::chrono::milliseconds(100));
-			batch.swap(queue);
+			batch.swap(event_queue);
 		}
 		if (!running)
 			break;

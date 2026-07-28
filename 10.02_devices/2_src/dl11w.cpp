@@ -503,8 +503,17 @@ void slu_c::worker_rcv(void)
 		 RS232 again.
 		 */
 		unsigned poll_periods_us = (rs232.CharTransmissionTime_us * 9) / 10;
-		// poll a bit faster to be ahead of char stream. 
+		// poll a bit faster to be ahead of char stream.
 		// don't oversample: PDP-11 must process char in that time
+
+		// The character time is zero until a port has opened, and CloseComport()
+		// resets it to zero, so a line whose port is absent or failed to open
+		// polls on a zero interval — a tight loop at realtime priority. On a
+		// single-core board that starves everything down to sshd: the kernel
+		// logs soft lockups naming this thread while the machine still answers
+		// ping. A line with no port behind it idles instead.
+		if (poll_periods_us == 0)
+			poll_periods_us = 10000;
 
 		timeout.wait_us(poll_periods_us);
 		if (qunibusadapter->line_INIT)

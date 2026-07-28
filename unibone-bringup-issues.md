@@ -369,3 +369,67 @@ On the board, against a running XXDP:
     restart   run=True  halt=False → the XXDP banner again
 
 Fixed in `10.05_web/2_src/webapi.cpp`.
+
+## 16. The SLU worker polls on a zero interval and spins at realtime priority
+
+Four times the board went unreachable: answering ping, sshd unable to finish a
+handshake. Sampling every thread across a service stop, at a realtime priority
+above the emulator's own, showed the stop completing in two seconds — the hang
+is not deterministic, and the rules built around it ("halt the CPU first",
+"deploy only into an idle machine") were superstition on three samples.
+
+The kernel had recorded what actually happened, in the boot that wedged:
+
+    watchdog: BUG: soft lockup - CPU#0 stuck for  45s! [DL11.0:16379]
+    watchdog: BUG: soft lockup - CPU#0 stuck for 105s! [DL11.0:16379]
+    watchdog: BUG: soft lockup - CPU#0 stuck for 280s! [DL11.0:16379]
+    rcu: INFO: rcu_preempt detected stalls on CPUs/tasks
+    systemd-journald.service: Failed with result 'watchdog'
+
+`DL11.0` is the SLU receive worker, SCHED_FIFO at priority 60 on a board with
+one core. Its poll interval comes from the character time:
+
+    unsigned poll_periods_us = (rs232.CharTransmissionTime_us * 9) / 10;
+    timeout.wait_us(poll_periods_us);
+
+`CharTransmissionTime_us` is zero until a port opens, and `CloseComport()` sets
+it back to zero. A worker still looping across a closed or unopened port
+therefore waits zero nanoseconds per pass: a tight loop at realtime priority,
+which starves everything below it. Ping keeps answering because the network
+stack runs in softirq; nothing in userspace gets a slice, which is why the
+board looks alive and reachable-but-not.
+
+The interval is floored at 10 ms when the character time is zero, so a line
+with no port behind it idles instead of spinning.
+
+This is a supported fix rather than a demonstrated one. Enabling a DL11 whose
+port cannot open is refused before the device installs, so that route no longer
+reaches the worker at all — the remaining way in is a port closed under a
+running worker. What is established: the kernel named this thread repeatedly,
+it is the only unbounded-poll path in it, and the value it divides by is zero
+both before an open and after a close.
+
+Fixed in `10.02_devices/2_src/dl11w.cpp`.
+
+Two things the run turned up that are not fixed. `PANEL.0` sits in
+uninterruptible sleep inside `omap_i2c_xfer_msg` during shutdown, where no
+signal can reach it until the transfer completes — a second way for a stop to
+hang, independent of this one. And the structure behind all of it stands: a
+single core carrying several SCHED_FIFO-60 device threads has no headroom, so
+any thread that fails to yield takes the machine out of reach rather than
+merely slowing it down.
+
+## 17. The panel's RUN lamp showed operator intent, not the machine
+
+The control panel's RUN lamp is `powered && !halted`, where `halted` moves only
+when an operator presses HALT or CONTINUE — it reflects the HALT line, which is
+all QBone can see of a physical CPU. An emulated CPU halts on its own too: a
+HALT opcode, a breakpoint, a double bus error, the power-up vector fetch of a
+`powercycle`. The panel showed RUN lit beside a CPU widget reading HALTED and
+`PC 000000`, and the widget was right.
+
+The 10 Hz state poll now takes the run state from the emulated CPU when there
+is one, so the lamp follows the machine. A physical CPU still shows its HALT
+line.
+
+Fixed in `10.05_web/2_src/webevents.cpp`.
