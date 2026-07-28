@@ -40,6 +40,7 @@
 #include "logsource.hpp"
 #include "device.hpp"
 #include "parameter.hpp"
+#include "qunibusdevice.hpp"
 
 #include "device_configuration.hpp"
 #include "device_label.hpp"
@@ -155,6 +156,7 @@ static int g_dip_value = -1;
 int webevents_dip_value(void) { return g_dip_value; }
 
 std::string webstorage_image_path(const std::string &name) { return name; }
+std::string webstorage_image_subpath(const std::string &name) { return name; }
 
 /*** a synthetic device: the standard built-ins plus a disk image and an
      address, the writable parameters a configuration snapshot captures ***/
@@ -178,6 +180,29 @@ struct test_device_c : public device_c {
 		// activity LED and the read-only access lamp are both PARAM_STATUS
 		activity_led.kind = parameter_c::PARAM_STATUS;
 		access_lamp.kind = parameter_c::PARAM_STATUS;
+	}
+	void on_power_changed(signal_edge_enum, signal_edge_enum) override {}
+	void on_init_changed(void) override {}
+};
+
+/*** a synthetic bus device: a backplane slot, and the arbitration requests
+     whose own slots give the device its footprint. A device whose receive and
+     transmit interrupts arbitrate separately occupies two adjacent slots. ***/
+struct test_busdevice_c : public qunibusdevice_c {
+	intr_request_c rcv_intr;
+	intr_request_c xmt_intr;
+
+	test_busdevice_c(const char *nm, const char *ty, unsigned slot, bool two_slots) {
+		name.value = nm;
+		type_name.value = ty;
+		default_priority_slot = slot;
+		priority_slot.value = slot;
+		rcv_intr.priority_slot = slot;
+		intr_requests.push_back(&rcv_intr);
+		if (two_slots) {
+			xmt_intr.priority_slot = slot + 1;
+			intr_requests.push_back(&xmt_intr);
+		}
 	}
 	void on_power_changed(signal_edge_enum, signal_edge_enum) override {}
 	void on_init_changed(void) override {}
@@ -691,6 +716,21 @@ int main(void) {
 		// DELQA is instanced; a lone interface omits the unit
 		check(device_label("DELQA", "delqa", "", 017774440) == "Ethernet controller (DELQA)",
 				"label: lone DELQA omits its unit");
+		// the UNIBUS controllers, whose types differ from their Q-bus counterparts
+		check(device_label("RL11", "rl", "", 0774400) == "RL disk controller (RL11)",
+				"label: UNIBUS RL controller");
+		check(device_label("RK11", "rk", "", 0777400) == "RK disk controller (RK11)",
+				"label: UNIBUS RK controller");
+		check(device_label("RX11", "rx", "", 0777170) == "RX01 floppy controller (RX11)",
+				"label: UNIBUS RX01 controller");
+		check(device_label("RY211", "ry", "", 0777170) == "RX02 floppy controller (RX211)",
+				"label: UNIBUS RX02 controller");
+		check(device_label("DEUNA", "deuna", "", 0774510) == "Ethernet controller (DEUNA)",
+				"label: DEUNA controller");
+		check(device_label("KE11", "ke", "", 0777300)
+				== "Extended arithmetic element (KE11-A)", "label: KE11-A");
+		check(device_label("m9312_c", "M9312", "", 0773024) == "Bootstrap ROM (M9312)",
+				"label: M9312 bootstrap");
 		// unknown type: raw handle fallback
 		check(device_label("mystery_c", "widget0", "", 0) == "widget0",
 				"label: unknown type falls back to the raw handle");
@@ -807,6 +847,74 @@ int main(void) {
 		logger->remove_source(&websrc);
 		logger->remove_source(ndev);
 		logger->remove_source(&late);
+	}
+
+	/* 10. backplane slots: one card per slot, so a configuration that puts two
+	       devices on the bus in one slot is refused before it is written, as is
+	       one that runs a device past the last slot. A device's footprint comes
+	       from its own requests, not from a table. */
+	{
+		// a mux at slot 10 with separate receive and transmit interrupts, so it
+		// holds 10 and 11; a single-slot controller to place against it
+		test_busdevice_c *mux = new test_busdevice_c("mux", "dzv11_c", 10, true);
+		test_busdevice_c *disk = new test_busdevice_c("disk", "RK11", 20, false);
+		reset_devices();
+		webconfigs_init(configs_dir); // capture the new devices' defaults
+
+		std::string err;
+		int status = 0;
+
+		// their defaults do not overlap, so the pair writes
+		std::vector<picojson::value> ok;
+		ok.push_back(dev_entry("mux", true, { }));
+		ok.push_back(dev_entry("disk", true, { }));
+		check(webconfigs_write("slots", make_doc(ok), false, &err, &status),
+				"non-overlapping slots write");
+
+		// the controller moved onto the mux's transmit slot is refused, and the
+		// error names both devices and the slot
+		std::vector<picojson::value> clash;
+		clash.push_back(dev_entry("mux", true, { }));
+		clash.push_back(dev_entry("disk", true, { { "slot", "11" } }));
+		err.clear();
+		status = 0;
+		check(!webconfigs_write("slots", make_doc(clash), false, &err, &status),
+				"second slot of a two-slot device is taken");
+		check(status == 422, "slot conflict answers 422");
+		check(err.find("disk") != std::string::npos && err.find("mux") != std::string::npos
+				&& err.find("11") != std::string::npos,
+				"slot conflict names both devices and the slot");
+
+		// the same slot outright
+		std::vector<picojson::value> same;
+		same.push_back(dev_entry("mux", true, { }));
+		same.push_back(dev_entry("disk", true, { { "slot", "10" } }));
+		err.clear();
+		status = 0;
+		check(!webconfigs_write("slots", make_doc(same), false, &err, &status),
+				"two devices in one slot refused");
+
+		// a device that is off the bus holds no slot, so the overlap is allowed
+		std::vector<picojson::value> off;
+		off.push_back(dev_entry("mux", true, { }));
+		off.push_back(dev_entry("disk", false, { { "slot", "10" } }));
+		err.clear();
+		status = 0;
+		check(webconfigs_write("slots", make_doc(off), false, &err, &status),
+				"a disabled device may share a slot");
+
+		// the last slot is 31, and a two-slot device placed there runs past it
+		std::vector<picojson::value> over;
+		over.push_back(dev_entry("mux", true, { { "slot", "31" } }));
+		err.clear();
+		status = 0;
+		check(!webconfigs_write("slots", make_doc(over), false, &err, &status),
+				"a device running past the last slot is refused");
+		check(status == 422, "slot overflow answers 422");
+
+		unlink(cfg_path("slots").c_str());
+		delete mux;
+		delete disk;
 	}
 
 	// tidy the temp tree
