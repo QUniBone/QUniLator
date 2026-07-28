@@ -67,6 +67,16 @@ RX0102drive_c::RX0102drive_c(RX0102uCPU_c *_uCPU, bool _is_RX02) :
 
     // "enable" and power switch are controlled by uCPU in case box
     enabled.readonly = true ;
+
+    write_protect_lamp.kind = parameter_c::PARAM_STATUS ;
+}
+
+// Runs on the lamp poll: age the ACCESS lamp (base class) and track the WRITE
+// PROTECT lamp against the mounted image's read-only state.
+void RX0102drive_c::refresh_activity(void)
+{
+    storagedrive_c::refresh_activity() ;
+    write_protect_lamp.value = image_is_readonly() ;
 }
 
 // return false, if illegal parameter value.

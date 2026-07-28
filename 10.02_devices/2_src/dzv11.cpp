@@ -71,6 +71,15 @@ dzv11_c::dzv11_c() : qunibusdevice_c()
 	memset(rx_enabled, 0, sizeof rx_enabled);
 	memset(tx_enabled, 0, sizeof tx_enabled);
 	memset(line_open, 0, sizeof line_open);
+	memset(line_dtr, 0, sizeof line_dtr);
+	memset(rx_lamp_until_ms, 0, sizeof rx_lamp_until_ms);
+	memset(tx_lamp_until_ms, 0, sizeof tx_lamp_until_ms);
+	for (unsigned i = 0; i < DZ_LINE_COUNT; i++) {
+		rx_lamp[i].kind = parameter_c::PARAM_STATUS;
+		tx_lamp[i].kind = parameter_c::PARAM_STATUS;
+		dtr_lamp[i].kind = parameter_c::PARAM_STATUS;
+		cd_lamp[i].kind = parameter_c::PARAM_STATUS;
+	}
 	silo_alarm_count = 0;
 	tdr_pending = false;
 	tdr_char = 0;
@@ -289,9 +298,12 @@ void dzv11_c::set_msr_dati(void)
 	// driver reads carrier from the MSR high byte to release a line's open(),
 	// so a connected client asserts CD there; without it getty blocks forever.
 	uint16_t val = 0;
-	for (unsigned i = 0; i < DZ_LINE_COUNT; i++)
-		if (line_open[i] && tcp_line[i].client_connected())
+	for (unsigned i = 0; i < DZ_LINE_COUNT; i++) {
+		bool carrier = line_open[i] && tcp_line[i].client_connected();
+		if (carrier)
 			val |= (1u << (DZ_MSR_CD_SHIFT + i));
+		cd_lamp[i].value = carrier; // dashboard carrier lamp tracks the MSR bit
+	}
 	if (val == msr_dati_value)
 		return;  // carrier unchanged: skip the register write and its log line
 	msr_dati_value = val;
@@ -357,9 +369,21 @@ void dzv11_c::eval_tcr_dato(void)
 	uint16_t val = get_register_dato_value(reg_tcr);
 	for (unsigned i = 0; i < DZ_LINE_COUNT; i++)
 		tx_enabled[i] = (val & (1u << i)) != 0;
+	// DTR (08-11) models the modem control line each line raises to keep its
+	// connection up. A guest that opens a line asserts DTR; when it closes the
+	// line (the terminal driver hangs up), DTR falls, and dropping DTR drops the
+	// TCP client — the connection ends so the far end sees the session close.
+	// The listen socket stays up for the next caller.
+	for (unsigned i = 0; i < DZ_LINE_COUNT; i++) {
+		bool dtr = (val & (1u << (DZ_TCR_DTR_SHIFT + i))) != 0;
+		if (line_dtr[i] && !dtr && line_open[i])
+			tcp_line[i].disconnect(); // DTR fell: hang up this line's client
+		line_dtr[i] = dtr;
+		dtr_lamp[i].value = dtr;
+	}
 	// TCR line-enable (00-03) and DTR (08-11) are read/write (TM Table 3-4), so
 	// the register reads back what was written. val is already masked to those
-	// bits by writable_bits. DTR does not drive the TCP transport.
+	// bits by writable_bits.
 	set_register_dati_value(reg_tcr, val, __func__);
 }
 
@@ -526,6 +550,14 @@ void dzv11_c::reset(void)
 	memset(tx_enabled, 0, sizeof tx_enabled);
 	memset(parity_enable, 0, sizeof parity_enable);
 	memset(odd_parity, 0, sizeof odd_parity);
+	// BINIT clears the TCR, so DTR falls; scrub the tracked state and the rx/tx/
+	// dtr lamps. cd_lamp is recomputed from live carrier by set_msr_dati below.
+	memset(line_dtr, 0, sizeof line_dtr);
+	for (unsigned i = 0; i < DZ_LINE_COUNT; i++) {
+		rx_lamp[i].value = false;
+		tx_lamp[i].value = false;
+		dtr_lamp[i].value = false;
+	}
 	tx_break = 0;  // TDR/break register cleared by BINIT (TM 3.2.6)
 	silo.clear();
 	silo_alarm_count = 0;
@@ -537,6 +569,36 @@ void dzv11_c::reset(void)
 	set_msr_dati();
 	update_csr_and_INTR();
 	pthread_mutex_unlock(&state_mutex);
+}
+
+// -------------------------------------------------------------------------
+// activity lamps
+
+// A byte moves in microseconds; hold the lamp for activity_lamp_on_time_ms so a
+// poll between bursts still catches it. refresh_activity() clears it once the
+// hold elapses. Called from the device threads by direct value assignment, the
+// same path the webevents lamp poll watches.
+void dzv11_c::note_rx_activity(unsigned line)
+{
+	rx_lamp_until_ms[line] = now_ms() + activity_lamp_on_time_ms;
+	rx_lamp[line].value = true;
+}
+
+void dzv11_c::note_tx_activity(unsigned line)
+{
+	tx_lamp_until_ms[line] = now_ms() + activity_lamp_on_time_ms;
+	tx_lamp[line].value = true;
+}
+
+void dzv11_c::refresh_activity(void)
+{
+	uint64_t now = now_ms();
+	for (unsigned i = 0; i < DZ_LINE_COUNT; i++) {
+		if (rx_lamp[i].value && now >= rx_lamp_until_ms[i])
+			rx_lamp[i].value = false;
+		if (tx_lamp[i].value && now >= tx_lamp_until_ms[i])
+			tx_lamp[i].value = false;
+	}
 }
 
 // -------------------------------------------------------------------------
@@ -572,6 +634,7 @@ void dzv11_c::worker_rcv(void)
 				continue;
 			uint8_t c;
 			while (tcp_line[i].poll_rcv(&c)) {
+				note_rx_activity(i);
 				pthread_mutex_lock(&state_mutex);
 				silo_push((uint8_t) i, c, 0);
 				update_csr_and_INTR();
@@ -606,8 +669,10 @@ void dzv11_c::worker_xmt(void)
 			csr_trdy = false; // character taken; scanner will re-present
 			update_csr_and_INTR();
 			pthread_mutex_unlock(&state_mutex);
-			if (ln < DZ_LINE_COUNT && line_open[ln])
+			if (ln < DZ_LINE_COUNT && line_open[ln]) {
 				tcp_line[ln].send(ch);
+				note_tx_activity(ln);
+			}
 			pthread_mutex_lock(&state_mutex);
 			continue;
 		}

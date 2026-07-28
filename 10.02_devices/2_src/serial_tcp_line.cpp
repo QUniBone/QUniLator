@@ -525,6 +525,18 @@ static bool option_supported(uint8_t opt)
 	return opt == OPT_BINARY || opt == OPT_SGA || opt == OPT_COMPORT;
 }
 
+// Options the server agrees to perform when the client asks for them with DO.
+// ECHO is here but deliberately not in option_supported(): the server performs
+// ECHO (the guest echoes, so the client must stop local-echoing and the server
+// confirms its own WILL ECHO), yet a client's WILL ECHO is still refused — the
+// client must never echo on the guest's behalf. Confirming DO ECHO with WILL
+// ECHO is what makes the offer stick; refusing it retracts the offer and the
+// client re-enables local echo, so every keystroke shows twice.
+static bool server_performs(uint8_t opt)
+{
+	return option_supported(opt) || opt == OPT_ECHO;
+}
+
 void serial_tcp_line_c::feed_inbound(const uint8_t *data, size_t len)
 {
 	uint8_t out[1024];
@@ -566,7 +578,7 @@ void serial_tcp_line_c::feed_inbound(const uint8_t *data, size_t len)
 			tstate_ = T_DATA;
 			break;
 		case T_DO:
-			option_supported(b) ? send_will(b) : send_wont(b);
+			server_performs(b) ? send_will(b) : send_wont(b);
 			tstate_ = T_DATA;
 			break;
 		case T_DONT:

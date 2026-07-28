@@ -76,6 +76,12 @@ public:
     parameter_unsigned_c current_track = parameter_unsigned_c(this, "track", "tr", /*readonly*/
                                          true, "", "%d", "Track # of current head position", 77, 10);
 
+    // WRITE PROTECT lamp for the dashboard, lit when the mounted image is
+    // read-only — the write-protect state the drive enforces, ignoring writes to
+    // a read-only floppy. Named "...lamp" so the webevents lamp poll picks it up.
+    parameter_bool_c write_protect_lamp = parameter_bool_c(this, "writeprotectlamp", "wpl",
+                                          /*readonly*/true, "State of WRITE PROTECT lamp");
+
 private:
 
     // IBM floppy format allows a "delete mark" for each sector.
@@ -102,6 +108,9 @@ public:
 
     void on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge) override;
     void on_init_changed(void) override;
+
+    // ages the ACCESS lamp (base class) and tracks the WRITE PROTECT lamp
+    void refresh_activity(void) override;
 
     unsigned get_rotation_ms() ;
 

@@ -122,6 +122,37 @@ public:
 		parameter_unsigned_c(this, "tcp_port3", "p3", false, "", "%d", "line 3 TCP port", 16, 10),
 	};
 
+	// Per-line signal lamps for the dashboard, one set per line. rx/tx pulse with
+	// traffic (held briefly by refresh_activity); dtr follows the TCR DTR bit the
+	// guest drives; cd follows carrier (a connected TCP client). Names end in
+	// "lamp" so webevents' lamp poll picks up the direct value assignments the
+	// device threads make. The DZV11 carries no RTS/CTS/DSR, and nothing rings
+	// RI, so those signals have no lamp here.
+	parameter_bool_c rx_lamp[DZ_LINE_COUNT] = {
+		parameter_bool_c(this, "rx0lamp", "rxl0", true, "line 0 receive activity"),
+		parameter_bool_c(this, "rx1lamp", "rxl1", true, "line 1 receive activity"),
+		parameter_bool_c(this, "rx2lamp", "rxl2", true, "line 2 receive activity"),
+		parameter_bool_c(this, "rx3lamp", "rxl3", true, "line 3 receive activity"),
+	};
+	parameter_bool_c tx_lamp[DZ_LINE_COUNT] = {
+		parameter_bool_c(this, "tx0lamp", "txl0", true, "line 0 transmit activity"),
+		parameter_bool_c(this, "tx1lamp", "txl1", true, "line 1 transmit activity"),
+		parameter_bool_c(this, "tx2lamp", "txl2", true, "line 2 transmit activity"),
+		parameter_bool_c(this, "tx3lamp", "txl3", true, "line 3 transmit activity"),
+	};
+	parameter_bool_c dtr_lamp[DZ_LINE_COUNT] = {
+		parameter_bool_c(this, "dtr0lamp", "dtl0", true, "line 0 data terminal ready"),
+		parameter_bool_c(this, "dtr1lamp", "dtl1", true, "line 1 data terminal ready"),
+		parameter_bool_c(this, "dtr2lamp", "dtl2", true, "line 2 data terminal ready"),
+		parameter_bool_c(this, "dtr3lamp", "dtl3", true, "line 3 data terminal ready"),
+	};
+	parameter_bool_c cd_lamp[DZ_LINE_COUNT] = {
+		parameter_bool_c(this, "cd0lamp", "cdl0", true, "line 0 carrier detect"),
+		parameter_bool_c(this, "cd1lamp", "cdl1", true, "line 1 carrier detect"),
+		parameter_bool_c(this, "cd2lamp", "cdl2", true, "line 2 carrier detect"),
+		parameter_bool_c(this, "cd3lamp", "cdl3", true, "line 3 carrier detect"),
+	};
+
 	void reset(void);
 
 	bool on_before_install(void) override;
@@ -135,6 +166,7 @@ public:
 	bool on_param_changed(parameter_c *param) override;
 	void on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge) override;
 	void on_init_changed(void) override;
+	void refresh_activity(void) override; // expire the rx/tx pulse lamps
 
 private:
 	qunibusdevice_register_t *reg_csr;
@@ -163,6 +195,14 @@ private:
 	bool rx_enabled[DZ_LINE_COUNT];   // LPR RX ON
 	bool tx_enabled[DZ_LINE_COUNT];   // TCR line enable
 	bool line_open[DZ_LINE_COUNT];    // this line's TCP transport is running
+	bool line_dtr[DZ_LINE_COUNT];     // TCR DTR bit last written by the guest
+
+	// rx/tx activity lamps pulse per byte and are held for activity_lamp_on_time_ms
+	// so a poll between bursts still sees them; refresh_activity clears them.
+	uint64_t rx_lamp_until_ms[DZ_LINE_COUNT];
+	uint64_t tx_lamp_until_ms[DZ_LINE_COUNT];
+	void note_rx_activity(unsigned line);
+	void note_tx_activity(unsigned line);
 
 	// per-line format, from the LPR; drives received parity/framing status
 	bool parity_enable[DZ_LINE_COUNT]; // LPR 06
