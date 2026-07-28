@@ -199,4 +199,6 @@ export interface BusState {
   init: boolean;
 }
 
-export type TermKey = 'slu0' | 'slu1' | 'serial';
+// What carries the machine's console: the ttyS2 bridge to a physical console
+// SLU, a Web Serial port in the browser, or the emulated DL11 at 777560.
+export type ConsoleSource = 'ttys2' | 'webserial' | 'dl11';

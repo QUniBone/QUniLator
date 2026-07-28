@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import { useStore, store, emit } from '../store';
 import { liveControl, loadConfigs, fetchConfigSnapshot, setConfigLayout } from '../api';
-import { initLiveTerminal, teardownTerminals } from '../lib/terminals';
+import { initLiveTerminal, teardownTerminals, consoleSource } from '../lib/terminals';
 import { enabledDevices } from '../lib/devmodel';
 import { placeItems, gridRows, fits, occupancyExcept } from '../lib/dashlayout';
 import type { GridItem } from '../lib/dashlayout';
@@ -154,10 +154,23 @@ export function TerminalHost() {
 }
 
 // The live console as a first-class card, so it reads like the other cards on
-// the dashboard.
+// the dashboard. A console whose link is down is dimmed and says so: the
+// terminal keeps whatever it last painted, and the card makes clear that what
+// is on it is no longer live.
+const CONSOLE_SOURCE_LABEL: Record<string, string> = {
+  ttys2: 'ttyS2',
+  webserial: 'Web Serial',
+  dl11: 'DL11',
+};
 function ConsoleCard() {
-  return html`<div class="card console-card">
-    <div class="card-head"><h3>Console</h3></div>
+  useStore();
+  const live = store.consoleConnected;
+  const src = CONSOLE_SOURCE_LABEL[consoleSource()] || '';
+  return html`<div class=${'card console-card' + (live ? '' : ' console-down')}>
+    <div class="card-head"><h3>Console</h3>
+      <span class=${'disk-status ' + (live ? 'ok' : 'idle')}
+        >${live ? src : 'disconnected'}</span>
+    </div>
     <div class="card-body dash-term">${html`<${TerminalHost} />`}</div>
   </div>`;
 }

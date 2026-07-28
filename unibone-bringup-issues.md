@@ -235,19 +235,78 @@ DL11, M9312 with the console and DL PROMs, and CPU20 with `pmi` on.
 arbitrator — so a program can be loaded into memory and started from the
 console without any of it existing in hardware.
 
-## 12. Stopping the emulator with the CPU running starves the board
+## 12. A halted emulated CPU spun a core and took the board with it
 
-A `systemctl stop` while the emulated CPU was enabled did not complete. The unit
-allows 15 seconds and then sends SIGKILL, but the board was so starved that
-systemd was still killing the old worker threads six minutes later, and in the
-meantime the machine answered ping while sshd could not finish a handshake —
-the emulator's threads run at realtime priority on a single core, and a CPU
-spinning on failed bus cycles never yields.
+Twice the board went unreachable: answering ping, with sshd unable to finish a
+handshake. The first time it looked like a newly installed binary refusing to
+start — it was the previous instance refusing to die, systemd still delivering
+SIGKILL to its threads six minutes after the stop, `TimeoutStopSec` being no
+help when the process starving the machine outranks the one trying to kill it.
 
-It looked exactly like the newly installed binary refusing to start; it was the
-previous instance refusing to die. Halt the CPU before stopping the service.
-That the guard did not hold is worth fixing: `TimeoutStopSec` cannot help when
-the process starving the machine outranks the process trying to kill it.
+The cause is in `cpu_c::worker()`, which has no wait anywhere:
+
+    while (!workers_terminate) {
+        ...
+        ka11_condstep(&ka11);   // steps nothing while halted
+        ...
+    }
+
+A running CPU is meant to take the core it is given — every pass executes an
+instruction. A halted one steps nothing and spins at full speed polling the
+switches, and on this single-core board that starves userspace. Both incidents
+had the CPU enabled and halted: once during a stop, once after the double bus
+error of a boot attempt.
+
+The worker now waits a millisecond per pass while halted, which no operator
+pressing START can notice. With the fix the CPU sits enabled and halted at a
+load of 1.1 with ssh answering instantly, and XXDP boots with the board staying
+responsive throughout.
+
+Fixed in `10.02_devices/2_src/cpu.cpp`.
+
+## 13. The package does not record which bus it was built for
+
+`build-deb.sh` packages whatever binary is in the deploy directory, and nothing
+in the package says whether that binary drives a physical bus or keeps it
+internal. Installing a package built from a physical-bus tree onto the
+standalone board silently undid the internal bus, and the machine failed its
+next boot with the double bus error of issue 11 — a full circle back to a
+symptom that was supposedly closed.
+
+The two are different products for different boards, and the package should say
+which one it is.
+
+## 14. The console card showed a terminal with nothing behind it
+
+The dashboard's console card carried three terminals — the two emulated SLUs
+and a Web Serial port — and picked one at mount:
+
+    (store.activeTerm === 'slu0' && !en0) || ... ? en0 ? 'slu0' : ... : 'serial'
+
+`devEnabled('DL11')` reads the device model, which on a fresh load has not
+arrived yet, so DL11 looked disabled and the card fell back to the Web Serial
+terminal. With no port granted that terminal is blank, while the DL11 socket
+connected and wrote its 40 KB of replayed history into a hidden one. The
+handshake was 101 and one 40 KB message arrived — into a terminal nobody could
+see. The tab switcher that would have revealed this, `liveTab()`, is exported
+and called from nowhere, so the other two terminals were unreachable anyway.
+
+A machine has one console, and which port carries it is a machine setting: the
+ttyS2 bridge, a Web Serial port, or — with neither — the emulated DL11 at
+777560. The card now holds one terminal that follows that setting, and every
+other serial line is reached over its own TCP port instead. The card names the
+live source and, when the link is down, greys the screen and says
+*disconnected*, so a terminal with nothing behind it can never again look like
+an idle machine.
+
+Multi-client consoles are unchanged, and the answerer protocol now covers the
+emulated DL11 as well: it had applied only to the external console, so several
+browsers watching `/ws/console/0` each answered the guest's identification
+queries through xterm's built-in reply. Now one answers, whichever channel
+carries the console.
+
+Fixed in `10.05_web/3_frontend/src/lib/terminals.ts`, `components/Dashboard.ts`,
+`store.ts`, `types.ts` and `styles.css`.
 
 ## Design note: one CPU device, not one per model
 

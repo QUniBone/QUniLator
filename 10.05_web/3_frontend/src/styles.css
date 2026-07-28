@@ -519,6 +519,10 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
 .btn.small.dash-cog { margin-left: auto; font-size: var(--fs-4); line-height: 1; padding: 2px 10px; }
 .console-card { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
 .console-card .card-body { display: flex; align-items: flex-start; }
+/* a console with no live link: the screen keeps what it last painted, dimmed,
+   so it reads as a record rather than as the running machine */
+.console-card.console-down .term { opacity: .38; filter: grayscale(1); }
+.console-card.console-down .term * { cursor: default; }
 
 /* the arrangeable dashboard grid: square cells, cards span whole cells */
 .dash-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }

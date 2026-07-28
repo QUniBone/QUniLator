@@ -527,6 +527,14 @@ void cpu_c::worker(unsigned instance)
 
         ka11.swab_vbit = (swab_vbit.value == true);
 
+        // A running CPU is meant to take the core it is given: every pass
+        // executes an instruction. A halted one steps nothing, and this loop
+        // would spin at full speed polling the switches - on a single-core
+        // board that starves everything else in userspace, ssh included, and
+        // the machine goes unreachable while looking alive to the network.
+        // Poll at a rate no operator pressing START can notice.
+        if (ka11.state == KA11_STATE_HALTED)
+            timeout.wait_ms(1);
     }
 }
 

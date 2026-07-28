@@ -12,7 +12,6 @@ import type {
   HwState,
   BusState,
   LogLevelName,
-  TermKey,
 } from './types';
 
 export interface Store {
@@ -32,7 +31,8 @@ export interface Store {
   logMore: boolean; // older entries remain in the journal to page in
   activeLevels: Set<LogLevelName>;
   termReady: boolean;
-  activeTerm: TermKey;
+  // the console terminal has a live link to whatever carries the console
+  consoleConnected: boolean;
   listeners: Set<() => void>;
 }
 
@@ -65,7 +65,7 @@ export const store: Store = {
   logMore: false,
   activeLevels: new Set<LogLevelName>(['ERROR', 'WARNING', 'INFO']),
   termReady: false,
-  activeTerm: 'slu0',
+  consoleConnected: false,
   listeners: new Set<() => void>(),
 };
 
