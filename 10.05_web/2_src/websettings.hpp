@@ -11,8 +11,17 @@
 
 struct mg_context;
 
+// Read $QUNILATOR_DIR/settings.json. Called before the device set is built,
+// which is why it is separate from registering the endpoint.
+void websettings_startup(void);
+
 // register /api/settings; persisted in $QUNILATOR_DIR/settings.json
 void websettings_register(struct mg_context *ctx);
+
+// Whether this board runs the emulated KA11 (PDP-11/20) instead of serving a
+// physical CPU. Read at startup; a change takes effect at the next start.
+bool websettings_emulated_cpu(void);
+void websettings_set_emulated_cpu(bool on);
 
 // Write settings.json now. The admin password lives in the same file, so
 // webauth.cpp calls this when it changes.

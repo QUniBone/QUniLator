@@ -28,10 +28,12 @@
 #include "buslatches.hpp"
 #include "pru.hpp"
 #include "qunibus.h"
+#include "ddrmem.h"
 #include "application.hpp"
 #include "webserver.hpp"
 #include "weblog.hpp"
 #include "webconfigs.hpp"
+#include "websettings.hpp"
 
 static volatile sig_atomic_t terminate_requested = 0;
 
@@ -64,6 +66,9 @@ static void usage(const char *progname)
 	printf("  --addresswidth <n>  " QUNIBUS_NAME " address width: 18\n");
 #endif
 	printf("  --config <name>     saved configuration to apply at startup\n");
+#if defined(UNIBUS)
+	printf("  --emulated-cpu      run the emulated KA11 (PDP-11/20) for this run\n");
+#endif
 	printf("  --loglevel <n>      %d fatal, %d error, %d warning, %d info (default), %d debug\n",
 			LL_FATAL, LL_ERROR, LL_WARNING, LL_INFO, LL_DEBUG);
 	printf("  --help              this text\n");
@@ -80,6 +85,7 @@ int main(int argc, char *argv[])
 #endif
 	unsigned loglevel = LL_INFO;
 	std::string startup_config;
+	bool opt_emulated_cpu = false;
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--port") && i + 1 < argc)
@@ -92,6 +98,8 @@ int main(int argc, char *argv[])
 			loglevel = strtoul(argv[++i], nullptr, 10);
 		else if (!strcmp(argv[i], "--config") && i + 1 < argc)
 			startup_config = argv[++i];
+		else if (!strcmp(argv[i], "--emulated-cpu"))
+			opt_emulated_cpu = true;
 		else if (!strcmp(argv[i], "--help")) {
 			usage(argv[0]);
 			return 0;
@@ -142,10 +150,39 @@ int main(int argc, char *argv[])
 	buslatches.output_enable(0); // DS8641 drivers off until the bus is ours
 	GPIO_SETVAL(gpios->reg_enable, 1); // leave SYSBOOT mode
 
+	// A board is either a peripheral of a physical PDP-11, which arbitrates the
+	// bus, or the machine itself with the emulated KA11 doing that. The device
+	// set is built for one of the two, so the setting is read before it exists;
+	// --emulated-cpu selects the KA11 for a run without changing what is stored.
+	websettings_startup();
+	bool emulated_cpu = websettings_emulated_cpu() || opt_emulated_cpu;
+#if !defined(UNIBUS)
+	if (emulated_cpu) {
+		WEB_WARNING("No emulated CPU on " QUNIBUS_NAME "; running as a peripheral.");
+		emulated_cpu = false;
+	}
+#endif
+
 	// Brings the PRU up with the emulation code and constructs the device set,
 	// which lives for the process lifetime. This starts the hardware; the PRU
 	// must not be started separately.
-	app->devices_startup(/*with_emulated_CPU*/false);
+	app->devices_startup(emulated_cpu);
+
+	// The emulated CPU has no machine around it, so the board supplies the
+	// memory too: everything below the I/O page that no physical card answers.
+	if (emulated_cpu) {
+		WEB_INFO("Emulated CPU: KA11 (PDP-11/20).");
+		unsigned first_invalid = qunibus->test_sizer();
+		if (first_invalid >= qunibus->iopage_start_addr)
+			WEB_INFO("Physical memory answers up to the I/O page; none emulated.");
+		else if (ddrmem->set_range(first_invalid, qunibus->iopage_start_addr - 2))
+			WEB_INFO("Emulating memory %s..%s.", qunibus->addr2text(first_invalid),
+					qunibus->addr2text(qunibus->iopage_start_addr - 2));
+		else
+			WEB_ERROR("Memory emulation for %s..%s refused.",
+					qunibus->addr2text(first_invalid),
+					qunibus->addr2text(qunibus->iopage_start_addr - 2));
+	}
 
 	std::string docroot = resolve_docroot(webroot);
 	webserver_c web_server(port, docroot);

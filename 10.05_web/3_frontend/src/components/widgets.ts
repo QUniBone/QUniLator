@@ -291,6 +291,55 @@ function DzWidget({ d }: { d: LiveDev }) {
     </div></div>`;
 }
 
+// The emulated KA11, as its console: the RUN lamp, the program counter and the
+// opcode count the CPU keeps, the switch register the operator sets, and the
+// three console switches. HALT is a toggle the CPU reads continuously; START
+// and CONTINUE are momentary, so they are pulsed and fall back on their own.
+function CpuWidget({ d }: { d: LiveDev }) {
+  const powered = store.hw.powered !== false;
+  const running = powered && lampOn(d, 'run_led');
+  const halted = paramVal(d, 'halt_switch') === '1';
+  const pc = statusParam(d, 'PC');
+  const cycles = statusParam(d, 'cycle_count');
+  const [swr, setSwr] = useState<string | null>(null);
+
+  const pulse = (name: string, what: string) => {
+    liveSetParam(d.name, name, '1', what);
+    setTimeout(() => liveSetParam(d.name, name, '0', what + ' released'), 300);
+  };
+  // octal params arrive already rendered in their base, zero-padded
+  const swrValue = swr !== null ? swr : paramVal(d, 'switch_reg');
+  const commitSwr = () => {
+    if (swr !== null) liveSetParam(d.name, 'switch_reg', swr, 'switch register set');
+    setSwr(null);
+  };
+
+  return html`<div class="card diskcard cpucard">
+    <div class="card-head"><h3>${d.label || d.type}</h3>
+      <span class=${'disk-status ' + (running ? 'ok' : 'idle')}>${running ? 'running' : 'halted'}</span>
+    </div>
+    <div class="card-body diskface">
+      <div class="cpu-regs">
+        <label>PC<span class="cpu-oct">${pc ? pc.v : '000000'}</span></label>
+        <label>SR<input class="cpu-oct cpu-swr" value=${swrValue}
+          onInput=${(e: any) => setSwr(e.currentTarget.value)}
+          onBlur=${commitSwr}
+          onKeyDown=${(e: any) => { if (e.key === 'Enter') e.currentTarget.blur(); }} /></label>
+        <label>OPS<span class="cpu-oct">${cycles ? cycles.v : '0'}</span></label>
+      </div>
+      <div class="lamps">
+        <${Cap} cls="cap-white" lit=${running}>RUN</${Cap}>
+        <${Cap} cls="cap-red" lit=${halted}
+          onClick=${() => liveSetParam(d.name, 'halt_switch', halted ? '0' : '1',
+            halted ? 'HALT released' : 'HALT asserted')}>HALT</${Cap}>
+        <${Cap} cls="cap-white" lit=${false}
+          onClick=${() => pulse('start_switch', 'START')}>START</${Cap}>
+        <${Cap} cls="cap-white" lit=${false}
+          onClick=${() => pulse('continue_switch', 'CONT')}>CONT</${Cap}>
+      </div>
+    </div></div>`;
+}
+
 type Widget = (props: { d: LiveDev }) => ReturnType<typeof html>;
 const WIDGET_MODELS: Record<string, Widget> = {
   RL02: RlWidget,
@@ -300,6 +349,7 @@ const WIDGET_MODELS: Record<string, Widget> = {
   RX01: RxWidget,
   RX02: RxWidget,
   dzv11_c: DzWidget,
+  'PDP-11/20': CpuWidget,
 };
 const WIDGET_CATEGORIES: Record<string, Widget> = {
   disk: DiskWidget,
@@ -315,6 +365,7 @@ export function widgetFor(d: LiveDev): Widget | null {
 // content at the grid cell size.
 export function widgetCells(d: LiveDev): { w: number; h: number } {
   if (d.type === 'VCB01') return { w: 12, h: 12 };
+  if (d.type === 'PDP-11/20') return { w: 7, h: 5 };
   if (d.type === 'dzv11_c') return { w: 5, h: 4 };
   if (d.type === 'RX01' || d.type === 'RX02') return { w: 6, h: 4 };
   if (d.type === 'RA81') return { w: 9, h: 4 };

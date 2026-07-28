@@ -93,3 +93,38 @@ It is bus-independent and runs on QBUS as well.
 
 Fixed in `10.01_base/2_src/arm/priorityrequest.cpp`,
 `10.01_base/2_src/arm/qunibusdevice.cpp` and `10.05_web/2_src/webconfigs.cpp`.
+
+## 6. The UNIBUS controllers had no label
+
+The label table is keyed by type name and carried the Q-bus variants alone, so
+the device list showed the raw handle — `rl`, `rk`, `rx`, `ry`, `deuna`,
+`M9312`, `ke` — where a QBone shows a role and a DEC code. RL11, RLV11, RK11,
+RX11, RY211, DEUNA, KE11 and the M9312 are now in the table.
+
+Fixed in `10.05_web/2_src/device_label.cpp`.
+
+## 7. The emulated PDP-11/20 was unreachable from the web service
+
+The KA11 emulation (`cpu_c` over `10.02_devices/2_src/cpu20`) is built into the
+UNIBUS binary, but `main_qbone_web.cpp` called `devices_startup(false)`, so the
+service never constructed it. That argument also decides who arbitrates the
+bus, which is why it cannot be a device an operator switches on later: a board
+is either a peripheral of a physical PDP-11, which arbitrates, or the machine
+itself with the KA11 doing it.
+
+So it is a machine setting, `emulated_cpu` in settings.json, read before the
+device set is built and offered through `/api/settings` with a warning that it
+takes effect at the next start; `--emulated-cpu` selects it for one run. A
+board running the KA11 has no machine around it, so it supplies the memory as
+well: everything below the I/O page that no physical card answers.
+
+The CPU then appears as the device CPU20, labelled "Emulated CPU (KA11)", with
+its console on the dashboard — RUN lamp, program counter, opcode count, switch
+register, and the HALT, START and CONTINUE switches. On the board it starts,
+fetches from emulated memory and halts on the zero word:
+
+    Emulating memory 000000..757776.
+    CPU HALT by opcode at 001000
+
+Added in `main_qbone_web.cpp`, `10.05_web/2_src/websettings.cpp`,
+`device_label.cpp` and the frontend's `widgets.ts`.

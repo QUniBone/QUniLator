@@ -55,6 +55,9 @@ static std::mutex settings_mutex; // guards ext_console
 // port is a bare tty name (rs232_c prepends /dev/), matching the SLU convention
 static external_console_c ext_console = { "webserial", "ttyS2", 38400 };
 static std::string settings_path;
+// Whether the board runs the emulated KA11. Read once at startup, before the
+// device set is built, and honoured on the UNIBUS build alone.
+static bool emulated_cpu = false;
 
 static void send_json(struct mg_connection *conn, int status, const picojson::value &val) {
 	std::string body = val.serialize();
@@ -103,6 +106,8 @@ static void load_settings(void) {
 		return;
 	webauth_load(v.get("admin"));
 	weblogging_load(v.get("log_levels"));
+	if (v.get("emulated_cpu").is<bool>())
+		emulated_cpu = v.get("emulated_cpu").get<bool>();
 	const picojson::value &ec = v.get("external_console");
 	if (!ec.is<picojson::object>())
 		return;
@@ -120,6 +125,7 @@ static void save_settings(void) {
 	{
 		std::lock_guard<std::mutex> lock(settings_mutex);
 		root["external_console"] = external_console_json();
+		root["emulated_cpu"] = picojson::value(emulated_cpu);
 	}
 	picojson::value admin = webauth_json();
 	if (!admin.is<picojson::null>())
@@ -151,6 +157,19 @@ external_console_c websettings_external_console(void) {
 	return ext_console;
 }
 
+bool websettings_emulated_cpu(void) {
+	std::lock_guard<std::mutex> lock(settings_mutex);
+	return emulated_cpu;
+}
+
+void websettings_set_emulated_cpu(bool on) {
+	{
+		std::lock_guard<std::mutex> lock(settings_mutex);
+		emulated_cpu = on;
+	}
+	save_settings();
+}
+
 static void settings_get(struct mg_connection *conn) {
 	picojson::object o;
 	o["platform"] = picojson::value(platform_name);
@@ -158,7 +177,13 @@ static void settings_get(struct mg_connection *conn) {
 	{
 		std::lock_guard<std::mutex> lock(settings_mutex);
 		o["external_console"] = external_console_json();
+		o["emulated_cpu"] = picojson::value(emulated_cpu);
 	}
+#if defined(UNIBUS)
+	o["emulated_cpu_available"] = picojson::value(true);
+#else
+	o["emulated_cpu_available"] = picojson::value(false);
+#endif
 	send_json(conn, 200, picojson::value(o));
 }
 
@@ -219,6 +244,26 @@ static void settings_put(struct mg_connection *conn) {
 			warnings.push_back(picojson::value(reason));
 	}
 
+	// the emulated CPU — the board is either a peripheral of a real PDP-11 or
+	// the machine itself, and which one it is decides who arbitrates the bus.
+	// That is settled when the device set is built, so the switch takes effect
+	// at the next start of the service.
+	const picojson::value &ecpu = req.get("emulated_cpu");
+	if (ecpu.is<bool>()) {
+#if defined(UNIBUS)
+		if (ecpu.get<bool>() != websettings_emulated_cpu()) {
+			websettings_set_emulated_cpu(ecpu.get<bool>());
+			WEB_INFO("emulated CPU %s", ecpu.get<bool>() ? "on" : "off");
+			warnings.push_back(picojson::value(std::string(
+				"emulated CPU setting stored; restart the service to build the "
+				"device set with it")));
+		}
+#else
+		send_error(conn, 422, "no emulated CPU on this bus");
+		return;
+#endif
+	}
+
 	picojson::object res;
 	res["ok"] = picojson::value(true);
 	res["warnings"] = picojson::value(warnings);
@@ -238,11 +283,19 @@ static int api_settings_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	return 200;
 }
 
-void websettings_register(struct mg_context *ctx) {
+// Read settings.json. Separate from registering the endpoint, because the
+// device set is built before the web server starts and the emulated-CPU
+// setting decides how it is built.
+void websettings_startup(void) {
 	const char *base = getenv("QUNILATOR_DIR");
 	if (base == nullptr)
 		base = getenv("HOME");
 	settings_path = std::string(base ? base : ".") + "/settings.json";
 	load_settings();
+}
+
+void websettings_register(struct mg_context *ctx) {
+	if (settings_path.empty())
+		websettings_startup();
 	mg_set_request_handler(ctx, "/api/settings", api_settings_handler, nullptr);
 }

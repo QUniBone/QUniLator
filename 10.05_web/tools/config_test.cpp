@@ -731,6 +731,8 @@ int main(void) {
 				== "Extended arithmetic element (KE11-A)", "label: KE11-A");
 		check(device_label("m9312_c", "M9312", "", 0773024) == "Bootstrap ROM (M9312)",
 				"label: M9312 bootstrap");
+		check(device_label("PDP-11/20", "CPU20", "", 0) == "Emulated CPU (KA11)",
+				"label: the emulated PDP-11/20");
 		// unknown type: raw handle fallback
 		check(device_label("mystery_c", "widget0", "", 0) == "widget0",
 				"label: unknown type falls back to the raw handle");

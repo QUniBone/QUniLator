@@ -63,6 +63,7 @@ const label_entry k_table[] = {
 	{ "VCB01",         "Graphics display",       "VCB01", INST_NONE },
 	{ "dzv11_c",       "4-line async serial mux","DZV11", INST_ADDR },
 	{ "dhv11_c",       "8-line async serial mux","DHV11", INST_ADDR },
+	{ "PDP-11/20",     "Emulated CPU",           "KA11",  INST_NONE },
 	{ "KE11",          "Extended arithmetic element", "KE11-A", INST_NONE },
 	{ "m9312_c",       "Bootstrap ROM",          "M9312", INST_NONE },
 };
