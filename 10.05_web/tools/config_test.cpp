@@ -914,7 +914,22 @@ int main(void) {
 				"a device running past the last slot is refused");
 		check(status == 422, "slot overflow answers 422");
 
+		// the emulated CPU arbitrates rather than requesting, and sits in no
+		// slot: it neither takes one nor collides with a device that has one
+		test_busdevice_c *cpu = new test_busdevice_c("cpu", "PDP-11/20", 0, false);
+		cpu->priority_slot.value = 0;
+		cpu->default_priority_slot = 0;
+		cpu->rcv_intr.priority_slot = 0xff; // uninitialized: the request is unused
+		std::vector<picojson::value> withcpu;
+		withcpu.push_back(dev_entry("cpu", true, { }));
+		withcpu.push_back(dev_entry("mux", true, { }));
+		err.clear();
+		status = 0;
+		check(webconfigs_write("slots", make_doc(withcpu), false, &err, &status),
+				"a device in no slot takes none");
+
 		unlink(cfg_path("slots").c_str());
+		delete cpu;
 		delete mux;
 		delete disk;
 	}

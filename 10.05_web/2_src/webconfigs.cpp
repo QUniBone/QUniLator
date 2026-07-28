@@ -583,10 +583,16 @@ static bool write_config_file(const std::string &name, const std::string &body,
 static std::set<int> device_slot_offsets(qunibusdevice_c *dev) {
 	std::set<int> offsets;
 	int base = (int) dev->priority_slot.value;
+	// Slot 0 is reserved and means "no backplane position": the emulated CPU
+	// arbitrates rather than requesting, and holds no slot to clash over.
+	if (base == 0)
+		return offsets;
 	for (dma_request_c *req : dev->dma_requests)
-		offsets.insert((int) req->get_priority_slot() - base);
+		if (req->get_priority_slot() < PRIORITY_SLOT_COUNT)
+			offsets.insert((int) req->get_priority_slot() - base);
 	for (intr_request_c *req : dev->intr_requests)
-		offsets.insert((int) req->get_priority_slot() - base);
+		if (req->get_priority_slot() < PRIORITY_SLOT_COUNT)
+			offsets.insert((int) req->get_priority_slot() - base);
 	if (offsets.empty())
 		offsets.insert(0); // a device with neither DMA nor interrupts still has a place
 	return offsets;
