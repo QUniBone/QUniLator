@@ -462,6 +462,66 @@ static int api_devices_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	return 200;
 }
 
+// The run controls, applied to an emulated CPU. Its console switches are the
+// machine's front panel, so HALT, CONTINUE and RESTART are those switches
+// rather than the bus signals a physical CPU watches — on UNIBUS there is no
+// HALT line to pull at all. Returns false when no emulated CPU is running the
+// machine, leaving the caller to drive the bus.
+//
+// RESTART is the front-panel sequence a KA11 has: LOAD ADDR, then START. The
+// address is the one the M9312 resolved for its boot PROM when a machine has
+// one; without it the CPU starts from the address already in its PC, which is
+// what an operator setting it by hand would expect.
+static bool control_apply_to_emulated_cpu(const std::string &action) {
+#if defined(UNIBUS)
+	// Only the run controls. init and powercycle are bus operations whichever
+	// CPU is present, and dc_on/dc_off carry power bookkeeping that belongs
+	// with them, so those keep the path below.
+	if (action != "halt" && action != "continue" && action != "restart")
+		return false;
+	if (device_configuration == nullptr || device_configuration->cpu == nullptr
+			|| !device_configuration->cpu->enabled.value)
+		return false;
+	cpu_c *cpu = device_configuration->cpu;
+	std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
+
+	if (action == "halt") {
+		cpu->halt_switch.set(true);
+		webevents_note_halt(true);
+		WEB_INFO("control %s: CPU halted", action.c_str());
+		return true;
+	}
+
+	// A restart re-enters at the boot address, so a running CPU is stopped
+	// first: the worker acts on the switch within a pass, and the wait is
+	// bounded so a CPU that will not stop cannot hold the request open.
+	if (action == "restart" && cpu->runmode.value) {
+		cpu->halt_switch.set(true);
+		timeout_c timeout;
+		for (unsigned i = 0; i < 50 && cpu->runmode.value; i++)
+			timeout.wait_ms(2);
+	}
+	cpu->halt_switch.set(false);
+	webevents_note_halt(false);
+
+	if (action == "restart") {
+		m9312_c *m9312 = device_configuration->m9312;
+		if (m9312 != nullptr && m9312->enabled.value
+				&& m9312->bootaddress != MEMORY_ADDRESS_INVALID)
+			cpu->pc.set(m9312->bootaddress & 0177777);
+		cpu->start_switch.set(true);
+		WEB_INFO("control restart: CPU started at %06o", (unsigned) cpu->pc.value);
+	} else {
+		cpu->continue_switch.set(true);
+		WEB_INFO("control %s: CPU continued", action.c_str());
+	}
+	return true;
+#else
+	(void) action;
+	return false;
+#endif
+}
+
 // POST /api/control
 // {"action": "init"|"powercycle"|"restart"|"halt"|"continue"|"dc_on"|"dc_off"}
 static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
@@ -492,6 +552,16 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	// operations lock, so it runs before the power-sequence block below.
 	if (dec.reload_config)
 		webconfigs_reload_for_dip();
+
+	// An emulated CPU has no HALT line to pull: its switches are the front
+	// panel, and the run controls belong on them. A board serving a physical
+	// PDP-11 keeps driving the bus signals below.
+	if (control_apply_to_emulated_cpu(action)) {
+		picojson::object res;
+		res["ok"] = picojson::value(true);
+		send_json(conn, 200, picojson::value(res));
+		return 200;
+	}
 
 	{
 		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);

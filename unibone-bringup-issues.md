@@ -262,7 +262,17 @@ pressing START can notice. With the fix the CPU sits enabled and halted at a
 load of 1.1 with ssh answering instantly, and XXDP boots with the board staying
 responsive throughout.
 
-Fixed in `10.02_devices/2_src/cpu.cpp`.
+Fixed in `10.02_devices/2_src/cpu.cpp` — for a halted CPU. A *running* one
+still takes the board down with the service: a third wedge came from stopping
+the service while XXDP was running. The teardown disables the CPU first, but
+`workers_stop()` joins a worker that may be inside a bus cycle, and nothing
+bounds that wait. Until it does, halt the CPU and confirm `run_led: false`
+before any stop, restart or package install — dpkg restarts the service.
+
+Behind all three wedges is one property: `qunibusadapter` runs SCHED_FIFO at
+priority 60 on a single core, so anything that fails to yield takes the whole
+board out of reach rather than merely slowing it. A thread that yielded would
+make each of these a misbehaving service instead of a power cycle.
 
 ## 13. The package does not record which bus it was built for
 
@@ -325,3 +335,37 @@ whose model is a parameter, `type = KA11` for the 11/20, `KD11-E` for the
 QBUS: LSI-11 is KD11, F-11 is KDF11, J-11 is KDJ11. VAX: the 11/730, 750 and
 780 by name; for the MicroVAXen, CVAX covers the family, with KD32 (MicroVAX I),
 KA630 (II), KA640, KA650, KA655, KA660, KA670 and KA680.
+
+## 15. The control panel and the CPU's switches were two panels on one machine
+
+`POST /api/control` was written for a physical CPU on the bus, and its run
+controls are bus signals:
+
+    #if defined(QBUS)
+        if (dec.do_halt)   { qunibus->set_halt(1); ... }
+        if (dec.do_resume) { qunibus->set_halt(0); ... }
+    #endif
+
+On UNIBUS there is no HALT line to pull, so `halt` and `continue` were compiled
+out entirely: the buttons posted, answered 200, and did nothing. `restart`
+survived as a bus power cycle, which the emulated CPU takes as its ACLO-inactive
+path — `ka11_reset` then a power-up vector fetch from location 24. On a machine
+where nothing set that vector, a running XXDP restarted into nonsense: one
+instruction executed, `PC 000012`, stopped. Meanwhile the CPU widget drove the
+KA11's console switches, which worked. Two panels, one machine, and the older
+one silently ineffective.
+
+An emulated CPU's switches are the machine's front panel, so the run controls
+are those switches now: `halt` asserts the HALT switch, `continue` releases it
+and pulses CONTINUE, and `restart` is the sequence a KA11 front panel actually
+has — stop, LOAD ADDR from the address the M9312 resolved for its boot PROM,
+START. `init` and `powercycle` stay bus operations whichever CPU is present,
+and `dc_on`/`dc_off` keep their power bookkeeping.
+
+On the board, against a running XXDP:
+
+    halt      run=False halt=True  PC=150750
+    continue  run=True  halt=False PC=150664
+    restart   run=True  halt=False → the XXDP banner again
+
+Fixed in `10.05_web/2_src/webapi.cpp`.
