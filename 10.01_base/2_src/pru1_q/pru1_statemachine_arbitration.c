@@ -91,6 +91,7 @@
 
 #include "pru1_buslatches.h"
 #include "pru1_timeouts.h"
+#include "iopageregister.h"
 #include "pru1_statemachine_arbitration.h"
 
 statemachine_arbitration_t sm_arb;
@@ -112,6 +113,8 @@ void sm_arb_reset() {
     sm_arb.arbitrator_grant_mask = 0;
 
 	sm_arb.cpu_bus_inhibit_dmr_mask = 0;
+
+	sm_arb.pending_intr_register_handle = 0 ;
 }
 
 /* sm_arb_workers_*()
@@ -199,6 +202,19 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
         }
         buslatches_setbits(6, PRIORITY_ARBITRATION_BIT_MASK, bus_lines);
         // buslatches_setbits(6, PRIORITY_ARBITRATION_BIT_MASK, sm_arb.device_request_mask);
+
+        // Update the device's interrupt register (e.g. RXCS with DONE) now that
+        // BIRQ carries this request, so DONE becomes visible to the CPU no
+        // earlier than the interrupt request line. Only one INTR per level is
+        // ever in flight (ARM gates on prl->active), so the pending write
+        // belongs to the request whose bit is on the bus. Done once per INTR.
+        if (sm_arb.pending_intr_register_handle
+                && (sm_arb.device_request_mask & sm_arb.pending_intr_arbitration_bit)) {
+            pru_iopage_registers.registers[sm_arb.pending_intr_register_handle].value =
+                    sm_arb.pending_intr_register_value;
+            sm_arb.pending_intr_register_handle = 0;
+        }
+
         // now relevant for GRANT forwarding
         sm_arb.device_request_signalled_mask = sm_arb.device_request_mask;
 

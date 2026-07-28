@@ -245,12 +245,18 @@ void main(void) {
 				// sm_arb evaluates this, extern Arbitrator raises Grant/performs INTR protocol,
 				// vector of GRANted level is transfered to ARM
 
-				// Atomically change state in a device's associates interrupt register.
-				// The Interupt Register is set immediately. No wait for INTR GRANT,
-				// INTR level may be blocked.
-				if (mailbox.intr.iopage_register_handle)
-					pru_iopage_registers.registers[mailbox.intr.iopage_register_handle].value =
-							mailbox.intr.iopage_register_value;
+				// Change the device's associated interrupt register (e.g. RXCS
+				// with DONE) in the same pass the arbitrator first drives BIRQ
+				// onto the bus, not here. On real hardware DONE and BIRQ are one
+				// flip-flop; setting the register ahead of BIRQ lets a CPU that
+				// tight-polls the register (RX01 ZRXAF0 "DONECK") observe DONE
+				// before the interrupt reaches it and report a false "no
+				// interrupt". Record it as pending; the register is still
+				// updated for a blocked (never-granted) interrupt, because BIRQ
+				// is driven and held whether or not a grant follows.
+				sm_arb.pending_intr_register_handle = mailbox.intr.iopage_register_handle;
+				sm_arb.pending_intr_arbitration_bit = mailbox.intr.priority_arbitration_bit;
+				sm_arb.pending_intr_register_value = mailbox.intr.iopage_register_value;
 				mailbox.arm2pru_req = ARM2PRU_NONE;  // done
 				// end of INTR is signaled to ARM with signal
 				break;

@@ -84,7 +84,14 @@ typedef struct {
 
 	uint8_t cpu_bus_inhibit_dmr_mask ; // OR of ARB_CPU_BUS_INHIBIT_DMR_*
 
-//    uint8_t dummy[1]; // make it dword-sized
+	// Deferred interrupt-register update. On INTR the device's iopage register
+	// (e.g. RXCS with DONE) is written when BIRQ is first driven onto the bus,
+	// not when the request is queued, so DONE and BIRQ reach the CPU together
+	// (as on real hardware): a CPU polling the register cannot observe the new
+	// state before the interrupt request line does.
+	uint8_t pending_intr_register_handle ; // 0 = none pending
+	uint8_t pending_intr_arbitration_bit ; // the request level bit it waits on
+	uint16_t pending_intr_register_value ;
 
 } statemachine_arbitration_t;
 
