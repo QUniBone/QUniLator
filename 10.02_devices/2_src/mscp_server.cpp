@@ -1347,6 +1347,10 @@ mscp_tape_server::dispatch_command(
             mscp_tape_c* d = GetTapeDrive(unitNumber);
             if (d != nullptr && d->HasSeriousException())
                 return STATUS(TapeStatus::SERIOUS_EXCEPTION, 0, d->EndFlags());
+            // A motion or transfer command runs the tape: light the ACCESS lamp
+            // so the dashboard shows activity. The lamp poll ages it back out.
+            if (d != nullptr)
+                d->set_activity_led(true);
             break;
         }
         default:

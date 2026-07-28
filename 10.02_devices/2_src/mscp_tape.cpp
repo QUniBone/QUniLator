@@ -36,7 +36,20 @@ mscp_tape_c::mscp_tape_c(storagecontroller_c *ctrl, uint32_t driveNumber) :
     // MSCP unit device number: one-based, matching the disk convention.
     _unitDeviceNumber = driveNumber + 1;
 
+    write_protect_lamp.kind = parameter_c::PARAM_STATUS;
+
     SetOffline();
+}
+
+//
+// refresh_activity():
+//  Runs on the lamp poll. Ages out the ACCESS lamp (base class) and tracks the
+//  WRITE PROTECT lamp against the drive's current write-lock state.
+//
+void mscp_tape_c::refresh_activity(void)
+{
+    storagedrive_c::refresh_activity();
+    write_protect_lamp.value = IsWriteProtected();
 }
 
 mscp_tape_c::~mscp_tape_c(void)

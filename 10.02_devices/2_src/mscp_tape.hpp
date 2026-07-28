@@ -39,6 +39,13 @@ public:
 
     bool on_param_changed(parameter_c *param) override;
 
+    // Front-panel WRITE PROTECT lamp, lit while the cartridge is write-locked
+    // (a read-only image or a software lock). Refreshed each lamp poll so the
+    // dashboard tracks it; the ACCESS lamp (storagedrive_c) covers tape motion.
+    parameter_bool_c write_protect_lamp = parameter_bool_c(this, "writeprotectlamp", "wpl",
+                                          /*readonly*/ true, "State of WRITE PROTECT lamp");
+    void refresh_activity(void) override;
+
     // MSCP unit identity.
     uint32_t GetMediaID(void) { return TK50_MEDIA_ID; }
     uint16_t GetClassModel(void) { return TK50_CLASS_MODEL; }
