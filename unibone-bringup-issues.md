@@ -169,7 +169,7 @@ So a self-contained machine needs `pmi` on. It ships off, which is right for a
 CPU driving a real backplane, and there is nothing yet that says so when the
 emulated CPU is the one running.
 
-## 11. The emulated CPU cannot reach the board's own emulated devices — open
+## 11. The emulated CPU cannot reach the board's own emulated devices
 
 With PMI on and the M9312 holding the RL11 boot PROM, the CPU runs the ROM and
 stops at the first device register. Its own cycle trace:
@@ -197,7 +197,72 @@ arbitrator: on a board whose only CPU is the emulated one, it answers "bus
 timeout reading memory" whenever that CPU is halted, including for addresses
 inside the emulated range.
 
-Closing it means giving device registers the same direct path PMI gives memory:
-the ARM can reach the PRU's iopage cells, but a register access is not a load
-or a store — it has to run the device's DATI/DATO event, the one the PRU raises
-today, or the read clears no flag and the write starts no seek.
+The answer is a build option, `NO_PHYSICAL_BUS`, which Jörg Hoppe added upstream
+in `a653b92`. It changes the PRU: the bus latches are kept internal and read
+back what was written, instead of being driven onto a backplane. The board then
+answers its own cycles, and a UniBone outside a machine is a whole PDP-11.
+
+Our copies of `pru1_buslatches.h` were byte-identical to that commit's parent,
+so both bus variants take the upstream file as it stands. The define reaches
+the PRU compiler and the ARM code through `CC_CODE_FLAGS`, which both makefiles
+now carry, and `crossbuild.sh -n` selects it. The makefiles' header
+dependencies do not cover a changed define — Jörg's warning is to "compile all"
+— so the chosen mode is recorded next to the firmware and a build that switches
+modes rebuilds the firmware and every object, in either direction.
+
+With that build the board reaches its own devices. The RL11 CSR reads over DMA,
+
+    GET /api/memory?address=774400  →  {"words":[49280]}   = 0140200
+
+and the emulated PDP-11/20 boots XXDP from an emulated RL02 through an emulated
+RL11, with the M9312's DL boot PROM and the DL11 as console:
+
+    CPU NOT SUPPORTED BY XXDP-XM
+     BOOTING UP XXDP-SM SMALL MONITOR
+     XXDP-SM SMALL MONITOR - XXDP V2.4  REVISION: D0
+     BOOTED FROM DL0
+     28KW OF MEMORY
+     UNIBUS SYSTEM
+
+The monitor is interactive, and a directory listing of the pack scrolls past.
+XXDP-XM declining the CPU is right: the KA11 has no memory management, so the
+extended-memory monitor steps aside for the small one.
+
+The machine is saved as the configuration `pdp1120`: RL11 with the XXDP pack,
+DL11, M9312 with the console and DL PROMs, and CPU20 with `pmi` on.
+
+`GET /api/memory` works in this build too — its DMA no longer needs a physical
+arbitrator — so a program can be loaded into memory and started from the
+console without any of it existing in hardware.
+
+## 12. Stopping the emulator with the CPU running starves the board
+
+A `systemctl stop` while the emulated CPU was enabled did not complete. The unit
+allows 15 seconds and then sends SIGKILL, but the board was so starved that
+systemd was still killing the old worker threads six minutes later, and in the
+meantime the machine answered ping while sshd could not finish a handshake —
+the emulator's threads run at realtime priority on a single core, and a CPU
+spinning on failed bus cycles never yields.
+
+It looked exactly like the newly installed binary refusing to start; it was the
+previous instance refusing to die. Halt the CPU before stopping the service.
+That the guard did not hold is worth fixing: `TimeoutStopSec` cannot help when
+the process starving the machine outranks the process trying to kill it.
+
+## Design note: one CPU device, not one per model
+
+From Jörg, on the CPU20 device: the shape should be a single generic bus CPU
+whose model is a parameter, `type = KA11` for the 11/20, `KD11-E` for the
+11/34 Frits has, rather than a device class per machine. The module codes:
+
+| model | CPU | model | CPU |
+|---|---|---|---|
+| 11/20 | KA11 | 11/45 | KB11-A |
+| 11/05 | KD11-B | 11/34 | KD11-E |
+| 11/04 | KD11-D | 11/60 | KD11-K |
+| 11/40 | KD11-A | 11/70 | KB11-B |
+| 11/44 | KD11-Z | | |
+
+QBUS: LSI-11 is KD11, F-11 is KDF11, J-11 is KDJ11. VAX: the 11/730, 750 and
+780 by name; for the MicroVAXen, CVAX covers the family, with KD32 (MicroVAX I),
+KA630 (II), KA640, KA650, KA655, KA660, KA670 and KA680.

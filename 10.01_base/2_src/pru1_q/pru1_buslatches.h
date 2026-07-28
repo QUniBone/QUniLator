@@ -31,6 +31,10 @@
 #include "tuning.h"
 #include "pru_pru_mailbox.h"
 
+// Code generation switch #define NO_PHYSICAL_BUS
+// needed if Unibone should run standalone without physical backplane.
+// latches are not written, "get()" returns cached values from "set()"
+
 typedef struct {
 	uint8_t cur_reg_val[8]; // content of output latches
 
@@ -67,15 +71,24 @@ extern uint32_t address_overlay ;
  * BBB can reach __delay_cycles(8)
  * BBG can reach *ALMOST* __delay_cycles(9)
  * */
+#ifdef NO_PHYSICAL_BUS
+// return the internal register value, which is not written to the physical latch.
+// No inverting signals here, in contrast to UNIBUS GRANTs.
+#define buslatches_getbyte(reg_sel)	(			\
+			buslatches.cur_reg_val[reg_sel] \
+		)
+#else
 #define buslatches_getbyte(reg_sel)	(			\
 	    ( __R30 = ((reg_sel) << 8) | (1 << 11),		\
 	    __delay_cycles(BUSLATCHES_GETBYTE_DELAY)							\
 	), 												\
 	(__R31 & 0xff)									\
 	)
+#endif
 
-// Reg 0, 1, 2can be set byte-wise, only whole byte data. Others must save bit state.
-// Rreg 2 is read 8 bit and write 7 bit, but not used bitwise.
+// identify register which must be set byte-wise
+// Reg 0, 1, 2 can be set byte-wise, only whole byte data. Others must save bit state.
+// Reg 2 is read 8 bit and write 7 bit, but not used bitwise.
 #define BUSLATCHES_REG_IS_BYTE(reg_sel) (                                            \
 	((reg_sel) <= 2) \
 	)
@@ -116,6 +129,26 @@ extern uint32_t address_overlay ;
  e-E: 5ns
  *******************************************************************************/
 
+
+void buslatches_setbits_helper(uint32_t val /*R14*/, uint32_t reg_sel /* R15 */,
+			uint8_t *cur_reg_val /* R16 */);
+	
+
+#ifdef NO_PHYSICAL_BUS
+// No physical bus activity, just save the value for read back
+
+#define buslatches_setbyte(reg_sel,val) do {	\
+		buslatches.cur_reg_val[reg_sel] = (val) ; \
+	} while(0)
+
+#define buslatches_setbits(reg_sel,bitmask,val) do {	\
+			/* merge new value with existing latch content						  */\
+			buslatches.cur_reg_val[reg_sel] =	\
+				(buslatches.cur_reg_val[reg_sel] & ~(bitmask)) | ((val) & (bitmask)) ; \
+			} while(0)
+
+#else
+// Regular QBUS activity
 #define buslatches_setbits(reg_sel,bitmask,val) do {	\
 	/* merge new value with existing latch content                        */\
 	buslatches_setbits_helper(											\
@@ -123,15 +156,13 @@ extern uint32_t address_overlay ;
 	  reg_sel, &buslatches.cur_reg_val[reg_sel] ) ;	\
 	} while(0)
 
-void buslatches_setbits_helper(uint32_t val /*R14*/, uint32_t reg_sel /* R15 */,
-		uint8_t *cur_reg_val /* R16 */);
-
 // set a register as byte.
-// no value caching, so register may never be accessed bitwise
-// only to be used for 2 (addr0..7), 3 (adr 8..15), 5 (data0..7), 6(data 8..15)
 #define buslatches_setbyte(reg_sel,val) do {	\
+	/* avoid value caching for speed, so register may never be accessed bitwise */ \
+	/* only to be used for 8-bit latches in BUSLATCHES_REG_IS_BYTE() */ \
 	buslatches_setbyte_helper(val,reg_sel) ;	\
 } while(0)
+#endif
 
 void buslatches_setbyte_helper(uint32_t val /*R14*/, uint32_t reg_sel /* R15 */);
 

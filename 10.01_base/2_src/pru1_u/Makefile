@@ -45,8 +45,11 @@ HEAP_SIZE=0x100
 CFLAGS_OPTIMIZER=--opt_level=3 --opt_for_speed=5 --auto_inline   --c_src_interlist --optimizer_interlist --gen_opt_info=2
 #CFLAGS_OPTIMIZER=--opt_level=3 --auto_inline   --c_src_interlist --optimizer_interlist --gen_opt_info=2
 #Common compiler and linker flags (Defined in 'PRU Optimizing C/C++ Compiler User's Guide)
+# The parent make passes the conditional compiles both sides of the emulator
+# share, so the PRU is built for the same bus as the ARM code (see makefile_u).
+CC_CODE_FLAGS ?= -DUNIBUS
 CFLAGS=-v3 $(CFLAGS_OPTIMIZER) \
-        -DUNIBUS  \
+        $(CC_CODE_FLAGS)  \
 	--display_error_number --emit_warnings_as_errors --verbose_diagnostics \
 	--endian=little --hardware_mac=on --obj_directory=$(OBJ_DIR) --pp_directory=$(OBJ_DIR) -ppd -ppa
 

@@ -42,6 +42,18 @@ PRUSS_DRV_LIB = $(PRU_PACKAGE_ROOT)/bin-bbb/libprussdrv.a
 # (e.g. -ltirpc where Sun RPC is no longer part of glibc)
 LDFLAGS+= -no-pie -lstdc++ -lpthread -lX11 $(PRUSS_DRV_LIB) $(EXTRA_LIBS)
 
+# Conditional compiles shared by the ARM code and the PRU code, so both sides of
+# the emulator are built for the same bus.
+#
+# NO_PHYSICAL_BUS builds an emulator whose QBUS is internal: the PRU keeps the
+# bus latches to itself instead of driving the backplane, and reads back what it
+# wrote. A board built this way runs outside a machine. Select it with
+# "crossbuild.sh -n".
+CC_CODE_FLAGS = -DQBUS -DBLINKENLIGHT_CLIENT
+ifdef NO_PHYSICAL_BUS
+	CC_CODE_FLAGS += -DNO_PHYSICAL_BUS
+endif
+
 # compiler flags and libraries
 ifeq ($(MAKE_CONFIGURATION),RELEASE)
 	CC_DBG_FLAGS = -O3 -Wall -Wextra -Wshadow -DDBG
@@ -77,8 +89,7 @@ CCFLAGS= \
 	-I$(DEVEXER_SRC_DIR)	\
 	-I$(OBJDIR)	\
 	-I$(PRU_DEPLOY_DIR)	\
-	-DQBUS	\
-	-DBLINKENLIGHT_CLIENT        \
+	$(CC_CODE_FLAGS)        \
 	-c	\
 	$(CCDEFS) $(CC_DBG_FLAGS) $(OS_CCDEFS)
 # OBJDIR in includes because of $(PRU_CODE)
@@ -656,12 +667,12 @@ $(OBJDIR)/qunibusadapter.o :  $(BASE_SRC_DIR)/qunibusadapter.cpp $(BASE_SRC_DIR)
 # and converted to a C array source code by hexpru -- array
 #  $(SHARED_SRC_DIR)/*.h $(SHARED_SRC_DIR)/*.c
 $(PRU0_CODE_LIST): $(PRU0_BASE_SRC_DIR)/*.h $(PRU0_BASE_SRC_DIR)/*.c $(SHARED_SRC_DIR)/*.h
-	$(MAKE) -C $(PRU0_BASE_SRC_DIR) $@
+	$(MAKE) -C $(PRU0_BASE_SRC_DIR) CC_CODE_FLAGS="$(CC_CODE_FLAGS)" $@
 	echo PRU0 codefile $@ created
 #	cp $(PRU_DEPLOY_DIR)/$(PRU0_CODE).[hc]
 
 $(PRU1_CODE_LIST): $(PRU1_BASE_SRC_DIR)/*.h $(PRU1_BASE_SRC_DIR)/*.c $(SHARED_SRC_DIR)/*.h
-	$(MAKE) -C $(PRU1_BASE_SRC_DIR) $@
+	$(MAKE) -C $(PRU1_BASE_SRC_DIR) CC_CODE_FLAGS="$(CC_CODE_FLAGS)" $@
 	echo PRU1 codefile $@ created
 #	cp $(PRU_DEPLOY_DIR)/$(PRU0_CODE).[hc]
 
