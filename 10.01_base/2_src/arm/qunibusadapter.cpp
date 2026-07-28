@@ -871,17 +871,22 @@ void qunibusadapter_c::cancel_INTR(intr_request_c& intr_request)
 {
     uint8_t level_index = intr_request.level_index; // alias
     priority_request_level_c *prl = &request_levels[level_index];
-    if (prl->slot_request[intr_request.priority_slot] == NULL)
-        return; // not scheduled or active
 
     pthread_mutex_lock(&requests_mutex); // lock schedule table operations
+    // test only under the mutex: the worker thread completes or reschedules
+    // slots in parallel
+    if (prl->slot_request[intr_request.priority_slot] == NULL) {
+        // not scheduled or active
+        pthread_mutex_unlock(&requests_mutex);
+        return;
+    }
     if (&intr_request == prl->active) {
         // already on PRU
         assert(level_index <= PRIORITY_LEVEL_INDEX_BR7);
         mailbox->intr.priority_arbitration_bit =
             priority_level_idx_to_arbitration_bit[level_index];
         mailbox_execute(ARM2PRU_INTR_CANCEL);
-        request_active_complete(level_index, true);
+        request_active_complete(level_index, true); // sets "complete", signals
 
         // restart next request
         request_activate_lowest_slot(level_index);
@@ -891,13 +896,16 @@ void qunibusadapter_c::cancel_INTR(intr_request_c& intr_request)
         // not active on PRU: just remove from schedule table
         prl->slot_request[intr_request.priority_slot] = NULL; // clear slot from request
         prl->slot_request_mask &= ~(1 << intr_request.priority_slot); // mask out slot bit
+
+        // signal to a possible INTR waiter, keeping the invariant of all
+        // other signal paths: "complete" set before complete_cond fires
+        pthread_mutex_lock(&intr_request.complete_mutex);
+        intr_request.complete = true;
+        pthread_cond_signal(&intr_request.complete_cond);
+        pthread_mutex_unlock(&intr_request.complete_mutex);
     }
     // both empty, or both filled
     assert((prl->slot_request_mask == 0) == (prl->active == NULL));
-
-    pthread_mutex_lock(&intr_request.complete_mutex);
-    pthread_cond_signal(&intr_request.complete_cond);
-    pthread_mutex_unlock(&intr_request.complete_mutex);
 
     pthread_mutex_unlock(&requests_mutex); // lock schedule table operations
 
