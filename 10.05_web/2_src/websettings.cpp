@@ -58,6 +58,10 @@ static std::string settings_path;
 // Whether the board runs the emulated KA11. Read once at startup, before the
 // device set is built, and honoured on the UNIBUS build alone.
 static bool emulated_cpu = false;
+// Whether the board keeps its bus to itself instead of driving a backplane.
+// Independent of the emulated CPU: a board can be the CPU of a real machine
+// full of real cards, or a machine entirely by itself.
+static bool internal_bus = false;
 
 static void send_json(struct mg_connection *conn, int status, const picojson::value &val) {
 	std::string body = val.serialize();
@@ -108,6 +112,8 @@ static void load_settings(void) {
 	weblogging_load(v.get("log_levels"));
 	if (v.get("emulated_cpu").is<bool>())
 		emulated_cpu = v.get("emulated_cpu").get<bool>();
+	if (v.get("internal_bus").is<bool>())
+		internal_bus = v.get("internal_bus").get<bool>();
 	const picojson::value &ec = v.get("external_console");
 	if (!ec.is<picojson::object>())
 		return;
@@ -126,6 +132,7 @@ static void save_settings(void) {
 		std::lock_guard<std::mutex> lock(settings_mutex);
 		root["external_console"] = external_console_json();
 		root["emulated_cpu"] = picojson::value(emulated_cpu);
+		root["internal_bus"] = picojson::value(internal_bus);
 	}
 	picojson::value admin = webauth_json();
 	if (!admin.is<picojson::null>())
@@ -162,6 +169,19 @@ bool websettings_emulated_cpu(void) {
 	return emulated_cpu;
 }
 
+bool websettings_internal_bus(void) {
+	std::lock_guard<std::mutex> lock(settings_mutex);
+	return internal_bus;
+}
+
+void websettings_set_internal_bus(bool on) {
+	{
+		std::lock_guard<std::mutex> lock(settings_mutex);
+		internal_bus = on;
+	}
+	save_settings();
+}
+
 void websettings_set_emulated_cpu(bool on) {
 	{
 		std::lock_guard<std::mutex> lock(settings_mutex);
@@ -178,6 +198,7 @@ static void settings_get(struct mg_connection *conn) {
 		std::lock_guard<std::mutex> lock(settings_mutex);
 		o["external_console"] = external_console_json();
 		o["emulated_cpu"] = picojson::value(emulated_cpu);
+		o["internal_bus"] = picojson::value(internal_bus);
 	}
 #if defined(UNIBUS)
 	o["emulated_cpu_available"] = picojson::value(true);
@@ -262,6 +283,18 @@ static void settings_put(struct mg_connection *conn) {
 		send_error(conn, 422, "no emulated CPU on this bus");
 		return;
 #endif
+	}
+
+	// the bus mode — which peripherals the machine can reach: the cards in a
+	// real backplane, or the board's own emulated devices. Independent of the
+	// emulated CPU, and settled when the PRU is loaded, so it takes effect at
+	// the next start of the service.
+	const picojson::value &ibus = req.get("internal_bus");
+	if (ibus.is<bool>() && ibus.get<bool>() != websettings_internal_bus()) {
+		websettings_set_internal_bus(ibus.get<bool>());
+		WEB_INFO("bus %s", ibus.get<bool>() ? "internal" : "physical");
+		warnings.push_back(picojson::value(std::string(
+			"bus mode stored; restart the service to load the firmware for it")));
 	}
 
 	picojson::object res;

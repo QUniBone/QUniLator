@@ -23,6 +23,12 @@ void websettings_register(struct mg_context *ctx);
 bool websettings_emulated_cpu(void);
 void websettings_set_emulated_cpu(bool on);
 
+// Whether the board keeps its bus internal instead of driving a backplane. The
+// firmware is chosen when the PRU is loaded, so a change takes effect at the
+// next start. Independent of the emulated CPU.
+bool websettings_internal_bus(void);
+void websettings_set_internal_bus(bool on);
+
 // Write settings.json now. The admin password lives in the same file, so
 // webauth.cpp calls this when it changes.
 void websettings_save(void);

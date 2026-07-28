@@ -83,9 +83,15 @@
 #if defined(UNIBUS)
 #include "pru1_code_unibus_array.c"
 #include "pru1_code_unibus_elf.c"
+// the same firmware with the bus kept inside the PRU, for a board that is a
+// machine by itself rather than a card in someone else's backplane
+#include "pru1_code_unibusint_array.c"
+#include "pru1_code_unibusint_elf.c"
 #elif defined(QBUS)
 #include "pru1_code_qbus_array.c"
 #include "pru1_code_qbus_elf.c"
+#include "pru1_code_qbusint_array.c"
+#include "pru1_code_qbusint_elf.c"
 #endif
 #undef const
 
@@ -147,6 +153,20 @@ struct prucode_entry prucode[] = {
 		pru1_code_qbus_image_0, sizeof(pru1_code_qbus_image_0), PRU1_ENTRY_ADDR, //
 		pru1_code_qbus_elf, sizeof(pru1_code_qbus_elf) //
 #endif		
+	}, //
+	  // the same emulation with an internal bus: the latches stay in the PRU
+	  // and read back what was written, so the board answers its own cycles
+	  // instead of driving a backplane
+		{ pru_c::PRUCODE_EMULATION_INTERNAL_BUS, //
+				pru0_code_all_image_0, sizeof(pru0_code_all_image_0), PRU0_ENTRY_ADDR, //
+				pru0_code_all_elf, sizeof(pru0_code_all_elf), //
+#if defined(UNIBUS)
+		pru1_code_unibusint_image_0, sizeof(pru1_code_unibusint_image_0), PRU1_ENTRY_ADDR, //
+		pru1_code_unibusint_elf, sizeof(pru1_code_unibusint_elf) //
+#elif defined(QBUS)
+		pru1_code_qbusint_image_0, sizeof(pru1_code_qbusint_image_0), PRU1_ENTRY_ADDR, //
+		pru1_code_qbusint_elf, sizeof(pru1_code_qbusint_elf) //
+#endif
 	}, //
 	   // end marker
 	{ pru_c::PRUCODE_EOD, NULL, 0, 0, NULL, 0, 0, 0, 0, NULL, 0 } };

@@ -78,7 +78,9 @@ public:
 
 	// bring up PRU emulation code and the device set (device_configuration),
 	// as the devices menu does on entry; used at startup in web mode
-	void devices_startup(bool with_emulated_CPU);
+	// internal_bus: load the firmware that keeps the bus inside the PRU, for a
+	// board that is a machine by itself rather than a card in a backplane
+	void devices_startup(bool with_emulated_CPU, bool internal_bus);
 	void devices_shutdown(void);
 
 	// QUniBone should emulate this address range

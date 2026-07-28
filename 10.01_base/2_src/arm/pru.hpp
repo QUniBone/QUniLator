@@ -73,7 +73,11 @@ public:
 		PRUCODE_EOD = 0, // special marker: end of dictionary
 		PRUCODE_NONE = 0, // no code running, RPU reset
 		PRUCODE_TEST = 1,	// only selftest functions
-		PRUCODE_EMULATION = 2 // regular QBUS/UNIBUS operation
+		PRUCODE_EMULATION = 2, // regular QBUS/UNIBUS operation
+		// The same emulation with the bus latches kept inside the PRU: the
+		// board answers its own cycles instead of driving a backplane, so a
+		// board with no machine around it is a machine by itself.
+		PRUCODE_EMULATION_INTERNAL_BUS = 3
 	// with or without physical CPU for arbitration
 	};
 public:

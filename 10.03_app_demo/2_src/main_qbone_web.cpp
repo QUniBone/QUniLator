@@ -166,7 +166,11 @@ int main(int argc, char *argv[])
 	// Brings the PRU up with the emulation code and constructs the device set,
 	// which lives for the process lifetime. This starts the hardware; the PRU
 	// must not be started separately.
-	app->devices_startup(emulated_cpu);
+	// The bus mode is independent of the CPU: a board can be the CPU of a real
+	// machine full of real cards, or a machine entirely by itself.
+	bool internal_bus = websettings_internal_bus();
+	WEB_INFO("%s bus.", internal_bus ? "Internal" : "Physical");
+	app->devices_startup(emulated_cpu, internal_bus);
 
 	// The emulated CPU has no machine around it, so the board supplies the
 	// memory too: everything below the I/O page that no physical card answers.

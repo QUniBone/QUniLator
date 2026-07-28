@@ -104,7 +104,8 @@ PRU0_CODE_LIST=	\
 
 PRU1_CODE_LIST= \
 	$(PRU_DEPLOY_DIR)/pru1_code_unibus_array.c	\
-	$(PRU_DEPLOY_DIR)/pru1_code_test_array.c
+	$(PRU_DEPLOY_DIR)/pru1_code_test_array.c \
+	$(PRU_DEPLOY_DIR)/pru1_code_unibusint_array.c
 
 
 
@@ -618,7 +619,8 @@ $(PRU_DEPLOY_DIR)/%_elf.c : $(PRU_DEPLOY_DIR)/%.out
 PRU_ELF_LIST= \
 	$(PRU_DEPLOY_DIR)/pru0_code_all_elf.c \
 	$(PRU_DEPLOY_DIR)/pru1_code_unibus_elf.c \
-	$(PRU_DEPLOY_DIR)/pru1_code_test_elf.c
+	$(PRU_DEPLOY_DIR)/pru1_code_test_elf.c \
+	$(PRU_DEPLOY_DIR)/pru1_code_unibusint_elf.c
 
 $(OBJDIR)/pru.o :  $(BASE_SRC_DIR)/pru.cpp $(BASE_SRC_DIR)/pru.hpp $(PRU0_CODE_LIST) $(PRU1_CODE_LIST) $(PRU_ELF_LIST)
 	$(CC) $(CCFLAGS) $< -o $@

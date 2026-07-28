@@ -479,3 +479,48 @@ With `bootaddress_label = dl0n` saved, an apply resolves it:
     m9312: Code label "dl0n" resolved, auto boot PC = 773004
 
 and RESTART alone boots the machine.
+
+## 20. The bus mode is a setting, not a build
+
+`NO_PHYSICAL_BUS` was a compile-time switch, so the internal bus meant a
+separate binary — and a package that records nothing about which one it holds
+(issue 13), which is how installing the wrong one silently reverted this board
+and broke its next boot.
+
+Nothing in the ARM code reads that define: it reaches `pru1_buslatches.h` and
+nothing else, so the only artefact that differs is the PRU1 firmware. The
+emulator already carries several PRU images and picks one at startup —
+`PRUCODE_TEST` and `PRUCODE_EMULATION` — so the internal bus becomes a third,
+`PRUCODE_EMULATION_INTERNAL_BUS`, built from the same sources into their own
+object directory and carried alongside the others. One binary serves both
+boards, and `crossbuild.sh -n` is gone.
+
+The setting is `internal_bus`, independent of `emulated_cpu`, because the two
+are orthogonal:
+
+| emulated CPU | bus | the machine |
+|---|---|---|
+| no | physical | a peripheral of a real PDP-11 |
+| yes | physical | the CPU of a real backplane full of real cards |
+| yes | internal | a machine entirely by itself |
+| no | internal | a device set nothing drives; for poking device models |
+
+Binding them would have forbidden the second row — a UniBone standing in for a
+dead CPU among real peripherals, which is much of the point of the board.
+
+Both take effect at the next start of the service, since the firmware is chosen
+when the PRU is loaded. On the board:
+
+    web] Internal bus.
+    PRU] Loaded and started PRU code with id = 3
+    web] Emulated CPU: KA11 (PDP-11/20).
+
+and XXDP boots from the emulated RL02 as before.
+
+**Open**: whether an emulated CPU on a *physical* bus can reach the board's own
+emulated devices. Issue 11 says no, but that was measured on a bench board with
+no backplane and no terminators, so the cycle may have failed electrically
+rather than logically. It decides what the second row above promises — real
+cards only, or real cards plus the board's emulated ones. The test is one
+reading of 774400 from a UniBone in a terminated backplane with the physical
+firmware and the emulated RL11 enabled.

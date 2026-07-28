@@ -15,10 +15,10 @@
 #   ./crossbuild.sh -d         build and deploy the binary to $QUNILATOR_HOST
 #   ./crossbuild.sh -c         clean object directory first
 #   ./crossbuild.sh -p         rebuild the PRU firmware even if it is present
-#   ./crossbuild.sh -n         build with an internal bus (NO_PHYSICAL_BUS): the
-#                              PRU keeps the bus latches to itself instead of
-#                              driving a backplane, so the board runs standalone
-#                              and its emulated CPU reaches its emulated devices
+#
+# Both PRU firmwares are built: the one that drives a backplane and the one that
+# keeps the bus inside the PRU. The emulator carries both and loads whichever the
+# board's bus-mode setting names, so one binary serves either use.
 #
 # environment:
 #   QUNILATOR_HOST   ssh destination of the device (default hans@qbone.huebner.org)
@@ -50,26 +50,15 @@ PLATFORM=QBUS
 DEPLOY=0
 CLEAN=0
 PRU_CLEAN=0
-NO_PHYSICAL_BUS=0
-while getopts "udcpn" opt; do
+while getopts "udcp" opt; do
     case $opt in
         u) SUFFIX=_u; PLATFORM=UNIBUS;;
         d) DEPLOY=1;;
         c) CLEAN=1;;
         p) PRU_CLEAN=1;;
-        n) NO_PHYSICAL_BUS=1;;
         *) exit 1;;
     esac
 done
-
-# The bus mode reaches the PRU compiler as a -D, and the makefiles' header
-# dependencies do not cover a changed define, so a build that switches modes
-# rebuilds everything - the PRU firmware included, since its bus latches are
-# what the define changes.
-PRU_CODE_FLAGS=
-if [ $NO_PHYSICAL_BUS = 1 ]; then
-    PRU_CODE_FLAGS="-D$PLATFORM -DNO_PHYSICAL_BUS"
-fi
 
 # builder image: Debian with the armhf cross toolchain.
 #
@@ -127,18 +116,6 @@ fi
 # PRU firmware. Both forms are needed - instruction words for the prussdrv
 # backend, the ELF itself for remoteproc - and both come out of the same build.
 PRU_DEPLOY_DIR=10.01_base/4_deploy$SUFFIX
-# A firmware built for the other bus mode looks current to the check below, so
-# the recorded mode decides instead: a switch rebuilds the firmware and the
-# objects compiled against it.
-BUS_MODE_STAMP="$PRU_DEPLOY_DIR/.busmode"
-BUS_MODE=$([ $NO_PHYSICAL_BUS = 1 ] && echo internal || echo physical)
-if [ ! -f "$BUS_MODE_STAMP" ] || [ "$(cat "$BUS_MODE_STAMP")" != "$BUS_MODE" ]; then
-    if [ -f "$BUS_MODE_STAMP" ]; then
-        echo "Bus mode changed to $BUS_MODE — rebuilding the PRU firmware and all objects."
-    fi
-    PRU_CLEAN=1
-    CLEAN=1
-fi
 if [ $PRU_CLEAN = 1 ]; then
     rm -f "$PRU_DEPLOY_DIR"/*.out "$PRU_DEPLOY_DIR"/*_array.c \
           "$PRU_DEPLOY_DIR"/*.object "$PRU_DEPLOY_DIR"/*.pp \
@@ -151,10 +128,27 @@ if [ -z "$(ls "$PRU_DEPLOY_DIR"/*_array.c 2>/dev/null || true)" ] \
         docker run --rm --platform linux/amd64 --user "$DOCKER_USER" \
             -v "$PWD:/qunibone" \
             -w "/qunibone/10.01_base/2_src/$prudir" $PRU_IMAGE \
-            make QUNILATOR_DIR=/qunibone QUNILATOR_PLATFORM=$PLATFORM \
-                ${PRU_CODE_FLAGS:+CC_CODE_FLAGS="$PRU_CODE_FLAGS"} all
+            make QUNILATOR_DIR=/qunibone QUNILATOR_PLATFORM=$PLATFORM all
     done
 fi
+# The internal-bus PRU1 image: the same sources with NO_PHYSICAL_BUS, compiled
+# into their own object directory because the switch reaches every object that
+# touches a bus latch. Only the image and its ELF are lifted out; the objects
+# stay behind so they never mix with the physical ones.
+INT_NAME=$([ "$SUFFIX" = _u ] && echo unibusint || echo qbusint)
+if [ ! -s "$PRU_DEPLOY_DIR/pru1_code_${INT_NAME}_array.c" ]; then
+    echo "Building the internal-bus PRU firmware ..."
+    docker run --rm --platform linux/amd64 --user "$DOCKER_USER" \
+        -v "$PWD:/qunibone" \
+        -w "/qunibone/10.01_base/2_src/pru1${SUFFIX}" $PRU_IMAGE \
+        make QUNILATOR_DIR=/qunibone QUNILATOR_PLATFORM=$PLATFORM \
+            OBJ_DIR="/qunibone/$PRU_DEPLOY_DIR/internal" \
+            CC_CODE_FLAGS="-D$PLATFORM -DNO_PHYSICAL_BUS" internal
+    cp "$PRU_DEPLOY_DIR/internal/pru1_code_${INT_NAME}_array.c" \
+       "$PRU_DEPLOY_DIR/internal/pru1_code_${INT_NAME}_array.h" \
+       "$PRU_DEPLOY_DIR/internal/pru1_code_${INT_NAME}.out" "$PRU_DEPLOY_DIR/"
+fi
+
 # make must see them as newer than the PRU sources, or it tries to run clpru
 touch "$PRU_DEPLOY_DIR"/*_array.c
 
@@ -192,7 +186,6 @@ docker run --rm --user "$DOCKER_USER" -v "$PWD:/qunibone" \
         BBB_CC=arm-linux-gnueabihf-gcc \
         CCDEFS=-I/usr/local/tirpc-armhf/include/tirpc \
         EXTRA_LIBS="-L/usr/local/tirpc-armhf/lib -ltirpc" \
-        ${PRU_CODE_FLAGS:+NO_PHYSICAL_BUS=1} \
         all
 
 BINARY=$OBJDIR/demo
@@ -201,7 +194,6 @@ file "$BINARY"
 # record the header state so the next incremental build detects ABI changes
 # (the build recreated $OBJDIR); only reached on a successful build (set -e)
 echo "$HEADER_HASH" > "$HEADER_STAMP"
-echo "$BUS_MODE" > "$BUS_MODE_STAMP"
 
 if [ $DEPLOY = 1 ]; then
     echo "Deploying to $QUNILATOR_HOST:$QUNILATOR_REMOTE_DIR/$BINARY ..."

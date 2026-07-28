@@ -130,12 +130,16 @@ static void print_device(device_c *device)
 }
 
 // bring up PRU emulation code and the device set; also used at startup in web mode
-void application_c::devices_startup(bool with_emulated_CPU)
+void application_c::devices_startup(bool with_emulated_CPU, bool internal_bus)
 {
 //	iopageregisters_init();
     // QBUS/UNIBUS activity
     // assert(qunibus->arbitrator_client) ; // External Bus Arbitrator required
-    hardware_startup(pru_c::PRUCODE_EMULATION);
+    // The firmware decides which peripherals the machine can reach: the cards
+    // in a real backplane, or the board's own emulated devices, which a board
+    // driving a physical bus cannot answer, being unable to serve its own cycle.
+    hardware_startup(internal_bus ? pru_c::PRUCODE_EMULATION_INTERNAL_BUS
+            : pru_c::PRUCODE_EMULATION);
     // now PRU executing QBUS/UNIBUS master/slave code, physical PDP-11 CPU as arbitrator required.
     gpios->activity_leds.enabled = !gpios->leds_for_debug ;
     buslatches.output_enable(true);
@@ -190,7 +194,7 @@ void application_c::menu_devices(const char *menu_code, bool with_emulated_CPU)
     // then the menu only borrows it and quitting keeps it alive
     bool borrowed_configuration = (device_configuration != nullptr);
     if (!borrowed_configuration)
-        devices_startup(with_emulated_CPU);
+        devices_startup(with_emulated_CPU, /*internal_bus*/false);
 
     slu_c *DL11 = device_configuration->DL11;
     std::stringstream& dl11_rcv_stream = device_configuration->dl11_rcv_stream;

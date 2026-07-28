@@ -92,6 +92,12 @@ all: $(OBJECTS_ALL) \
 	$(OBJ_DIR)/pru1_code_unibus.out $(OBJ_DIR)/pru1_code_unibus_array.c \
 	$(OBJ_DIR)/pru1_code_test.out $(OBJ_DIR)/pru1_code_test_array.c
 
+# The internal-bus image: the same firmware with NO_PHYSICAL_BUS, built into
+# its own object directory because the switch reaches every object that touches
+# a bus latch. The caller passes OBJ_DIR and CC_CODE_FLAGS; the distinct image
+# name is what keeps the two sets of C-array symbols apart in the emulator.
+internal: $(OBJ_DIR)/pru1_code_unibusint.out $(OBJ_DIR)/pru1_code_unibusint_array.c
+
 #all:  $(OBJECTS_ALL) $(OBJ_DIR)/pru1_code_test_array.c
 
 # Rule to generate several linked binaries from several main*.c,

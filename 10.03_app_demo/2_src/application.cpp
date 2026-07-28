@@ -405,7 +405,7 @@ int application_c::run(int argc, char *argv[])
             docroot = std::string(root ? root : ".") + "/10.05_web/3_frontend";
         }
         // device set lives for the process lifetime, menus only borrow it
-        devices_startup(/*with_emulated_CPU*/false);
+        devices_startup(/*with_emulated_CPU*/false, /*internal_bus*/false);
         webserver = new webserver_c(opt_web_port, docroot);
         webserver->start();
     }
