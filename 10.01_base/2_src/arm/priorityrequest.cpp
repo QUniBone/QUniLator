@@ -55,7 +55,7 @@ void priority_request_c::set_priority_slot(uint8_t _priority_slot)
 		return ; // called on every on_param_change()
 	qunibusdevice_c *ubdevice = qunibusdevice_c::find_by_request_slot(_priority_slot);
 	if (ubdevice && ubdevice != device) {
-            WARNING("Slot %u requested by device %s, already used by %s", (unsigned) priority_slot,
+            WARNING("Slot %u requested by device %s, already used by %s", (unsigned) _priority_slot,
                       device->name.value.c_str(), ubdevice->name.value.c_str());
 		}
 	priority_slot = _priority_slot;

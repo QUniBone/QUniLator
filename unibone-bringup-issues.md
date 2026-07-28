@@ -41,3 +41,42 @@ emulator" on a Unibus board.
 `rebrand` now maps `Qbus` to the board's bus as well.
 
 Fixed in `packaging/build-deb.sh`.
+
+## 4. The priority-slot warning named the wrong slot
+
+`set_priority_slot()` reported its member `priority_slot` — the slot the
+request held before the call, 255 while still uninitialized — instead of the
+`_priority_slot` it was refusing, so the startup log read "Slot 255 requested
+by device dzv11" whatever slot had actually collided.
+
+Fixed in `10.01_base/2_src/arm/priorityrequest.cpp`.
+
+## 5. Priority slots collide across the larger UNIBUS device set — open
+
+With the slot named correctly, a UNIBUS startup logs 12 collisions. The
+emulator holds one backplane, and the compile-time slot defaults were chosen
+against the QBUS device set; the UNIBUS build adds RK11, RF11, RL11 and KE11
+on top of the same numbers:
+
+| slot | holder | collides with |
+|---|---|---|
+| 2 | DL11 transmit | DL11b receive |
+| 3 | DL11b transmit | LTC |
+| 10 | RK11, KE11 | dzv11d |
+| 12 | RF11 | dhv11 |
+| 15 | RL11 | dhv11b |
+
+The DL11/DL11b/LTC overlaps at 2 and 3 are not UNIBUS-specific: `DL11b` takes
+`DL11`'s slot + 1, which is DL11's own transmit slot, and `LTC` sits at
+`SLU_SLOT + 2`. Both buses carry them.
+
+The device set occupies 1..24 and 30..31 on UNIBUS, leaving 19, 23 and 25..29
+free — seven slots, where the two mux pools alone want twelve, so renumbering
+the pools does not fit.
+
+Slots matter for a device that is on the bus. Every device is constructed at
+startup whether or not it is enabled, and the warning fires there, so a board
+that enables neither dzv11d nor RK11 is told about their shared slot at every
+boot. Checking the slot against the *enabled* devices, at the point a device is
+enabled or its slot changes, reports the collisions that can affect arbitration
+and stays quiet about the rest.
