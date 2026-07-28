@@ -1,0 +1,5 @@
+# This tape does not ring the bell at the end of a pass either: it prints its
+# banner once and then "CFKABD1 11/34 TRAPS TST DONE" per pass, and reports an
+# error by halting (with the test number in location 302). So the first DONE,
+# reached without a halt, is the pass.
+pass-text = DONE

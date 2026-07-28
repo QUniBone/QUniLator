@@ -1,0 +1,11 @@
+# This tape neither rings the bell at the end of a pass nor halts on an error.
+# It prints its banner once and then one line per pass,
+#
+#	END PASS #     1  TOTAL ERRORS SINCE LAST REPORT      0
+#
+# with the failed tests listed above it. So the end of a pass is the text, and
+# "no errors" is the count in it - which is why the pass text reaches into the
+# number instead of stopping at "END PASS": that alone would pass the tape with
+# its errors still being printed. A count of ten or more reads "     10" and
+# does not match.
+pass-text = TOTAL ERRORS SINCE LAST REPORT      0

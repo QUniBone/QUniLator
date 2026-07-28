@@ -1,6 +1,8 @@
 # object/binary output of the demo application build
 10.03_app_demo/4_deploy_q/
 10.03_app_demo/4_deploy_u/
+# host-built CPU core test binary, objects and per-run stamps
+10.06_cputest/4_deploy/
 # c-kermit source + binary, fetched/built by 91_3rd_party/ckermit/build.sh
 91_3rd_party/ckermit/build/
 

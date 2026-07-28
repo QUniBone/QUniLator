@@ -1,0 +1,5 @@
+# DEC absolute loader tape images of the CPU core test suite. They are machine
+# code in a byte-framed format whose checksums cover every byte, so any
+# end-of-line or encoding conversion destroys them.
+*.BIN binary
+*.BIC binary

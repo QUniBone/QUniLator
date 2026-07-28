@@ -23,6 +23,16 @@ jobs:
       - name: Run the configuration-model host test
         run: ./10.05_web/tools/run_config_test.sh
 
+  cpu-test:
+    # The emulated CPU cores against the original DEC MAINDEC diagnostics, on a
+    # fake bus built from a word array: host compiler, no BeagleBone, no bus
+    # hardware. A core defect a tape finds turns this job red.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run the MAINDEC diagnostics against both CPU cores
+        run: make -C 10.06_cputest/2_src -j"$(nproc)" test
+
   package:
     runs-on: ubuntu-latest
     strategy:

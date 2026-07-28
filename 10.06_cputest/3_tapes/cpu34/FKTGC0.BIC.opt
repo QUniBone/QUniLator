@@ -1,0 +1,12 @@
+# Ignored for now: this diagnostic tests too much hardware the fake bus does
+# not have. It drives the KL11 itself, sending the whole character set, 0 to
+# 177 and round again, through the interrupt driven transmitter, and goes on
+# to exercise console behaviour beyond the minimal KL11 stub of testbus.cpp;
+# it halts at 003300 after 13 sweeps.
+ignore = 1
+
+# Kept for when the tape is re-enabled: a BEL is character 007 of the sweep,
+# so the usual "a BEL ends a pass" rule would call the run passed after 634
+# instructions, on the seventh character it prints. The run has to be judged
+# some other way.
+bell-is-pass = 0

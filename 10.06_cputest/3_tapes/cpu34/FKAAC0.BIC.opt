@@ -1,0 +1,5 @@
+# This tape does not ring the bell at the end of a pass, it says so in words:
+# after the banner it prints "END PASS 1", "END PASS 2", ... and reports an
+# error by halting. So the first such line, reached without a halt, is the
+# pass. Nothing else is ever printed.
+pass-text = END PASS

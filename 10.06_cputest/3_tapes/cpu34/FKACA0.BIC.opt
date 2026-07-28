@@ -1,0 +1,4 @@
+# Announces the end of a pass in words instead of with a BEL, like FKAAC0:
+# it prints "END PASS" about every 1.2 M instructions and reports an error by
+# halting. Nothing else is ever printed.
+pass-text = END PASS

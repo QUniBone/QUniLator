@@ -86,6 +86,25 @@ Two linker settings that have to stay:
 - **`-no-pie`.** The vendored `libprussdrv.a` holds no position-independent
   code, so a toolchain defaulting to PIE rejects its relocations.
 
+## Testing the emulated CPU
+
+`make -C 10.06_cputest/2_src -j test` runs the original DEC MAINDEC diagnostics
+against both emulation cores — the KA11 (11/20) and the KD11-EA (11/34 with
+KT11-D memory management). It builds with the **host** compiler and runs on the
+build machine: the cores reach the world only through the `unibone_*()` functions
+of `cpu_bus_adapter.h`, and `10.06_cputest/2_src/testbus.cpp` implements those on
+a word array with KL11 and KW11 stubs, so no board and no bus hardware take part.
+CI runs the same command.
+
+Change a core and the tapes for it re-run; a stamp per (core, tape) pair keeps an
+unrelated build from re-running anything. Drop a tape into `3_tapes/both`,
+`3_tapes/cpu20` or `3_tapes/cpu34` and it is picked up by wildcard. The suite is
+35 passes and one documented skip — see `10.06_cputest/3_tapes/README.md` for
+what each tape covers and how a run is judged.
+
+The bus the emulator drives on the board is the real thing; this suite says
+nothing about it. It validates instruction and MMU behaviour only.
+
 ## Warnings and diagnostics
 
 Keep both the build and the editor clean. A change is not done while it leaves
@@ -94,7 +113,7 @@ compiler warnings or spurious language-server errors behind.
 - **No compiler warnings.** Fix them at the source, not by silencing the
   compiler — e.g. bounded `snprintf(buf, sizeof buf, …)` rather than `sprintf`.
   This holds for the board build (`./crossbuild.sh`), the host tests
-  (`10.05_web/tools/*`), and CI.
+  (`10.05_web/tools/*`, `10.06_cputest/2_src`), and CI.
 - **No spurious editor diagnostics.** The IDE's clangd has none of the makefile's
   `-I` paths or `-D` defines, so without help it reports false "file not found"
   errors (`civetweb.h`, `logger.hpp`, …) that cascade into undeclared-identifier
