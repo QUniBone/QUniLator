@@ -38,8 +38,8 @@ priority_request_c::priority_request_c(qunibusdevice_c *_device)
 	complete = false;
 	executing_on_PRU = false;
 	priority_slot = 0xff; // uninitialized, asserts() if used
-	complete_mutex = PTHREAD_MUTEX_INITIALIZER;
-	complete_cond = PTHREAD_COND_INITIALIZER; // PRU signal notifies request on completeness
+	pthread_mutex_init(&complete_mutex, NULL);
+	pthread_cond_init(&complete_cond, NULL); // PRU signal notifies request on completeness
 }
 
 priority_request_c::~priority_request_c() 
