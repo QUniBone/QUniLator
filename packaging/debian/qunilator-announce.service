@@ -1,14 +1,14 @@
 [Unit]
 Description=Announce the address the board can be reached at
-Documentation=file:/usr/share/bone/README.Debian
+Documentation=file:/usr/share/qunilator/README.Debian
 # the bridge carries the address, so wait for the network and for the veth pair
-After=network-online.target bone-network.service
+After=network-online.target qunilator-network.service
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/sbin/bone-announce
+ExecStart=/usr/sbin/qunilator-announce
 # on the console as well as in the journal: on a first boot the console is the
 # only place anyone is looking
 StandardOutput=journal+console

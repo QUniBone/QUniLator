@@ -10,12 +10,12 @@
 # reads back at the next boot, and a filesystem grown to the larger figure
 # then "exceeds size of device" and will not mount. Between the stages the
 # filesystem is smaller than its partition, which always mounts. The reboot
-# bone-setup performs on the first boot is the barrier; if there is none, the
+# qunilator-setup performs on the first boot is the barrier; if there is none, the
 # filesystem is simply grown on the next reboot instead.
 
 set -e
 
-MARKER=/var/lib/bone/.resized
+MARKER=/var/lib/qunilator/.resized
 [ -e "$MARKER" ] && exit 0
 
 ROOT=$(findmnt -no SOURCE /)
@@ -43,5 +43,5 @@ fi
 # stage two: the partition already fills the disk, so its table has been
 # re-read and resize2fs grows the filesystem to a size that fits.
 resize2fs "$ROOT"
-mkdir -p /var/lib/bone
+mkdir -p /var/lib/qunilator
 : > "$MARKER"

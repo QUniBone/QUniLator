@@ -148,7 +148,7 @@ convenience:
    networking is.
 
 The address is also printed on the console and into the journal once the bone
-has one — `journalctl -u '*-announce'`, or re-run `sudo bone-announce` to print
+has one — `journalctl -u '*-announce'`, or re-run `sudo qunilator-announce` to print
 it again.
 
 Then open `http://<address>/`. The web interface binds port 80 and asks you to
@@ -170,7 +170,7 @@ renames it `qbone-2.local`, a third `qbone-3.local`. They stay reachable, but
 which bone gets which suffix follows boot order and can change. Give each bone
 its own name instead:
 
-    sudo bone-rename pdp11-front
+    sudo qunilator-rename pdp11-front
 
 The name then follows everywhere by itself: `pdp11-front.local`, the DNS-SD
 entry, the DHCP lease in your router's table, and the login banner. Run it with
@@ -182,11 +182,11 @@ it serves, not the machine's name, and is unaffected.
 
 Only the emulator itself is built for a particular bus. Everything around it —
 the setup, network, rename, resize, announce and LED tools, their units, and the
-files under `/etc/bone`, `/var/lib/bone` and `/usr/share/bone` — manages a
-BeagleBone carrying a cape and is the same on either bone, so all of it is
-named `bone`. The bus-specific name appears in three places: the emulator binary
-(`/usr/bin/qbone` or `/usr/bin/unibone`), the unit that runs it, and the package
-you install.
+files under `/etc/qunilator`, `/var/lib/qunilator` and `/usr/share/qunilator` —
+manages a BeagleBone carrying a cape and is the same on either board, so all of
+it is named `qunilator`, after the software. The bus-specific name appears in
+three places: the emulator binary (`/usr/bin/qbone` or `/usr/bin/unibone`), the
+unit that runs it, and the package you install.
 
 ## Updating
 

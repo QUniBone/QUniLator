@@ -4,9 +4,9 @@
 # The address comes from DHCP and the appliance has no display, so on a first
 # boot there is nothing to read it off. This puts it on every console and in the
 # journal, where an attached serial terminal shows it without logging in and
-# `journalctl -u bone-announce` shows it afterwards.
+# `journalctl -u qunilator-announce` shows it afterwards.
 #
-# usage: bone-announce [interface]      (default br0)
+# usage: qunilator-announce [interface]      (default br0)
 
 set -e
 
@@ -29,11 +29,11 @@ while [ "$i" -lt "$TRIES" ]; do
 done
 
 if [ -z "$ADDR" ]; then
-    echo "bone-announce: no address on $IFACE after ${TRIES}s."
-    echo "bone-announce: check the network cable and the DHCP server."
+    echo "qunilator-announce: no address on $IFACE after ${TRIES}s."
+    echo "qunilator-announce: check the network cable and the DHCP server."
     # the gadget address is fixed, so it is worth naming even with no lease
     if [ -n "$(addr_of usb0)" ]; then
-        echo "bone-announce: reachable over USB at http://$(addr_of usb0)/"
+        echo "qunilator-announce: reachable over USB at http://$(addr_of usb0)/"
     fi
     exit 0
 fi

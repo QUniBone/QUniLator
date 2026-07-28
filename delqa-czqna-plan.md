@@ -245,7 +245,7 @@ DELQA mode`), and promiscuous decoding.
 
 ## Traps
 
-`QUNIBONE_LOG` receives nothing while the demo runs; DEBUG output only
+`QUNILATOR_LOG` receives nothing while the demo runs; DEBUG output only
 reaches the tmux pane (`tmux capture-pane -t qb -p -S -400`). Piping the
 demo's output to a file yields an empty file, and `tmux pipe-pane` does not
 attach either, so the pane's own scrollback is the log. It holds 2000 lines
@@ -262,9 +262,9 @@ verbosity write, and an enable, after the configuration is applied.
 Deploy with the demo stopped, or `scp` fails silently on the busy binary and
 the next run tests the old code.
 
-The demo needs `QUNIBONE_DIR` or it finds no configurations and no images:
+The demo needs `QUNILATOR_DIR` or it finds no configurations and no images:
 
-    cd ~/QUniBone && sudo QUNIBONE_DIR=$HOME/QUniBone \
+    cd ~/QUniBone && sudo QUNILATOR_DIR=$HOME/QUniBone \
         ./10.03_app_demo/4_deploy_q/demo --web --addresswidth 22
 
 qbone answers on **192.168.2.223**; use `/usr/bin/ssh`, and prefix

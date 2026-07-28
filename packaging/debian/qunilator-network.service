@@ -1,13 +1,13 @@
 [Unit]
 Description=Network interface for the emulated Ethernet controller
-Documentation=file:/usr/share/bone/README.Debian
+Documentation=file:/usr/share/qunilator/README.Debian
 After=network.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/sbin/bone-network start
-ExecStop=/usr/sbin/bone-network stop
+ExecStart=/usr/sbin/qunilator-network start
+ExecStop=/usr/sbin/qunilator-network stop
 
 [Install]
 WantedBy=multi-user.target

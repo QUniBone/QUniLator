@@ -36,7 +36,7 @@
 #include "webserver.hpp"
 #include "webstorage.hpp"
 #include "qunibusadapter.hpp"
-#include "qunibus.h"		// QUNIBONE_NAME (the display brand)
+#include "qunibus.h"		// QUNILATOR_NAME (the product name)
 
 webserver_c *webserver = nullptr;
 
@@ -127,7 +127,7 @@ static int begin_request_handler(struct mg_connection *conn) {
 		if (!ok) {
 			mg_printf(conn,
 					"HTTP/1.1 401 Unauthorized\r\n"
-					"WWW-Authenticate: Basic realm=\"" QUNIBONE_NAME "\"\r\n"
+					"WWW-Authenticate: Basic realm=\"" QUNILATOR_NAME "\"\r\n"
 					"Content-Length: 0\r\n\r\n");
 			return 1;
 		}

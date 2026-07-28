@@ -23,7 +23,7 @@ bridge and other machine settings live. Stopping it to run `qbone-demo` by hand
 loses that, so the interactive menu is for hardware-level work the API does not
 cover, not for ordinary device configuration.
 
-State lives in `/var/lib/bone`: `images/` for disk images, `configs/` for saved
+State lives in `/var/lib/qunilator`: `images/` for disk images, `configs/` for saved
 device snapshots, `settings.json` for board settings.
 
 Useful endpoints, all under `http://qbone/api`:

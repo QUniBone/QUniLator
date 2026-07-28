@@ -29,7 +29,7 @@ function Sidebar({ active }: { active: string }) {
   const loc = useLocation();
   return html`<aside class="sidebar">
     <div class="wordmark"><div class="mark">Q</div>
-      <div><span class="name">QBone</span><span class="sub">QBUS bridge</span></div></div>
+      <div><span class="name">QUniLator</span><span class="sub">QBUS bridge</span></div></div>
     <nav class="nav">${NAV.map(
       ([path, label]) => html`
       <button class=${active === path ? 'active' : ''} onClick=${() => loc.route(path)}><span>${label}</span></button>`

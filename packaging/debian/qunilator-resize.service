@@ -1,14 +1,14 @@
 [Unit]
 Description=Grow the root filesystem to fill the card (once)
-Documentation=file:/usr/share/bone/README.Debian
+Documentation=file:/usr/share/qunilator/README.Debian
 # root has to be writable; run before the emulator so it sees the full disk
 After=systemd-remount-fs.service local-fs.target
-ConditionPathExists=!/var/lib/bone/.resized
+ConditionPathExists=!/var/lib/qunilator/.resized
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/sbin/bone-resize
+ExecStart=/usr/sbin/qunilator-resize
 
 [Install]
 WantedBy=sysinit.target

@@ -2,11 +2,11 @@
 # and veth-br (the emulated Ethernet controller's veth) are its ports, so the
 # emulated machine and the BeagleBone share one L2 segment.
 #
-# MACAddress is pinned to the uplink's address by qbone-setup: a bridge
+# MACAddress is pinned to the uplink's address by qunilator-setup: a bridge
 # otherwise adopts the lowest MAC among its ports, and a veth's random address
 # can undercut the uplink's, changing the DHCP identity. Keeping the uplink MAC
 # keeps the lease stable.
 [NetDev]
 Name=br0
 Kind=bridge
-# MACAddress set by qbone-setup to the uplink's address
+# MACAddress set by qunilator-setup to the uplink's address

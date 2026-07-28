@@ -14,7 +14,7 @@
 
 struct mg_context;
 
-// register /api/configs; configurations live in $QUNIBONE_DIR/configs
+// register /api/configs; configurations live in $QUNILATOR_DIR/configs
 void webconfigs_register(struct mg_context *ctx);
 
 // Locate the configuration directory and capture the parameter defaults, the

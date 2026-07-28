@@ -40,7 +40,7 @@ jobs:
 
       - name: Install packaging tools
         # build-deb.sh runs natively when dpkg-deb and dtc are present, and
-        # cross-compiles bone-leds with the armhf gcc; supply all three.
+        # cross-compiles qunilator-leds with the armhf gcc; supply all three.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \

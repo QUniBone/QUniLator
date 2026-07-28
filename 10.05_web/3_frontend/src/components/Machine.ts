@@ -11,7 +11,7 @@ export function MachinePage() {
   }, []);
   const ec = s.settings.external_console || {};
   return html`<section class="page active" data-page="machine">
-    <p class="lede">Machine-wide hardware settings — global to the QBone, not tied to any one emulated device.</p>
+    <p class="lede">Machine-wide hardware settings — global to the whole machine, not tied to any one emulated device.</p>
     <div class="card" style="margin-bottom:14px; max-width:560px">
       <div class="card-head"><h3>Bus</h3></div>
       <div class="card-body"><div class="set-grid">

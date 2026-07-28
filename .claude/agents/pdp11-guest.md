@@ -26,7 +26,7 @@ so user programs draw pixels).
 - Console is the on-board SLU on `/dev/ttyS2`, bridged as `/ws/console/ext`; read
   it with `websocat` (auth per CLAUDE.md). The SLU has **no RX FIFO — send one
   char at a time**. Nothing else may hold `/dev/ttyS2`.
-- Disk images and configs live in `/var/lib/bone/`. `211bsd.json` and the RSX
+- Disk images and configs live in `/var/lib/qunilator/`. `211bsd.json` and the RSX
   config are applied via `POST /api/configs/<name>/apply`.
 - Standalone programs onto the bare board: `tools/dmaload.py` (DMA-load a
   MACRO-11 `.lst` through `/api/memory`) and `tools/odt.py` (micro-ODT over the

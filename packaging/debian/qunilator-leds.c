@@ -1,4 +1,4 @@
-/* bone-leds.c - emulator status indicator on three BeagleBone user LEDs.
+/* qunilator-leds.c - emulator status indicator on three BeagleBone user LEDs.
  *
  * Shows how far the board is through bring-up on a contiguous run of three
  * user LEDs - usr0, usr1, usr2. SD-card activity (the kernel's mmc0 trigger,
@@ -11,7 +11,7 @@
  *     XXX   starting       blink, 0.5 s
  *     bounce (X00 0X0 00X 0X0 ...)   ready, ~150 ms sweep, forever
  *
- * The phase comes from systemd and the bone-setup marker, polled once a
+ * The phase comes from systemd and the qunilator-setup marker, polled once a
  * second. Nothing in the emulator is involved: the bounce simply means the
  * emulator service is active.
  *
@@ -143,9 +143,9 @@ static int detect_phase(void)
 {
 	if (svc_active(emulator_unit()))
 		return 3;
-	if (access("/var/lib/bone/.setup-done", F_OK) == 0)
+	if (access("/var/lib/qunilator/.setup-done", F_OK) == 0)
 		return 2;
-	if (svc_active("bone-setup.service"))
+	if (svc_active("qunilator-setup.service"))
 		return 1;
 	return 0;
 }

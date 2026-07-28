@@ -480,7 +480,7 @@ static void ws_close_handler(const struct mg_connection *conn, void *) {
 void webevents_register(struct mg_context *ctx) {
 	// load the persisted log tail before the sink is installed, so live lines
 	// continue the stored id sequence
-	const char *base = getenv("QUNIBONE_DIR");
+	const char *base = getenv("QUNILATOR_DIR");
 	if (base == nullptr)
 		base = getenv("HOME");
 	webevents_log_init(std::string(base ? base : "."));

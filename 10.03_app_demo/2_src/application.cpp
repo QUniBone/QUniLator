@@ -193,9 +193,9 @@ void application_c::parse_commandline(int argc, char **argv)
                          "", "8080", "web interface on port 8080");
     getopt_parser.define("webroot", "webroot", "directory", "", "",
                          "Serve the web frontend from <directory>.\n"
-                         "Default is 10.05_web/3_frontend under QUNIBONE_DIR, which is the\n"
+                         "Default is 10.05_web/3_frontend under QUNILATOR_DIR, which is the\n"
                          "source tree layout; an installed frontend lives somewhere else.", "",
-                         "", "/usr/share/bone/frontend", "installed frontend");
+                         "", "/usr/share/qunilator/frontend", "installed frontend");
 #endif
 
 	// test options
@@ -330,10 +330,10 @@ int application_c::run(int argc, char *argv[])
     parse_commandline(argc, argv);
 
     logger->reset_log_levels(); // logger.default_level maybe info or debug
-    // QUNIBONE_LOG=<path> additionally appends every message to a file,
+    // QUNILATOR_LOG=<path> additionally appends every message to a file,
     // flushed per line - reliable capture for tail/grep
-    if (getenv("QUNIBONE_LOG"))
-        logger->set_file_sink(getenv("QUNIBONE_LOG"));
+    if (getenv("QUNILATOR_LOG"))
+        logger->set_file_sink(getenv("QUNILATOR_LOG"));
     logger->default_filepath = "qunibone.log.csv";
 
     // the device workers run SCHED_RR and saturate the CPU during
@@ -396,10 +396,10 @@ int application_c::run(int argc, char *argv[])
 
 #if defined(WEBUI)
     if (opt_web_port) {
-        // installation root: QUNIBONE_DIR (see compile-bbb.env), fallback $HOME
+        // installation root: QUNILATOR_DIR (see compile-bbb.env), fallback $HOME
         std::string docroot = opt_web_root;
         if (docroot.empty()) {
-            const char *root = getenv("QUNIBONE_DIR");
+            const char *root = getenv("QUNILATOR_DIR");
             if (root == nullptr)
                 root = getenv("HOME");
             docroot = std::string(root ? root : ".") + "/10.05_web/3_frontend";

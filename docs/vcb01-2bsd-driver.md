@@ -20,7 +20,7 @@ register and interrupt interface a driver would target (assessed below).
 
 ## Evidence that no driver exists
 
-Checked offline against the pack `/var/lib/bone/images/2.11BSD_qbone.dsk` on the
+Checked offline against the pack `/var/lib/qunilator/images/2.11BSD_qbone.dsk` on the
 board, without booting (the console is char-at-a-time fragile). Two independent
 lines agree.
 

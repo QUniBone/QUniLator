@@ -1,8 +1,8 @@
 [Unit]
 Description=PDP-11 Qbus device emulator
-Documentation=file:/usr/share/bone/README.Debian
-After=network.target bone-network.service bone-setup.service bbbio-set-sysconf.service
-Requires=bone-network.service
+Documentation=file:/usr/share/qunilator/README.Debian
+After=network.target qunilator-network.service qunilator-setup.service bbbio-set-sysconf.service
+Requires=qunilator-network.service
 # bbbio-set-sysconf may reboot on a first boot to apply base-image settings; if
 # it does, the emulator must not have started, because a SIGTERM caught in its
 # PRU startup is uninterruptible and would hang the reboot. Ordering after it
@@ -10,8 +10,8 @@ Requires=bone-network.service
 
 [Service]
 Type=simple
-Environment=QUNIBONE_DIR=/var/lib/bone
-WorkingDirectory=/var/lib/bone
+Environment=QUNILATOR_DIR=/var/lib/qunilator
+WorkingDirectory=/var/lib/qunilator
 # The PRU cores are driven through remoteproc, and pru_rproc binds them a
 # moment after the modules load: on a cold boot the emulator would otherwise
 # reach for PRUs that are not there yet and exit. Wait for both cores to carry
@@ -20,9 +20,9 @@ ExecStartPre=/bin/sh -c 'i=0; while [ $i -lt 100 ]; do [ -e /sys/bus/platform/de
 
 # The machine the board comes up as is the configuration designated the default
 # through the web interface, applied at startup. Configurations are saved from
-# the web interface and live in /var/lib/bone/configs. "--config <name>"
+# the web interface and live in /var/lib/qunilator/configs. "--config <name>"
 # overrides the default for bring-up and testing.
-ExecStart=/usr/bin/qbone --port 80 --webroot /usr/share/bone/frontend \
+ExecStart=/usr/bin/qbone --port 80 --webroot /usr/share/qunilator/frontend \
     --addresswidth 22
 # The bus engine runs at realtime priority and the PRU driver wants physical
 # memory, so this stays privileged.

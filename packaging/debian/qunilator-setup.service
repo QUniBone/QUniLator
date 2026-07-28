@@ -1,14 +1,14 @@
 [Unit]
 Description=First-boot setup (network bridge, boot settings)
-Documentation=file:/usr/share/bone/README.Debian
+Documentation=file:/usr/share/qunilator/README.Debian
 # eth0 has to exist so its MAC can be pinned into the bridge; networkd manages
 # it. Run before the emulator and its network so the bridge is in place first.
 After=systemd-networkd.service
 Wants=systemd-networkd.service
-Before=bone-network.service
-# The bridge is written once, on the first boot. bone-setup --auto records
+Before=qunilator-network.service
+# The bridge is written once, on the first boot. qunilator-setup --auto records
 # this when the network is configured, and this condition stops it re-running.
-ConditionPathExists=!/var/lib/bone/.setup-done
+ConditionPathExists=!/var/lib/qunilator/.setup-done
 
 [Service]
 Type=oneshot
@@ -16,7 +16,7 @@ RemainAfterExit=yes
 # --auto reboots between passes rather than asking, so the board configures
 # itself with no login. The first run writes the bridge and reboots; the next
 # finds it in place, records .setup-done and hands off to the emulator.
-ExecStart=/usr/sbin/bone-setup --auto
+ExecStart=/usr/sbin/qunilator-setup --auto
 
 [Install]
 WantedBy=multi-user.target

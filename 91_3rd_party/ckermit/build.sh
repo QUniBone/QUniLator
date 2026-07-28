@@ -10,15 +10,15 @@
 #
 # usage (run from 91_3rd_party/ckermit/):
 #   ./build.sh        build kermit (dynamic armhf binary)
-#   ./build.sh -d     build and deploy to $QUNIBONE_HOST:~/bin/kermit
+#   ./build.sh -d     build and deploy to $QUNILATOR_HOST:~/bin/kermit
 #
 # environment:
-#   QUNIBONE_HOST   ssh destination of the device (default hans@192.168.2.223)
+#   QUNILATOR_HOST   ssh destination of the device (default hans@192.168.2.223)
 
 set -e
 cd "$(dirname "$0")"
 
-QUNIBONE_HOST=${QUNIBONE_HOST:-hans@192.168.2.223}
+QUNILATOR_HOST=${QUNILATOR_HOST:-hans@192.168.2.223}
 IMAGE=qunibone-ckermit-jessie
 WORKDIR=${CKERMIT_BUILD_DIR:-build}
 CKVER=cku302
@@ -80,9 +80,9 @@ BINARY="$SRC/kermit"
 file "$BINARY"
 
 if [ $DEPLOY = 1 ]; then
-    echo "Deploying to $QUNIBONE_HOST:~/bin/kermit ..."
-    ssh "$QUNIBONE_HOST" 'mkdir -p ~/bin'
-    scp "$BINARY" "$QUNIBONE_HOST:bin/kermit.new"
-    ssh "$QUNIBONE_HOST" 'mv ~/bin/kermit.new ~/bin/kermit && chmod +x ~/bin/kermit'
+    echo "Deploying to $QUNILATOR_HOST:~/bin/kermit ..."
+    ssh "$QUNILATOR_HOST" 'mkdir -p ~/bin'
+    scp "$BINARY" "$QUNILATOR_HOST:bin/kermit.new"
+    ssh "$QUNILATOR_HOST" 'mv ~/bin/kermit.new ~/bin/kermit && chmod +x ~/bin/kermit'
     echo "Deployed. Ensure ~/bin is on PATH, or run ~/bin/kermit."
 fi

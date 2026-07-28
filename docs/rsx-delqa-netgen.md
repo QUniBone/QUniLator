@@ -103,8 +103,8 @@ before booting.
 Do this **on a copy of the pack**, never on `rsx11mplus.dsk`:
 
 ```
-ssh hans@qbone sudo cp /var/lib/bone/images/rsx11mplus.dsk \
-                       /var/lib/bone/images/rsx11mplus-net.dsk
+ssh hans@qbone sudo cp /var/lib/qunilator/images/rsx11mplus.dsk \
+                       /var/lib/qunilator/images/rsx11mplus-net.dsk
 ```
 
 Point `uda0` at the copy, enable `delqa`, boot RSX (console `/ws/console/ext`,
@@ -203,7 +203,7 @@ second DECnet node on the LAN.
 
 ### The deliverable
 
-`rsx11mplus-net.dsk` (under `/var/lib/bone/images/`, alongside the pristine
+`rsx11mplus-net.dsk` (under `/var/lib/qunilator/images/`, alongside the pristine
 `rsx11mplus.dsk`) is the networked pack. The board carries a saved config
 **`rsx-net`** that enables `uda`, `uda0`→`rsx11mplus-net.dsk`, `delqa` (CSR
 774440, vector 120), `KW11`, and the `rl`/`rl0` exchange drive — `POST

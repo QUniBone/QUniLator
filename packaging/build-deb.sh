@@ -67,19 +67,20 @@ while getopts "u" opt; do
 done
 
 # Board identity. The emulator is compiled for one bus, so the binary, the unit
-# that runs it and the package carry the board's name. Everything else - the
-# tools, their units, and the paths under /etc, /var/lib and /usr/share - is a
-# BeagleBone with a cape whichever bus it bridges, and is named "bone". QBUS is
-# qbone/QBone, UNIBUS is unibone/UniBone.
+# that runs it and the package carry the board's name: QBUS is qbone/QBone,
+# UNIBUS is unibone/UniBone. The web interface shows the software's own product
+# name, QUniLator, which is the same on both buses. The appliance's own files -
+# the provisioning tools, their units, and the paths under /etc, /var/lib and
+# /usr/share - are named "qunilator" whichever bus the cape bridges.
 if [ "$SUFFIX" = _u ]; then
     NAME=unibone; DISPLAY=UniBone; OTHER=qbone
 else
     NAME=qbone;   DISPLAY=QBone;   OTHER=unibone
 fi
 
-# Name this board in the two files that have to say which bus they are for: the
-# emulator's unit, which names its binary, and the web interface, which shows
-# the brand. Everything else is installed as it is in the repository.
+# Carry the board brand into the emulator's unit, which names its binary, and
+# rewrite any board-brand token that lingers in a web asset. Everything else is
+# installed as it is in the repository.
 rebrand() {
     sed -e "s/qbone/$NAME/g" -e "s/QBone/$DISPLAY/g"
 }
@@ -101,15 +102,15 @@ install -d -m 755 $STAGE/DEBIAN \
     $STAGE/etc/modprobe.d \
     $STAGE/etc/modules-load.d \
     $STAGE/usr/bin \
-    $STAGE/usr/share/bone/frontend/assets \
+    $STAGE/usr/share/qunilator/frontend/assets \
     $STAGE/usr/share/doc/$NAME \
-    $STAGE/etc/bone \
+    $STAGE/etc/qunilator \
     $STAGE/lib/systemd/system \
     $STAGE/lib/firmware \
     $STAGE/usr/sbin \
-    $STAGE/usr/share/bone/network \
-    $STAGE/var/lib/bone/images \
-    $STAGE/var/lib/bone/configs
+    $STAGE/usr/share/qunilator/network \
+    $STAGE/var/lib/qunilator/images \
+    $STAGE/var/lib/qunilator/configs
 
 # The emulator, built for this board's bus
 install -m 755 $BINARY $STAGE/usr/bin/$NAME
@@ -126,10 +127,10 @@ for f in "$DIST"/*; do
     b=$(basename "$f")
     case "$b" in
         index.html|site.webmanifest)
-            rebrand < "$f" > $STAGE/usr/share/bone/frontend/"$b"
-            chmod 644 $STAGE/usr/share/bone/frontend/"$b" ;;
+            rebrand < "$f" > $STAGE/usr/share/qunilator/frontend/"$b"
+            chmod 644 $STAGE/usr/share/qunilator/frontend/"$b" ;;
         *)
-            install -m 644 "$f" $STAGE/usr/share/bone/frontend/"$b" ;;
+            install -m 644 "$f" $STAGE/usr/share/qunilator/frontend/"$b" ;;
     esac
 done
 for f in "$DIST"/assets/*; do
@@ -137,48 +138,48 @@ for f in "$DIST"/assets/*; do
     b=$(basename "$f")
     case "$b" in
         *.js|*.css)
-            rebrand < "$f" > $STAGE/usr/share/bone/frontend/assets/"$b"
-            chmod 644 $STAGE/usr/share/bone/frontend/assets/"$b" ;;
+            rebrand < "$f" > $STAGE/usr/share/qunilator/frontend/assets/"$b"
+            chmod 644 $STAGE/usr/share/qunilator/frontend/assets/"$b" ;;
         *)
-            install -m 644 "$f" $STAGE/usr/share/bone/frontend/assets/"$b" ;;
+            install -m 644 "$f" $STAGE/usr/share/qunilator/frontend/assets/"$b" ;;
     esac
 done
 
 # Everything below manages a BeagleBone carrying a cape and does the same job
 # whichever bus it bridges, so it installs exactly as it is in the repository.
-install -m 755 packaging/debian/bone-network packaging/debian/bone-setup \
-    packaging/debian/bone-resize packaging/debian/bone-announce \
-    packaging/debian/bone-rename $STAGE/usr/sbin/
+install -m 755 packaging/debian/qunilator-network packaging/debian/qunilator-setup \
+    packaging/debian/qunilator-resize packaging/debian/qunilator-announce \
+    packaging/debian/qunilator-rename $STAGE/usr/sbin/
 # status LEDs: a tiny standalone daemon, cross-compiled here
-arm-linux-gnueabihf-gcc -O2 -Wall -o $STAGE/usr/sbin/bone-leds packaging/debian/bone-leds.c
-install -m 644 packaging/debian/bone-network.service \
-    packaging/debian/bone-setup.service packaging/debian/bone-leds.service \
-    packaging/debian/bone-resize.service packaging/debian/bone-announce.service \
+arm-linux-gnueabihf-gcc -O2 -Wall -o $STAGE/usr/sbin/qunilator-leds packaging/debian/qunilator-leds.c
+install -m 644 packaging/debian/qunilator-network.service \
+    packaging/debian/qunilator-setup.service packaging/debian/qunilator-leds.service \
+    packaging/debian/qunilator-resize.service packaging/debian/qunilator-announce.service \
     $STAGE/lib/systemd/system/
-install -m 644 packaging/debian/network.conf $STAGE/etc/bone/network.conf
+install -m 644 packaging/debian/network.conf $STAGE/etc/qunilator/network.conf
 # The bundled empty configuration. The service adopts it as the default on a
 # board that has never had one set, so a valid startup configuration always
 # exists. Shipped as a template and copied into place by postinst only when
 # absent, so an operator's own default.json is never overwritten.
-install -m 644 packaging/debian/default-config.json $STAGE/usr/share/bone/default-config.json
-# DNS-SD advertisement for the web interface. A template: bone-setup substitutes
+install -m 644 packaging/debian/default-config.json $STAGE/usr/share/qunilator/default-config.json
+# DNS-SD advertisement for the web interface. A template: qunilator-setup substitutes
 # the board's name and identifier and installs it under /etc/avahi/services, so
 # the file under /etc is generated rather than a conffile every board would show
 # as locally modified.
-install -m 644 packaging/debian/avahi-bone.service $STAGE/usr/share/bone/avahi-bone.service
+install -m 644 packaging/debian/avahi-qunilator.service $STAGE/usr/share/qunilator/avahi-qunilator.service
 # referenced by the units' Documentation=, and by policy under the package's doc
 # directory, which is named for the package
-install -m 644 packaging/debian/README.Debian $STAGE/usr/share/bone/README.Debian
+install -m 644 packaging/debian/README.Debian $STAGE/usr/share/qunilator/README.Debian
 install -m 644 packaging/debian/README.Debian $STAGE/usr/share/doc/$NAME/README.Debian
 chmod 644 $STAGE/lib/systemd/system/$NAME.service
 
-# bone-setup builds this into the loaded DTB so eth0 is a plain, bridgeable
+# qunilator-setup builds this into the loaded DTB so eth0 is a plain, bridgeable
 # NIC. The same eth0 fix serves both boards.
 install -m 644 02_bbb_config/01_cape/am335x-boneblack-bone.dts \
-    $STAGE/usr/share/bone/am335x-boneblack-bone.dts
-# the bridge that carries the emulated machine, installed by bone-setup
+    $STAGE/usr/share/qunilator/am335x-boneblack-bone.dts
+# the bridge that carries the emulated machine, installed by qunilator-setup
 for f in br0.netdev br0.network eth0.network veth-br.network veth-pdp.network usb0.network; do
-    install -m 644 packaging/debian/network/$f $STAGE/usr/share/bone/network/$f
+    install -m 644 packaging/debian/network/$f $STAGE/usr/share/qunilator/network/$f
 done
 
 # Both cape overlays: capemgr loads UniBone-00B0.dtbo from the cape's EEPROM
@@ -226,7 +227,7 @@ INSTALLED_KB=$(du -sk $STAGE | cut -f1)
 
 # files under /etc, which dpkg must not overwrite once they have been edited
 {
-    echo "/etc/bone/network.conf"
+    echo "/etc/qunilator/network.conf"
     echo "/etc/modprobe.d/bone.conf"
     echo "/etc/modules-load.d/bone.conf"
 } > $STAGE/DEBIAN/conffiles
@@ -249,35 +250,60 @@ if [ -e /etc/qbone/startup.cmd ]; then
     fi
     rm -f /etc/qbone/startup.cmd
 fi
+# The appliance's config directory moved from /etc/bone to /etc/qunilator when
+# the software was named QUniLator. Carry an operator's edited network.conf
+# across so dpkg does not orphan it as a stale conffile.
+if [ -x /usr/bin/dpkg-maintscript-helper ] \
+        && dpkg-maintscript-helper supports mv_conffile 2>/dev/null; then
+    dpkg-maintscript-helper mv_conffile \
+        /etc/bone/network.conf /etc/qunilator/network.conf 1.12.0-1~ -- "$@"
+fi
 PREINST
 cat > $STAGE/DEBIAN/postinst <<'POSTINST'
 #!/bin/sh
 set -e
+if [ -x /usr/bin/dpkg-maintscript-helper ] \
+        && dpkg-maintscript-helper supports mv_conffile 2>/dev/null; then
+    dpkg-maintscript-helper mv_conffile \
+        /etc/bone/network.conf /etc/qunilator/network.conf 1.12.0-1~ -- "$@"
+fi
 if [ "$1" = configure ]; then
+    # Carry the pre-QUniLator layout forward: persistent state moves from
+    # /var/lib/bone to /var/lib/qunilator, and the provisioning units were
+    # renamed bone-* to qunilator-*. dpkg removes the old package files on
+    # upgrade, but the operator's state and the old enable-symlinks are ours.
+    if [ -d /var/lib/bone ] && [ ! -d /var/lib/qunilator ]; then
+        mv /var/lib/bone /var/lib/qunilator
+    fi
+    if [ -d /run/systemd/system ]; then
+        for old in bone-network bone-setup bone-resize bone-announce bone-leds; do
+            systemctl disable "$old.service" >/dev/null 2>&1 || true
+        done
+    fi
     # Seed the bundled empty configuration as the startup fallback, without
     # ever clobbering an operator's own default.json.
-    if [ ! -e /var/lib/bone/configs/default.json ]; then
-        install -d -m 755 /var/lib/bone/configs
-        install -m 644 /usr/share/bone/default-config.json \
-            /var/lib/bone/configs/default.json || true
+    if [ ! -e /var/lib/qunilator/configs/default.json ]; then
+        install -d -m 755 /var/lib/qunilator/configs
+        install -m 644 /usr/share/qunilator/default-config.json \
+            /var/lib/qunilator/configs/default.json || true
     fi
     if [ -d /run/systemd/system ]; then
         systemctl daemon-reload || true
         # $2 is the previously configured version, empty on a first install.
         # Enabling only then keeps a unit the operator disabled disabled.
-        # The emulator needs boot settings bone-setup applies and a reboot to
+        # The emulator needs boot settings qunilator-setup applies and a reboot to
         # pick them up, so a first install enables without starting.
         if [ -z "$2" ]; then
-            systemctl enable bone-network.service qbone.service || true
+            systemctl enable qunilator-network.service qbone.service || true
         else
-            for unit in bone-network.service qbone.service; do
+            for unit in qunilator-network.service qbone.service; do
                 if systemctl is-active --quiet $unit; then
                     systemctl restart $unit || true
                 fi
             done
         fi
     fi
-    echo "qbone: run 'sudo bone-setup' to configure the boot settings, the"
+    echo "qbone: run 'sudo qunilator-setup' to configure the boot settings, the"
     echo "qbone: network and the services. See /usr/share/doc/qbone/README.Debian"
 fi
 POSTINST
@@ -286,14 +312,19 @@ cat > $STAGE/DEBIAN/prerm <<'PRERM'
 set -e
 if [ "$1" = remove ] && [ -d /run/systemd/system ]; then
     systemctl stop qbone.service || true
-    systemctl stop bone-network.service || true
+    systemctl stop qunilator-network.service || true
 fi
 PRERM
 cat > $STAGE/DEBIAN/postrm <<'POSTRM'
 #!/bin/sh
 set -e
+if [ -x /usr/bin/dpkg-maintscript-helper ] \
+        && dpkg-maintscript-helper supports mv_conffile 2>/dev/null; then
+    dpkg-maintscript-helper mv_conffile \
+        /etc/bone/network.conf /etc/qunilator/network.conf 1.12.0-1~ -- "$@"
+fi
 if [ "$1" = remove ] && [ -d /run/systemd/system ]; then
-    systemctl disable qbone.service bone-network.service || true
+    systemctl disable qbone.service qunilator-network.service || true
     systemctl daemon-reload || true
 fi
 POSTRM

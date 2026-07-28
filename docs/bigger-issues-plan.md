@@ -190,7 +190,7 @@ Files: `10.05_web/3_frontend/src/components/Log.ts`, `.../lib/events.ts`,
 `.../webevents.cpp`; `10.05_web/docs/api.md`.
 
 ### 5.1 Disk journal + paginated REST feed
-- Backend writes log lines to a journal file under `/var/lib/bone` and serves
+- Backend writes log lines to a journal file under `/var/lib/qunilator` and serves
   newest-first pages via a new REST endpoint (for reload and endless scroll);
   `/ws/events` continues to stream live lines. Survives service restart.
   Document in `api.md`.

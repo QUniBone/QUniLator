@@ -4,7 +4,7 @@
    hans@huebner.org
    MIT license, see webserver.hpp for the full text.
 
-   Disk images live in $QUNIBONE_DIR/images (created on registration):
+   Disk images live in $QUNILATOR_DIR/images (created on registration):
 
      GET  /api/images          list: name, size, mtime, attached drives, path
      POST /api/images          multipart upload into the images directory
@@ -265,7 +265,7 @@ static int api_images_handler(struct mg_connection *conn, void * /*cbdata*/) {
 }
 
 void webstorage_register(struct mg_context *ctx) {
-	const char *base = getenv("QUNIBONE_DIR");
+	const char *base = getenv("QUNILATOR_DIR");
 	if (base == nullptr)
 		base = getenv("HOME");
 	images_dir = std::string(base ? base : ".") + "/images";

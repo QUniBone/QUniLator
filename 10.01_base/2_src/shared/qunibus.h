@@ -44,6 +44,11 @@
   #error "Define UNIBUS or QBUS !"
 #endif
 
+// Product name of the emulator software, shown in the web interface and its
+// startup banners. It names the software, independent of the bus and the cape
+// it runs on - which QUNIBUS_NAME and QUNIBONE_NAME name.
+#define QUNILATOR_NAME  "QUniLator"
+
 // max size of memory for all systems, (22 bit addressing)
 #define QUNIBUS_MAX_WORDCOUNT 0x200000 // 2MWords = 4MB
 

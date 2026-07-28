@@ -39,13 +39,13 @@
 // default_station_address(): the DELQA's power-on station address. DEC's OUI
 // (08:00:2b) with the low three bytes taken from the board's own Ethernet MAC,
 // so every QBone gets a distinct address. It is generated once and persisted
-// under QUNIBONE_DIR, so it stays stable across boots; a saved configuration's
+// under QUNILATOR_DIR, so it stays stable across boots; a saved configuration's
 // "mac" parameter overrides it, and the file can be edited to change it. If the
 // board MAC cannot be read the low bytes are random instead.
 static std::string default_station_address()
 {
-    const char *dir = getenv("QUNIBONE_DIR");
-    std::string path = std::string(dir && *dir ? dir : "/var/lib/bone") + "/delqa.mac";
+    const char *dir = getenv("QUNILATOR_DIR");
+    std::string path = std::string(dir && *dir ? dir : "/var/lib/qunilator") + "/delqa.mac";
 
     // a value written on a previous run wins, keeping the address stable
     {

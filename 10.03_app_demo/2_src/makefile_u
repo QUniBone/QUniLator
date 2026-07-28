@@ -6,21 +6,21 @@
 PROG = demo
 # the same emulation, served over the web interface with no menu and no terminal
 PROG_WEB = qbone-web
-# QUNIBONE_DIR from environment
-QUNIBONE_ROOT = $(QUNIBONE_DIR)
+# QUNILATOR_DIR from environment
+QUNILATOR_ROOT = $(QUNILATOR_DIR)
 
-PRU_PACKAGE_ROOT = $(QUNIBONE_ROOT)/91_3rd_party/am335x_pru_package
+PRU_PACKAGE_ROOT = $(QUNILATOR_ROOT)/91_3rd_party/am335x_pru_package
 
-COMMON_SRC_DIR= $(QUNIBONE_ROOT)/90_common/src
-SHARED_SRC_DIR= $(QUNIBONE_ROOT)/10.01_base/2_src/shared
-PRU0_BASE_SRC_DIR= $(QUNIBONE_ROOT)/10.01_base/2_src/pru0
-PRU1_BASE_SRC_DIR= $(QUNIBONE_ROOT)/10.01_base/2_src/pru1_u
-PRU_DEPLOY_DIR=$(QUNIBONE_ROOT)/10.01_base/4_deploy_u
-BASE_SRC_DIR= $(QUNIBONE_ROOT)/10.01_base/2_src/arm
-DEVICE_SRC_DIR= $(QUNIBONE_ROOT)/10.02_devices/2_src
-SHAREDFILESYSTEM_SRC_DIR= $(QUNIBONE_ROOT)/10.02_devices/2_src/sharedfilesystem
-BLINKENBONE_SRC_DIR= $(QUNIBONE_ROOT)/10.02_devices/2_src/blinkenbone
-DEVEXER_SRC_DIR= $(QUNIBONE_ROOT)/10.04_device_exerciser/2_src
+COMMON_SRC_DIR= $(QUNILATOR_ROOT)/90_common/src
+SHARED_SRC_DIR= $(QUNILATOR_ROOT)/10.01_base/2_src/shared
+PRU0_BASE_SRC_DIR= $(QUNILATOR_ROOT)/10.01_base/2_src/pru0
+PRU1_BASE_SRC_DIR= $(QUNILATOR_ROOT)/10.01_base/2_src/pru1_u
+PRU_DEPLOY_DIR=$(QUNILATOR_ROOT)/10.01_base/4_deploy_u
+BASE_SRC_DIR= $(QUNILATOR_ROOT)/10.01_base/2_src/arm
+DEVICE_SRC_DIR= $(QUNILATOR_ROOT)/10.02_devices/2_src
+SHAREDFILESYSTEM_SRC_DIR= $(QUNILATOR_ROOT)/10.02_devices/2_src/sharedfilesystem
+BLINKENBONE_SRC_DIR= $(QUNILATOR_ROOT)/10.02_devices/2_src/blinkenbone
+DEVEXER_SRC_DIR= $(QUNILATOR_ROOT)/10.04_device_exerciser/2_src
 
 # PRUSSDRV includes
 PRUSS_INCLUDE_DIR = $(PRU_PACKAGE_ROOT)/include
@@ -196,9 +196,9 @@ OBJECTS = $(OBJDIR)/application.o	\
 # web interface (10.05_web); WEBUI=0 builds without it
 WEBUI ?= 1
 ifeq ($(WEBUI),1)
-WEB_SRC_DIR= $(QUNIBONE_ROOT)/10.05_web/2_src
-CIVETWEB_DIR= $(QUNIBONE_ROOT)/91_3rd_party/civetweb
-PICOJSON_DIR= $(QUNIBONE_ROOT)/91_3rd_party/picojson
+WEB_SRC_DIR= $(QUNILATOR_ROOT)/10.05_web/2_src
+CIVETWEB_DIR= $(QUNILATOR_ROOT)/91_3rd_party/civetweb
+PICOJSON_DIR= $(QUNILATOR_ROOT)/91_3rd_party/picojson
 CCFLAGS+= -DWEBUI -I$(WEB_SRC_DIR) -I$(CIVETWEB_DIR) -I$(PICOJSON_DIR)
 OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/weblog.o	\
@@ -601,7 +601,7 @@ $(OBJDIR)/civetweb.o :  $(CIVETWEB_DIR)/civetweb.c $(CIVETWEB_DIR)/civetweb.h
 # The firmware ELF, embedded so remoteproc can be handed a file that came
 # out of the executable itself.
 $(PRU_DEPLOY_DIR)/%_elf.c : $(PRU_DEPLOY_DIR)/%.out
-	$(QUNIBONE_ROOT)/tools/bin2c.sh $< $*_elf $@
+	$(QUNILATOR_ROOT)/tools/bin2c.sh $< $*_elf $@
 
 PRU_ELF_LIST= \
 	$(PRU_DEPLOY_DIR)/pru0_code_all_elf.c \

@@ -3,7 +3,7 @@
 # Idempotent: safe to run when the pair already exists.
 
 set -e
-CONF=/etc/bone/network.conf
+CONF=/etc/qunilator/network.conf
 [ -r $CONF ] && . $CONF
 
 PDP_IF=${PDP_IF:-veth-pdp}
@@ -21,7 +21,7 @@ start)
             # re-enslaving an already-enslaved port is a no-op
             ip link set "$PEER_IF" master "$BRIDGE"
         else
-            echo "bone-network: bridge $BRIDGE does not exist, $PEER_IF left detached" >&2
+            echo "qunilator-network: bridge $BRIDGE does not exist, $PEER_IF left detached" >&2
         fi
     fi
     ;;

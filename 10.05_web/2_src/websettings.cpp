@@ -239,7 +239,7 @@ static int api_settings_handler(struct mg_connection *conn, void * /*cbdata*/) {
 }
 
 void websettings_register(struct mg_context *ctx) {
-	const char *base = getenv("QUNIBONE_DIR");
+	const char *base = getenv("QUNILATOR_DIR");
 	if (base == nullptr)
 		base = getenv("HOME");
 	settings_path = std::string(base ? base : ".") + "/settings.json";

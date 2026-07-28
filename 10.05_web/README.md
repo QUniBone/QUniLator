@@ -1,4 +1,4 @@
-# 10.05_web — QBone/UniBone web interface
+# 10.05_web — QUniLator web interface
 
 Browser UI for the `demo` application: device and parameter management,
 the PDP-11 serial console, disk image handling, configuration snapshots
@@ -17,7 +17,7 @@ enabled with `demo --web [port]`.
 ## Running
 
 ```sh
-sudo QUNIBONE_DIR=$HOME/QUniBone ./10.03_app_demo/4_deploy_q/demo --web --addresswidth 22
+sudo QUNILATOR_DIR=$HOME/QUniBone ./10.03_app_demo/4_deploy_q/demo --web --addresswidth 22
 ```
 
 `--web` takes an optional port (default 80). The application brings up the
@@ -26,8 +26,8 @@ web interface operate the same devices side by side; web actions echo on
 the terminal as `web: ...` lines. The hardware test menus are unavailable
 while the web interface owns the devices.
 
-Disk images live in `$QUNIBONE_DIR/images/`, configuration snapshots in
-`$QUNIBONE_DIR/configs/`.
+Disk images live in `$QUNILATOR_DIR/images/`, configuration snapshots in
+`$QUNILATOR_DIR/configs/`.
 
 ## Access control
 
@@ -51,7 +51,7 @@ Description=QUniBone web interface
 After=network.target
 
 [Service]
-Environment=QUNIBONE_DIR=/home/hans/QUniBone
+Environment=QUNILATOR_DIR=/home/hans/QUniBone
 EnvironmentFile=-/home/hans/QUniBone/qunibone-platform.env
 WorkingDirectory=/home/hans/QUniBone
 ExecStart=/home/hans/QUniBone/10.03_app_demo/4_deploy_q/demo --web --addresswidth 22

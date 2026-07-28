@@ -19,8 +19,8 @@ fully host-testable.
   `webstorage.cpp`, the `web_ws_try_send` broadcast helper (`webws.hpp`).
 - `10.05_web/docs/api.md` — the contract you own; update it with every shape change.
 - `10.05_web/tools/host_test.cpp` — the seed of the host test harness.
-- Board settings live in `/var/lib/bone/settings.json`; configs in
-  `/var/lib/bone/configs/`.
+- Board settings live in `/var/lib/qunilator/settings.json`; configs in
+  `/var/lib/qunilator/configs/`.
 
 ## Plans you implement (build the config model FIRST — it is the keystone)
 `configuration-model-plan.md` (current/default/modified, rename, save/apply,

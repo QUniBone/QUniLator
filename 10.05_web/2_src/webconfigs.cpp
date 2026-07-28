@@ -51,7 +51,7 @@
      PUT    /api/configs/<name>/devices/<device>/image   {"value": "<image>"}
                                        the medium that drive starts with
 
-   Files live in $QUNIBONE_DIR/configs/<name>.json. Besides the devices, a file
+   Files live in $QUNILATOR_DIR/configs/<name>.json. Besides the devices, a file
    may carry an operator "title" and a "dip_value" (the DIP setting that selects
    it at power-on); both are optional metadata, preserved across a live-save:
 
@@ -1467,7 +1467,7 @@ void webconfigs_init(const std::string &dir) {
 }
 
 void webconfigs_register(struct mg_context *ctx) {
-	const char *base = getenv("QUNIBONE_DIR");
+	const char *base = getenv("QUNILATOR_DIR");
 	if (base == nullptr)
 		base = getenv("HOME");
 	webconfigs_init(std::string(base ? base : ".") + "/configs");

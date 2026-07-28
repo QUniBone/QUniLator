@@ -12,19 +12,19 @@
 # usage:
 #   ./crossbuild.sh            build for QBUS (demo binary)
 #   ./crossbuild.sh -u         build for UNIBUS
-#   ./crossbuild.sh -d         build and deploy the binary to $QUNIBONE_HOST
+#   ./crossbuild.sh -d         build and deploy the binary to $QUNILATOR_HOST
 #   ./crossbuild.sh -c         clean object directory first
 #   ./crossbuild.sh -p         rebuild the PRU firmware even if it is present
 #
 # environment:
-#   QUNIBONE_HOST   ssh destination of the device (default hans@qbone.huebner.org)
-#   QUNIBONE_REMOTE_DIR  QUniBone directory on the device (default ~/QUniBone)
+#   QUNILATOR_HOST   ssh destination of the device (default hans@qbone.huebner.org)
+#   QUNILATOR_REMOTE_DIR  QUniBone directory on the device (default ~/QUniBone)
 
 set -e
 cd "$(dirname "$0")"
 
-QUNIBONE_HOST=${QUNIBONE_HOST:-hans@qbone.huebner.org}
-QUNIBONE_REMOTE_DIR=${QUNIBONE_REMOTE_DIR:-QUniBone}
+QUNILATOR_HOST=${QUNILATOR_HOST:-hans@qbone.huebner.org}
+QUNILATOR_REMOTE_DIR=${QUNILATOR_REMOTE_DIR:-QUniBone}
 IMAGE=qunibone-crossbuild
 PRU_IMAGE=qunibone-pru-cgt
 
@@ -124,7 +124,7 @@ if [ -z "$(ls "$PRU_DEPLOY_DIR"/*_array.c 2>/dev/null || true)" ] \
         docker run --rm --platform linux/amd64 --user "$DOCKER_USER" \
             -v "$PWD:/qunibone" \
             -w "/qunibone/10.01_base/2_src/$prudir" $PRU_IMAGE \
-            make QUNIBONE_DIR=/qunibone QUNIBONE_PLATFORM=$PLATFORM all
+            make QUNILATOR_DIR=/qunibone QUNILATOR_PLATFORM=$PLATFORM all
     done
 fi
 # make must see them as newer than the PRU sources, or it tries to run clpru
@@ -158,7 +158,7 @@ fi
 docker run --rm --user "$DOCKER_USER" -v "$PWD:/qunibone" \
     -w /qunibone/10.03_app_demo/2_src $IMAGE \
     make -f makefile$SUFFIX -j"$(sysctl -n hw.ncpu 2>/dev/null || echo 4)" \
-        QUNIBONE_DIR=/qunibone \
+        QUNILATOR_DIR=/qunibone \
         MAKE_CONFIGURATION=RELEASE \
         MAKE_TARGET_ARCH=BBB \
         BBB_CC=arm-linux-gnueabihf-gcc \
@@ -174,8 +174,8 @@ file "$BINARY"
 echo "$HEADER_HASH" > "$HEADER_STAMP"
 
 if [ $DEPLOY = 1 ]; then
-    echo "Deploying to $QUNIBONE_HOST:$QUNIBONE_REMOTE_DIR/$BINARY ..."
+    echo "Deploying to $QUNILATOR_HOST:$QUNILATOR_REMOTE_DIR/$BINARY ..."
     # upload beside the binary, then rename: replaces it even while it runs
-    scp "$BINARY" "$QUNIBONE_HOST:$QUNIBONE_REMOTE_DIR/$BINARY.new"
-    ssh "$QUNIBONE_HOST" "mv '$QUNIBONE_REMOTE_DIR/$BINARY.new' '$QUNIBONE_REMOTE_DIR/$BINARY'"
+    scp "$BINARY" "$QUNILATOR_HOST:$QUNILATOR_REMOTE_DIR/$BINARY.new"
+    ssh "$QUNILATOR_HOST" "mv '$QUNILATOR_REMOTE_DIR/$BINARY.new' '$QUNILATOR_REMOTE_DIR/$BINARY'"
 fi

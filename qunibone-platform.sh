@@ -24,22 +24,22 @@ fi
 
 . $PLATFORMENV
 
-# fix legacy qunibone-platform.env: QUNIBONE_PLATFORM was MAKE_QUNIBUS
-# QUNIBONE_PLATFORM_SUFFIX was PLATFORM_SUFFIX
-if [ -z "$QUNIBONE_PLATFORM_SUFFIX" ] ; then
-        QUNIBONE_PLATFORM_SUFFIX=$PLATFORM_SUFFIX
+# fix legacy qunibone-platform.env: QUNILATOR_PLATFORM was MAKE_QUNIBUS
+# QUNILATOR_PLATFORM_SUFFIX was PLATFORM_SUFFIX
+if [ -z "$QUNILATOR_PLATFORM_SUFFIX" ] ; then
+        QUNILATOR_PLATFORM_SUFFIX=$PLATFORM_SUFFIX
 fi
-if [ -z "$QUNIBONE_PLATFORM" ] ; then
-        QUNIBONE_PLATFORM=$MAKE_QUNIBUS
+if [ -z "$QUNILATOR_PLATFORM" ] ; then
+        QUNILATOR_PLATFORM=$MAKE_QUNIBUS
 fi
 
 
-if [ -z "$QUNIBONE_PLATFORM" ]; then
-  echo "Error: variable QUNIBONE_PLATFORM not set or empty!"
+if [ -z "$QUNILATOR_PLATFORM" ]; then
+  echo "Error: variable QUNILATOR_PLATFORM not set or empty!"
   exit 1
 fi
-if [ -z "$QUNIBONE_PLATFORM_SUFFIX" ]; then
-  echo "Error: variable QUNIBONE_PLATFORM_SUFFIX not set or empty!"
+if [ -z "$QUNILATOR_PLATFORM_SUFFIX" ]; then
+  echo "Error: variable QUNILATOR_PLATFORM_SUFFIX not set or empty!"
   exit 1
 fi
 
@@ -95,7 +95,7 @@ function link4dir() {
   linkpath="$1"
 
   substr=
-  replace=${QUNIBONE_PLATFORM_SUFFIX}
+  replace=${QUNILATOR_PLATFORM_SUFFIX}
   filepath=${linkpath/%$substr/$replace}
 
   mkdir -p $filepath
@@ -123,9 +123,9 @@ function link4dir() {
 # if UniBone: copy 5_applications_u/* to 5_applications,
 # if QBone: copy 5_applications_q/* to 5_applications,
 
-echo "Copying 5_applications$QUNIBONE_PLATFORM_SUFFIX to 5_applications"
+echo "Copying 5_applications$QUNILATOR_PLATFORM_SUFFIX to 5_applications"
 # (recursive move faster, but complicate directory merge)
-cp -f -a $HOME/10.03_app_demo/5_applications$QUNIBONE_PLATFORM_SUFFIX/* $HOME/10.03_app_demo/5_applications
+cp -f -a $HOME/10.03_app_demo/5_applications$QUNILATOR_PLATFORM_SUFFIX/* $HOME/10.03_app_demo/5_applications
 
 # In any case: remove 5_applications_u and 5_applications_q
 rm -f -R  $HOME/10.03_app_demo/5_applications_u

@@ -13,11 +13,11 @@ Most of the work is done and scattered across three places.
 
 `packaging/build-deb.sh` produces a complete `qbone_*_armhf.deb`: a static
 `/usr/bin/qbone` with the PRU firmware inside it, the frontend under
-`/usr/share/bone/frontend`, both cape overlays in `/lib/firmware`, the
+`/usr/share/qunilator/frontend`, both cape overlays in `/lib/firmware`, the
 modprobe and modules-load drop-ins, two systemd units, and empty state
-directories under `/var/lib/bone`.
+directories under `/var/lib/qunilator`.
 
-`packaging/debian/bone-setup` performs the whole board-side procedure:
+`packaging/debian/qunilator-setup` performs the whole board-side procedure:
 rewrites `/boot/uEnv.txt`, checks the hardware, bridges the uplink with an
 armed rollback, and starts the services.
 
@@ -25,7 +25,7 @@ armed rollback, and starts the services.
 needs, and the three ways a stock image wedges a board with a cape fitted.
 
 The gap between that and an image is small and specific: the fixes
-`bone-setup` does not do (`gpio-manager`, the `ttyGS0` getty, nginx on port
+`qunilator-setup` does not do (`gpio-manager`, the `ttyGS0` getty, nginx on port
 80, the persistent journal), the operator toolset, a user, sample disk images,
 and a build that produces the same artifact twice.
 
@@ -92,7 +92,7 @@ fallback if the registry's signing turns out to be awkward to consume.
 
 The disk images left this repository in commit `a11c388` and live at
 `files.retrocmp.com/qunibone/`. Runtime expects them in
-`/var/lib/bone/images`, registered through the web interface, each paired
+`/var/lib/qunilator/images`, registered through the web interface, each paired
 with the `.cmd` script that boots it.
 
 **A. Baked into the image.** Simplest, and it makes every download carry
@@ -100,7 +100,7 @@ every sample whether or not it is wanted. It also welds the samples to the
 image release cycle.
 
 **B. Separate apt packages** - `qbone-images-rt11`, `qbone-images-xxdp`,
-`qbone-images-211bsd`, each dropping into `/var/lib/bone/images` with a
+`qbone-images-211bsd`, each dropping into `/var/lib/qunilator/images` with a
 matching saved configuration. The base image installs one small sample;
 anything else is one `apt install`. Samples then version independently of
 the emulator, which is what they want to do.
@@ -136,14 +136,14 @@ board's first boot.
     truncate                        cut the image file
 
 The rcn-ee *base* image carries no first-boot resize of its own (the flasher
-images do, this one does not), so `bone-resize.service` provides it, in two
+images do, this one does not), so `qunilator-resize.service` provides it, in two
 stages across a reboot. First boot: extend the partition with `sfdisk`.
 Later boot, once the kernel has re-read the enlarged table: grow the ext4
-with `resize2fs`, then record `/var/lib/bone/.resized`. The two stages
+with `resize2fs`, then record `/var/lib/qunilator/.resized`. The two stages
 matter - growing the filesystem in the same boot the partition was extended
 can leave it a few blocks larger than the on-disk partition the kernel reads
 back, which then "exceeds size of device" and will not mount. The
-`bone-setup` first-boot reboot is the barrier; all tools are from
+`qunilator-setup` first-boot reboot is the barrier; all tools are from
 util-linux, no `growpart`/cloud-guest-utils.
 
 ## Emulated Ethernet needs eth0 as a plain NIC (legacy cpsw driver)
@@ -200,13 +200,13 @@ The image manages the network with `systemd-networkd`, so the bridge is built
 there, not in ifupdown (an `/etc/network/interfaces.d` stanza fights networkd
 and neither wins). The files are in `packaging/debian/network/`:
 
-    br0.netdev     bridge; MACAddress pinned to the uplink by bone-setup
+    br0.netdev     bridge; MACAddress pinned to the uplink by qunilator-setup
     br0.network    DHCP on br0, ClientIdentifier=mac
     eth0.network   eth0 is a bridge port, no address
     veth-br.network   the controller veth's far end is a bridge port
     veth-pdp.network  the DELQA's end: up, no address
 
-`bone-network` creates the `veth-pdp`/`veth-br` pair; networkd enslaves
+`qunilator-network` creates the `veth-pdp`/`veth-br` pair; networkd enslaves
 `veth-br` and `eth0` to `br0`, and `br0` holds the host's DHCP address. The
 DELQA defaults its `interface` parameter to `veth-pdp`. networkd bridges
 default to STP off, so ports forward immediately and DHCP completes at boot.
@@ -217,7 +217,7 @@ check is an end-to-end guest test (2.11BSD `qe0` pinging the BeagleBone and a
 LAN host).
 
 **Not yet automated in the package**: building and installing the DTB, pinning
-`br0`'s MAC in `bone-setup`, and shipping the networkd files in place of the
+`br0`'s MAC in `qunilator-setup`, and shipping the networkd files in place of the
 ifupdown bridge. The artifacts and procedure above are the reference for that
 work.
 
@@ -227,7 +227,7 @@ In order, in the chroot:
 
 1. **Boot settings.** `disable_uboot_overlay_emmc=1`, `disable_uboot_overlay_video=1`,
    `disable_uboot_overlay_audio=1`, `uboot_overlay_pru` commented out,
-   `uboot_overlay_addr4=QBone.dtbo`. `bone-setup` already writes exactly
+   `uboot_overlay_addr4=QBone.dtbo`. `qunilator-setup` already writes exactly
    this; the image build can call it or share its code rather than
    duplicating the edits.
 2. **Packages.** Free port 80 for the web interface: `apt purge nginx
@@ -253,13 +253,13 @@ In order, in the chroot:
    the first value for each keyword, so the drop-in wins. Personal accounts
    are not baked in; `personalize-image.sh` adds one to a copy of the image.
 7. **Install the `qbone` package** and enable the units. The image enables
-   `bone-setup.service` as well, so the board runs `bone-setup --auto` on
+   `qunilator-setup.service` as well, so the board runs `qunilator-setup --auto` on
    first boot and configures its network bridge with no login - the one step
    that cannot be baked, since the bridge pins the board's own uplink MAC. It
    reboots itself between the setup passes and records
-   `/var/lib/bone/.setup-done` when finished. A package install leaves the
-   unit disabled, where the operator drives `bone-setup` by hand. The image
-   also enables `bone-leds.service`, the status-LED indicator.
+   `/var/lib/qunilator/.setup-done` when finished. A package install leaves the
+   unit disabled, where the operator drives `qunilator-setup` by hand. The image
+   also enables `qunilator-leds.service`, the status-LED indicator.
 8. **The apt repository** keyring and sources entry.
 9. **Identity reset**, last: truncate `/etc/machine-id` to zero bytes, remove
    `/etc/ssh/ssh_host_*`, clear shell history, apt lists and logs, and set
@@ -273,7 +273,7 @@ In order, in the chroot:
 ## Package changes, done
 
 - **The units are enabled on install.** A first install enables both without
-  starting them, since the emulator needs boot settings `bone-setup` applies
+  starting them, since the emulator needs boot settings `qunilator-setup` applies
   and a reboot to pick them up. An upgrade restarts whatever was running and
   leaves a disabled unit disabled.
 - **`Depends` names the tools the scripts call** - `iproute2`, `ifupdown`,
@@ -300,9 +300,9 @@ Silicon the chroot runs under qemu-user-static. The script grows the root to
 make room, installs the package and the operator toolset, removes nginx and
 cockpit, builds and installs the legacy-Ethernet device tree, applies the
 uEnv boot settings, places the operating systems and their configurations
-under `/var/lib/bone`, resets the machine identity, enables the services, and
+under `/var/lib/qunilator`, resets the machine identity, enables the services, and
 shrinks the filesystem back to fit. The bridge MAC is not baked in: it is
-pinned to the board's own uplink by `bone-setup` at first boot. Write the
+pinned to the board's own uplink by `qunilator-setup` at first boot. Write the
 result to a card with `dd`; rcn-ee's first-boot resize grows the root to fill
 it.
 
@@ -383,7 +383,7 @@ console would close it completely.
   `6.12.93-bone63` against a live 11/73 and whether RT is needed at all is
   still unmeasured. Shipping non-RT keeps the measurement honest.
 - Does the image ship with the uplink already bridged, or does it leave that
-  to a first `bone-setup` run? Bridging at build time cannot arm the
+  to a first `qunilator-setup` run? Bridging at build time cannot arm the
   rollback that makes it safe, which argues for leaving it.
 - The apt repository host. CI is GitHub Actions, matching this repository's
   `origin`; the Debian registry on `code.netzhansa.com` is verified working

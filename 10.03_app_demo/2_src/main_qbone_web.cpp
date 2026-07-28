@@ -46,7 +46,7 @@ static std::string resolve_docroot(const std::string &opt_root)
 {
 	if (!opt_root.empty())
 		return opt_root;
-	const char *root = getenv("QUNIBONE_DIR");
+	const char *root = getenv("QUNILATOR_DIR");
 	if (root == nullptr)
 		root = getenv("HOME");
 	return std::string(root ? root : ".") + "/10.05_web/3_frontend";
@@ -54,7 +54,7 @@ static std::string resolve_docroot(const std::string &opt_root)
 
 static void usage(const char *progname)
 {
-	printf("%s - " QUNIBONE_NAME " " QUNIBUS_NAME " emulator, served over its web interface\n\n", progname);
+	printf("%s - " QUNILATOR_NAME " " QUNIBUS_NAME " emulator, served over its web interface\n\n", progname);
 	printf("usage: %s [options]\n", progname);
 	printf("  --port <n>          TCP port of the web interface (default 80)\n");
 	printf("  --webroot <dir>     directory holding the frontend\n");
@@ -110,7 +110,7 @@ int main(int argc, char *argv[])
 	sigaction(SIGTERM, &sa, nullptr);
 	sigaction(SIGINT, &sa, nullptr);
 
-	WEB_INFO(QUNIBONE_NAME " web service starting, " QUNIBUS_NAME " emulation.");
+	WEB_INFO(QUNILATOR_NAME " web service starting, " QUNIBUS_NAME " emulation.");
 
 	// The address width decides the layout of the IO page, so the emulation
 	// needs it before the PRU is started.
@@ -146,7 +146,7 @@ int main(int argc, char *argv[])
 	// default for bring-up and testing.
 	webconfigs_startup(startup_config);
 
-	WEB_INFO(QUNIBONE_NAME " ready. Every operator action arrives through the web interface.");
+	WEB_INFO(QUNILATOR_NAME " ready. Every operator action arrives through the web interface.");
 
 	// Nothing to do here: the web server serves on its own threads and the
 	// emulated devices run on theirs.
@@ -156,6 +156,6 @@ int main(int argc, char *argv[])
 	WEB_INFO("Signal %d received, shutting down.", (int) terminate_requested);
 	web_server.stop();
 	app->devices_shutdown();
-	WEB_INFO(QUNIBONE_NAME " web service stopped.");
+	WEB_INFO(QUNILATOR_NAME " web service stopped.");
 	return 0;
 }

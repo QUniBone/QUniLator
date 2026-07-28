@@ -11,7 +11,7 @@
 
 struct mg_context;
 
-// register /api/settings; persisted in $QUNIBONE_DIR/settings.json
+// register /api/settings; persisted in $QUNILATOR_DIR/settings.json
 void websettings_register(struct mg_context *ctx);
 
 // Write settings.json now. The admin password lives in the same file, so

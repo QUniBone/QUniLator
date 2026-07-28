@@ -1,3 +1,18 @@
+qbone (1.12.0-1) trixie; urgency=low
+
+  * The web interface and the service's startup banners show the software's own
+    product name, QUniLator, the same on the QBUS and UNIBUS capes.
+  * The appliance's provisioning tools and their units are named qunilator-*
+    (qunilator-setup, qunilator-network, qunilator-leds, qunilator-resize,
+    qunilator-announce, qunilator-rename), and its state, configuration and
+    asset trees live under /var/lib/qunilator, /etc/qunilator and
+    /usr/share/qunilator. An upgrade carries a board's existing state and its
+    edited network.conf across, and disables the former bone-* units.
+  * The QUNIBONE_* environment variables are renamed QUNILATOR_*; QUNILATOR_DIR
+    names the state directory the service reads.
+
+ -- Hans Huebner <hans.huebner@gmail.com>  Tue, 28 Jul 2026 07:54:10 +0200
+
 qbone (1.11.0-1) trixie; urgency=low
 
   * A TQK50/TK50 cartridge-tape subsystem runs on a shared MSCP port and server
@@ -60,14 +75,14 @@ qbone (1.9.0-1) trixie; urgency=low
 
   * Name for the bus only what is built for the bus. The emulator binary, the
     unit that runs it and the package carry the board's name; the tools, their
-    units and the files under /etc/bone, /var/lib/bone and /usr/share/bone are
+    units and the files under /etc/qunilator, /var/lib/qunilator and /usr/share/qunilator are
     the same on either board. This moves the layout: a board is reflashed
     rather than upgraded.
   * Find the board without hunting for its address: mDNS, a DNS-SD entry
     carrying an identifier drawn from the board's own MAC, a fixed address on
     the USB gadget interface, the address above the serial login prompt, and an
     announcement on the console once the bridge has one.
-  * bone-rename gives a board its own name, for several on one network.
+  * qunilator-rename gives a board its own name, for several on one network.
 
  -- Hans Huebner <hans.huebner@gmail.com>  Wed, 22 Jul 2026 08:00:00 +0200
 

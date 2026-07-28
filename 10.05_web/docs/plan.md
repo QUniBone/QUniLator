@@ -156,7 +156,7 @@ Byte-transparent binary WebSockets bridged to the two DL11 `slu_c` units via
 | `GET /api/devices` | full device/parameter snapshot (3.4) |
 | `PUT /api/devices/<dev>/params/<param>` `{"value":…}` | set a parameter (`enabled` included) |
 | `POST /api/control` `{"action":"init"\|"powercycle"\|"halt"\|"continue"}` | bus actions |
-| `GET /api/images` | image files in `$QUNIBONE_DIR/images`: name, size, mtime, attached drives |
+| `GET /api/images` | image files in `$QUNILATOR_DIR/images`: name, size, mtime, attached drives |
 | `POST /api/images` | upload (multipart) into the images directory |
 | `GET /api/images/<name>` | download |
 | `GET /api/configs` | saved configurations: name, mtime, enabled devices |
@@ -168,7 +168,7 @@ Byte-transparent binary WebSockets bridged to the two DL11 `slu_c` units via
 Attach/detach and enable/disable are parameter writes; the Control row maps
 to `/api/control`. A configuration is a JSON snapshot of the device setup —
 every device's enabled state and writable parameter values, stored in
-`$QUNIBONE_DIR/configs/<name>.json`. Snapshots are taken from and applied to
+`$QUNILATOR_DIR/configs/<name>.json`. Snapshots are taken from and applied to
 the live parameter system, so a saved configuration reproduces exactly what
 the devices and storage pages show.
 

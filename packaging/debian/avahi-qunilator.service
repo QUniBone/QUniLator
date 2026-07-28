@@ -5,7 +5,7 @@
   itself to a service browser instead of having to be found by address. Safari's
   Bonjour list, avahi-browse and the file manager's network view all pick it up.
 
-  A template: bone-setup installs the copy under /etc/avahi/services with the
+  A template: qunilator-setup installs the copy under /etc/avahi/services with the
   board's own identifier substituted in. Boards ship with one hostname, so
   several on a network collide and mDNS renames the later ones by boot order;
   the identifier comes from the uplink MAC and stays with the board whatever its

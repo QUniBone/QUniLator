@@ -11,7 +11,7 @@
 
 struct mg_context;
 
-// register /api/images; images live in $QUNIBONE_DIR/images
+// register /api/images; images live in $QUNILATOR_DIR/images
 void webstorage_register(struct mg_context *ctx);
 
 // the one directory the web interface keeps images in

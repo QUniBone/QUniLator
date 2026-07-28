@@ -15,18 +15,18 @@
 # board. That needs a plain, bridgeable NIC. The stock 6.x device tree binds
 # the switchdev cpsw driver, whose eth0 is a hardware switch port the kernel
 # refuses to add to a software bridge, so eth0 is moved to the legacy ti,cpsw
-# driver by a device tree built here. See /usr/share/bone/README.Debian.
+# driver by a device tree built here. See /usr/share/qunilator/README.Debian.
 #
 # usage:
-#   bone-setup                 set up, including the network
-#   bone-setup --no-network    set up without touching the network
+#   qunilator-setup                 set up, including the network
+#   qunilator-setup --no-network    set up without touching the network
 
 set -e
 
 UENV=/boot/uEnv.txt
-CONF=/etc/bone/network.conf
-DTS=/usr/share/bone/am335x-boneblack-bone.dts
-NETSRC=/usr/share/bone/network
+CONF=/etc/qunilator/network.conf
+DTS=/usr/share/qunilator/am335x-boneblack-bone.dts
+NETSRC=/usr/share/qunilator/network
 NETDIR=/etc/systemd/network
 # the file U-Boot loads on this image (uboot_base_dtb_univ), not the base or a
 # board-revision variant
@@ -49,16 +49,16 @@ while [ $# -gt 0 ]; do
         --no-network|--no-bridge) WANT_NET=no ;;
         # unattended: reboot between passes instead of asking, and hand the
         # hardware check and emulator startup to the enabled units. Used by
-        # bone-setup.service so a distribution image configures itself with no
-        # login. It stops running once /var/lib/bone/.setup-done exists.
+        # qunilator-setup.service so a distribution image configures itself with no
+        # login. It stops running once /var/lib/qunilator/.setup-done exists.
         --auto) AUTO=yes ;;
         *) echo "usage: $0 [--no-network] [--auto]" >&2; exit 2 ;;
     esac
     shift
 done
 
-say() { echo "bone-setup: $*"; }
-die() { echo "bone-setup: $*" >&2; exit 1; }
+say() { echo "qunilator-setup: $*"; }
+die() { echo "qunilator-setup: $*" >&2; exit 1; }
 
 [ "$(id -u)" = 0 ] || die "must run as root"
 
@@ -217,7 +217,7 @@ install_bridge() {
 
     # br0.netdev with the uplink MAC pinned in
     tmp=$(mktemp)
-    sed "s|^# MACAddress set by bone-setup.*|MACAddress=$mac|" \
+    sed "s|^# MACAddress set by qunilator-setup.*|MACAddress=$mac|" \
         "$NETSRC/br0.netdev" > "$tmp"
     # usb0.network addresses the USB gadget, the way in when the board's
     # address on the bridge is not known; it is inert without the gadget
@@ -250,7 +250,7 @@ if [ $WANT_NET = yes ]; then
     else
         say "  bridge already configured"
     fi
-    # bone-network only creates the veth pair; networkd enslaves it
+    # qunilator-network only creates the veth pair; networkd enslaves it
     if grep -q "^BRIDGE=." $CONF 2>/dev/null; then
         sed -i "s|^BRIDGE=.*|BRIDGE=|" $CONF
     fi
@@ -267,7 +267,7 @@ fi
 # board keeps one identity across the LAN and the emulated machine. Without an
 # eth0 the name carries no identifier and mDNS alone separates the boards.
 install_avahi_service() {
-    src=/usr/share/bone/avahi-bone.service
+    src=/usr/share/qunilator/avahi-qunilator.service
     dst=/etc/avahi/services/$BOARD.service
     [ -r "$src" ] || return 1
     # only where an avahi is installed to read it
@@ -309,17 +309,17 @@ if [ -n "$NEED_REBOOT" ]; then
         systemctl reboot
         exit 0
     fi
-    say "settings applied. Reboot, then run 'sudo bone-setup' again to start"
+    say "settings applied. Reboot, then run 'sudo qunilator-setup' again to start"
     say "the services:  sudo reboot"
     exit 0
 fi
 
 # Past the reboot point the network is fully configured. Unattended, that is
-# all this does: the enabled bone-network and emulator units check the hardware
+# all this does: the enabled qunilator-network and emulator units check the hardware
 # and start the emulator. Record that setup is done so the service stops here.
 if [ "$AUTO" = yes ]; then
-    mkdir -p /var/lib/bone
-    : > /var/lib/bone/.setup-done
+    mkdir -p /var/lib/qunilator
+    : > /var/lib/qunilator/.setup-done
     say "network configured; the $BOARD service starts the emulator"
     exit 0
 fi
@@ -355,15 +355,15 @@ else
     if [ $WANT_NET = yes ] && ! eth0_is_plain; then
         die "eth0 is still a switch port: the legacy-Ethernet device tree is not
   in effect. If the boot settings or the device tree were just installed, reboot
-  and run bone-setup again."
+  and run qunilator-setup again."
     fi
 fi
 
 # --------------------------------------------------------- emulator startup
 
 say "starting services"
-systemctl enable bone-network $BOARD >/dev/null 2>&1 || true
-systemctl restart bone-network
+systemctl enable qunilator-network $BOARD >/dev/null 2>&1 || true
+systemctl restart qunilator-network
 systemctl restart $BOARD
 
 sleep 2

@@ -1,9 +1,9 @@
 The PDP-11 emulator on Debian
 ===============
 
-Run bone-setup and you are done:
+Run qunilator-setup and you are done:
 
-    sudo bone-setup
+    sudo qunilator-setup
 
 It settles the boot configuration, checks that the PRUs and the cape are
 there, bridges the uplink so the emulated machine can reach the network,
@@ -16,9 +16,9 @@ kept as it is, rather than rebuilt.
 On a kernel newer than 4.19 the first run usually changes /boot/uEnv.txt and
 stops there, because those settings only take effect at boot:
 
-    sudo bone-setup      # applies boot settings, asks for a reboot
+    sudo qunilator-setup      # applies boot settings, asks for a reboot
     sudo reboot
-    sudo bone-setup      # finishes
+    sudo qunilator-setup      # finishes
 
 The original file is kept as /boot/uEnv.txt.bone-orig.
 
@@ -26,7 +26,7 @@ Boot settings
 -------------
 
 bone_capemgr was removed in 4.19, so the cape overlay no longer loads from
-the cape's own EEPROM and U-Boot applies it instead. bone-setup names
+the cape's own EEPROM and U-Boot applies it instead. qunilator-setup names
 QBone.dtbo in a free overlay slot, and turns off three overlays that would
 otherwise claim the cape's pins first - the eMMC's, HDMI's and the audio
 codec's. It also comments out uboot_overlay_pru: that overlay names a
@@ -38,20 +38,20 @@ runs in and the interrupt the PRUs raise. uio_pdrv_genirq binds to the
 latter only when told which compatible to look for, which
 /etc/modprobe.d/bone.conf does.
 
-If bone-setup reports a missing piece it names which one, and each maps to
+If qunilator-setup reports a missing piece it names which one, and each maps to
 one of these settings.
 
-bone-setup runs in two passes. The first applies the boot settings, builds
+qunilator-setup runs in two passes. The first applies the boot settings, builds
 the legacy-Ethernet device tree and writes the bridge configuration; it then
 asks for a reboot, because both the device tree and the bridge take effect
 only at boot. The second, after the reboot, finds everything in place and
 starts the services. Run it, reboot when it says to, and run it again.
 
-The distribution image does this without a login: bone-setup.service runs
-"bone-setup --auto", which reboots between the passes itself and records
-/var/lib/bone/.setup-done when the network is configured, so it runs only
+The distribution image does this without a login: qunilator-setup.service runs
+"qunilator-setup --auto", which reboots between the passes itself and records
+/var/lib/qunilator/.setup-done when the network is configured, so it runs only
 until the board is set up. The unit ships disabled on a package install,
-where the operator runs bone-setup by hand; the image enables it.
+where the operator runs qunilator-setup by hand; the image enables it.
 
 Moving eth0 onto the bridge moves this board's address onto the bridge, and
 the device tree swap changes the Ethernet driver -- either could put a
@@ -63,7 +63,7 @@ rebooting returns eth0 to its original driver.
 
 To skip the network entirely:
 
-    sudo bone-setup --no-network
+    sudo qunilator-setup --no-network
 
 The emulated machine can then reach this board, which is enough for a local
 mopd, but not the rest of the network.
@@ -76,13 +76,13 @@ the guest's several MAC addresses and reaches both the LAN and this board at
 layer 2 (mopd boots the guest over Ethernet). That is a Linux bridge over a
 plain NIC. The stock 6.x kernel binds the switchdev cpsw driver, whose eth0
 is a hardware switch port the kernel will not add to a software bridge, so
-bone-setup builds a device tree that binds the legacy ti,cpsw driver and
+qunilator-setup builds a device tree that binds the legacy ti,cpsw driver and
 installs it as the DTB U-Boot loads.
 
 The bridge itself is systemd-networkd: br0 carries eth0 (the uplink) and
 veth-br (the controller's veth), and holds this board's DHCP address, pinned
-to the uplink's MAC so the lease does not change. bone-network creates the
-veth pair from /etc/bone/network.conf before the emulator starts; the
+to the uplink's MAC so the lease does not change. qunilator-network creates the
+veth pair from /etc/qunilator/network.conf before the emulator starts; the
 controller binds to veth-pdp. The networkd files live in
 /etc/systemd/network/{br0.netdev,br0.network,eth0.network,veth-br.network,
 veth-pdp.network}.
@@ -90,19 +90,19 @@ veth-pdp.network}.
 Running
 -------
 
-bone-setup starts and enables the services. Afterwards they behave as any
+qunilator-setup starts and enables the services. Afterwards they behave as any
 others:
 
     systemctl status qbone      # or unibone, on a UNIBUS board
     systemctl restart qbone
 
 The web interface answers on port 80. State - disk images, saved
-configurations and settings.json - lives in /var/lib/bone.
+configurations and settings.json - lives in /var/lib/qunilator.
 
-The distribution image ships a root filesystem shrunk to fit; bone-resize
+The distribution image ships a root filesystem shrunk to fit; qunilator-resize
 grows it to fill the card in two stages across a reboot - extend the
 partition on the first boot, grow the ext4 into it once the kernel has
-re-read the table on the next - then records /var/lib/bone/.resized and
+re-read the table on the next - then records /var/lib/qunilator/.resized and
 does not run again.
 
 /usr/bin/qbone (/usr/bin/unibone on a UNIBUS board) serves the web interface
@@ -113,14 +113,14 @@ driven from a terminal menu, for bus latch, master/slave and device exerciser
 work; it needs an operator on stdin and is not what the service runs.
 
 The emulated Ethernet controller binds to veth-pdp, the interface
-bone-network creates and joins to the bridge bone-setup builds from the
-uplink. Rename it in /etc/bone/network.conf and the delqa's "interface"
+qunilator-network creates and joins to the bridge qunilator-setup builds from the
+uplink. Rename it in /etc/qunilator/network.conf and the delqa's "interface"
 parameter has to follow.
 
 Status LEDs
 -----------
 
-bone-leds drives a contiguous run of three green user LEDs - usr0, usr1,
+qunilator-leds drives a contiguous run of three green user LEDs - usr0, usr1,
 usr2 - to show how far the board is through bring-up, and relocates SD-card
 activity (the mmc0 trigger, normally usr1) to usr3, whose eMMC trigger is
 idle since the board runs from the SD card. A growing blink marks progress
@@ -131,10 +131,10 @@ and a bouncing light means the emulator is up:
     XXX   starting       blink
     bounce               ready
 
-The phase comes from systemd and /var/lib/bone/.setup-done, so the bounce
+The phase comes from systemd and /var/lib/qunilator/.setup-done, so the bounce
 simply means the emulator's service is active. The unit is enabled on the distribution
 image and shipped disabled in the package; `systemctl disable --now
-bone-leds` returns the LEDs to the kernel on the next boot.
+qunilator-leds` returns the LEDs to the kernel on the next boot.
 
 Admin password
 --------------

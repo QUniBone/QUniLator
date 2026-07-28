@@ -12,10 +12,10 @@ emulated (and real) PDP-11 over a serial line and to move files.
 
 ```
 ./build.sh        # build the armhf binary into ./build/src/kermit
-./build.sh -d     # build and deploy to $QUNIBONE_HOST:~/bin/kermit
+./build.sh -d     # build and deploy to $QUNILATOR_HOST:~/bin/kermit
 ```
 
-`QUNIBONE_HOST` defaults to `hans@192.168.2.223`.
+`QUNILATOR_HOST` defaults to `hans@192.168.2.223`.
 
 The build runs in Docker and produces a **dynamically linked** binary against
 the device's glibc, so hostname resolution works. The QBone runs Debian 8

@@ -10,7 +10,7 @@ is planned and built first.
 ## 1. What exists today
 
 `webconfigs.cpp` already treats a configuration as a JSON snapshot of the device
-set under `$QUNIBONE_DIR/configs/<name>.json` (`/var/lib/bone/configs` on the
+set under `$QUNILATOR_DIR/configs/<name>.json` (`/var/lib/qunilator/configs` on the
 board). A snapshot lists the enabled devices and, of those, only the parameters
 that differ from the values captured at construction (`capture_parameter_defaults()`
 at startup). The endpoints cover list, read, save (`PUT`), apply (`POST

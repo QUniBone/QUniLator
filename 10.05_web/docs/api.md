@@ -204,7 +204,7 @@ Answers `{"ok": true, "address": …, "count": …}`.
 
 ## Disk images
 
-Image files live in `$QUNIBONE_DIR/images/`.
+Image files live in `$QUNILATOR_DIR/images/`.
 
 ### `GET /api/images`
 
@@ -233,7 +233,7 @@ a drive or referenced by a saved configuration.
 
 A configuration is a named JSON snapshot of the device setup — every
 device's enabled state and writable parameter values — stored in
-`$QUNIBONE_DIR/configs/<name>.json`. It may also carry a `title`, an
+`$QUNILATOR_DIR/configs/<name>.json`. It may also carry a `title`, an
 operator-friendly label that reads more naturally than the file name; the name
 stays the identity used to address and rename the configuration. The title is
 file metadata, so it survives a save whose document names only devices.
@@ -448,7 +448,7 @@ global default. Persists. `422` for an unknown level name. Answers
 ### `GET /api/log?before=<id>&limit=<n>`
 
 A page of the persisted log journal, **newest first**. Every log line is
-appended to `$QUNIBONE_DIR/log.jsonl` with a monotonic `id` and a server
+appended to `$QUNILATOR_DIR/log.jsonl` with a monotonic `id` and a server
 timestamp, so the diagnostics view reloads its history and pages older entries
 in — the log survives a page reload and a service restart. The file is bounded
 (trimmed to the most recent ~20000 lines at startup).

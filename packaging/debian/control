@@ -16,6 +16,6 @@ Description: PDP-11 Qbus device emulator for the QBone cape
  live dashboard.
  .
  The cape's device tree overlay and the PRU interface are boot-time settings.
- Run qbone-setup after installing: it applies them, checks the hardware, puts
+ Run qunilator-setup after installing: it applies them, checks the hardware, puts
  the emulated Ethernet controller on the network and starts the services. See
  /usr/share/doc/qbone/README.Debian.

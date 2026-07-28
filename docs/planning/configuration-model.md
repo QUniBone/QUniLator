@@ -8,7 +8,7 @@ machine's setup can be edited, saved back, named, and designated as the default.
 
 ## Current state
 
-Configurations are saved device snapshots under `/var/lib/bone/configs`, applied
+Configurations are saved device snapshots under `/var/lib/qunilator/configs`, applied
 with `POST /api/configs/<name>/apply`. The live machine is a set of devices with
 parameters; there is no notion of *which* configuration it currently represents.
 "Current configuration" is inferred by comparing live devices against saved

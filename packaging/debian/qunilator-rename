@@ -11,13 +11,13 @@
 # hostname. Nothing in the emulator reads it: the board name in the unit
 # and the package is the board type, not this machine's name.
 #
-# usage: bone-rename <name>
-#        bone-rename            show the current name
+# usage: qunilator-rename <name>
+#        qunilator-rename            show the current name
 
 set -e
 
-say() { echo "bone-rename: $*"; }
-die() { echo "bone-rename: $*" >&2; exit 1; }
+say() { echo "qunilator-rename: $*"; }
+die() { echo "qunilator-rename: $*" >&2; exit 1; }
 
 current=$(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null || echo "?")
 

@@ -26,18 +26,18 @@ $(error $(ERROR_BODY))
 endif
 
 PROJ_NAME=pru0
-ifeq ($(QUNIBONE_PLATFORM),UNIBUS)
+ifeq ($(QUNILATOR_PLATFORM),UNIBUS)
 	OBJ_DIR=$(abspath ../../4_deploy_u)
-else ifeq  ($(QUNIBONE_PLATFORM),QBUS)
+else ifeq  ($(QUNILATOR_PLATFORM),QBUS)
 	OBJ_DIR=$(abspath ../../4_deploy_q)
 else
-	$(error Set QUNIBONE_PLATFORM to UNIBUS or QBUS!)
+	$(error Set QUNILATOR_PLATFORM to UNIBUS or QBUS!)
 endif
 SHARED_DIR=$(abspath ../shared)
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CURRENT_DIR := $(notdir $(patsubst %/,%,$(dir $(MKFILE_PATH))))
-COMMON_SCRIPTS_DIR=$(QUNIBONE_DIR)/90_common/scripts
-SUPPORTPACKAGE_DIR := $(QUNIBONE_DIR)/91_3rd_party/pru-c-compile/pru-software-support-package
+COMMON_SCRIPTS_DIR=$(QUNILATOR_DIR)/90_common/scripts
+SUPPORTPACKAGE_DIR := $(QUNILATOR_DIR)/91_3rd_party/pru-c-compile/pru-software-support-package
 LINKER_COMMAND_FILE=./AM335x_PRU.cmd
 LIBS=--library=$(SUPPORTPACKAGE_DIR)/lib/rpmsg_lib.lib
 INCLUDE=--include_path=$(SUPPORTPACKAGE_DIR)/include --include_path=$(SUPPORTPACKAGE_DIR)/include/am335x \
