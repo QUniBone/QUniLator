@@ -1,27 +1,40 @@
-/* webstorage.cpp: /api/images — disk image files of the web interface
+/* webstorage.cpp: /api/images — disk/tape image files of the web interface
 
    Copyright (c) 2026, Hans Huebner
    hans@huebner.org
    MIT license, see webserver.hpp for the full text.
 
-   Disk images live in $QUNILATOR_DIR/images (created on registration):
+   Images live in a hierarchy under $QUNILATOR_DIR/images. Devices reference an
+   image by a path relative to $QUNILATOR_DIR ("images/du/foo.dsk"), which the
+   drive opens through the working directory — portable across boards. The API
+   and the UI speak the images-root-relative "subpath" ("du/foo.dsk").
 
-     GET  /api/images          list: name, size, mtime, attached drives, path
-     POST /api/images          multipart upload into the images directory
-     GET  /api/images/<name>   download
+     GET    /api/images                 tree: folders and image files
+     POST   /api/images                 multipart upload (multiple files + dir)
+     GET    /api/images/<subpath>       download
+     DELETE /api/images/<subpath>       delete a file
+     POST   /api/move                   {from,to} rename/move a file or folder
+     POST   /api/folders                {path} create a folder
+     DELETE /api/folders/<subpath>      remove an empty folder
 
    Attaching an image to a drive is a parameter write on the drive
-   (PUT /api/devices/<drive>/params/image with the listed path).
+   (PUT /api/devices/<drive>/params/image with the subpath).
 */
 
 #include <dirent.h>
+#include <errno.h>
+#include <pwd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <mutex>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -38,37 +51,117 @@
 
 static std::string images_dir;
 
-// image names are plain files in the images directory, nothing else
-static bool valid_image_name(const std::string &name) {
-	if (name.empty() || name[0] == '.')
+// -------------------------------------------------------------------------
+// path model
+
+// A relative path under the images root: one or more non-empty segments, no
+// "." or ".." components, no leading dot on a segment (hidden files), no
+// backslash, and not absolute. This is the single path-traversal guard.
+static bool valid_subpath(const std::string &sub) {
+	if (sub.empty() || sub[0] == '/' || sub.find('\\') != std::string::npos)
 		return false;
-	return name.find('/') == std::string::npos
-			&& name.find('\\') == std::string::npos;
+	size_t start = 0;
+	while (start <= sub.size()) {
+		size_t slash = sub.find('/', start);
+		std::string seg = sub.substr(start, slash == std::string::npos
+				? std::string::npos : slash - start);
+		if (seg.empty() || seg == "." || seg == ".." || seg[0] == '.')
+			return false;
+		if (slash == std::string::npos)
+			break;
+		start = slash + 1;
+	}
+	return true;
+}
+
+// The canonical images-root-relative key for any stored/incoming image value.
+// Accepts the stored form ("images/du/foo"), a legacy "./images/foo", an
+// absolute path inside the images dir, or an already-bare subpath, and returns
+// "du/foo". An unmanaged absolute path (outside the images dir) is returned
+// unchanged so a drive attached to a file elsewhere reports its true path.
+std::string webstorage_image_subpath(const std::string &value) {
+	if (value.empty())
+		return "";
+	std::string v = value;
+	std::string absp = images_dir + "/";
+	if (v.compare(0, absp.size(), absp) == 0)
+		return v.substr(absp.size());
+	if (v.compare(0, 2, "./") == 0)
+		v = v.substr(2);
+	if (v.compare(0, 7, "images/") == 0)
+		return v.substr(7);
+	return v; // already a subpath, or an unmanaged absolute path
 }
 
 const std::string &webstorage_images_dir() {
 	return images_dir;
 }
 
-std::string webstorage_image_path(const std::string &name) {
-	if (name.empty() || name.find('/') != std::string::npos)
-		return name;
-	return images_dir + "/" + name;
+// The value stored in a drive's "image" parameter and a saved config: relative
+// to $QUNILATOR_DIR so it is portable and the drive opens it via the working
+// directory. Empty stays empty; an unmanaged absolute path is left untouched.
+std::string webstorage_image_path(const std::string &value) {
+	std::string sub = webstorage_image_subpath(value);
+	if (sub.empty())
+		return "";
+	if (sub[0] == '/')
+		return sub; // unmanaged absolute path
+	return "images/" + sub;
+}
+
+// Absolute filesystem path for reading/writing the file.
+static std::string image_abs(const std::string &value) {
+	std::string sub = webstorage_image_subpath(value);
+	if (sub.empty())
+		return "";
+	if (sub[0] == '/')
+		return sub;
+	return images_dir + "/" + sub;
 }
 
 std::string webstorage_image_held_by(const std::string &path, const std::string &except) {
-	if (path.empty())
+	std::string key = webstorage_image_subpath(path);
+	if (key.empty())
 		return "";
 	std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
 	for (device_c *dev : device_c::mydevices) {
 		storagedrive_c *drive = dynamic_cast<storagedrive_c *>(dev);
 		if (drive == nullptr || dev->name.value == except || !dev->enabled.value)
 			continue;
-		if (drive->image_filepath.value == path)
+		if (webstorage_image_subpath(drive->image_filepath.value) == key)
 			return dev->name.value;
 	}
 	return "";
 }
+
+// make every directory along a subpath under the images root
+static bool make_dirs(const std::string &sub) {
+	std::string acc = images_dir;
+	size_t start = 0;
+	while (start < sub.size()) {
+		size_t slash = sub.find('/', start);
+		std::string seg = sub.substr(start, slash == std::string::npos
+				? std::string::npos : slash - start);
+		acc += "/" + seg;
+		if (mkdir(acc.c_str(), 0755) != 0 && errno != EEXIST)
+			return false;
+		if (slash == std::string::npos)
+			break;
+		start = slash + 1;
+	}
+	return true;
+}
+
+// give a freshly written file to the qunilator user so the SMB/FTP/SFTP shares
+// can manage it. Best effort: the user may not exist on a dev host.
+static void own_by_qunilator(const std::string &path) {
+	struct passwd *pw = getpwnam("qunilator");
+	if (pw != nullptr)
+		(void) !chown(path.c_str(), pw->pw_uid, pw->pw_gid);
+}
+
+// -------------------------------------------------------------------------
+// JSON helpers
 
 static void send_json(struct mg_connection *conn, int status, const picojson::value &val) {
 	std::string body = val.serialize();
@@ -87,49 +180,113 @@ static void send_error(struct mg_connection *conn, int status, const std::string
 	send_json(conn, status, picojson::value(err));
 }
 
-// drives an image file is attached to. The comparison is on the whole path,
-// so a drive holding a same-named file from another directory is reported as
-// what it is — not attached to the image listed here.
-static picojson::array attached_drives(const std::string &name) {
+static bool read_json_body(struct mg_connection *conn, picojson::value *out) {
+	std::string body;
+	char buf[4096];
+	int n;
+	while ((n = mg_read(conn, buf, sizeof buf)) > 0)
+		body.append(buf, n);
+	std::string err = picojson::parse(*out, body);
+	return err.empty() && out->is<picojson::object>();
+}
+
+// drives an image file is attached to, matched on the whole subpath so a
+// same-named file in another folder is not confused for this one.
+static picojson::array attached_drives(const std::string &sub) {
 	picojson::array result;
-	std::string path = images_dir + "/" + name;
 	std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
 	for (device_c *dev : device_c::mydevices) {
 		storagedrive_c *drive = dynamic_cast<storagedrive_c *>(dev);
 		if (drive == nullptr)
 			continue;
-		if (webstorage_image_path(drive->image_filepath.value) == path)
+		if (webstorage_image_subpath(drive->image_filepath.value) == sub)
 			result.push_back(picojson::value(dev->name.value));
 	}
 	return result;
 }
 
-// GET /api/images
-static void images_list(struct mg_connection *conn) {
-	picojson::array images;
-	DIR *dir = opendir(images_dir.c_str());
-	if (dir != nullptr) {
-		struct dirent *entry;
-		while ((entry = readdir(dir)) != nullptr) {
-			std::string name = entry->d_name;
-			if (!valid_image_name(name))
+// -------------------------------------------------------------------------
+// read-only-while-attached
+
+static std::mutex ro_mutex;
+static std::set<std::string> ro_marked; // subpaths this module forced read-only
+
+void webstorage_refresh_readonly(bool machine_running) {
+	std::set<std::string> want; // images that should be read-only now
+	if (machine_running) {
+		std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
+		for (device_c *dev : device_c::mydevices) {
+			storagedrive_c *drive = dynamic_cast<storagedrive_c *>(dev);
+			if (drive == nullptr || !dev->enabled.value)
 				continue;
-			std::string path = images_dir + "/" + name;
-			struct stat st;
-			if (stat(path.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
-				continue;
+			std::string sub = webstorage_image_subpath(drive->image_filepath.value);
+			if (!sub.empty() && sub[0] != '/')
+				want.insert(sub);
+		}
+	}
+	std::lock_guard<std::mutex> lock(ro_mutex);
+	// clear the write bits on newly-attached images
+	for (const std::string &sub : want) {
+		if (ro_marked.count(sub))
+			continue;
+		struct stat st;
+		std::string abs = images_dir + "/" + sub;
+		if (stat(abs.c_str(), &st) == 0)
+			chmod(abs.c_str(), st.st_mode & ~(mode_t) 0222);
+		ro_marked.insert(sub);
+	}
+	// restore owner-write on images no longer held (detached, or machine halted)
+	for (std::set<std::string>::iterator it = ro_marked.begin(); it != ro_marked.end();) {
+		if (want.count(*it)) {
+			++it;
+			continue;
+		}
+		struct stat st;
+		std::string abs = images_dir + "/" + *it;
+		if (stat(abs.c_str(), &st) == 0)
+			chmod(abs.c_str(), (st.st_mode | S_IWUSR) & 07777);
+		it = ro_marked.erase(it);
+	}
+}
+
+// -------------------------------------------------------------------------
+// listing
+
+// recurse the images tree, collecting folder subpaths and file entries
+static void walk_images(const std::string &reldir, picojson::array &dirs,
+		picojson::array &images, int depth) {
+	if (depth > 16)
+		return; // guard against a pathological tree / symlink loop
+	std::string absdir = reldir.empty() ? images_dir : images_dir + "/" + reldir;
+	DIR *dir = opendir(absdir.c_str());
+	if (dir == nullptr)
+		return;
+	struct dirent *entry;
+	while ((entry = readdir(dir)) != nullptr) {
+		std::string leaf = entry->d_name;
+		if (leaf == "." || leaf == ".." || leaf[0] == '.')
+			continue;
+		std::string sub = reldir.empty() ? leaf : reldir + "/" + leaf;
+		std::string abs = images_dir + "/" + sub;
+		struct stat st;
+		if (lstat(abs.c_str(), &st) != 0)
+			continue;
+		if (S_ISDIR(st.st_mode)) {
+			dirs.push_back(picojson::value(sub));
+			walk_images(sub, dirs, images, depth + 1);
+		} else if (S_ISREG(st.st_mode)) {
 			picojson::object o;
-			o["name"] = picojson::value(name);
-			o["path"] = picojson::value(path);
+			o["name"] = picojson::value(leaf);
+			o["path"] = picojson::value(sub);      // images-root-relative
+			o["dir"] = picojson::value(reldir);    // parent folder ("" = root)
 			o["size"] = picojson::value((double) st.st_size);
+			o["writable"] = picojson::value((st.st_mode & S_IWUSR) != 0);
 			char mtime[32];
-			strftime(mtime, sizeof(mtime), "%Y-%m-%d %H:%M",
-					localtime(&st.st_mtime));
+			strftime(mtime, sizeof mtime, "%Y-%m-%d %H:%M", localtime(&st.st_mtime));
 			o["mtime"] = picojson::value(mtime);
-			o["attached"] = picojson::value(attached_drives(name));
-			// where saved configurations put it, as configuration/drive pairs
+			o["attached"] = picojson::value(attached_drives(sub));
 			picojson::array uses;
-			for (const config_image_use_t &u : webconfigs_image_uses(name)) {
+			for (const config_image_use_t &u : webconfigs_image_uses(sub)) {
 				picojson::object e;
 				e["config"] = picojson::value(u.config);
 				e["device"] = picojson::value(u.device);
@@ -138,15 +295,26 @@ static void images_list(struct mg_connection *conn) {
 			o["used"] = picojson::value(uses);
 			images.push_back(picojson::value(o));
 		}
-		closedir(dir);
 	}
-	send_json(conn, 200, picojson::value(images));
+	closedir(dir);
 }
 
-// multipart upload state
+// GET /api/images -> { "dirs": [...subpaths], "images": [...entries] }
+static void images_list(struct mg_connection *conn) {
+	picojson::array dirs, images;
+	walk_images("", dirs, images, 0);
+	picojson::object out;
+	out["dirs"] = picojson::value(dirs);
+	out["images"] = picojson::value(images);
+	send_json(conn, 200, picojson::value(out));
+}
+
+// -------------------------------------------------------------------------
+// upload (multiple files into a target folder)
+
 struct upload_state {
-	std::string name; // file being received
-	bool stored;
+	std::string dir;            // target folder subpath ("" = root), from ?dir=
+	std::vector<std::string> names; // stored file subpaths
 	bool bad_name;
 };
 
@@ -154,31 +322,54 @@ static int upload_field_found(const char *key, const char *filename,
 		char *path, size_t pathlen, void *user_data) {
 	(void) key;
 	upload_state *state = (upload_state *) user_data;
-	if (filename == nullptr || !valid_image_name(filename)) {
+	if (filename == nullptr)
+		return MG_FORM_FIELD_STORAGE_SKIP; // ignore non-file fields
+	if (!valid_subpath(filename)) {
 		state->bad_name = true;
-		return MG_FORM_FIELD_HANDLE_ABORT;
+		return MG_FORM_FIELD_STORAGE_ABORT;
 	}
-	state->name = filename;
-	snprintf(path, pathlen, "%s/%s", images_dir.c_str(), filename);
+	std::string sub = state->dir.empty() ? std::string(filename)
+			: state->dir + "/" + filename;
+	state->names.push_back(sub);
+	snprintf(path, pathlen, "%s/%s", images_dir.c_str(), sub.c_str());
 	return MG_FORM_FIELD_STORAGE_STORE;
 }
 
 static int upload_field_get(const char *, const char *, size_t, void *) {
-	return MG_FORM_FIELD_HANDLE_NEXT; // no inline fields expected
-}
-
-static int upload_field_stored(const char *path, long long file_size, void *user_data) {
-	(void) path;
-	(void) file_size;
-	((upload_state *) user_data)->stored = true;
 	return MG_FORM_FIELD_HANDLE_NEXT;
 }
 
-// POST /api/images — multipart upload
+static int upload_field_stored(const char *path, long long file_size, void *user_data) {
+	(void) file_size;
+	(void) user_data;
+	own_by_qunilator(path);
+	return MG_FORM_FIELD_HANDLE_NEXT;
+}
+
+// POST /api/images?dir=<folder> — multipart upload of one or more file fields
+// into the target folder (query parameter, so its value is known before the
+// body is parsed, independent of field order). Empty/absent dir = root.
 static void images_upload(struct mg_connection *conn) {
 	upload_state state;
-	state.stored = false;
 	state.bad_name = false;
+	const struct mg_request_info *ri = mg_get_request_info(conn);
+	if (ri->query_string != nullptr) {
+		char buf[512];
+		int n = mg_get_var(ri->query_string, strlen(ri->query_string),
+				"dir", buf, sizeof buf);
+		if (n > 0)
+			state.dir.assign(buf, n);
+	}
+	while (!state.dir.empty() && state.dir.back() == '/')
+		state.dir.pop_back();
+	if (!state.dir.empty() && !valid_subpath(state.dir)) {
+		send_error(conn, 400, "target folder is not a valid path");
+		return;
+	}
+	if (!state.dir.empty() && !make_dirs(state.dir)) {
+		send_error(conn, 500, "cannot create the target folder");
+		return;
+	}
 	struct mg_form_data_handler handler;
 	handler.field_found = upload_field_found;
 	handler.field_get = upload_field_get;
@@ -186,21 +377,159 @@ static void images_upload(struct mg_connection *conn) {
 	handler.user_data = &state;
 	mg_handle_form_request(conn, &handler);
 	if (state.bad_name) {
-		send_error(conn, 400, "image name must be a plain file name");
+		send_error(conn, 400, "a file name is not a valid path segment");
 		return;
 	}
-	if (!state.stored) {
+	if (state.names.empty()) {
 		send_error(conn, 400, "no file in upload");
 		return;
 	}
-	WEB_INFO("image %s uploaded", state.name.c_str());
+	picojson::array stored;
+	for (const std::string &n : state.names) {
+		WEB_INFO("image %s uploaded", n.c_str());
+		stored.push_back(picojson::value(n));
+	}
 	picojson::object res;
 	res["ok"] = picojson::value(true);
-	res["name"] = picojson::value(state.name);
+	res["names"] = picojson::value(stored);
 	send_json(conn, 200, picojson::value(res));
 }
 
-// /api/images and /api/images/<name>
+// -------------------------------------------------------------------------
+// per-file GET/DELETE and move
+
+static void image_delete(struct mg_connection *conn, const std::string &sub) {
+	picojson::array attached = attached_drives(sub);
+	if (!attached.empty()) {
+		send_error(conn, 409, "image is attached to " + attached[0].get<std::string>());
+		return;
+	}
+	std::string config = webconfigs_image_referenced(sub);
+	if (!config.empty()) {
+		send_error(conn, 409, "image is referenced by configuration \"" + config + "\"");
+		return;
+	}
+	if (unlink(image_abs(sub).c_str()) != 0) {
+		send_error(conn, 500, "cannot delete image \"" + sub + "\"");
+		return;
+	}
+	WEB_INFO("image %s deleted", sub.c_str());
+	picojson::object res;
+	res["ok"] = picojson::value(true);
+	send_json(conn, 200, picojson::value(res));
+}
+
+// POST /api/move — {from, to} rename/move a file or folder within the tree
+static void image_move(struct mg_connection *conn) {
+	picojson::value req;
+	if (!read_json_body(conn, &req)
+			|| !req.get("from").is<std::string>() || !req.get("to").is<std::string>()) {
+		send_error(conn, 400, "body must be {\"from\":..,\"to\":..}");
+		return;
+	}
+	std::string from = webstorage_image_subpath(req.get("from").get<std::string>());
+	std::string to = webstorage_image_subpath(req.get("to").get<std::string>());
+	if (!valid_subpath(from) || !valid_subpath(to)) {
+		send_error(conn, 400, "from/to must be valid image paths");
+		return;
+	}
+	std::string from_abs = images_dir + "/" + from, to_abs = images_dir + "/" + to;
+	struct stat st;
+	if (lstat(from_abs.c_str(), &st) != 0) {
+		send_error(conn, 404, "\"" + from + "\" does not exist");
+		return;
+	}
+	if (lstat(to_abs.c_str(), &st) == 0) {
+		send_error(conn, 409, "\"" + to + "\" already exists");
+		return;
+	}
+	// moving a file that a drive or a config points at would break the link;
+	// require it be detached first (same rule as delete)
+	if (!attached_drives(from).empty()) {
+		send_error(conn, 409, "image is attached to a drive");
+		return;
+	}
+	if (!webconfigs_image_referenced(from).empty()) {
+		send_error(conn, 409, "image is referenced by a saved configuration");
+		return;
+	}
+	size_t slash = to.rfind('/');
+	if (slash != std::string::npos && !make_dirs(to.substr(0, slash))) {
+		send_error(conn, 500, "cannot create the target folder");
+		return;
+	}
+	if (rename(from_abs.c_str(), to_abs.c_str()) != 0) {
+		send_error(conn, 500, "cannot move \"" + from + "\"");
+		return;
+	}
+	WEB_INFO("image %s moved to %s", from.c_str(), to.c_str());
+	picojson::object res;
+	res["ok"] = picojson::value(true);
+	send_json(conn, 200, picojson::value(res));
+}
+
+// -------------------------------------------------------------------------
+// content introspection: run the Python decoders on one image, read-only
+
+// Where the packaging installs the dec-disketten decoders + introspect.py.
+static const char *INTROSPECT = "/usr/share/qunilator/decoders/introspect.py";
+
+// Run introspect.py on an image and return its JSON. Executed with fork/exec,
+// never a shell, so a file name carrying shell metacharacters is passed as one
+// argument and cannot inject.
+static std::string run_introspect(const std::string &abspath) {
+	int fds[2];
+	if (pipe(fds) != 0)
+		return "";
+	pid_t pid = fork();
+	if (pid < 0) {
+		close(fds[0]);
+		close(fds[1]);
+		return "";
+	}
+	if (pid == 0) {
+		dup2(fds[1], STDOUT_FILENO);
+		close(fds[0]);
+		close(fds[1]);
+		execlp("python3", "python3", INTROSPECT, abspath.c_str(), (char *) nullptr);
+		_exit(127);
+	}
+	close(fds[1]);
+	std::string out;
+	char buf[4096];
+	ssize_t n;
+	while ((n = read(fds[0], buf, sizeof buf)) > 0)
+		out.append(buf, (size_t) n);
+	close(fds[0]);
+	int status;
+	waitpid(pid, &status, 0);
+	return out;
+}
+
+// GET /api/images/<subpath>/contents
+static void image_contents(struct mg_connection *conn, const std::string &sub) {
+	std::string path = image_abs(sub);
+	struct stat st;
+	if (stat(path.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
+		send_error(conn, 404, "unknown image \"" + sub + "\"");
+		return;
+	}
+	std::string body = run_introspect(path);
+	if (body.empty()) {
+		send_error(conn, 500, "could not read the image contents");
+		return;
+	}
+	// introspect.py already emits JSON; pass it through
+	mg_printf(conn,
+			"HTTP/1.1 200 OK\r\n"
+			"Content-Type: application/json\r\n"
+			"Cache-Control: no-store\r\n"
+			"Content-Length: %u\r\n\r\n",
+			(unsigned) body.size());
+	mg_write(conn, body.c_str(), body.size());
+}
+
+// /api/images and /api/images/<subpath>
 static int api_images_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	const struct mg_request_info *ri = mg_get_request_info(conn);
 	std::string uri = ri->local_uri ? ri->local_uri : "";
@@ -218,50 +547,116 @@ static int api_images_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		return 200;
 	}
 
-	// /api/images/<name>
-	std::string name = rest.substr(1);
-	if (!valid_image_name(name)) {
+	std::string sub = rest.substr(1); // after the leading slash
+
+	// GET /api/images/<subpath>/contents — list the files inside an image
+	static const std::string CONT = "/contents";
+	if (sub.size() > CONT.size()
+			&& sub.compare(sub.size() - CONT.size(), CONT.size(), CONT) == 0) {
+		std::string base = sub.substr(0, sub.size() - CONT.size());
+		if (!valid_subpath(base)) {
+			send_error(conn, 404, "unknown image");
+			return 404;
+		}
+		if (strcmp(ri->request_method, "GET") != 0) {
+			send_error(conn, 405, "GET required");
+			return 405;
+		}
+		image_contents(conn, base);
+		return 200;
+	}
+
+	if (!valid_subpath(sub)) {
 		send_error(conn, 404, "unknown image");
 		return 404;
 	}
-	std::string path = images_dir + "/" + name;
+	std::string path = image_abs(sub);
 	struct stat st;
 	if (stat(path.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
-		send_error(conn, 404, "unknown image \"" + name + "\"");
+		send_error(conn, 404, "unknown image \"" + sub + "\"");
 		return 404;
 	}
-
 	if (strcmp(ri->request_method, "GET") == 0) {
 		mg_send_mime_file(conn, path.c_str(), "application/octet-stream");
 		return 200;
 	}
 	if (strcmp(ri->request_method, "DELETE") == 0) {
-		// an image in use stays: attached to a drive or part of a
-		// saved configuration
-		picojson::array attached = attached_drives(name);
-		if (!attached.empty()) {
-			send_error(conn, 409, "image is attached to "
-					+ attached[0].get<std::string>());
-			return 409;
+		image_delete(conn, sub);
+		return 200;
+	}
+	send_error(conn, 405, "GET or DELETE required");
+	return 405;
+}
+
+// POST /api/move
+static int api_move_handler(struct mg_connection *conn, void *) {
+	const struct mg_request_info *ri = mg_get_request_info(conn);
+	if (strcmp(ri->request_method, "POST") != 0) {
+		send_error(conn, 405, "POST required");
+		return 405;
+	}
+	image_move(conn);
+	return 200;
+}
+
+// POST /api/folders {path}  and  DELETE /api/folders/<subpath>
+static int api_folders_handler(struct mg_connection *conn, void *) {
+	const struct mg_request_info *ri = mg_get_request_info(conn);
+	std::string uri = ri->local_uri ? ri->local_uri : "";
+	std::string rest = uri.substr(strlen("/api/folders"));
+
+	if (rest.empty() || rest == "/") {
+		if (strcmp(ri->request_method, "POST") != 0) {
+			send_error(conn, 405, "POST required");
+			return 405;
 		}
-		std::string config = webconfigs_image_referenced(name);
-		if (!config.empty()) {
-			send_error(conn, 409,
-					"image is referenced by configuration \"" + config + "\"");
-			return 409;
+		picojson::value req;
+		if (!read_json_body(conn, &req) || !req.get("path").is<std::string>()) {
+			send_error(conn, 400, "body must be {\"path\":..}");
+			return 400;
 		}
-		if (unlink(path.c_str()) != 0) {
-			send_error(conn, 500, "cannot delete image \"" + name + "\"");
+		std::string sub = webstorage_image_subpath(req.get("path").get<std::string>());
+		if (!valid_subpath(sub)) {
+			send_error(conn, 400, "\"" + sub + "\" is not a valid folder path");
+			return 400;
+		}
+		if (!make_dirs(sub)) {
+			send_error(conn, 500, "cannot create folder \"" + sub + "\"");
 			return 500;
 		}
-		WEB_INFO("image %s deleted", name.c_str());
+		own_by_qunilator(images_dir + "/" + sub);
+		WEB_INFO("folder %s created", sub.c_str());
 		picojson::object res;
 		res["ok"] = picojson::value(true);
 		send_json(conn, 200, picojson::value(res));
 		return 200;
 	}
-	send_error(conn, 405, "GET or DELETE required");
-	return 405;
+
+	// DELETE /api/folders/<subpath>
+	std::string sub = rest.substr(1);
+	if (!valid_subpath(sub)) {
+		send_error(conn, 404, "unknown folder");
+		return 404;
+	}
+	if (strcmp(ri->request_method, "DELETE") != 0) {
+		send_error(conn, 405, "DELETE required");
+		return 405;
+	}
+	std::string abs = images_dir + "/" + sub;
+	struct stat st;
+	if (lstat(abs.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) {
+		send_error(conn, 404, "unknown folder \"" + sub + "\"");
+		return 404;
+	}
+	if (rmdir(abs.c_str()) != 0) {
+		send_error(conn, 409, "folder \"" + sub + "\" is not empty");
+		return 409;
+	}
+	WEB_INFO("folder %s removed", sub.c_str());
+	picojson::object res;
+	res["ok"] = picojson::value(true);
+	send_json(conn, 200, picojson::value(res));
+	return 200;
 }
 
 void webstorage_register(struct mg_context *ctx) {
@@ -271,4 +666,6 @@ void webstorage_register(struct mg_context *ctx) {
 	images_dir = std::string(base ? base : ".") + "/images";
 	mkdir(images_dir.c_str(), 0755); // may already exist
 	mg_set_request_handler(ctx, "/api/images", api_images_handler, nullptr);
+	mg_set_request_handler(ctx, "/api/move", api_move_handler, nullptr);
+	mg_set_request_handler(ctx, "/api/folders", api_folders_handler, nullptr);
 }

@@ -106,6 +106,13 @@ no modelled spin-up (RK05, RX, MSCP/RA81) report `ready` as soon as a medium is
 present; the RL01/RL02 pass through `loaded` while the pack spins up and reach
 `ready` at lock-on. Non-disk devices omit the field.
 
+The DZV11 mux exposes one set of per-line signal lamps in `statusparams`, named
+`<sig><line>lamp` for line `0`–`3`: `rx<n>lamp` and `tx<n>lamp` pulse with
+receive/transmit traffic, `dtr<n>lamp` follows the DTR bit the guest drives, and
+`cd<n>lamp` follows carrier (a connected TCP client on that line). The DZV11
+carries no RTS/CTS/DSR and rings no RI, so those signals have no lamp. The
+dashboard renders the four lines as a modem-signal LED panel.
+
 A device that plugs into the bus (a `qunibusdevice`) also carries
 `address_options` and `vector_options` — the standard `base_addr` and
 `intr_vector` values for its type (raw numbers, ascending), gathered from the
@@ -204,30 +211,75 @@ Answers `{"ok": true, "address": …, "count": …}`.
 
 ## Disk images
 
-Image files live in `$QUNILATOR_DIR/images/`.
+Image files live in a folder hierarchy under `$QUNILATOR_DIR/images/`. Folders
+are seeded per media type by DEC device mnemonic — `dl/` (RL), `du/` (MSCP),
+`rx/` (RX floppy), `mu/` (TMSCP tape), `dk/` (RK05) — and the operator may nest
+their own folders freely below.
+
+Everything the API takes or returns for a specific image is its **subpath** — a
+path relative to the images root, e.g. `du/2.11BSD.dsk`. A drive stores its
+image as `images/<subpath>` (relative to `$QUNILATOR_DIR`), which it opens
+through the working directory; the `image` parameter accepts a subpath and the
+service prepends `images/`. A subpath may not contain `..`, a leading `/`, or a
+dot-leading segment.
 
 ### `GET /api/images`
 
+The whole tree — folders and files:
+
 ```json
-[{"name": "rt11v53.rl02", "path": "/home/.../images/rt11v53.rl02",
-  "size": 10485760, "mtime": "2026-07-16 20:51", "attached": ["rl0"]}]
+{"dirs": ["dl", "du", "dl/systems"],
+ "images": [
+   {"name": "2.11BSD.dsk", "path": "du/2.11BSD.dsk", "dir": "du",
+    "size": 1000090112, "writable": true, "mtime": "2026-07-16 20:51",
+    "attached": ["uda0"], "used": [{"config": "211bsd", "device": "uda0"}]}]}
 ```
 
-`attached` lists the drives whose `image` parameter points at the file.
+`path` is the subpath; `dir` its parent folder (`""` = root). `attached` lists
+drives whose `image` points at the file; `used` the configuration/device pairs
+that reference it. `writable` is false while the file is held read-only (an
+image attached to a running machine).
 
-### `POST /api/images`
+### `POST /api/images?dir=<folder>`
 
-Multipart upload (`multipart/form-data`, one file field). The client-side
-file name becomes the image name; names must be plain file names.
+Multipart upload (`multipart/form-data`) of one or more `file` fields. The
+target folder is the `dir` query parameter (a subpath; absent/empty = root),
+known before the body is parsed so it is independent of field order. Each file's
+name is validated as a single path segment and written under `dir`, which is
+created if missing. Answers `{"ok": true, "names": ["du/foo.dsk", …]}`.
 
-### `GET /api/images/<name>`
+### `GET /api/images/<subpath>` · `DELETE /api/images/<subpath>`
 
-Downloads the image.
+Download, or remove the file. Delete is refused with `409` while the image is
+attached to a drive or referenced by a saved configuration. The subpath may
+contain slashes (`/api/images/du/2.11BSD.dsk`).
 
-### `DELETE /api/images/<name>`
+### `POST /api/move`
 
-Removes the image file. Refused with `409` while the image is attached to
-a drive or referenced by a saved configuration.
+Body `{"from": <subpath>, "to": <subpath>}` — rename or move a file or folder
+within the tree. Refused `409` if the source is attached/referenced or the
+target already exists.
+
+### `POST /api/folders` · `DELETE /api/folders/<subpath>`
+
+Create a folder (body `{"path": <subpath>}`, parents made as needed), or remove
+an **empty** folder (`409` if not empty).
+
+### `GET /api/images/<subpath>/contents`
+
+Read-only listing of the files inside a disk/tape image, decoded by the Python
+decoders under `/usr/share/qunilator/decoders`. Returns the detected filesystem,
+the volume/home-block metadata, and the file list:
+
+```json
+{"file": "rt11-rl0.img", "filesystem": "RT-11", "home": {…},
+ "files": [{"name": "SWAP.SYS", "bytes": 12800, "blocks": 25, "date": "…"}, …]}
+```
+
+Recognized filesystems are **RT-11** and **Files-11 ODS-2**; anything else
+(Files-11 ODS-1, XXDP, a Unix filesystem, …) reports `"filesystem": "foreign"`
+or `"unknown"` with no file list rather than an error. A 256,256-byte RX01
+floppy image is de-interleaved first; other images are read as linear blocks.
 
 ## Configurations
 

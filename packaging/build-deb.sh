@@ -162,6 +162,10 @@ install -m 644 packaging/debian/network.conf $STAGE/etc/qunilator/network.conf
 # exists. Shipped as a template and copied into place by postinst only when
 # absent, so an operator's own default.json is never overwritten.
 install -m 644 packaging/debian/default-config.json $STAGE/usr/share/qunilator/default-config.json
+# the image-introspection decoders: the web interface shells out to introspect.py
+# to list the files inside an RT-11 / Files-11 image
+install -d -m 755 $STAGE/usr/share/qunilator/decoders
+install -m 644 packaging/decoders/*.py $STAGE/usr/share/qunilator/decoders/
 # DNS-SD advertisement for the web interface. A template: qunilator-setup substitutes
 # the board's name and identifier and installs it under /etc/avahi/services, so
 # the file under /etc is generated rather than a conffile every board would show
@@ -215,7 +219,7 @@ INSTALLED_KB=$(du -sk $STAGE | cut -f1)
     # not here. Spelled out rather than taken from packaging/debian/control,
     # whose ${misc:Depends} is a debhelper substitution this build does not do,
     # and which has no ${shlibs:Depends} to compute the libraries either.
-    echo "Depends: libc6, libstdc++6, libgcc-s1, libx11-6, iproute2, device-tree-compiler, cpp, make"
+    echo "Depends: libc6, libstdc++6, libgcc-s1, libx11-6, iproute2, device-tree-compiler, cpp, make, python3"
     # the two boards ship the same cape overlay and firmware files, and a BBB
     # carries one cape, so they are mutually exclusive on a machine
     echo "Conflicts: $OTHER"
@@ -280,6 +284,19 @@ if [ "$1" = configure ]; then
             systemctl disable "$old.service" >/dev/null 2>&1 || true
         done
     fi
+    # A dedicated system user owns the image tree so the SMB/FTP/SFTP shares can
+    # serve it under one login; the emulator itself keeps running as root for the
+    # PRU. The web interface sets this user's password when the operator sets the
+    # web password. Creation is idempotent.
+    if ! getent group qunilator >/dev/null; then
+        addgroup --system qunilator || true
+    fi
+    if ! getent passwd qunilator >/dev/null; then
+        adduser --system --ingroup qunilator --home /var/lib/qunilator \
+            --no-create-home --shell /usr/sbin/nologin qunilator || true
+    fi
+    install -d -m 755 /var/lib/qunilator/images
+    chown -R qunilator:qunilator /var/lib/qunilator/images || true
     # Seed the bundled empty configuration as the startup fallback, without
     # ever clobbering an operator's own default.json.
     if [ ! -e /var/lib/qunilator/configs/default.json ]; then

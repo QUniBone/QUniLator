@@ -409,6 +409,11 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 			// keep the terminal user informed, like an echoed command
 			WEB_INFO("%s.%s = %s", dev->name.value.c_str(),
 					param->name.c_str(), value.c_str());
+			// attaching/detaching an image changes which files the shares must
+			// hold read-only while the machine runs
+			if (param->name == "image")
+				webstorage_refresh_readonly(webevents_is_powered()
+						&& !webevents_is_halted());
 		} catch (bad_parameter &e) {
 			WEB_INFO("%s.%s = %s rejected: %s", dev->name.value.c_str(),
 					param->name.c_str(), value.c_str(), e.what());

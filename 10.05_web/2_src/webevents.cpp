@@ -45,6 +45,7 @@
 
 #include "webevents.hpp"
 #include "webconfigs.hpp"
+#include "webstorage.hpp"
 
 // clients, guarded by clients_mutex; writes only from the broadcast thread
 static std::mutex clients_mutex;
@@ -307,12 +308,18 @@ static void on_log_message(unsigned msglevel, const char *label, const char *tex
 }
 
 void webevents_note_halt(bool halted) {
-	std::lock_guard<std::mutex> lock(state_mutex);
-	last_halt = halted;
-	picojson::object event;
-	event["t"] = picojson::value("state");
-	event["halt"] = picojson::value(halted);
-	enqueue(event);
+	bool running;
+	{
+		std::lock_guard<std::mutex> lock(state_mutex);
+		last_halt = halted;
+		running = cur_powered && !last_halt;
+		picojson::object event;
+		event["t"] = picojson::value("state");
+		event["halt"] = picojson::value(halted);
+		enqueue(event);
+	}
+	// an image attached to a running machine is read-only over the shares
+	webstorage_refresh_readonly(running);
 }
 
 bool webevents_is_halted(void) {
@@ -321,12 +328,17 @@ bool webevents_is_halted(void) {
 }
 
 void webevents_note_powered(bool powered) {
-	std::lock_guard<std::mutex> lock(state_mutex);
-	cur_powered = powered;
-	picojson::object event;
-	event["t"] = picojson::value("state");
-	event["powered"] = picojson::value(powered);
-	enqueue(event);
+	bool running;
+	{
+		std::lock_guard<std::mutex> lock(state_mutex);
+		cur_powered = powered;
+		running = cur_powered && !last_halt;
+		picojson::object event;
+		event["t"] = picojson::value("state");
+		event["powered"] = picojson::value(powered);
+		enqueue(event);
+	}
+	webstorage_refresh_readonly(running);
 }
 
 bool webevents_is_powered(void) {

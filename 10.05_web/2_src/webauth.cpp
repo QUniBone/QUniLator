@@ -26,7 +26,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pwd.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <mutex>
 #include <string>
@@ -34,8 +36,32 @@
 #include "civetweb.h"
 #include "picojson.h"
 
+#include "logger.hpp"
+#include "weblog.hpp"
 #include "webauth.hpp"
 #include "websettings.hpp"
+
+// Propagate a freshly set web password to the qunilator OS user so the SMB,
+// FTP and SFTP shares accept the same credential. Best effort, root-only:
+// chpasswd sets the PAM/Unix password (FTP + SFTP), smbpasswd the separate
+// Samba database. The password is fed on stdin, never on a command line, and
+// never logged. A missing user or tool (a dev host) is ignored.
+static void feed_password(const char *cmd, const std::string &lines) {
+	FILE *p = popen(cmd, "w");
+	if (p == nullptr)
+		return;
+	fwrite(lines.data(), 1, lines.size(), p);
+	pclose(p);
+}
+
+static void sync_share_password(const std::string &password) {
+	if (getuid() != 0 || getpwnam("qunilator") == nullptr)
+		return;
+	feed_password("chpasswd 2>/dev/null", "qunilator:" + password + "\n");
+	feed_password("smbpasswd -s -a qunilator 2>/dev/null",
+			password + "\n" + password + "\n");
+	WEB_INFO("share password for user qunilator updated from the web password");
+}
 
 /*** SHA-256 (FIPS 180-4) ***/
 
@@ -350,6 +376,7 @@ bool webauth_set_password(const std::string &password, std::string *error) {
 		cache_store(password);
 	}
 	websettings_save();
+	sync_share_password(password);
 	return true;
 }
 

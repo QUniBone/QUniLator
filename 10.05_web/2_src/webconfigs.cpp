@@ -174,8 +174,23 @@ static bool is_default(parameter_c *p) {
 	return it != parameter_defaults.end() && it->second.value == *p->render();
 }
 
+// The bus-placement parameters an operator sets in a configuration: where the
+// device sits in the I/O page, its interrupt vector and level, and its bus slot.
+// They read back read-only on an installed device because a placement change
+// takes hold only when the device is unplugged and re-registered - which apply
+// does - so their live readonly flag means "not while running", not "never". A
+// stored configuration may carry them, so they count as settable here.
+static bool is_bus_placement(const std::string &name) {
+	return strcasecmp(name.c_str(), "base_addr") == 0
+			|| strcasecmp(name.c_str(), "intr_vector") == 0
+			|| strcasecmp(name.c_str(), "intr_level") == 0
+			|| strcasecmp(name.c_str(), "slot") == 0;
+}
+
 // an operator may set this, whatever a transient lock says right now
 static bool is_settable(parameter_c *p) {
+	if (is_bus_placement(p->name))
+		return true;
 	std::map<parameter_c *, param_default_t>::iterator it = parameter_defaults.find(p);
 	return it == parameter_defaults.end() ? !p->readonly : it->second.writable;
 }
@@ -617,11 +632,6 @@ static std::string device_image(const picojson::value &d) {
 	return it->second.get<std::string>();
 }
 
-static std::string basename_of(const std::string &path) {
-	size_t base = path.rfind('/');
-	return base == std::string::npos ? path : path.substr(base + 1);
-}
-
 // every drive, in every saved configuration, that names this image file
 std::vector<config_image_use_t> webconfigs_image_uses(const std::string &image_name) {
 	std::vector<config_image_use_t> uses;
@@ -641,7 +651,9 @@ std::vector<config_image_use_t> webconfigs_image_uses(const std::string &image_n
 			continue;
 		for (picojson::value &d : content.get("devices").get<picojson::array>()) {
 			std::string path = device_image(d);
-			if (path.empty() || basename_of(path) != image_name)
+			// image_name is the canonical images-root-relative subpath; compare
+			// on that so two same-named files in different folders don't collide
+			if (path.empty() || webstorage_image_subpath(path) != image_name)
 				continue;
 			config_image_use_t use;
 			use.config = name;
@@ -852,12 +864,12 @@ static void config_set_image(struct mg_connection *conn, const std::string &name
 		for (picojson::value &d : devices) {
 			if (&d == target)
 				continue;
-			if (device_image(d) != path)
+			if (webstorage_image_subpath(device_image(d)) != webstorage_image_subpath(path))
 				continue;
 			std::string other = d.get("name").is<std::string>()
 					? d.get("name").get<std::string>() : "another drive";
-			send_error(conn, 409, "\"" + basename_of(path) + "\" is already the image of "
-					+ other + " in this configuration");
+			send_error(conn, 409, "\"" + webstorage_image_subpath(path)
+					+ "\" is already the image of " + other + " in this configuration");
 			return;
 		}
 
