@@ -331,11 +331,16 @@ void RX0102uCPU_c::step_execute(enum step_e step)
 
 // OR standard flags into RXES register
 // "init done" and "drive ready" not set here, depends on function
-uint16_t  RX0102uCPU_c::complete_rxes(void) 
+uint16_t  RX0102uCPU_c::complete_rxes(void)
 {
 
     if (deleted_data_mark)
         rxes |= BIT(6) ;
+
+    // RXES<7> Drive Ready reflects the selected drive on every command
+    // completion, not only after Read Status.
+    if (selected_drive()->check_ready())
+        rxes |= BIT(7) ;
 
     if (is_RX02) {
         if (!power_switch.value)
