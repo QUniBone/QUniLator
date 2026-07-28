@@ -28,10 +28,12 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "pru.hpp"
 #include "pru_backend.hpp"
 #include "logger.hpp"
+#include "timeout.hpp"
 #include "ddrmem.h"
 #include "mailbox.h"
 
@@ -104,31 +106,46 @@ void mailbox_test1()
 /* start cmd to PRU via mailbox. Wait until ready
  * mailbox union members must have been filled.
  */
-//uint32_t xxx;
 
 pthread_mutex_t arm2pru_mutex = PTHREAD_MUTEX_INITIALIZER ;
 
-bool  mailbox_execute(uint8_t request) 
+// The PRU main loop ACKs every request within a few of its iterations
+// (microseconds). If the PRU firmware is stopped, crashed or restarted, an
+// unbounded poll spins forever and the calling thread (e.g. the CPU worker,
+// which executes a request per emulated instruction) hangs beyond recovery.
+// Bound the spin, so a dead PRU produces a message instead of a silent freeze.
+#define ARM2PRU_TIMEOUT_MS	100
+
+bool  mailbox_execute(uint8_t request)
 {
 // write to arm2pru_req must be last memory operation
 	pthread_mutex_lock(&arm2pru_mutex) ;
 
 	__sync_synchronize();
-	while (mailbox->arm2pru_req != ARM2PRU_NONE)
-		; // wait to complete
+	uint64_t starttime_ns = timeout_c::abstime_ns() ;
+	while (mailbox->arm2pru_req != ARM2PRU_NONE) {
+		// wait for previous request to complete
+		if (timeout_c::abstime_ns() - starttime_ns > ARM2PRU_TIMEOUT_MS * 1000000ull) {
+			printf("ERROR: mailbox_execute(%u): PRU busy with request %u for %u ms - PRU stopped or hung?\n",
+					(unsigned) request, (unsigned) mailbox->arm2pru_req, ARM2PRU_TIMEOUT_MS);
+			pthread_mutex_unlock(&arm2pru_mutex) ;
+			return false ;
+		}
+	}
 
 	mailbox->arm2pru_req = request; // go!
 
-	// wait until ACKed	
-	while (mailbox->arm2pru_req == request);
-	/*
-	do {
-		xxx = mailbox->arm2pru_req;
-	} while (xxx != ARM2PRU_NONE);
-
-	while (mailbox->arm2pru_req != ARM2PRU_NONE)
-		; // wait until processed
-	*/
+	// wait until ACKed
+	starttime_ns = timeout_c::abstime_ns() ;
+	while (mailbox->arm2pru_req == request) {
+		if (timeout_c::abstime_ns() - starttime_ns > ARM2PRU_TIMEOUT_MS * 1000000ull) {
+			printf("ERROR: mailbox_execute(%u): PRU did not ACK within %u ms - PRU stopped or hung?\n",
+					(unsigned) request, ARM2PRU_TIMEOUT_MS);
+			mailbox->arm2pru_req = ARM2PRU_NONE; // back to idle for a later restarted PRU
+			pthread_mutex_unlock(&arm2pru_mutex) ;
+			return false ;
+		}
+	}
 	// result false = error
 	bool result = (mailbox->arm2pru_req == ARM2PRU_NONE) ;
 	pthread_mutex_unlock(&arm2pru_mutex) ;
