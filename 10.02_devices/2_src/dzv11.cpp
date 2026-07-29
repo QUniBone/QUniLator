@@ -432,6 +432,12 @@ void dzv11_c::eval_tdr_dato(void)
 	tdr_char = ch;
 	tdr_line = line;
 	tdr_pending = true;
+	// Loading the transmit buffer drops Transmitter Ready for this line until the
+	// character has been shifted out (one character time). The worker re-presents
+	// TRDY only after it sends the byte, so a driver that polls TRDY after each
+	// write — 2.11BSD's dz pseudo-DMA output loop — reads it clear and stops
+	// instead of spinning. The maintenance branch above returns before here.
+	csr_trdy = false;
 }
 
 // caller holds state_mutex; pick the next enabled+open line for the scanner
@@ -467,7 +473,10 @@ void dzv11_c::scan_tx_trdy(void)
 		csr_trdy = false;
 		update_csr_and_INTR();
 	}
-	if (!csr_trdy && select_next_tx_line()) {
+	// Hold TRDY down while a wire character is still in flight (the worker has not
+	// sent it yet). Maintenance loopback never leaves tdr_pending set, so its
+	// synchronous re-presentation — which VDZAD3 Test 20 depends on — is unchanged.
+	if (!csr_trdy && !tdr_pending && select_next_tx_line()) {
 		csr_trdy = true;
 		update_csr_and_INTR();
 	}
@@ -655,14 +664,12 @@ void dzv11_c::worker_xmt(void)
 		// the presented line was disabled. The register-write path calls this
 		// too; here it catches a client (dis)connecting between accesses.
 		scan_tx_trdy();
-		if (!csr_trdy) {
-			// scanner off, or no enabled line: wait for a CSR/TCR change
-			pthread_cond_wait(&xmt_cond, &state_mutex);
-			continue;
-		}
 		if (tdr_pending) {
 			// wire (non-maint) transmit; maint loopback is delivered
-			// synchronously in eval_tdr_dato and never sets tdr_pending.
+			// synchronously in eval_tdr_dato and never sets tdr_pending. Send the
+			// latched character here, before the !csr_trdy wait below: loading TDR
+			// dropped TRDY (the character is in flight), so this byte must still go
+			// out and TRDY be re-presented for the next one.
 			uint8_t ch = tdr_char;
 			uint8_t ln = tdr_line;
 			tdr_pending = false;
@@ -674,6 +681,11 @@ void dzv11_c::worker_xmt(void)
 				note_tx_activity(ln);
 			}
 			pthread_mutex_lock(&state_mutex);
+			continue;
+		}
+		if (!csr_trdy) {
+			// scanner off, or no enabled line: wait for a CSR/TCR change
+			pthread_cond_wait(&xmt_cond, &state_mutex);
 			continue;
 		}
 		// TRDY presented, waiting for the CPU to write TDR
