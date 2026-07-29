@@ -369,22 +369,31 @@ That is stage 3's mechanism working: a device model of this project, driven by
 a bootstrap written for real hardware, reaching memory through the adapter's
 map. It is the first point at which the device models are genuinely under test.
 
-The boot does not complete. The furthest it has got is
-`%BOOT-F-Unable to locate BOOT file`, which is VMB having initialised the
-controller and read from the volume and not found what it wanted; the state as
-left is the earlier `%BOOT-F-Failed to initialize device`, after the drive's
-interrupt vector and its size reporting were both changed in one step - two
-variables at once, which is why it is not known which of them moved it back.
-Undoing the vector alone did not restore it.
+The boot does not complete, and what it does instead is reproducible from a
+freshly started service: VMB retries, and its attempts alternate between
+`%BOOT-F-Failed to initialize device` and `%BOOT-F-Unable to locate BOOT file`.
+The second is much the further of the two - the controller initialised, the
+volume was read, and what VMB wanted was not found - and that the two alternate
+says the fault is not a constant wrong answer somewhere but something that
+sometimes works. The map refuses nothing: `dma_failures` stays at zero.
 
-The interrupt is the thing to look at next. `bus_interrupts` stays zero
-throughout, and giving the controller a vector made the boot worse rather than
-better: a controller that asks for an interrupt and never gets one waits, where
-one that does not ask is polled and makes progress. An interrupt that does
-arrive is gated at the adapter anyway, since `uba_eval_int()` passes nothing on
-unless the control register's interrupt field switch and BR interrupt enable
-are set, and `uba_cr` reads zero - VMB never sets them for a device it is only
-booting from.
+What has been checked and is sound: the controller presents STEP1 of the MSCP
+initialisation, `004000` in its status register, and a console examine reads
+exactly that back off the bus. The word writes reach it right-justified, which
+is how `WriteW()` passes them and how simh's own handlers take them.
+
+Its own log shows the initialisation restarting rather than progressing: the
+host writes the initialisation register once, the controller resets and comes
+back to STEP1, and no write of the status register follows. So VMB polls a
+controller that is offering what it should be offering, and does not take it.
+
+The interrupt is worth suspecting. `bus_interrupts` stays zero throughout, and
+giving the controller a vector made the boot worse rather than better: one that
+asks for an interrupt and never gets it waits, where one that does not ask is
+polled and makes progress. An interrupt that did arrive would be gated at the
+adapter anyway, since `uba_eval_int()` passes nothing on unless the control
+register's interrupt field switch and BR interrupt enable are set, and `uba_cr`
+reads zero - VMB never sets them for a device it is only booting from.
 
 ## What stage 2 still needs
 
