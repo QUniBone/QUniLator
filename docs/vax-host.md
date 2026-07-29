@@ -567,11 +567,49 @@ the interrupt. Fixing that ended the delayed grants and took the transfers the
 map registers refused during the handover from three to none, but did not
 change the loop.
 
-So the question is what VMS does with the step-2 interrupt. It is delivered -
-the count rises in step with the loop - and the machine keeps executing at
-IPL 0 rather than stopping. The next thing to look at is the other side of it:
-what the processor does when it takes the interrupt, which the console's memory
-examine can now be pointed at.
+### Reading the same boot against the controller that works
+
+The core carries an MSCP controller of its own, and this VMS image boots from it
+to the date prompt. That is the same host, the same image and the same
+processor driving a different controller, so it says what ours should look like -
+and `core_debug` turns on simh's own tracing for it to be read off.
+
+It gave up the first fault at once. VMS's own initialisation, the one after the
+bootstrap's, writes the same step-1 word to both:
+
+	RQ rq_rd (SA) = 0x0940            the controller says what it can do
+	RQ rq_wr (SA, 0xA4FF)             rings of 16, interrupts, vector 0774
+	RQ rq_rd (SA) = 0x10A4            step 2
+	RQ rq_wr (SA, 0xD0A9)             and the host carries on
+
+Ours answered 0x0800 to that first read: a controller supporting nothing beyond
+a host-settable vector. Extended diagnostics and host buffer mapping are what a
+Unibus MSCP controller declares, and both hosts look for them - CZUDH's step-1
+test wanted them too, and now gets past it and fails at step 4 instead.
+
+### Where it stands: the interrupt is taken and nothing follows it
+
+The loop survives that fix. What is now known about it, by measurement rather
+than inference:
+
+- The processor takes the interrupt and reads the vector. `intr_pending`, the
+  level whose vector the adapter still holds, reads zero at every sample: the
+  vector is consumed as fast as it is offered, which only the processor's
+  acknowledge does.
+- The vector is the one VMS asked for. It requests 0774 in the step-1 word, the
+  adapter is open (`uba_cr` 7C, so IFS and BRIE are both set), `UBA_VEC_MASK` is
+  0x1FC and the vector is 0x1FC exactly, and simh's own controller returns the
+  same value from its acknowledge routine.
+- Nothing follows it. The processor's register accesses are traced now, and
+  between the interrupt and the reset nine seconds later there is not one - no
+  read of SA, which is what the working controller's host does immediately.
+  Then VMS polls SA, finds step 2, and starts the handshake again.
+
+So VMS takes an interrupt it asked for, at the vector it asked for, and does not
+run the driver that asked for it. What the processor executes when it takes it
+is the next thing to see, and neither of the tools built here reaches it: the
+console examines physical memory and the address is in system space, and the
+adapter declares debug flags but has no trace points to switch on.
 
 A caution for anyone reading the counters: `dma_words` and the rest accumulate
 from when the device was installed, not from the last START, so progress is the
