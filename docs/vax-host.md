@@ -1,7 +1,12 @@
-# The VAX host, stage 0
+# The VAX host
 
 Where the VAX UNIBUS host of [`vax-unibus-plan.md`](vax-unibus-plan.md) stands.
-Stage 0 is complete: the simh VAX-11/780 is vendored, it builds on the
+Stages 0 and 1 are complete: the processor runs as a device of the application
+on a backplane-less UniBone, and boots VMS over the web console.
+
+## Stage 0
+
+The harvest: the simh VAX-11/780 is vendored, it builds on the
 workstation and cross-builds for the board, DEC's own processor diagnostics
 pass on it, and it boots VMS both as the stock simulator and with a shim in
 place of simh's command interpreter - which is the form it takes when it moves
@@ -180,13 +185,52 @@ external deadline to meet and no third-party controller to arbitrate with. The
 DW780 register window and the interrupt path of stage 2 are still needed, and
 stage 5 then runs against the emulated devices.
 
-## What stage 1 needs next
+## Stage 1 — the processor as a device
 
-- Wrap the shim as a `unibuscpu_c` subclass beside `cpu_c`, with the batching of
-  `simh_shim_run()` driving `worker()`, and `simh_shim_set()` carrying the
-  device's parameters.
-- Point the shim's elapsed-time source at
-  `the_flexi_timeout_controller`, as `cpu.cpp` does for the KA11.
-- Route the console byte channel to the web console channel.
-- Cross-build the vendored tree for the AM335x and record the instruction rate,
-  which is the baseline every later stage is measured against.
+`cpuvax_c` is the VAX inside the application. It descends from `unibuscpu_c`
+rather than from `cpu_base_c`, which is shaped for the PDP-11 and its sixteen
+bit program counter, console switch register and power-fail trap through vector
+24; a VAX has none of those.
+
+The emulation core lives in `10.02_devices/2_src/cpuvax`, beside the KA11 and
+the KD11-EA, because it is one of them. `makefile_u` compiles it and the
+vendored simh as C with the VAX configuration into their own object directory,
+so this application's C++ and its defines never reach them. The QBUS build
+carries none of it: a VAX has no Q-bus.
+
+The device gives the seam its three things. The console is an `rs232adapter`,
+the type a DL11 line uses, so the web console bridge carries it the same way
+and reaches it at `/ws/console/vax`. The time source is whichever clock the
+emulation is running on. And `worker()` runs the processor in batches, charging
+the emulated clock two microseconds an instruction - what a real 780 spends.
+
+Its parameters are the machine: `memory` in megabytes, `bootimage` and
+`bootdevice` for the volume it boots from, `batch` for how long a pass runs
+before the switches are looked at again. `run_led`, `PC`, `PSL` and
+`cycle_count` are what it is doing. Enabling the device builds the machine and
+leaves it stopped; `start_switch` boots it.
+
+The volume is attached to the controller inside the core, and that is
+scaffolding: it answers at 772150, where the emulated UDA50 answers, so the two
+are alternatives. Stage 3 is where the disk moves onto the bus and this one
+goes. The interrupt path waits for the UNIBUS adapter of stage 2, so nothing on
+the bus can interrupt this processor yet.
+
+Measured on `unibone.huebner.org`: VMS 4.7 boots to `Username:` over
+`/ws/console/vax`, and runs at **2.5 M instructions per second** with the
+system idle at that prompt - about five times a real 11/780. The synthetic
+figure below is lower because its loop reads and writes memory on every pass,
+where an idle VMS mostly does not; both are worth keeping, one for the machine
+and one for the emulator.
+
+## What stage 2 needs next
+
+- The DW780's register window, with VAX access to UNIBUS I/O space going
+  through `unibone_dati()` and `unibone_dato()` onto the bus.
+- `on_interrupt()` widened to carry the bus request level, and BR4-7 mapped to
+  VAX IPL 14-17 with the adapter's vector offset applied.
+- A bus timeout becoming a UBA error and a VAX machine check.
+
+A backplane-less board shortens what follows, because `internal_bus` makes the
+PRU answer its own cycles: the same path carries the register window and the
+DMA of stages 3 and 4 with no external timing deadline to meet.
