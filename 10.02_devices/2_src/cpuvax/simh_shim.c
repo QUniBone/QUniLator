@@ -1064,6 +1064,11 @@ t_stat sim_process_event (void)
 UNIT *uptr;
 t_stat reason;
 
+/* A device's service routine may reconfigure it, and a reconfiguration
+   rebuilds the I/O page dispatch, so the bus's claim on it is checked here -
+   the one place every device's work passes through. */
+simh_shim_bus_reassert ();
+
 shim_update_time ();
 if (sim_interval > 0)
     return SCPE_OK;
@@ -1381,6 +1386,26 @@ return reason;
 simh_shim_status_t simh_shim_set (const char *setting)
 {
 return set_cmd (0, setting);
+}
+
+int simh_shim_device_info (const char *name, unsigned *base_addr, int *enabled)
+{
+char gbuf[CBUFSIZE];
+DEVICE *dptr;
+UNIT *uptr;
+
+shim_get_glyph (name, gbuf, 0, TRUE);
+if ((dptr = find_dev (gbuf)) == NULL) {
+    if ((dptr = find_unit (gbuf, &uptr)) == NULL)
+        return 0;
+    }
+/* The device information block's first member is the address the device
+   answers at, which is what a boot command reads out of it. Its declaration
+   lives in the PDP-11 headers, which will not compile against a VAX's value
+   types, so the one member wanted here is read where it sits. */
+*base_addr = (dptr->ctxt != NULL) ? *(const uint32 *) dptr->ctxt : 0;
+*enabled = (dptr->flags & DEV_DIS) ? 0 : 1;
+return 1;
 }
 
 simh_shim_status_t simh_shim_attach (const char *unit_name, const char *filename)

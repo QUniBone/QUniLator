@@ -123,6 +123,16 @@ void simh_shim_state (simh_shim_state_t *state);
    processor. */
 int simh_shim_bus_interrupt (unsigned vector, unsigned br_level);
 
+/* Where a device the core carries would answer, and whether it is taking part
+   at all. A boot command reads its address out of the same descriptor and tells
+   the bootstrap, so this is what the bootstrap will be looking for. Returns
+   zero when there is no such device. */
+int simh_shim_device_info (const char *name, unsigned *base_addr, int *enabled);
+
+/* Whether the bus, rather than a device the core carries, still answers this
+   UNIBUS address. */
+int simh_shim_bus_owns (unsigned unibus_addr);
+
 /* A device on the bus is moving data to or from memory. The address is the
    eighteen bit one the device drives; what it reaches is the processor's memory
    through the adapter's map registers, which is where an unallocated map entry

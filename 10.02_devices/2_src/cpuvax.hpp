@@ -78,6 +78,11 @@ public:
     parameter_bool_c bus_iopage = parameter_bool_c(this, "bus_iopage", "bio",/*readonly*/
                                   false, "1 = UNIBUS register accesses go on the bus.");
 
+    // Whether the bus gets the I/O page whole, over the addresses the
+    // controller inside the core claims, or only what that controller leaves.
+    parameter_bool_c bus_exclusive = parameter_bool_c(this, "bus_exclusive", "bx",/*readonly*/
+                                     false, "1 = the bus owns the I/O page over the core's own devices.");
+
     // What a real 780's console does with EXAMINE and DEPOSIT, and the only way
     // to reach a device register before an operating system has a driver for
     // it. Writing an address to bus_examine performs a DATI and leaves the
@@ -123,6 +128,10 @@ public:
                                     true, "", "%u", "UNIBUS adapter init in progress.", 8, 10);
     parameter_unsigned64_c iopage_dispatches = parameter_unsigned64_c(this, "iopage_dispatches", "iod",/*readonly*/
                                                true, "", "%u", "I/O page accesses the processor made", 63, 10);
+    parameter_unsigned_c iopage_claimed = parameter_unsigned_c(this, "iopage_claimed", "ioc",/*readonly*/
+                                          true, "", "%u", "I/O page words the bus answers", 16, 10);
+    parameter_bool_c bootdev_on_bus = parameter_bool_c(this, "bootdev_on_bus", "bob",/*readonly*/
+                                      true, "1 = the boot device's address is answered by the bus, now.");
     parameter_unsigned_c uba_cr = parameter_unsigned_c(this, "uba_cr", "ucr",/*readonly*/
                                   true, "", "%08x", "UNIBUS adapter control register.", 32, 16);
     parameter_unsigned64_c cycle_count = parameter_unsigned64_c(this, "cycle_count", "cc",/*readonly*/

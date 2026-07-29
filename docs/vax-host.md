@@ -338,38 +338,53 @@ carries, and that dropped everything the bus had claimed - so a bootstrap found
 nothing where its controller should have been. Every path that resets now goes
 through one place that takes the I/O page back afterwards.
 
+### The claim has to be held, not just made
+
+A device may reconfigure itself while the machine runs - simh's MSCP controller
+ends its reset by running the auto-configuration - and that rebuilds the whole
+I/O page dispatch from the devices the core carries, taking back whatever the
+bus had claimed. Nothing announces it, and the count taken when the page was
+claimed goes on reading 4096 while the boot device's own address has quietly
+gone back to the controller inside.
+
+That is what had VMB failing with no bus cycle at all: it was talking to simh's
+controller the whole time, and with no volume attached to it there was nothing
+to boot from. The claim is now witnessed by one of the slots it took and
+re-asserted whenever that slot changes hands, checked where every device's work
+passes through. `bootdev_on_bus` reports the answer live, because the count
+never could.
+
 ### Where it stands
 
-VMB does not boot from the emulated UDA50 yet, and what has been learnt narrows
-it a long way.
+With the claim held, VMB drives the emulated UDA50 over the bus and the
+controller moves data into VAX memory through the map registers:
 
-The bus and the controller are not in question. A console examine of the UDA50's
-status register returns `004000`, which is STEP1 of the MSCP initialisation - the
-emulated controller is alive on the bus and answering the processor. The claim on
-the I/O page behaves as it should too: sharing it leaves simh's controller
-exactly two words, its IP and SA registers, and taking it exclusively claims all
-4096.
+| | |
+|---|---|
+| `bootdev_on_bus` | true - the controller's address is answered by the bus |
+| `iopage_dispatches` | tens of thousands - VMB is reading and writing its registers |
+| `dma_words` | over a thousand - **the map registers are carrying transfers** |
 
-What the two configurations do differently is the whole finding. With the volume
-inside the core, VMS boots and the adapter's control register reads `0000007C` -
-VMB configured the adapter, as it must before using a device on it. With the
-volume on the bus, that register stays `00000000` and the adapter's I/O page
-dispatch is never entered at all.
+That is stage 3's mechanism working: a device model of this project, driven by
+a bootstrap written for real hardware, reaching memory through the adapter's
+map. It is the first point at which the device models are genuinely under test.
 
-So VMB is not failing to reach the controller. **It is failing before it
-configures the adapter**, which is upstream of the UNIBUS entirely, and the
-`%BOOT-F-Failed to initialize device` that follows is the consequence rather
-than the cause. Every explanation that lives below that point has been ruled
-out: the dispatch is installed, `uba_uiip` is clear throughout, and a disabled
-controller - which would have left `dibp->ba` unset, since the address comes
-from an auto-configuration a disabled device takes no part in - is no longer
-what happens.
+The boot does not complete. The furthest it has got is
+`%BOOT-F-Unable to locate BOOT file`, which is VMB having initialised the
+controller and read from the volume and not found what it wanted; the state as
+left is the earlier `%BOOT-F-Failed to initialize device`, after the drive's
+interrupt vector and its size reporting were both changed in one step - two
+variables at once, which is why it is not known which of them moved it back.
+Undoing the vector alone did not restore it.
 
-Finding out what VMB does between being started and configuring the adapter
-wants the core's execution traced, which is a different kind of work from
-reading state through the web interface, and where the next session should
-start. `iopage_dispatches` and `uba_cr` are published as status parameters so
-that a run can be judged from outside without rebuilding.
+The interrupt is the thing to look at next. `bus_interrupts` stays zero
+throughout, and giving the controller a vector made the boot worse rather than
+better: a controller that asks for an interrupt and never gets one waits, where
+one that does not ask is polled and makes progress. An interrupt that does
+arrive is gated at the adapter anyway, since `uba_eval_int()` passes nothing on
+unless the control register's interrupt field switch and BR interrupt enable
+are set, and `uba_cr` reads zero - VMB never sets them for a device it is only
+booting from.
 
 ## What stage 2 still needs
 

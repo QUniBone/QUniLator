@@ -33,6 +33,11 @@ int simh_shim_bus_write (unsigned addr, unsigned data, int byte);
 /* Point the unclaimed part of the I/O page at that bus, or take it off again.
    Defined in simh_shim_bus.c, which only a build with a bus links. */
 unsigned simh_shim_bus_install (int exclusive);
+int simh_shim_bus_owns (unsigned unibus_addr);
+
+/* Take the I/O page back if a device's reconfiguration has rebuilt the
+   dispatch and reclaimed it. Returns non-zero when it had to. */
+int simh_shim_bus_reassert (void);
 void simh_shim_bus_remove (void);
 
 /* Reset every device and then take the I/O page back, which every path that

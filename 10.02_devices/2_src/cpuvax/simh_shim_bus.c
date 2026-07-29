@@ -74,6 +74,41 @@ if (!simh_shim_bus_write (shim_unibus_addr (pa), (unsigned) (data & 0177777),
 return SCPE_OK;
 }
 
+/* The claim, and one slot of it kept as a witness.
+
+   A device may reconfigure itself while the machine runs - simh's MSCP
+   controller ends its reset by running the auto-configuration - and that
+   rebuilds the whole I/O page dispatch from the devices the core carries,
+   taking back whatever the bus had claimed. Nothing announces it. So the claim
+   is re-asserted whenever the witness shows it has been lost, which is one
+   pointer compare on the path that runs it. */
+static int shim_claim_exclusive = 0;
+static uint32 shim_claim_witness = 0;
+static int shim_claim_active = 0;
+
+int simh_shim_bus_reassert (void)
+{
+if (!shim_claim_active)
+    return 0;
+if (iodispR[shim_claim_witness] == &shim_bus_read)
+    return 0;                                           /* still ours */
+simh_shim_bus_install (shim_claim_exclusive);
+return 1;
+}
+
+/* Whether the bus still answers a given UNIBUS address. The count taken when
+   the page was claimed says only what was done then; a device that
+   reconfigures itself afterwards rebuilds the dispatch and takes its own
+   addresses back, and only asking the table now tells whether it did. */
+int simh_shim_bus_owns (unsigned unibus_addr)
+{
+uint32 idx = (unibus_addr & IOPAGEMASK) >> 1;
+
+if (idx >= (IOPAGESIZE >> 1))
+    return 0;
+return (iodispR[idx] == &shim_bus_read);
+}
+
 /* Point the I/O page at the bus. Called after each reset, because reset_all()
    rebuilds the tables from the devices simh has.
 
@@ -90,12 +125,16 @@ unsigned claimed = 0;
 
 for (i = 0; i < (IOPAGESIZE >> 1); i++) {
     if (exclusive || (iodispR[i] == NULL)) {
+        if (claimed == 0)
+            shim_claim_witness = i;                     /* watch the first */
         iodispR[i] = &shim_bus_read;
         claimed++;
         }
     if (exclusive || (iodispW[i] == NULL))
         iodispW[i] = &shim_bus_write;
     }
+shim_claim_exclusive = exclusive;
+shim_claim_active = (claimed > 0);
 return claimed;
 }
 
@@ -104,6 +143,8 @@ return claimed;
 void simh_shim_bus_remove (void)
 {
 uint32 i;
+
+shim_claim_active = 0;
 
 for (i = 0; i < (IOPAGESIZE >> 1); i++) {
     if (iodispR[i] == &shim_bus_read)

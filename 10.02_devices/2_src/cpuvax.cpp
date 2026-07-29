@@ -61,6 +61,9 @@ cpuvax_c::cpuvax_c() :
     memory_mb.value = 8;
     bootdevice.value = "RQ0";
     batch_size.value = 10000;
+    // The bus takes the I/O page whole by default: a machine whose peripherals
+    // are on the bus wants nothing of the core's own answering there.
+    bus_exclusive.value = true;
 
     runmode.value = false;
     halt_switch.value = false;
@@ -80,6 +83,8 @@ cpuvax_c::cpuvax_c() :
     ipl.kind = parameter_c::PARAM_STATUS;
     uba_init.kind = parameter_c::PARAM_STATUS;
     iopage_dispatches.kind = parameter_c::PARAM_STATUS;
+    iopage_claimed.kind = parameter_c::PARAM_STATUS;
+    bootdev_on_bus.kind = parameter_c::PARAM_STATUS;
     uba_cr.kind = parameter_c::PARAM_STATUS;
     halt_switch.kind = parameter_c::PARAM_STATUS;
     start_switch.kind = parameter_c::PARAM_STATUS;
@@ -251,7 +256,7 @@ bool cpuvax_c::configure_machine(void)
     if (bus_iopage.value) {
         host.bus_read = vax_bus_read;
         host.bus_write = vax_bus_write;
-        host.bus_owns_iopage = internal_disk ? 0 : 1;
+        host.bus_owns_iopage = bus_exclusive.value ? 1 : 0;
     }
     host.message_file = stdout;
     simh_shim_bind(&host);
@@ -268,6 +273,20 @@ bool cpuvax_c::configure_machine(void)
         ERROR("VAX memory size %u MB refused: %s",
               (unsigned) memory_mb.value, simh_shim_status_text(r));
         return false;
+    }
+
+    {
+        // What the bootstrap will be told to look for. A controller that takes
+        // no part in the auto-configuration keeps no address, and a bootstrap
+        // sent to address zero fails without ever reaching the bus.
+        unsigned ba = 0;
+        int on = 0;
+
+        if (simh_shim_device_info(bootdevice.value.c_str(), &ba, &on))
+            INFO("boot device %s: %s, would answer at %06o",
+                 bootdevice.value.c_str(), on ? "configured" : "not configured", ba);
+        else
+            ERROR("the processor has no device called %s", bootdevice.value.c_str());
     }
 
     if (internal_disk
@@ -349,6 +368,14 @@ void cpuvax_c::publish_status(void)
     ipl.value = state.ipl;
     uba_init.value = state.uba_init;
     iopage_dispatches.value = state.iopage_dispatches;
+    iopage_claimed.value = state.iopage_claimed;
+    {
+        unsigned ba = 0;
+        int on = 0;
+
+        if (simh_shim_device_info(bootdevice.value.c_str(), &ba, &on))
+            bootdev_on_bus.value = simh_shim_bus_owns(ba) != 0;
+    }
     uba_cr.value = state.uba_cr;
     cycle_count.value = (uint64_t) state.instructions - instructions_at_start;
 
@@ -557,7 +584,7 @@ bool cpuvax_c::on_param_changed(parameter_c *param)
     // read then; changing them under a running processor would describe a
     // machine that is not there.
     if ((param == &memory_mb || param == &bootimage || param == &bootdevice
-            || param == &bus_iopage) && enabled.value) {
+            || param == &bus_iopage || param == &bus_exclusive) && enabled.value) {
         ERROR("%s can only be changed while the processor is disabled",
               param->name.c_str());
         return false;
