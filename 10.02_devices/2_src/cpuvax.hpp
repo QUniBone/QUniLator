@@ -126,6 +126,11 @@ public:
                                        true, "", "%u", "words a device moved through the map", 63, 10);
     parameter_unsigned64_c dma_failures = parameter_unsigned64_c(this, "dma_failures", "df",/*readonly*/
                                           true, "", "%u", "transfers the map registers refused", 63, 10);
+    // A map entry with the byte offset bit set moves the transfer one byte up,
+    // so the processor's address is odd where the device's is even. Counted
+    // because it is the path a driver's unaligned buffer takes.
+    parameter_unsigned64_c dma_byte_offset = parameter_unsigned64_c(this, "dma_byte_offset", "dbo",/*readonly*/
+                                             true, "", "%u", "transfers the map registers offset by a byte", 63, 10);
 
     // How many instructions worker() runs before it looks at the switches, the
     // power events and the terminate flag again. Long enough that the check

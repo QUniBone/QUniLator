@@ -80,6 +80,7 @@ cpuvax_c::cpuvax_c() :
     bus_interrupts.kind = parameter_c::PARAM_STATUS;
     dma_words.kind = parameter_c::PARAM_STATUS;
     dma_failures.kind = parameter_c::PARAM_STATUS;
+    dma_byte_offset.kind = parameter_c::PARAM_STATUS;
     ipl.kind = parameter_c::PARAM_STATUS;
     uba_init.kind = parameter_c::PARAM_STATUS;
     iopage_dispatches.kind = parameter_c::PARAM_STATUS;
@@ -585,11 +586,15 @@ bool cpuvax_c::on_dma(uint8_t qunibus_cycle, uint32_t unibus_addr,
     // a bootstrap loading an image writes consecutive pages, and a translation
     // that piles them on one address shows up here before anywhere else.
     static unsigned traced = 0;
+    unsigned phys = 0;
+    int mapped = simh_shim_map_addr(unibus_addr, &phys);
+
+    // The byte offset bit of a map entry lands the transfer one byte up, which
+    // is what an odd processor address for an even bus address means.
+    if (mapped && (phys & 1))
+        dma_byte_offset.value++;
 
     if (traced < 200) {
-        unsigned phys = 0;
-        int mapped = simh_shim_map_addr(unibus_addr, &phys);
-
         traced++;
         DEBUG("dma %s %06o -> %s%08x, %u words, first %06o %06o",
               write ? "write" : "read", (unsigned) unibus_addr,
