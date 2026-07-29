@@ -698,6 +698,76 @@ while the count of interrupts granted on the bus keeps rising.
 Which is the shape of an interrupt that is granted, consumed, and never turned
 into a dispatch.
 
+### The tables are rebuilt every batch
+
+Following that to the end took reading what the driver does with the vector.
+VMS is entered correctly, and this is what it finds:
+
+	802EFA78 04150000| MOVQ R4,-(SP)
+	802EFA7B 04150004| BICL3 #7FFFFE03,@#80029834,R4
+	                   7FFFFE03 00000000 00000000 -> 00000000
+	802EFA94 04150004| JMP @(R5)+
+	8021906C 04150004| INCL @#80002C44
+	                   0000007B -> 0000007C
+	80219076 04150000| REI
+
+The second instruction is the read of BRRVR, masked to the vector and the
+adapter's own flag, and it reads **zero**. So the driver jumps to the routine
+that counts an interrupt from a device that is not asking - the count going
+7B to 7C - and returns. Every interrupt the controller raised had been landing
+there, which is why the MSCP driver never saw the controller answer.
+
+The vector was gone by the time it was read. `build_dib_tab()`, at the top of
+`sim_instr()`, calls `init_ubus_tab()`, which clears the I/O page dispatch and
+every interrupt vector before filling them in again from the devices the core
+carries. simh enters `sim_instr()` once for a RUN command, so that is setup. A
+processor driven in batches enters it thousands of times a second.
+
+A device on the bus owns no entry to be rebuilt from, so both halves of what it
+put there are lost. The dispatch half was already being re-asserted - that is
+what `simh_shim_bus_reassert()` was for, and why it existed at all. The vector
+half was not, and losing it is silent: the request stays raised, the processor
+takes it, and the driver is handed a zero.
+
+So a batch now schedules a restore one instruction in, where the reassert puts
+back both.
+
+## Stage 3 is done
+
+	   VAX/VMS Version V4.7 28-Oct-1987 13:00
+
+	PLEASE ENTER DATE AND TIME (DD-MMM-YYYY  HH:MM)  29-JUL-2026 15:00
+	%%%%%%%%%%%  OPCOM  29-JUL-2026 15:01:15.49  %%%%%%%%%%%
+	Logfile has been initialized by operator _OPA0:
+	Logfile is SYS$SYSROOT:[SYSMGR]OPERATOR.LOG;19
+	%SET-I-INTSET, login interactive limit = 64
+	  SYSTEM       job terminated at 29-JUL-2026 15:01:16.62
+
+Against what the plan asked for:
+
+**VMS boots from the emulated UDA50 with its registers accessed over the real
+bus.** Four consecutive boots, through startup to the login prompt. A run moves
+1.19 million words through the map registers and takes a thousand interrupts
+from the controller, with 2488 register accesses on the bus.
+
+**File-level read and write, checked by reading the image on the host.** VMS
+opens a new version of the operator log on each boot - `;16` through `;19` - and
+the image on the host carries the timestamps typed at the console during those
+boots, which a 1987 distribution image cannot have had.
+
+**A map register that is not allocated fails the transfer the way a real UBA
+fails it, rather than corrupting memory.** Seen in the handover from the
+bootstrap to VMS's own driver: three transfers refused, at 756734 twice and at
+the odd address 741677, each reported and none written anywhere. The machine
+carried on and booted.
+
+**Byte offset.** The path is simh's own, unmodified, and it now has a count of
+its own, `dma_byte_offset`. It reads zero: VMS's MSCP driver hands the
+controller longword aligned buffers, so nothing in this workload asks the map
+registers to shift a transfer by a byte. The path is in place and instrumented;
+it is not exercised by booting, and a diagnostic that asks for an unaligned
+buffer is what would exercise it.
+
 A caution for anyone reading the counters: `dma_words` and the rest accumulate
 from when the device was installed, not from the last START, so progress is the
 difference across one run and not the value after it.
