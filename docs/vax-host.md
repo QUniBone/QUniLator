@@ -611,6 +611,50 @@ is the next thing to see, and neither of the tools built here reaches it: the
 console examines physical memory and the address is in system space, and the
 adapter declares debug flags but has no trace points to switch on.
 
+### How the two controllers differ
+
+The question worth asking is what this controller does that the one inside the
+core does not, since the same VMS boots from that one. The protocol is no longer
+any of it. Every value the handshake exchanges is identical:
+
+| the host writes | the core's controller answers | this one answers |
+|---|---|---|
+| (reads step 1) | 0940 | 0940 |
+| A4FF | 10A4 | 10A4 |
+| D0A9 | 20FF | 20FF |
+| 0003 | 4063 | 4063 |
+
+and the bootstrap, which drives the same four steps with a different step-1 word,
+gets 1080, 2000 and 4063 out of this controller and completes.
+
+What differs is everything around the protocol:
+
+- **Where an interrupt is raised.** The core's controller raises one inside the
+  core, on the thread running instructions, between two of them, at its own bit
+  with an acknowledge routine. This one raises it on the bus; the PRU arbitrates
+  and grants it, and it is put into the core from the thread that watches the
+  bus, at a reserved bit with a vector.
+- **What thread the controller runs on.** The core's is a scheduled event in the
+  processor's own thread, so a command and the instruction that issued it cannot
+  overlap. This one is a pthread of its own, so every exchange is between
+  threads - and `uba_eval_int()`, called from ours, clears every nexus request
+  the adapter holds and re-sets them from scratch, while the processor's thread
+  is clearing the one it has just taken.
+- **How long a step takes.** The core's answers within the guest's instruction
+  stream, a couple of hundred instructions. This one answers after real-time
+  waits - half a millisecond per initialisation step, and a polling linger of
+  half a second - which is milliseconds of guest time.
+- **What a register read reaches.** SA here is write-only as far as the state
+  machine is concerned: the callback takes the DATO flip-flops without looking
+  at the cycle, so a read never enters it. The core's read path is a full one.
+
+The second of those was tried as a fix - handing the vector to the processor's
+thread and putting it in between batches, where the core's own devices raise
+theirs. It did not get the boot further and the controller stopped raising
+interrupts at all, so it was backed out rather than kept on the strength of the
+argument for it. The race it describes is real and worth closing, but it is not
+what is holding the boot up.
+
 A caution for anyone reading the counters: `dma_words` and the rest accumulate
 from when the device was installed, not from the last START, so progress is the
 difference across one run and not the value after it.
