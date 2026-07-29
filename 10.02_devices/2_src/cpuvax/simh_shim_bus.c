@@ -187,6 +187,16 @@ uba_eval_int ();
 return 1;
 }
 
+unsigned simh_shim_bus_interrupt_pending (void)
+{
+int32 lvl;
+
+for (lvl = IPL_HLVL - 1; lvl >= 0; lvl--)
+    if (int_req[lvl] & (1 << SHIM_INT_BIT))
+        return (unsigned) lvl + 4;                      /* 0..3 -> BR4..BR7 */
+return 0;
+}
+
 /* ------------------------------------------------------------------------ */
 /* DMA from a device on the bus                                              */
 /*                                                                           */

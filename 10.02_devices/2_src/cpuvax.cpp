@@ -356,7 +356,6 @@ void cpuvax_c::machine_start(void)
     mailbox->param = 1;
     mailbox_execute(ARM2PRU_CPU_ENABLE);
     qunibus->set_arbitrator_active(true);
-    published_priority = 0xff;              // republish on the next pass
 #ifdef CPU_CONTROLLED_TIME
     // Every device model's delays are then measured against the machine rather
     // than against the board, at the cost of a guest clock that runs at
@@ -404,18 +403,22 @@ void cpuvax_c::publish_status(void)
     uba_cr.value = state.uba_cr;
     cycle_count.value = (uint64_t) state.instructions - instructions_at_start;
 
-    // What the arbitration on the bus compares a device's request against. The
-    // VAX ranks its own interrupts IPL 14 to 17 where the bus ranks them BR4 to
-    // BR7, and anything below that leaves every device free to interrupt.
-    if (bus_iopage.value) {
-        uint8_t arbitration_level = (state.ipl >= 0x14)
-                                    ? (uint8_t) (state.ipl - 0x10) : 0;
-
-        if (arbitration_level != published_priority) {
-            published_priority = arbitration_level;
-            unibone_prioritylevelchange(arbitration_level);
-        }
-    }
+    // What the arbitration on the bus compares a device's request against.
+    //
+    // It is the adapter's level, not the processor's. A DW780 takes a device's
+    // request whenever it has a slot for it, latches the vector and posts the
+    // request to the processor, which services it once its own IPL permits - so
+    // a processor running at IPL 31 must still let the grant happen, or a
+    // device it is waiting for can never announce itself. The arbitration
+    // therefore only has to hold off a level whose slot is still full.
+    //
+    // Published every pass rather than when it changes. Granting an INTR leaves
+    // the arbitration holding its grants until the processor writes the level
+    // again, which is how a real one is told the vector has been taken; a level
+    // written only when it differs would leave the bus held after the first
+    // interrupt, and a device's transfer waits on the same grants.
+    if (bus_iopage.value)
+        unibone_prioritylevelchange((uint8_t) simh_shim_bus_interrupt_pending());
 }
 
 /* Ask the processor's thread for a bus cycle and wait for it. A bus master's
@@ -546,12 +549,27 @@ bool cpuvax_c::on_dma(uint8_t qunibus_cycle, uint32_t unibus_addr,
     // The device's direction: DATO and DATOB write memory, DATI reads it.
     bool write = (qunibus_cycle != QUNIBUS_CYCLE_DATI);
 
+    // The first transfers of a machine's life are the ones worth seeing: the
+    // command ring a bootstrap hands over, and whether what the controller
+    // reads back is what the processor wrote.
+    static unsigned traced = 0;
+
+    if (traced < 40) {
+        traced++;
+        DEBUG("dma %s %06o, %u words, first %06o %06o", write ? "write" : "read",
+              (unsigned) unibus_addr, (unsigned) wordcount,
+              (unsigned) buffer[0], wordcount > 1 ? (unsigned) buffer[1] : 0);
+    }
+
     if (!simh_shim_bus_dma(write ? 1 : 0, unibus_addr, buffer, wordcount)) {
         dma_failures.value++;
         WARNING("the map registers refused %u words at %06o",
                 (unsigned) wordcount, (unsigned) unibus_addr);
         return true;                            // answered, and it failed
     }
+    if (traced <= 40 && !write)
+        DEBUG("dma read  %06o gave %06o %06o", (unsigned) unibus_addr,
+              (unsigned) buffer[0], wordcount > 1 ? (unsigned) buffer[1] : 0);
     dma_words.value += wordcount;
     return true;
 }

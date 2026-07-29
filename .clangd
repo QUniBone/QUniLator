@@ -24,3 +24,14 @@ CompileFlags:
     # host would otherwise take.
     - -D__linux__
     - -DARM
+
+---
+# The seam of 10.02_devices/2_src/cpuvax and the vendored simh it wraps are C.
+# A header of theirs opened on its own is parsed with the flags of a neighbouring
+# translation unit, and the C++ standard the rest of the tree compiles with does
+# not go with a C file - so name the language for them here.
+If:
+  PathMatch: [.*/cpuvax/.*\.h, .*/simh_vax/.*\.h]
+CompileFlags:
+  Remove: [-std=c++11]
+  Add: [-xc, -std=c99]

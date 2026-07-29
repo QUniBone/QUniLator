@@ -391,23 +391,78 @@ The difference is plain in what follows:
 | register accesses | 17157, thrashing | 42, and it stops |
 | words through the map | 754 | **11164** |
 
+### The protocol runs
+
+The MSCP conversation completes. The controller's own log, at debug, records the
+initialisation walking STEP1 to STEP4 and then the commands themselves:
+
+	Message size 0x30 opcode 0x4  ...   SET CONTROLLER CHARACTERISTICS
+	Message size 0x30 opcode 0x9  ...   ONLINE
+	Message size 0x30 opcode 0x21 ...   READ, 512 bytes, lbn 1
+	MSCP RWE 0x21 unit 0 ... count 12288 lbn 6070
+	MSCP RWE 0x21 unit 0 ... count 47104 lbn 164548
+	cmd 0x0 st 0x0 fl 0x0
+
+Every command answers with status zero, the bootstrap reads the home block, the
+index file and the directories, and the two large reads are a bootstrap image
+and the system image being loaded. A hundred and sixty thousand words have moved
+through the map registers with no transfer refused.
+
+The controller does not interrupt, and is right not to: the bootstrap gives it a
+vector of zero when it initialises it, which is how a program that polls says it
+wants none. So the interrupt count staying at zero here says nothing about the
+interrupt path, which stage 2 exercised on its own.
+
+### The arbitration level, and what it costs to publish it late
+
+Two things were wrong in how the processor talks to the arbitration on the bus,
+and both showed up as a boot that moved less data the faster the board ran.
+
+The level published is the **adapter's**, not the processor's. A DW780 takes a
+device's request whenever it has a slot for it, latches the vector, and posts
+the request to the processor, which services it once its own IPL permits. A
+bootstrap sits at IPL 31 for its whole life; publishing 31 to the arbitration
+holds off every grant, so a device the processor is waiting for can never
+announce itself. What the arbitration has to hold off is only a level whose slot
+is still full, which is what `simh_shim_bus_interrupt_pending()` reports.
+
+And the level is published **every pass**, not when it changes. Granting an
+interrupt leaves the arbitration holding its grants until the processor writes
+the level again - that is how it is told the vector has been taken - and a level
+written only when it differs leaves the bus held after the first one. A device's
+transfer waits on the same grants, so the symptom is not a lost interrupt but a
+disk that stops.
+
+The effect is large, and it scales the wrong way without the fix, because the
+processor opens a grant window once per batch:
+
+| instructions per batch | words moved in 30 s, before | after |
+|---|---|---|
+| 200 | 0 | |
+| 2000 | 0 | |
+| 10000 | 754 | 8526 |
+| 100000 | 8840 | |
+
 ### Where it stands
 
-The boot still does not complete. The bootstrap and the controller get some way
-into the MSCP initialisation - the controller's own log shows it reaching STEP1,
-the host writing its initialisation register, and eleven thousand words moving
-through the map - and then the initialisation restarts rather than finishing,
-and the processor spins at IPL 31 without touching the bus again.
+The boot does not complete. The bootstrap reads its way through the file system
+and then starts the same sequence again - home block, index file, directory -
+without ever printing its first line, so it is retrying a lookup rather than
+waiting on anything. Every read the controller performs succeeds and no map
+entry is refused, which leaves what the reads *contain*: data that satisfies the
+controller and not the bootstrap points at the translation between them, and
+that is the byte offset and the map registers the rest of this stage has still
+to verify.
 
-Nothing on the bus can interrupt it there, and that is correct rather than
-broken: a VAX at IPL 31 blocks every request, and the level published to the
-arbitration says so. But it means the wait it is in cannot be ended by a device,
-so it is a loop it has entered rather than one it is waiting in - which points
-at what the initialisation did before it, not at the interrupt.
+A caution for anyone reading the counters: `dma_words` and the rest accumulate
+from when the device was installed, not from the last START, so progress is the
+difference across one run and not the value after it.
 
-The controller's log is the place to look next. It records the initialisation
-steps it goes through and the commands it is given, and it currently shows the
-steps repeating and no command ever arriving.
+Two operational traps cost time here. A parameter that changes the machine -
+`bus_iopage`, `bootimage` - is refused while the processor is enabled, and the
+refusal is a line in the log rather than anything the caller sees. And disabling
+the processor while a batch is running cancels its worker, which leaves the
+device wedged; restart the service rather than trying to recover it.
 
 ## What stage 2 still needs
 

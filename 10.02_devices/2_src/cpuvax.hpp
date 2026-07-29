@@ -18,15 +18,14 @@
  the PDP-11: a sixteen bit program counter, a console switch register, and a
  trap through vector 24 on a power failure. A VAX has none of those.
 
- With bus_iopage set, the UNIBUS adapter's window on the I/O page is live and
- the processor's register accesses become bus cycles, so the emulated devices
- of 10.02_devices answer them. What is still missing is the other direction: a
- device raising an interrupt cannot yet reach this processor, because the bus
- reports a vector without the request level a VAX needs to know which IPL to
- take it at - see docs/vax-host.md.
+ With bus_iopage set, the UNIBUS adapter's window on the I/O page is live: the
+ processor's register accesses become bus cycles, a device's interrupt reaches
+ the adapter's request registers at the level it was granted at, and a device's
+ transfer is answered here through the adapter's map registers rather than on
+ the bus. docs/vax-host.md is the running record of what that reaches.
 
- A machine is booted from the disk simh carries inside the core, which is
- scaffolding until the emulated UDA50 on the bus takes over.
+ A machine is booted either from the disk simh carries inside the core or from
+ the emulated UDA50 on the bus, which bootdevice and bootimage choose between.
  */
 #ifndef _CPUVAX_HPP_
 #define _CPUVAX_HPP_
@@ -157,7 +156,6 @@ private:
     bool request_console_access(enum console_access_e what, unsigned addr);
 
     bool machine_running = false;       // the core is executing, not halted
-    uint8_t published_priority = 0xff;  // last level given to the arbitration
     uint64_t instructions_at_start = 0; // sim_gtime() when the machine started
 
     bool configure_machine(void);       // memory, disk, boot; leaves it ready to run

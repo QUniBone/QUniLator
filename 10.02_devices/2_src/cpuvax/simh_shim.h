@@ -123,6 +123,12 @@ void simh_shim_state (simh_shim_state_t *state);
    processor. */
 int simh_shim_bus_interrupt (unsigned vector, unsigned br_level);
 
+/* The highest bus request level whose vector the adapter is still holding,
+   4 to 7, or zero when it holds none. The adapter has one slot per level, so
+   this is the level at which a further request must be held off until the
+   processor has taken the one already latched. */
+unsigned simh_shim_bus_interrupt_pending (void);
+
 /* Where a device the core carries would answer, and whether it is taking part
    at all. A boot command reads its address out of the same descriptor and tells
    the bootstrap, so this is what the bootstrap will be looking for. Returns
