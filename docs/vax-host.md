@@ -321,30 +321,36 @@ through one place that takes the I/O page back afterwards.
 
 ### Where it stands
 
-VMB does not boot from the emulated UDA50 yet. It runs, tries to initialise the
-controller, and fails with `%BOOT-F-Failed to initialize device` - having made
-**no bus cycle at all**.
+VMB does not boot from the emulated UDA50 yet, and what has been learnt narrows
+it a long way.
 
-What has been ruled out:
+The bus and the controller are not in question. A console examine of the UDA50's
+status register returns `004000`, which is STEP1 of the MSCP initialisation - the
+emulated controller is alive on the bus and answering the processor. The claim on
+the I/O page behaves as it should too: sharing it leaves simh's controller
+exactly two words, its IP and SA registers, and taking it exclusively claims all
+4096.
 
-- **The bus path.** A console examine of the UDA50's status register returns
-  `004000`, which is STEP1 of the MSCP initialisation - the emulated controller
-  is alive on the bus and answering the processor, and `bus_cycles` counts it.
-- **The dispatch.** With the bus owning the I/O page, all 4096 words of it point
-  at the bus, reported at enable time.
-- **The adapter's init flag.** `uba_uiip` reads 0 throughout, so `ReadUb()` is
-  not refusing accesses for that reason.
-- **A disabled controller.** Disabling simh's RQ frees the address but leaves
-  `dibp->ba` unset, because the address is assigned by the auto-configuration a
-  disabled device takes no part in - so the boot command told the bootstrap the
-  controller was at zero. The controller now stays configured and the bus takes
-  the page over it instead.
+What the two configurations do differently is the whole finding. With the volume
+inside the core, VMS boots and the adapter's control register reads `0000007C` -
+VMB configured the adapter, as it must before using a device on it. With the
+volume on the bus, that register stays `00000000` and the adapter's I/O page
+dispatch is never entered at all.
 
-So the processor's own register accesses are not reaching `ReadUb()`, while the
-ones the console makes reach the bus perfectly. The next thing to find out is
-which path a VMB reference to the I/O page actually takes through `vax_mmu.c` -
-whether it reaches `ReadIO()` at all, or is answered somewhere earlier - which
-wants the core traced rather than another guess from outside.
+So VMB is not failing to reach the controller. **It is failing before it
+configures the adapter**, which is upstream of the UNIBUS entirely, and the
+`%BOOT-F-Failed to initialize device` that follows is the consequence rather
+than the cause. Every explanation that lives below that point has been ruled
+out: the dispatch is installed, `uba_uiip` is clear throughout, and a disabled
+controller - which would have left `dibp->ba` unset, since the address comes
+from an auto-configuration a disabled device takes no part in - is no longer
+what happens.
+
+Finding out what VMB does between being started and configuring the adapter
+wants the core's execution traced, which is a different kind of work from
+reading state through the web interface, and where the next session should
+start. `iopage_dispatches` and `uba_cr` are published as status parameters so
+that a run can be judged from outside without rebuilding.
 
 ## What stage 2 still needs
 

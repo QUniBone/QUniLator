@@ -108,6 +108,7 @@ typedef struct {
     unsigned ipl;                                       /* current priority */
     unsigned iopage_claimed;                            /* I/O page words on the bus */
     unsigned uba_init;                                  /* adapter init in progress */
+    unsigned iopage_dispatches;                         /* I/O page accesses the core made */
     unsigned uba_cr;                                    /* adapter control register */
     double instructions;
 } simh_shim_state_t;

@@ -121,6 +121,8 @@ public:
                                true, "", "%02x", "Interrupt priority level.", 8, 16);
     parameter_unsigned_c uba_init = parameter_unsigned_c(this, "uba_init", "ui",/*readonly*/
                                     true, "", "%u", "UNIBUS adapter init in progress.", 8, 10);
+    parameter_unsigned64_c iopage_dispatches = parameter_unsigned64_c(this, "iopage_dispatches", "iod",/*readonly*/
+                                               true, "", "%u", "I/O page accesses the processor made", 63, 10);
     parameter_unsigned_c uba_cr = parameter_unsigned_c(this, "uba_cr", "ucr",/*readonly*/
                                   true, "", "%08x", "UNIBUS adapter control register.", 32, 16);
     parameter_unsigned64_c cycle_count = parameter_unsigned64_c(this, "cycle_count", "cc",/*readonly*/

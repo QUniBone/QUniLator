@@ -42,11 +42,16 @@ return UNIBUS_IOPAGE_BASE + (((uint32) pa) & IOPAGEMASK);
 /* A read the bus did not answer is a nonexistent memory error of the adapter,
    which is what the DW780 reports for a device that is not there and what turns
    into a machine check if the processor was not expecting it. */
+/* Counted where the adapter's dispatch enters, so a machine that reaches the
+   bus can be told apart from one that never asks. */
+unsigned shim_iopage_dispatches = 0;
+
 static t_stat shim_bus_read (int32 *data, int32 pa, int32 mode)
 {
 unsigned value;
 
 (void) mode;
+shim_iopage_dispatches++;
 if (!simh_shim_bus_read (shim_unibus_addr (pa), &value)) {
     uba_ub_nxm (pa);
     *data = 0;
@@ -58,6 +63,7 @@ return SCPE_OK;
 
 static t_stat shim_bus_write (int32 data, int32 pa, int32 mode)
 {
+shim_iopage_dispatches++;
 /* WRITEB is the byte cycle, DATOB on the bus, and the byte the processor means
    is the one the address selects. */
 if (!simh_shim_bus_write (shim_unibus_addr (pa), (unsigned) (data & 0177777),

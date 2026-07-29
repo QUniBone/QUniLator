@@ -79,6 +79,7 @@ cpuvax_c::cpuvax_c() :
     dma_failures.kind = parameter_c::PARAM_STATUS;
     ipl.kind = parameter_c::PARAM_STATUS;
     uba_init.kind = parameter_c::PARAM_STATUS;
+    iopage_dispatches.kind = parameter_c::PARAM_STATUS;
     uba_cr.kind = parameter_c::PARAM_STATUS;
     halt_switch.kind = parameter_c::PARAM_STATUS;
     start_switch.kind = parameter_c::PARAM_STATUS;
@@ -347,6 +348,7 @@ void cpuvax_c::publish_status(void)
     psl.value = state.psl;
     ipl.value = state.ipl;
     uba_init.value = state.uba_init;
+    iopage_dispatches.value = state.iopage_dispatches;
     uba_cr.value = state.uba_cr;
     cycle_count.value = (uint64_t) state.instructions - instructions_at_start;
 
