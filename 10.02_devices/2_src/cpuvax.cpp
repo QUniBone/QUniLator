@@ -266,6 +266,31 @@ bool cpuvax_c::configure_machine(void)
         return false;
     }
 
+    // With the peripherals on the bus, the controller inside the core is put
+    // out of the way for good rather than merely overwritten. Re-asserting a
+    // claim it keeps taking back is a fight, and a fight has a loser: an access
+    // that lands while the controller owns its address again reaches a
+    // controller with no volume in it.
+    //
+    // It is disabled only after that first reset, because the address it
+    // answers at is assigned by the auto-configuration, and a device disabled
+    // before that takes no part in it and keeps no address. Disabling
+    // afterwards leaves the address in its descriptor, which is what the boot
+    // command reads to tell the bootstrap where to look.
+    if (!internal_disk && bus_iopage.value) {
+        if ((r = simh_shim_set("RQ DISABLED")) != 0) {
+            ERROR("VAX cannot put its own controller aside: %s", simh_shim_status_text(r));
+            return false;
+        }
+        if ((r = simh_shim_reset()) != 0) {
+            ERROR("VAX reset failed: %s", simh_shim_status_text(r));
+            return false;
+        }
+    } else if ((r = simh_shim_set("RQ ENABLED")) != 0) {
+        ERROR("VAX cannot configure its own controller: %s", simh_shim_status_text(r));
+        return false;
+    }
+
     // Memory goes through the processor's own setting, which sizes the array
     // and tells the memory controllers what they answer for.
     snprintf(setting, sizeof setting, "CPU %uM", (unsigned) memory_mb.value);

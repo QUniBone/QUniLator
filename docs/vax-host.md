@@ -369,31 +369,45 @@ That is stage 3's mechanism working: a device model of this project, driven by
 a bootstrap written for real hardware, reaching memory through the adapter's
 map. It is the first point at which the device models are genuinely under test.
 
-The boot does not complete, and what it does instead is reproducible from a
-freshly started service: VMB retries, and its attempts alternate between
-`%BOOT-F-Failed to initialize device` and `%BOOT-F-Unable to locate BOOT file`.
-The second is much the further of the two - the controller initialised, the
-volume was read, and what VMB wanted was not found - and that the two alternate
-says the fault is not a constant wrong answer somewhere but something that
-sometimes works. The map refuses nothing: `dma_failures` stays at zero.
+### The controller inside has to be put aside, not overwritten
 
-What has been checked and is sound: the controller presents STEP1 of the MSCP
-initialisation, `004000` in its status register, and a console examine reads
-exactly that back off the bus. The word writes reach it right-justified, which
-is how `WriteW()` passes them and how simh's own handlers take them.
+Re-asserting a claim that a device keeps taking back is a fight, and a fight has
+a loser: an access that lands while the controller inside the core owns its
+address again reaches a controller with no volume in it. That is what made the
+attempts alternate between failing to initialise the device and getting as far
+as looking for the boot file.
 
-Its own log shows the initialisation restarting rather than progressing: the
-host writes the initialisation register once, the controller resets and comes
-back to STEP1, and no write of the status register follows. So VMB polls a
-controller that is offering what it should be offering, and does not take it.
+The controller inside is now disabled outright when the peripherals are on the
+bus - but only after the first reset, because the address it answers at is
+assigned by the auto-configuration, and a device disabled before that takes no
+part in it and keeps no address. Disabled afterwards it keeps the address in its
+descriptor, which is what the boot command reads to tell the bootstrap where to
+look, while taking no further part in building the I/O page.
 
-The interrupt is worth suspecting. `bus_interrupts` stays zero throughout, and
-giving the controller a vector made the boot worse rather than better: one that
-asks for an interrupt and never gets it waits, where one that does not ask is
-polled and makes progress. An interrupt that did arrive would be gated at the
-adapter anyway, since `uba_eval_int()` passes nothing on unless the control
-register's interrupt field switch and BR interrupt enable are set, and `uba_cr`
-reads zero - VMB never sets them for a device it is only booting from.
+The difference is plain in what follows:
+
+| | before | after |
+|---|---|---|
+| register accesses | 17157, thrashing | 42, and it stops |
+| words through the map | 754 | **11164** |
+
+### Where it stands
+
+The boot still does not complete. The bootstrap and the controller get some way
+into the MSCP initialisation - the controller's own log shows it reaching STEP1,
+the host writing its initialisation register, and eleven thousand words moving
+through the map - and then the initialisation restarts rather than finishing,
+and the processor spins at IPL 31 without touching the bus again.
+
+Nothing on the bus can interrupt it there, and that is correct rather than
+broken: a VAX at IPL 31 blocks every request, and the level published to the
+arbitration says so. But it means the wait it is in cannot be ended by a device,
+so it is a loop it has entered rather than one it is waiting in - which points
+at what the initialisation did before it, not at the interrupt.
+
+The controller's log is the place to look next. It records the initialisation
+steps it goes through and the commands it is given, and it currently shows the
+steps repeating and no command ever arriving.
 
 ## What stage 2 still needs
 
