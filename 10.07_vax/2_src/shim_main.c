@@ -25,6 +25,11 @@
 #include <unistd.h>
 
 #include "simh_shim.h"
+
+/* The harness reaches past the seam for the things a workstation console
+   wants and an embedded one does not: LOAD for an image given on the command
+   line, and the processor's own registers to report where it stopped. */
+#include "sim_defs.h"
 #include "scp.h"
 #include "vax_defs.h"
 

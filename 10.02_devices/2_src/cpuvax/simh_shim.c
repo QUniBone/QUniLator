@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "sim_defs.h"
 #include "scp.h"
 #include "sim_fio.h"
 #include "simh_shim_internal.h"
@@ -270,7 +271,7 @@ snprintf (shim_status_buf, sizeof shim_status_buf, "Simulator status %d", (int) 
 return shim_status_buf;
 }
 
-const char *simh_shim_status_text (t_stat status)
+const char *simh_shim_status_text (simh_shim_status_t status)
 {
 return sim_error_text (status);
 }
@@ -1280,7 +1281,7 @@ return sim_messagef (SCPE_NOFNC, "TAR is not available in the embedded build\n")
 /* The embedding API                                                         */
 /* ------------------------------------------------------------------------ */
 
-t_stat simh_shim_reset (void)
+simh_shim_status_t simh_shim_reset (void)
 {
 DEVICE *dptr;
 uint32 i, j;
@@ -1309,7 +1310,12 @@ for (i = 0; (dptr = sim_devices[i]) != NULL; i++)
 return reset_all (0);
 }
 
-t_stat simh_shim_run (int32 max_instructions)
+int simh_shim_batch_ended (simh_shim_status_t status)
+{
+return (status == SCPE_STOP);
+}
+
+simh_shim_status_t simh_shim_run (int max_instructions)
 {
 t_stat reason;
 
@@ -1321,12 +1327,12 @@ sim_cancel (&shim_batch_unit);
 return reason;
 }
 
-t_stat simh_shim_set (const char *setting)
+simh_shim_status_t simh_shim_set (const char *setting)
 {
 return set_cmd (0, setting);
 }
 
-t_stat simh_shim_attach (const char *unit_name, const char *filename)
+simh_shim_status_t simh_shim_attach (const char *unit_name, const char *filename)
 {
 DEVICE *dptr;
 UNIT *uptr;
@@ -1340,7 +1346,7 @@ if (dptr->attach != NULL)
 return attach_unit (uptr, filename);
 }
 
-t_stat simh_shim_boot (const char *unit_name)
+simh_shim_status_t simh_shim_boot (const char *unit_name)
 {
 CTAB *cmd;
 

@@ -40,6 +40,7 @@ QUNIBONE_ROOT := $(QUNIBONE_DIR)
 endif
 
 SIMH_DIR = $(QUNIBONE_ROOT)/91_3rd_party/simh_vax
+SHIM_DIR = $(QUNIBONE_ROOT)/10.02_devices/2_src/cpuvax
 OBJDIR = $(abspath ../4_deploy)
 
 VAX780 = $(OBJDIR)/vax780
@@ -251,15 +252,20 @@ SHIM_PDP11_SRC = pdp11_io_lib.c
 # simh's file layer, which depends on nothing above it.
 SHIM_SIM_SRC = sim_fio.c
 
+# The shim itself, which lives beside the other CPU emulation cores because it
+# is one: the application compiles the same files into cpuvax_c.
 SHIM_SRC = \
-	simh_shim.c simh_shim_console.c simh_shim_timer.c simh_shim_tmxr.c \
-	shim_main.c
+	simh_shim.c simh_shim_console.c simh_shim_timer.c simh_shim_tmxr.c
+
+# The workstation host, which belongs to this directory and not to the device.
+SHIM_HOST_SRC = shim_main.c
 
 SHIM_OBJECTS = \
 	$(patsubst %.c,$(OBJDIR)/shim/VAX/%.o,$(SHIM_VAX_SRC)) \
 	$(patsubst %.c,$(OBJDIR)/shim/PDP11/%.o,$(SHIM_PDP11_SRC)) \
 	$(patsubst %.c,$(OBJDIR)/shim/sim/%.o,$(SHIM_SIM_SRC)) \
-	$(patsubst %.c,$(OBJDIR)/shim/shim/%.o,$(SHIM_SRC))
+	$(patsubst %.c,$(OBJDIR)/shim/shim/%.o,$(SHIM_SRC)) \
+	$(patsubst %.c,$(OBJDIR)/shim/host/%.o,$(SHIM_HOST_SRC))
 
 # No SIMH_ASYNCH and no SIMH_NETWORK: an embedded core has neither a reader
 # thread nor a host network stack of its own.
@@ -267,7 +273,7 @@ SHIM_CFLAGS = \
 	-std=c99 -U__STRICT_ANSI__ -MMD -MP \
 	-O2 -DNDEBUG=1 -fno-strict-overflow -finline-functions \
 	$(SIMH_MODEL) $(SIMH_HOST) $(SIMH_PROVENANCE) $(SIMH_WARNINGS) \
-	-I$(SIMH_DIR)/sim -I$(SIMH_DIR)/VAX -I$(SIMH_DIR)/PDP11 -Ishim
+	-I$(SIMH_DIR)/sim -I$(SIMH_DIR)/VAX -I$(SIMH_DIR)/PDP11 -I$(SHIM_DIR)
 
 # The device list is built twice from one source: once as the machine alone, and
 # once with simh's MSCP controller for the disk configuration below.
@@ -281,7 +287,7 @@ $(VAX780_SHIM): $(SHIM_OBJECTS) $(SHIM_SYSLIST) $(SHIM_NODISK)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) $(SHIM_OBJECTS) $(SHIM_SYSLIST) $(SHIM_NODISK) $(SIMH_LDFLAGS) -o $@
 
-$(SHIM_SYSLIST): shim/vax780_shim_syslist.c
+$(SHIM_SYSLIST): $(SHIM_DIR)/vax780_shim_syslist.c
 	@mkdir -p $(dir $@)
 	$(HOST_CC) $(SHIM_OWN_CFLAGS) -c $< -o $@
 
@@ -312,7 +318,7 @@ $(VAX780_SHIM_DISK): $(SHIM_OBJECTS) $(SHIM_DISK_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) $(SHIM_OBJECTS) $(SHIM_DISK_OBJECTS) $(SIMH_LDFLAGS) -o $@
 
-$(SHIM_SYSLIST_DISK): shim/vax780_shim_syslist.c
+$(SHIM_SYSLIST_DISK): $(SHIM_DIR)/vax780_shim_syslist.c
 	@mkdir -p $(dir $@)
 	$(HOST_CC) $(SHIM_OWN_CFLAGS) -DSHIM_WITH_DISK -c $< -o $@
 
@@ -332,7 +338,11 @@ $(OBJDIR)/shim/sim/%.o: $(SIMH_DIR)/sim/%.c
 # level and not to the vendored tree's suppressions.
 SHIM_OWN_CFLAGS = $(filter-out $(SIMH_WARNINGS),$(SHIM_CFLAGS)) -Wall -Wextra
 
-$(OBJDIR)/shim/shim/%.o: shim/%.c
+$(OBJDIR)/shim/shim/%.o: $(SHIM_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) $(SHIM_OWN_CFLAGS) -c $< -o $@
+
+$(OBJDIR)/shim/host/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(HOST_CC) $(SHIM_OWN_CFLAGS) -c $< -o $@
 

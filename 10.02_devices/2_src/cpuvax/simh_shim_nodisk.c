@@ -12,6 +12,7 @@
 
 #include "simh_shim.h"
 
+#include "sim_defs.h"
 #include "scp.h"
 #include "sim_disk.h"
 

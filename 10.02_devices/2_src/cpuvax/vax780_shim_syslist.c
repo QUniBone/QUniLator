@@ -24,7 +24,9 @@
  * VMB before starting a boot.
  */
 
+#include "sim_defs.h"
 #include "vax_defs.h"
+#include "simh_shim.h"
 
 char sim_name[] = "VAX 11/780";
 
@@ -111,4 +113,21 @@ while ((val = Fgetc (fileref)) != EOF) {                /* read byte stream */
     origin = origin + 1;
     }
 return SCPE_OK;
+}
+
+/* What the processor is doing, for an embedding that publishes it. Here rather
+   than in simh_shim.c because a program counter, a status longword and the code
+   for a halt are the processor's own, and the rest of the shim knows nothing
+   about which processor it is carrying. */
+
+void simh_shim_state (simh_shim_state_t *state)
+{
+state->pc = (uint32_t) PC;
+state->psl = (uint32_t) PSL;
+state->instructions = sim_gtime ();
+}
+
+int simh_shim_halted (simh_shim_status_t status)
+{
+return (status == STOP_HALT);
 }

@@ -28,11 +28,17 @@
 #ifndef SIMH_SHIM_H_
 #define SIMH_SHIM_H_
 
-#include "sim_defs.h"
+#include <stdio.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* The seam is stated in plain types so that an embedding written in C++ can
+   include this without simh's own headers coming with it. A status is one of
+   simh's SCPE_ codes, and zero is success. */
+typedef int simh_shim_status_t;
 
 /* What the embedding provides. Every member is required. */
 typedef struct {
@@ -57,26 +63,44 @@ typedef struct {
 void simh_shim_bind (const simh_shim_host_t *host);
 
 /* Reset every device in sim_devices[], as scp's RESET ALL does. */
-t_stat simh_shim_reset (void);
+simh_shim_status_t simh_shim_reset (void);
 
 /* Run the processor for at most max_instructions, then return. The count is
    approximate in the same way sim_interval is: an instruction that spans
    several memory cycles charges more than one. Returns what sim_instr()
    returned, which is SCPE_STOP when the batch simply ran out. */
-t_stat simh_shim_run (int32 max_instructions);
+simh_shim_status_t simh_shim_run (int max_instructions);
 
 /* Attach a file to a unit named as scp names it, "RQ0" or "FL". */
-t_stat simh_shim_attach (const char *unit_name, const char *filename);
+simh_shim_status_t simh_shim_attach (const char *unit_name, const char *filename);
 
 /* Set a device or unit parameter out of its modifier table, as scp's SET does:
    simh_shim_set("RQ0 RD54"), simh_shim_set("RQ UDA50"). */
-t_stat simh_shim_set (const char *setting);
+simh_shim_status_t simh_shim_set (const char *setting);
 
 /* Boot from a device, as scp's BOOT does: find it, and call its boot routine. */
-t_stat simh_shim_boot (const char *unit_name);
+simh_shim_status_t simh_shim_boot (const char *unit_name);
 
 /* Text for a status code, for a host that wants to report one. */
-const char *simh_shim_status_text (t_stat status);
+const char *simh_shim_status_text (simh_shim_status_t status);
+
+/* What the processor is doing, for an embedding that publishes it. The
+   instruction count is simh's own, which charges a long instruction more than
+   one, so it counts work and not opcodes. */
+typedef struct {
+    uint32_t pc;
+    uint32_t psl;
+    double instructions;
+} simh_shim_state_t;
+
+void simh_shim_state (simh_shim_state_t *state);
+
+/* True when the last run ended because the processor executed HALT. */
+int simh_shim_halted (simh_shim_status_t status);
+
+/* True when the last run ended only because the batch ran out, which is the
+   ordinary end of a pass and not a reason to stop the machine. */
+int simh_shim_batch_ended (simh_shim_status_t status);
 
 #ifdef __cplusplus
 }

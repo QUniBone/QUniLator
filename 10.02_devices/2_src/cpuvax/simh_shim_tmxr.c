@@ -15,6 +15,7 @@
 
 #include "simh_shim.h"
 
+#include "sim_defs.h"
 #include "scp.h"
 #include "sim_tmxr.h"
 #include "simh_shim_internal.h"

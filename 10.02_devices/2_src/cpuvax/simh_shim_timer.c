@@ -19,6 +19,7 @@
 
 #include <time.h>
 
+#include "sim_defs.h"
 #include "scp.h"
 #include "sim_timer.h"
 #include "simh_shim_internal.h"

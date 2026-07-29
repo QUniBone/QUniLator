@@ -62,6 +62,7 @@
 #include "deuna.hpp"
 #include "cpu20.hpp"
 #include "cpu34.hpp"
+#include "cpuvax.hpp"
 #endif
 
 class device_configuration_c {
@@ -88,6 +89,7 @@ public:
 	// whichever is running.
 	cpu20_c *CPU20;
 	cpu34_c *CPU34;
+	cpuvax_c *CPUVAX;
 #elif defined(QBUS)
 	RLV12_c *RL11;
 	rkv11_c *RK11;

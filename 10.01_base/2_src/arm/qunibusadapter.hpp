@@ -87,6 +87,11 @@ private:
 public:
 	qunibusadapter_c();
 
+	// The processor now installed, or NULL. A CPU device asks before it
+	// installs itself, because register_device() asserts on a second one and an
+	// operator deserves a refusal rather than an aborted emulator.
+	unibuscpu_c *installed_cpu(void) { return registered_cpu; }
+
 	bool on_param_changed(parameter_c *param) override;  // must implement
 
 	// list of registered devices.
