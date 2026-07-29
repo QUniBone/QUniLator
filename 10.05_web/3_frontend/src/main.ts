@@ -10,6 +10,9 @@ import { initEvents, eventsWs } from './lib/events';
 import { shutdownTerminals } from './lib/terminals';
 import { vcb01Socket } from './lib/vcb01';
 
+// name the tab after the board it is serving, e.g. "qbone - QUniLator"
+document.title = location.hostname ? location.hostname + ' - QUniLator' : 'QUniLator';
+
 render(
   html`<${LocationProvider}><${App} /></${LocationProvider}>`,
   document.getElementById('app')!

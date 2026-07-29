@@ -26,11 +26,16 @@ function activeNav(path: string): string {
   return hit ? hit[0] : '/dashboard';
 }
 
+// the backend's platform string, cased for the wordmark
+const BUS_LABEL: Record<string, string> = { QBUS: 'QBus', UNIBUS: 'Unibus', HOST: 'Host' };
+
 function Sidebar({ active }: { active: string }) {
   const loc = useLocation();
+  const s = useStore();
+  const bus = BUS_LABEL[s.platform] || s.platform || '';
   return html`<aside class="sidebar">
     <div class="wordmark"><div class="mark">Q</div>
-      <div><span class="name">QUniLator</span><span class="sub">QBUS bridge</span></div></div>
+      <div><span class="name">QUniLator</span><span class="sub">${bus}</span></div></div>
     <nav class="nav">${NAV.map(
       ([path, label]) => html`
       <button class=${active === path ? 'active' : ''} onClick=${() => guardedRoute(loc, path)}><span>${label}</span></button>`
