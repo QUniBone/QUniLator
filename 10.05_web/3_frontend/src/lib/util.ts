@@ -12,6 +12,13 @@ export function octalStr(v: number, bitwidth?: number): string {
   return v.toString(8).padStart(Math.ceil((bitwidth || 16) / 3), '0');
 }
 
+// A value in the base a device declares it in. A PDP-11 register is read in
+// octal because that is how its documentation and its front panel read it; a
+// VAX register is read in hex for the same reason.
+export function hexStr(v: number, bitwidth?: number): string {
+  return v.toString(16).padStart(Math.ceil((bitwidth || 16) / 4), '0');
+}
+
 export function humanSize(n: number): string {
   if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
   if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';

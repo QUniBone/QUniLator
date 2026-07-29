@@ -51,9 +51,13 @@ export function serialConnected(): boolean {
   return serialPort != null;
 }
 
-// Where the console lives. The external-console setting names the physical
-// path; with none, the console is the emulated DL11 the guest talks to.
+// Where the console lives. A VAX carries its console terminal inside the
+// processor rather than on the bus, so a machine with one running has its
+// console there and nowhere else. Otherwise the external-console setting names
+// the physical path, and with none the console is the emulated DL11 the guest
+// talks to.
 export function consoleSource(): ConsoleSource {
+  if (store.devmodel.some((d) => d.type === 'VAX-11/780' && d.enabled)) return 'vax';
   const src = (store.settings.external_console || {}).source || 'off';
   if (src === 'ttys2') return 'ttys2';
   if (src === 'webserial') return 'webserial';
@@ -66,6 +70,7 @@ function consolePath(): string | null {
   const src = consoleSource();
   if (src === 'ttys2') return '/ws/console/ext';
   if (src === 'dl11') return '/ws/console/0';
+  if (src === 'vax') return '/ws/console/vax';
   return null;
 }
 

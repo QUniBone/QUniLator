@@ -45,7 +45,7 @@ cpuvax_c::cpuvax_c() :
     unibuscpu_c()
 {
     name.value = "cpuvax";
-    type_name.value = "cpuvax_c";
+    type_name.value = "VAX-11/780";
     log_label = "vax";
 
     // no registers on the bus, and no vector or slot of its own

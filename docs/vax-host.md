@@ -187,6 +187,25 @@ external deadline to meet and no third-party controller to arbitrate with. The
 DW780 register window and the interrupt path of stage 2 are still needed, and
 stage 5 then runs against the emulated devices.
 
+## On the dashboard
+
+The processor has a card of its own, because the PDP-11's does not fit: a VAX
+has a thirty-two bit program counter read in hex, a status longword laid out
+differently, and no switch register. It shows the counter and the longword, the
+mode and the level the processor runs at, the condition codes, and what the
+UNIBUS adapter has carried - register accesses, interrupts and mapped transfers,
+which is what says whether the adapter is doing anything. RUN, HALT and START
+work as the PDP-11's do.
+
+The console follows the processor. A VAX carries its console terminal inside
+itself rather than on the bus, so a machine with one enabled has its console
+there and nowhere else, and the dashboard's terminal connects to
+`/ws/console/vax` without being told to.
+
+Reading a register in the base its documentation uses is now the device model's
+business rather than each card's: a parameter declared in base 16 arrives
+rendered in hex, as one declared in base 8 always arrived in octal.
+
 ## Stage 1 — the processor as a device
 
 `cpuvax_c` is the VAX inside the application. It descends from `unibuscpu_c`
