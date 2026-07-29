@@ -15,7 +15,7 @@ Nothing here touches a board. Everything below is a host build and a host run.
 | `91_3rd_party/simh_vax` | the vendored simh sources and their provenance |
 | `10.07_vax/2_src/makefile` | the host build, two targets |
 | `10.07_vax/2_src/shim` | the stand-in for simh's command interpreter |
-| `10.07_vax/3_tests` | the two runs that judge the stage |
+| `10.07_vax/3_tests` | the runs that judge the stage |
 | `10.07_vax/4_deploy` | binaries and test output, not committed |
 
 `make -C 10.07_vax/2_src -j` builds both targets, clean under gcc and clang.
@@ -84,7 +84,43 @@ Three of simh's facilities are deliberately absent rather than stubbed:
 assembles a few instructions, loads them at address 0 and runs them. They write
 `OK` to the console and halt, which exercises the loader, instruction execution,
 the console channel, the event queue that completes each character, and the stop
-path.
+path. `shim-rate.sh` runs a five-instruction loop against the clock and reports
+the instruction rate.
+
+## On the board
+
+The core is portable C, and both targets cross-build for the AM335x under the
+armhf toolchain `crossbuild.sh` carries — the makefile header gives the command.
+`SIMH_USE_NETWORK=no` turns off simh's own ethernet, which a board build does
+not want: its ethernet is the emulated DEUNA on the bus.
+
+Measured on `unibone.huebner.org`, a backplane-less UniBone (AM335x, 474 MB),
+against the same workstation figures:
+
+| | workstation | board |
+|---|---|---|
+| `shim-rate.sh` | 38.9 M instructions/s | 0.97 M instructions/s |
+| `boot-vms.sh` to the login prompt | 13 s | 55 s |
+
+A VAX-11/780 is about half a million instructions per second, so the board runs
+the machine at roughly twice the speed of the original. The board figure was
+taken while the board's own PDP-11/34 emulation was running and holding about a
+third of the processor, so an idle board gives more.
+
+These are the stage 1 baseline: a later stage that moves them by an order of
+magnitude has changed something structural.
+
+What runs there today is the simulator standing alone, not a VAX under
+QUniLator. The step from one to the other is stage 1 below.
+
+A backplane-less board reaches the rest of the plan by a shorter road than the
+plan assumes, because `internal_bus` (see `unibone-bringup-issues.md` §20) makes
+the PRU answer its own bus cycles. Stages 2 to 4 exist to put device registers
+and DMA on real bus wires and to prove the map lookup fits the UNIBUS slave
+timing budget; with the bus internal the same PRU path carries them with no
+external deadline to meet and no third-party controller to arbitrate with. The
+DW780 register window and the interrupt path of stage 2 are still needed, and
+stage 5 then runs against the emulated devices.
 
 ## What stage 1 needs next
 

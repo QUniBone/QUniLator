@@ -50,12 +50,26 @@ answer_date=$(date '+%d-%b-%Y %H:%M' | tr '[:lower:]' '[:upper:]')
 
 echo "booting $image on $(basename "$vax780"), limit ${timeout_s}s"
 
-# simh reads its own console from stdin. A pipe that outlives the run keeps it
-# from seeing end of file while VMS is still starting.
-( sleep "$timeout_s" ) |
-    ( cd "$rundir" && timeout "$timeout_s" "$vax780" "$here/boot-vms.ini" \
-        system.dsk "$answer_date" ) >"$rundir/sim.out" 2>&1
+# simh reads its own console from stdin, and takes end of file there as a reason
+# to stop. Nothing types at it - the EXPECT rules answer the two prompts - so it
+# is given a pipe that no one writes to and that stays open: sleep holds the
+# write end, and is killed as soon as the simulator is done so a run ends when
+# the boot ends rather than when the limit does.
+fifo=$rundir/console.in
+mkfifo "$fifo"
+sleep "$timeout_s" >"$fifo" &
+holder=$!
+
+started=$(date +%s)
+( cd "$rundir" && timeout "$timeout_s" "$vax780" "$here/boot-vms.ini" \
+    system.dsk "$answer_date" ) <"$fifo" >"$rundir/sim.out" 2>&1
 status=$?
+elapsed=$(( $(date +%s) - started ))
+
+kill "$holder" 2>/dev/null
+wait "$holder" 2>/dev/null
+rm -f "$fifo"
+echo "the run took ${elapsed}s"
 
 log=$rundir/console.log
 if [ ! -s "$log" ]; then

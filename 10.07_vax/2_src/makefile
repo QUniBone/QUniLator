@@ -15,6 +15,16 @@
 #	clean		remove objects and binaries
 #
 # Use "make -j".
+#
+# For the board, run the same makefile under the armhf cross toolchain that
+# crossbuild.sh carries, which is the Debian the appliance image runs:
+#
+#	docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/qunibone" \
+#	    -w /qunibone/10.07_vax/2_src qunibone-crossbuild:<tag> \
+#	    make QUNIBONE_DIR=/qunibone HOST_CC=arm-linux-gnueabihf-gcc \
+#	         OBJDIR=/qunibone/10.07_vax/4_deploy_arm SIMH_USE_NETWORK=no -j
+#
+# Copy 4_deploy_arm/vax780 and vax780-shim to the board and run 3_tests there.
 
 # Fixed immediately: the generated dependency files are included at the end of
 # this makefile and join MAKEFILE_LIST, so its last word stops naming this file
@@ -93,7 +103,17 @@ SIMH_DLOPEN = -DSIM_HAVE_DLOPEN=dylib
 else
 SIMH_DLOPEN = -DSIM_HAVE_DLOPEN=so
 endif
+
+# simh's own ethernet, which the stock simulator's XU device needs and which
+# wants pcap's header at compile time. Set SIMH_USE_NETWORK=no for a build whose
+# ethernet is an emulated device on the bus rather than simh's, which is what a
+# build for the board is; sim_ether.c then compiles to its own stub.
+SIMH_USE_NETWORK ?= yes
+ifeq ($(SIMH_USE_NETWORK),yes)
 SIMH_NETWORK = -DHAVE_PCAP_NETWORK -DUSE_SHARED -DBPF_CONST_STRING
+else
+SIMH_NETWORK =
+endif
 
 # The reader thread and asynchronous I/O, as the upstream makefile builds them.
 SIMH_ASYNCH = -DUSE_READER_THREAD -DSIM_ASYNCH_IO
@@ -122,9 +142,7 @@ SIMH_PROVENANCE = \
 #				ignores
 #   missing-braces		vax_uw.c writes the UNIT table with the simh
 #				UDATA() macro and no inner braces
-#   uninitialized,		sim_tmxr.c has three locals the compiler cannot
-#   maybe-uninitialized		see are set on every reached path, and
-#				sim_exp_set() in scp.c copies re_nsub on a path
+#   uninitialized		sim_exp_set() in scp.c copies re_nsub on a path
 #				that only a regex-enabled build reaches
 #   misleading-indentation	simh's house style puts the closing brace of a
 #				block at the indent of its body
@@ -140,10 +158,15 @@ SIMH_WARNINGS = \
 	-Wno-misleading-indentation \
 	-Wno-array-bounds
 
-# -Wmaybe-uninitialized is a gcc spelling; clang rejects the flag and says so.
+# gcc spellings, which clang rejects and says so:
+#
+#   maybe-uninitialized	sim_tmxr.c has three locals gcc cannot see are set on
+#			every reached path
+#   format-overflow	sim_tape.c formats an int into a three-character buffer,
+#			which a 32-bit target makes gcc count as up to ten
 HOST_CC_IS_CLANG = $(shell echo | $(HOST_CC) -dM -E - 2>/dev/null | grep -c __clang__)
 ifeq ($(HOST_CC_IS_CLANG),0)
-SIMH_WARNINGS += -Wno-maybe-uninitialized
+SIMH_WARNINGS += -Wno-maybe-uninitialized -Wno-format-overflow
 endif
 
 # -MMD -MP writes a dependency file beside each object, so a changed header
