@@ -141,6 +141,13 @@ public:
     parameter_bool_c lock = parameter_bool_c(this, "lock", "lk", false,
                             "Host lock: medium cannot be changed while set");
 
+    // Copy-on-write overlay: when set (the default for disks), writes to a plain
+    // binary image go to a per-image sparse overlay and the base file stays
+    // read-only, so an unclean shutdown only ever corrupts the throw-away
+    // overlay. Cleared: the image is written in place (the classic behaviour).
+    parameter_bool_c use_overlay = parameter_bool_c(this, "use_overlay", "ovl", false,
+                            "Write through a copy-on-write overlay, keeping the base image pristine");
+
     virtual bool on_param_changed(parameter_c *param) override;
 
 //	parameter_bool_c writeprotect = parameter_bool_c(this, "writeprotect", "wp", /*readonly*/false, "Medium is write protected, different reasons") ;
@@ -160,6 +167,11 @@ private:
     bool image_recreate_shared_on_param_change(std::string image_path, std::string filesystem_paramval, std::string shareddir_paramval);
 
 public:
+    // the active image implementation (may be a plain file, a COW overlay, a
+    // shared dir or nullptr when detached); the web layer downcasts to reach
+    // storageimage_cow_c for overlay management
+    storageimage_base_c *get_image(void) const { return image ; }
+
     bool image_open(bool create) ;
     void image_close(void) ;
     bool image_is_open(void) ;

@@ -114,6 +114,13 @@ export interface ImageInfo {
   mtime?: string;
   attached?: string[];
   used?: ImageUse[];
+  // A copy-on-write overlay captures every write since the base image; the base
+  // file itself is never touched. When active, the block/byte fields report how
+  // much the overlay holds (dirty 512-byte blocks and the sidecar's real
+  // on-disk footprint).
+  overlay?: boolean;
+  overlay_dirty_blocks?: number;
+  overlay_bytes?: number;
 }
 
 // GET /api/images now returns a folder tree: the flat list of folder subpaths

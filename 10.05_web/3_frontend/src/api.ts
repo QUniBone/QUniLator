@@ -229,6 +229,63 @@ export async function moveImage(from: string, to: string): Promise<boolean> {
   return res.ok;
 }
 
+// ---- copy-on-write overlays ----
+// The three overlay operations answer 409 while the machine runs (they need the
+// disk quiescent) and 404 when the image has no active overlay. The status code
+// is returned so the caller can surface the 409 case inline; other failures are
+// toasted like the rest of the image mutations. A success refreshes the image
+// list so the overlay readout updates.
+export interface OverlayResult {
+  ok: boolean;
+  status: number;
+  error?: string;
+}
+
+async function overlayOp(
+  subpath: string,
+  op: 'discard' | 'commit' | 'export',
+  okMsg: string,
+  body?: Record<string, unknown>
+): Promise<OverlayResult> {
+  const url = subURL('/api/images/', subpath) + '/overlay/' + op;
+  const init: RequestInit = { method: 'POST' };
+  if (body) {
+    init.headers = { 'Content-Type': 'application/json' };
+    init.body = JSON.stringify(body);
+  }
+  let r: Response;
+  try {
+    r = await fetch(url, init);
+  } catch {
+    toast('POST ' + url, 'network error');
+    return { ok: false, status: 0, error: 'network error' };
+  }
+  const data = (await r.json().catch(() => ({}))) as { error?: string };
+  if (r.ok) {
+    toast('POST ' + url, okMsg);
+    await refreshImages().catch(() => {});
+  } else if (r.status !== 409) {
+    // the 409 "machine must be halted" case is shown inline by the caller
+    toast('POST ' + url, data.error || 'overlay operation failed');
+  }
+  return { ok: r.ok, status: r.status, error: data.error };
+}
+
+// Throw the overlay away and revert the disk to its pristine base.
+export function discardOverlay(subpath: string): Promise<OverlayResult> {
+  return overlayOp(subpath, 'discard', 'overlay discarded — reverted to base');
+}
+
+// Fold the overlay into the base image (permanent) and clear the overlay.
+export function commitOverlay(subpath: string): Promise<OverlayResult> {
+  return overlayOp(subpath, 'commit', 'overlay consolidated into the base image');
+}
+
+// Write a flattened base+overlay standalone image to `dest`, leaving both intact.
+export function exportOverlay(subpath: string, dest: string): Promise<OverlayResult> {
+  return overlayOp(subpath, 'export', 'flattened image written to ' + dest, { dest });
+}
+
 // ---- configurations ----
 // GET /api/configs → {current, modified, configs[]}. The current pointer and
 // the live modified flag come straight from the backend; the /ws/events

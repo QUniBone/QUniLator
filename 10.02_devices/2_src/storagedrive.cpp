@@ -60,6 +60,11 @@ storagedrive_c::storagedrive_c(storagecontroller_c *_controller) :
     image = nullptr ; // create on parameter setting
     // or pure "shared" directory, or syncronizing share<->binary image
 
+    // copy-on-write overlay on by default for disk media: writes are captured
+    // in a per-image overlay and the base image stays pristine
+    use_overlay.value = true ;
+    use_overlay.new_value = true ;
+
     // default: shared filesystem not (yet) implementable for this disk type (MSCP)
     drive_type = drive_type_e::NONE ;
 
@@ -125,8 +130,17 @@ bool storagedrive_c::image_recreate_on_param_change(parameter_c *param)
         // todo: well-formed path? else later open() fails
         image_delete() ;
 		accepted = image_recreate_shared_on_param_change(image_filepath.new_value, image_filesystem.value, image_shareddir.value) ;
-	    if (image == nullptr)  // not enough params for shared dir: try regular image
-	        image = new storageimage_binfile_c(image_filepath.new_value) ; // dyn size
+	    if (image == nullptr) {
+	        // not a shared dir: a regular binary image. Disks default to a
+	        // copy-on-write overlay (base stays pristine, writes go to a sibling
+	        // ".ovl"); tapes and drives with the overlay disabled write in place.
+	        if (use_overlay.value && !strcmp(category(), "disk")
+	                && !image_filepath.new_value.empty()) {
+	            std::string base = image_filepath.new_value ;
+	            image = new storageimage_cow_c(base, base + ".ovl", base + ".ovl.map") ;
+	        } else
+	            image = new storageimage_binfile_c(image_filepath.new_value) ; // dyn size
+	    }
         accepted = (image != nullptr) ;
     } else if (param == &image_filesystem) {
         // shared image file system change?

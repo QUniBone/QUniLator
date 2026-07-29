@@ -4,7 +4,7 @@
 import { html } from '../html';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import { useRoute, useLocation } from 'preact-iso';
-import { humanSize, baseName, parentDir, subURL } from '../lib/util';
+import { humanSize, baseName, parentDir, subURL, esc } from '../lib/util';
 import {
   refreshImages,
   uploadImages,
@@ -13,8 +13,12 @@ import {
   deleteFolder,
   moveImage,
   imageContents,
+  discardOverlay,
+  commitOverlay,
+  exportOverlay,
+  type OverlayResult,
 } from '../api';
-import { promptModal } from '../lib/modals';
+import { promptModal, confirmModal } from '../lib/modals';
 import { useStore } from '../store';
 import { DelButton } from './common';
 import type { ImageInfo, ImageContents } from '../types';
@@ -101,6 +105,76 @@ function ContentsPanel({ data }: { data?: ImageContents }) {
           <td class="mono">${f.blocks_on_volume != null ? f.blocks_on_volume : '—'}</td>
           <td class="muted mono">${f.created || '—'}</td></tr>`
       )}</tbody></table></div></div>`;
+}
+
+// The copy-on-write overlay readout and its three operations, shown beneath a
+// disk row whose image carries an active overlay. Discard reverts to the base;
+// consolidate folds the writes into the base (destructive) or into a fresh file
+// (non-destructive). All three need the machine halted; the backend's 409 is
+// surfaced inline rather than as a passing toast.
+function OverlayPanel({ im }: { im: ImageInfo }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const react = (r: OverlayResult) => {
+    if (r.ok) setMsg('');
+    else if (r.status === 409)
+      setMsg('Halt the machine first — overlay operations need the disk idle.');
+    else setMsg(r.error || 'overlay operation failed');
+  };
+
+  const run = async (fn: () => Promise<OverlayResult>) => {
+    setBusy(true);
+    react(await fn());
+    setBusy(false);
+  };
+
+  const discard = async () => {
+    if (!(await confirmModal('Discard overlay', 'Discard all changes since the base image?', 'Discard'))) return;
+    run(() => discardOverlay(im.path));
+  };
+
+  const consolidate = async () => {
+    const ok = await confirmModal(
+      'Consolidate into the base image',
+      'Permanently write these changes into <span class="mono">' +
+        esc(im.name) +
+        '</span>? The original cannot be recovered afterward.',
+      'Consolidate'
+    );
+    if (!ok) return;
+    run(() => commitOverlay(im.path));
+  };
+
+  const exportNew = async () => {
+    const dot = im.path.lastIndexOf('.');
+    const suggestion =
+      dot > im.path.lastIndexOf('/')
+        ? im.path.slice(0, dot) + '-flat' + im.path.slice(dot)
+        : im.path + '-flat';
+    const dest = await promptModal(
+      'Consolidate to a new image',
+      'Destination path (in the image tree)',
+      suggestion,
+      'Export'
+    );
+    if (!dest) return;
+    run(() => exportOverlay(im.path, dest));
+  };
+
+  const blocks = im.overlay_dirty_blocks ?? 0;
+  return html`<div class="overlay-panel">
+    <div class="overlay-status">
+      <span class="overlay-label">Overlay active</span>
+      <span class="muted mono">${blocks.toLocaleString()} block${blocks === 1 ? '' : 's'} written · ${humanSize(im.overlay_bytes ?? 0)}</span>
+    </div>
+    <div class="overlay-actions">
+      <button class="btn small" disabled=${busy} onClick=${discard}>Discard overlay</button>
+      <button class="btn small" disabled=${busy} onClick=${consolidate}>Consolidate → base</button>
+      <button class="btn small" disabled=${busy} onClick=${exportNew}>Consolidate → new file…</button>
+    </div>
+    ${msg ? html`<div class="overlay-msg">${msg}</div>` : null}
+  </div>`;
 }
 
 export function StoragePage() {
@@ -225,7 +299,8 @@ export function StoragePage() {
               aria-expanded=${open} onClick=${() => toggleContents(im.path)}>▸</button>
             <span class="pick-icon">💾</span>
             <span class="mono">${im.name}</span>
-            ${im.writable === false ? html`<span class="chip off" title="read-only file">read-only</span>` : null}</span></td>
+            ${im.writable === false ? html`<span class="chip off" title="read-only file">read-only</span>` : null}
+            ${im.overlay ? html`<span class="chip warn" title="a copy-on-write overlay holds unsaved writes">overlay</span>` : null}</span></td>
           <td class="mono">${humanSize(im.size)}</td>
           <td><${ImageUsage} im=${im} /></td>
           <td class="muted mono" style="font-size:var(--fs-0)">${im.mtime}</td>
@@ -235,6 +310,10 @@ export function StoragePage() {
             <button class="btn small" onClick=${() => renameEntry(im.path, false)}>Rename…</button>${' '}
             <${DelButton} label="Delete" confirmLabel="Confirm delete" onConfirm=${() => deleteImage(im.path)} />
           </td></tr>
+          ${im.overlay
+            ? html`<tr key=${'ov:' + im.path} class="overlay-row"><td colspan="5">
+                <${OverlayPanel} im=${im} /></td></tr>`
+            : null}
           ${open
             ? html`<tr key=${'fc:' + im.path} class="contents-row"><td colspan="5">
                 <${ContentsPanel} data=${contents[im.path]} /></td></tr>`

@@ -331,6 +331,17 @@ table.data td.mono, table.data th.num { font-family: var(--font-mono); }
 .img-contents-head .fs { color: var(--ink); font-weight: 600; }
 .img-contents-head .vol { color: var(--ink-muted); }
 .img-contents .note { margin: 2px; }
+/* copy-on-write overlay controls, shown beneath a disk row */
+.overlay-row > td { padding: 0 10px 10px; background: var(--surface-2); }
+.overlay-panel {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: 8px 2px 2px; font-size: var(--fs-1);
+}
+.overlay-label { color: var(--warn); font-weight: 600; }
+.overlay-status { display: flex; align-items: baseline; gap: 8px; }
+.overlay-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.overlay-msg { flex-basis: 100%; color: var(--err); font-size: var(--fs-0); }
+
 /* the inner listing reads as a nested, lighter table */
 table.data.inner { background: var(--surface); border: 1px solid var(--line-soft); border-radius: 6px; }
 table.data.inner th { padding: 5px 8px; }

@@ -36,6 +36,7 @@
 #include <stdint.h>
 #include <string>
 #include <fstream>
+#include <vector>
 #include "logsource.hpp"
 #include "bytebuffer.hpp"
 
@@ -102,6 +103,87 @@ public:
     virtual void save_to_file(std::string host_filename) override ;
 
 
+} ;
+
+// A copy-on-write disk image: a read-only base file plus a sparse overlay that
+// holds every 512-byte block written since the base was opened. Reads fall
+// through to the base for blocks not yet written; writes only ever touch the
+// overlay, so the base stays pristine and an unclean shutdown can only corrupt
+// the throw-away overlay. An occupancy bitmap (one bit per block) records which
+// blocks live in the overlay; it is persisted to a sidecar and, if the sidecar
+// is missing or stale, rebuilt from the overlay's SEEK_DATA/SEEK_HOLE sparseness.
+class storageimage_cow_c: public storageimage_base_c {
+private:
+    static const unsigned BLOCK_SIZE = 512 ;
+
+    std::string base_fname ;    // read-only base image
+    std::string overlay_fname ; // sparse overlay holding written blocks
+    std::string map_fname ;     // occupancy-bitmap sidecar
+
+    int base_fd ;               // O_RDONLY
+    int overlay_fd ;            // O_RDWR|O_CREAT
+
+    uint64_t base_size_bytes ;  // size of the base file (pristine size)
+    uint64_t image_size_bytes ; // logical disk size (grows if a write extends it)
+    uint64_t block_count ;      // ceil(image_size_bytes / BLOCK_SIZE)
+
+    std::vector<uint8_t> occupancy ; // 1 bit per block; set => block is in overlay
+    bool opened ;               // between open() and close()
+
+    // bitmap helpers
+    bool bit_get(uint64_t block) const ;
+    void bit_set(uint64_t block) ;
+    void ensure_blocks(uint64_t needed_block_count) ; // grow bitmap + logical size
+
+    // read one whole block: from the overlay if occupied, else the base; the
+    // buffer is zero-filled first so a short read past EOF yields 00s.
+    void cow_read_block(uint64_t block, uint8_t *block_buffer) ;
+
+    bool load_bitmap_sidecar() ;      // true if a valid sidecar was loaded
+    void rebuild_bitmap_from_overlay() ; // crash recovery from overlay sparseness
+    void write_bitmap_sidecar() ;
+
+public:
+    storageimage_cow_c(std::string _base_fname, std::string _overlay_fname,
+                       std::string _map_fname) {
+        base_fname = _base_fname ;
+        overlay_fname = _overlay_fname ;
+        map_fname = _map_fname ;
+        base_fd = -1 ;
+        overlay_fd = -1 ;
+        base_size_bytes = 0 ;
+        image_size_bytes = 0 ;
+        block_count = 0 ;
+        opened = false ;
+    }
+
+    virtual ~storageimage_cow_c() override {
+        close() ;
+    }
+
+    virtual bool is_readonly() override {
+        return false ; // writes always land in the overlay
+    }
+    virtual bool open(storagedrive_c *drive, bool create) override;
+    virtual bool is_open(void) override;
+    virtual bool truncate(void) override; // resets the disk to the pristine base
+    virtual void read(uint8_t *buffer, uint64_t position, unsigned len) override;
+    virtual void write(uint8_t *buffer, uint64_t position, unsigned len) override;
+    virtual uint64_t size(void) override;
+    virtual void close(void) override;
+    virtual void get_bytes(byte_buffer_c *byte_buffer, uint64_t byte_offset, uint32_t data_size) override;
+    virtual void set_bytes(byte_buffer_c *byte_buffer, uint64_t byte_offset) override ;
+    virtual void save_to_file(std::string host_filename) override ; // flattened export
+
+    // overlay management, driven by the images API
+    void discard() ;             // throw the overlay away, back to pristine base
+    bool commit() ;              // fold the overlay into the base, then discard()
+    void export_to(std::string host_filename) { save_to_file(host_filename) ; }
+
+    // status for the API
+    bool has_overlay(void) const { return opened ; }
+    uint64_t dirty_block_count(void) const ; // occupied (written) blocks
+    uint64_t overlay_allocated_bytes(void) const ; // overlay's on-disk footprint
 } ;
 
 // in-memory version of disk image file

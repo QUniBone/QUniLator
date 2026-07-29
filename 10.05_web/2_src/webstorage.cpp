@@ -44,10 +44,12 @@
 #include "logger.hpp"
 #include "device.hpp"
 #include "storagedrive.hpp"
+#include "storageimage.hpp"
 
 #include "weblog.hpp"
 #include "webstorage.hpp"
 #include "webconfigs.hpp"
+#include "webevents.hpp"
 
 static std::string images_dir;
 
@@ -205,6 +207,56 @@ static picojson::array attached_drives(const std::string &sub) {
 	return result;
 }
 
+// Overlay status for an image, filled from the COW object of a drive it is
+// attached to. Present is false when no attached drive runs a copy-on-write
+// overlay for this image (detached, overlay disabled, or a shared dir).
+struct overlay_status_t {
+	bool present = false;
+	uint64_t dirty_blocks = 0;
+	uint64_t overlay_bytes = 0;
+};
+
+static overlay_status_t overlay_status(const std::string &sub) {
+	overlay_status_t out;
+	std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
+	for (device_c *dev : device_c::mydevices) {
+		storagedrive_c *drive = dynamic_cast<storagedrive_c *>(dev);
+		if (drive == nullptr)
+			continue;
+		if (webstorage_image_subpath(drive->image_filepath.value) != sub)
+			continue;
+		storageimage_cow_c *cow = dynamic_cast<storageimage_cow_c *>(drive->get_image());
+		if (cow == nullptr || !cow->has_overlay())
+			continue;
+		out.present = true;
+		out.dirty_blocks = cow->dirty_block_count();
+		out.overlay_bytes = cow->overlay_allocated_bytes();
+		break;
+	}
+	return out;
+}
+
+// Locate the COW image of a drive an image is attached to, so an overlay
+// operation acts on the object the running system holds (same fds), not a
+// second view of the files. Returns nullptr when there is no such drive.
+// The caller must hold device_c::mydevices_mutex.
+static storageimage_cow_c *find_attached_cow(const std::string &sub, std::string *drive_name) {
+	for (device_c *dev : device_c::mydevices) {
+		storagedrive_c *drive = dynamic_cast<storagedrive_c *>(dev);
+		if (drive == nullptr)
+			continue;
+		if (webstorage_image_subpath(drive->image_filepath.value) != sub)
+			continue;
+		storageimage_cow_c *cow = dynamic_cast<storageimage_cow_c *>(drive->get_image());
+		if (cow != nullptr && cow->has_overlay()) {
+			if (drive_name != nullptr)
+				*drive_name = dev->name.value;
+			return cow;
+		}
+	}
+	return nullptr;
+}
+
 // -------------------------------------------------------------------------
 // read-only-while-attached
 
@@ -218,6 +270,12 @@ void webstorage_refresh_readonly(bool machine_running) {
 		for (device_c *dev : device_c::mydevices) {
 			storagedrive_c *drive = dynamic_cast<storagedrive_c *>(dev);
 			if (drive == nullptr || !dev->enabled.value)
+				continue;
+			// a base served through a copy-on-write overlay is never written by
+			// the emulator, so it needs no read-only marking — and the user's
+			// permissions on it must be left untouched
+			storageimage_cow_c *cow = dynamic_cast<storageimage_cow_c *>(drive->get_image());
+			if (cow != nullptr && cow->has_overlay())
 				continue;
 			std::string sub = webstorage_image_subpath(drive->image_filepath.value);
 			if (!sub.empty() && sub[0] != '/')
@@ -266,6 +324,12 @@ static void walk_images(const std::string &reldir, picojson::array &dirs,
 		std::string leaf = entry->d_name;
 		if (leaf == "." || leaf == ".." || leaf[0] == '.')
 			continue;
+		// hide the copy-on-write overlay and its bitmap sidecar: they are
+		// internal per-image artifacts, not images in their own right
+		if (leaf.size() > 4 && leaf.compare(leaf.size() - 4, 4, ".ovl") == 0)
+			continue;
+		if (leaf.size() > 8 && leaf.compare(leaf.size() - 8, 8, ".ovl.map") == 0)
+			continue;
 		std::string sub = reldir.empty() ? leaf : reldir + "/" + leaf;
 		std::string abs = images_dir + "/" + sub;
 		struct stat st;
@@ -293,6 +357,12 @@ static void walk_images(const std::string &reldir, picojson::array &dirs,
 				uses.push_back(picojson::value(e));
 			}
 			o["used"] = picojson::value(uses);
+			overlay_status_t ov = overlay_status(sub);
+			o["overlay"] = picojson::value(ov.present);
+			if (ov.present) {
+				o["overlay_dirty_blocks"] = picojson::value((double) ov.dirty_blocks);
+				o["overlay_bytes"] = picojson::value((double) ov.overlay_bytes);
+			}
 			images.push_back(picojson::value(o));
 		}
 	}
@@ -529,6 +599,98 @@ static void image_contents(struct mg_connection *conn, const std::string &sub) {
 	mg_write(conn, body.c_str(), body.size());
 }
 
+// POST /api/images/<subpath>/overlay/<discard|commit|export>
+//
+// discard: throw the overlay away, restoring the pristine base
+// commit:  fold the overlay into the base, then discard it
+// export:  write a flattened plain image to {"dest": <subpath>}, base untouched
+//
+// Guarded on machine state: mutating an overlay (or reading a consistent
+// flattened export) while the guest is doing I/O would race live block writes,
+// so these are only allowed with the machine not running (powered off or the
+// CPU halted) — the same "safe to touch storage" condition the read-only-while-
+// attached logic uses.
+static void image_overlay_op(struct mg_connection *conn, const std::string &base,
+		const std::string &action) {
+	if (webevents_is_powered() && !webevents_is_halted()) {
+		send_error(conn, 409,
+				"halt the machine before changing an image overlay");
+		return;
+	}
+
+	// export needs its destination from the body before we take the device lock
+	std::string dest_sub, dest_abs;
+	if (action == "export") {
+		picojson::value req;
+		if (!read_json_body(conn, &req) || !req.get("dest").is<std::string>()) {
+			send_error(conn, 400, "body must be {\"dest\":..}");
+			return;
+		}
+		dest_sub = webstorage_image_subpath(req.get("dest").get<std::string>());
+		if (!valid_subpath(dest_sub)) {
+			send_error(conn, 400, "\"" + dest_sub + "\" is not a valid image path");
+			return;
+		}
+		size_t slash = dest_sub.rfind('/');
+		if (slash != std::string::npos && !make_dirs(dest_sub.substr(0, slash))) {
+			send_error(conn, 500, "cannot create the target folder");
+			return;
+		}
+		dest_abs = images_dir + "/" + dest_sub;
+	}
+
+	std::string drive_name;
+	bool ok = false;
+	int fail_status = 500;
+	std::string errmsg;
+	{
+		std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
+		storageimage_cow_c *cow = find_attached_cow(base, &drive_name);
+		if (cow == nullptr) {
+			send_error(conn, 404,
+					"no attached drive has a copy-on-write overlay for \"" + base + "\"");
+			return;
+		}
+		if (action == "discard") {
+			cow->discard();
+			ok = true;
+		} else if (action == "commit") {
+			// consolidating writes into the base needs a writable base; a base
+			// the user made read-only cannot be committed into (its permissions
+			// are never touched), so fail with a clear, specific message
+			if (access(image_abs(base).c_str(), W_OK) != 0) {
+				fail_status = 409;
+				errmsg = "cannot consolidate into read-only base image \"" + base + "\"";
+			} else {
+				ok = cow->commit();
+				if (!ok)
+					errmsg = "commit failed (see the log)";
+			}
+		} else if (action == "export") {
+			cow->export_to(dest_abs);
+			ok = true;
+		} else {
+			errmsg = "unknown overlay action";
+		}
+	}
+	if (!ok) {
+		send_error(conn, fail_status, errmsg.empty() ? "overlay operation failed" : errmsg);
+		return;
+	}
+	if (action == "export") {
+		own_by_qunilator(dest_abs);
+		WEB_INFO("image %s overlay exported to %s", base.c_str(), dest_sub.c_str());
+	} else {
+		WEB_INFO("image %s overlay %s (drive %s)", base.c_str(), action.c_str(),
+				drive_name.c_str());
+	}
+	picojson::object res;
+	res["ok"] = picojson::value(true);
+	if (action == "export")
+		res["dest"] = picojson::value(dest_sub);
+	send_json(conn, 200, picojson::value(res));
+}
+
 // /api/images and /api/images/<subpath>
 static int api_images_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	const struct mg_request_info *ri = mg_get_request_info(conn);
@@ -563,6 +725,25 @@ static int api_images_handler(struct mg_connection *conn, void * /*cbdata*/) {
 			return 405;
 		}
 		image_contents(conn, base);
+		return 200;
+	}
+
+	// POST /api/images/<subpath>/overlay/<discard|commit|export>
+	static const std::string OVL = "/overlay/";
+	size_t ovl_at = sub.rfind(OVL);
+	if (ovl_at != std::string::npos) {
+		std::string overlay_base = sub.substr(0, ovl_at);
+		std::string action = sub.substr(ovl_at + OVL.size());
+		if (!valid_subpath(overlay_base)
+				|| (action != "discard" && action != "commit" && action != "export")) {
+			send_error(conn, 404, "unknown overlay action");
+			return 404;
+		}
+		if (strcmp(ri->request_method, "POST") != 0) {
+			send_error(conn, 405, "POST required");
+			return 405;
+		}
+		image_overlay_op(conn, overlay_base, action);
 		return 200;
 	}
 
