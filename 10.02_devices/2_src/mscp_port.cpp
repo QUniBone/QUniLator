@@ -909,19 +909,23 @@ mscp_port_c::PortError(uint16_t error)
 
 //
 // Interrupt():
-//  Invokes a Qbus/Unibus interrupt if interrupts are enabled and the interrupt
-//  vector is non-zero.  Updates SA to the specified value atomically.
+//  Sets SA to the specified value and invokes a Qbus/Unibus interrupt if
+//  interrupts are enabled and the interrupt vector is non-zero.
+//
+//  A controller loads SA and then requests the interrupt, so the host can read
+//  the step it has reached whether or not the request has been granted yet.
+//  Publishing SA with the grant instead leaves the register holding the
+//  previous step for as long as the arbitration takes, and a host that polls
+//  SA rather than waiting for the interrupt sees the initialisation stand still.
 //
 void
 mscp_port_c::Interrupt(uint16_t sa_value)
 {
+    update_SA(sa_value);
+
     if ((_interruptEnable || _initStep == InitializationStep::Complete) && _interruptVector != 0)
     {
-        qunibusadapter->INTR(intr_request, SA_reg, sa_value);
-    }
-    else
-    {
-        update_SA(sa_value);
+        qunibusadapter->INTR(intr_request, NULL, 0);
     }
 }
 
