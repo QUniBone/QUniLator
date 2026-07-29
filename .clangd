@@ -40,3 +40,49 @@ CompileFlags:
     - -I10.05_web/2_src
     - -I91_3rd_party/civetweb
     - -I91_3rd_party/picojson
+
+---
+# The VAX host of 10.07_vax and the simh sources it builds are C, not C++, and
+# they are built by 10.07_vax/2_src/makefile with a configuration of their own.
+# The flags above describe the QBUS C++ build and do not apply, so this fragment
+# takes them off again and gives clangd the VAX build's view instead.
+If:
+  PathMatch:
+    - 10.07_vax/.*
+    - 91_3rd_party/simh_vax/.*
+CompileFlags:
+  Remove:
+    - -std=c++11
+    - -D__linux__
+    - -DARM
+    - -DQBUS
+    - -DBLINKENLIGHT_CLIENT
+    - -DDBG
+    - -DWEBUI
+    - -DUSE_WEBSOCKET
+  Add:
+    # Headers default to Objective-C++ in clangd, which rejects -std=c99 outright
+    # and then reports every type in them as unknown.
+    - -xc
+    - -std=c99
+    - -U__STRICT_ANSI__
+    - -DVM_VAX
+    - -DVAX_780
+    - -DUSE_INT64
+    - -DUSE_ADDR64
+    # Named from the repository root, as the flags above are, and again from the
+    # two directories the VAX sources sit in - 10.07_vax/2_src/shim and
+    # 91_3rd_party/simh_vax/* - because a clangd with no compilation database
+    # resolves a relative -I against the directory of the file it is parsing. A
+    # path that does not exist from where clangd stands is ignored.
+    - -I91_3rd_party/simh_vax/sim
+    - -I91_3rd_party/simh_vax/VAX
+    - -I91_3rd_party/simh_vax/PDP11
+    - -I10.07_vax/2_src/shim
+    - -I../../../91_3rd_party/simh_vax/sim
+    - -I../../../91_3rd_party/simh_vax/VAX
+    - -I../../../91_3rd_party/simh_vax/PDP11
+    - -I../../../10.07_vax/2_src/shim
+    - -I../sim
+    - -I../VAX
+    - -I../PDP11
