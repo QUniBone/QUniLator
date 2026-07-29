@@ -655,6 +655,49 @@ interrupts at all, so it was backed out rather than kept on the strength of the
 argument for it. The race it describes is real and worth closing, but it is not
 what is holding the boot up.
 
+### What the instruction history says
+
+`core_history` keeps the last quarter million instructions and writes them out a
+pass after an interrupt arrives, which is the only way to see what the processor
+does with a vector. Two things came out of it.
+
+The processor is not wedged. It sits in a one instruction loop,
+
+	80008B1F 00000000| BRB 80008B1F
+
+at IPL 0 with everything enabled, and it takes the interval clock normally -
+
+	8000A0C8 04180000| MTPR #800000C1,#18
+	8000A0D2 04180004| ADDL2 @#800022D4,80002B40
+
+which is IPL 24 and VMS adding a tick to the system time. So the machine is
+healthy and interruptible; it is waiting for the disk and nothing else.
+
+Sorting the window by the level each instruction ran at:
+
+| IPL | instructions |
+|---|---|
+| 0 | 247950 |
+| 8 | 632 |
+| 21 | 17 |
+| 24 | 1362 |
+| 31 | 28 |
+
+The seventeen at 21 are not our interrupt being serviced. They open with VMS at
+IPL 31 writing its own priority down - `MTPR 5E(R5),#12`, PR 18 hex being the
+processor's IPL - and then calling a driver routine that fills in a control
+block. That is VMS synchronising at device level to initialise the driver, not
+answering a device.
+
+And the adapter's own state, sampled while this goes on, has nothing held:
+`uba_cr` 7C, so the interrupt field switch and the BR interrupt enable are both
+on; `uba_dr` zero, so interrupts are not disabled; `nexus_req` zero and
+`intr_pending` zero, so neither the adapter nor the core is holding a request -
+while the count of interrupts granted on the bus keeps rising.
+
+Which is the shape of an interrupt that is granted, consumed, and never turned
+into a dispatch.
+
 A caution for anyone reading the counters: `dma_words` and the rest accumulate
 from when the device was installed, not from the last START, so progress is the
 difference across one run and not the value after it.
