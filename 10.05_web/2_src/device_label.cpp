@@ -27,46 +27,49 @@ enum instancing_e {
 
 struct label_entry {
 	const char *type_name;
-	const char *role;
+	const char *role;       // descriptive role, for controllers and standalone devices
 	const char *code;       // "" for internal devices with no DEC code
+	const char *kind;       // a drive's medium — "disk"/"tape"/"floppy" — which the
+	                        // label leads with the DEC code and instance for;
+	                        // "" for everything else, which uses the role
 	instancing_e instancing;
 };
 
 const label_entry k_table[] = {
-	{ "blinkenbone_c", "Front panel",            "",      INST_NONE },
-	{ "demo_io_c",     "Demo I/O",               "",      INST_NONE },
-	{ "RF11",          "DECdisk controller",     "RF11",  INST_NONE },
-	{ "RS11",          "Fixed-head disk",        "RS11",  INST_UNIT },
-	{ "RL11",          "RL disk controller",     "RL11",  INST_NONE },
-	{ "RLV11",         "RL disk controller",     "RLV11", INST_NONE },
-	{ "RLV12",         "RL disk controller",     "RLV12", INST_NONE },
-	{ "RL02",          "RL02 cartridge disk",    "RL02",  INST_UNIT },
-	{ "RK11",          "RK disk controller",     "RK11",  INST_NONE },
-	{ "RKV11",         "RK disk controller",     "RKV11", INST_NONE },
-	{ "RK05",          "RK05 cartridge disk",    "RK05",  INST_UNIT },
-	{ "UDA50",         "MSCP disk controller",   "UDA50", INST_NONE },
-	{ "RA81",          "MSCP disk",              "RA81",  INST_UNIT },
-	{ "TQK50",         "TMSCP tape controller",  "TQK50", INST_NONE },
-	{ "TK50",          "TK50 tape",              "TK50",  INST_UNIT },
-	{ "slu_c",         "Serial line unit",       "DL11",  INST_ADDR },
-	{ "ltc_c",         "Line-time clock",        "KW11",  INST_NONE },
-	{ "kw11p_c",       "Programmable clock",     "KW11-P",INST_NONE },
-	{ "RX11",          "RX01 floppy controller", "RX11",  INST_NONE },
-	{ "RXV11",         "RX01 floppy controller", "RXV11", INST_NONE },
-	{ "RY211",         "RX02 floppy controller", "RX211", INST_NONE },
-	{ "RXV12",         "RX02 floppy controller", "RXV12", INST_NONE },
-	{ "RX0102uCPU",    "Floppy microcontroller", "",      INST_NONE },
-	{ "RX01",          "RX01 floppy",            "RX01",  INST_UNIT },
-	{ "RX02",          "RX02 floppy",            "RX02",  INST_UNIT },
-	{ "DELQA",         "Ethernet controller",    "DELQA", INST_UNIT },
-	{ "DEUNA",         "Ethernet controller",    "DEUNA", INST_NONE },
-	{ "VCB01",         "Graphics display",       "VCB01", INST_NONE },
-	{ "dzv11_c",       "4-line async serial mux","DZV11", INST_ADDR },
-	{ "dhv11_c",       "8-line async serial mux","DHV11", INST_ADDR },
-	{ "PDP-11/20",     "Emulated CPU",           "KA11",  INST_NONE },
-	{ "PDP-11/34",     "Emulated CPU",           "KD11-EA", INST_NONE },
-	{ "KE11",          "Extended arithmetic element", "KE11-A", INST_NONE },
-	{ "m9312_c",       "Bootstrap ROM",          "M9312", INST_NONE },
+	{ "blinkenbone_c", "Front panel",            "",      "",       INST_NONE },
+	{ "demo_io_c",     "Demo I/O",               "",      "",       INST_NONE },
+	{ "RF11",          "DECdisk controller",     "RF11",  "",       INST_NONE },
+	{ "RS11",          "Fixed-head disk",        "RS11",  "disk",   INST_UNIT },
+	{ "RL11",          "RL disk controller",     "RL11",  "",       INST_NONE },
+	{ "RLV11",         "RL disk controller",     "RLV11", "",       INST_NONE },
+	{ "RLV12",         "RL disk controller",     "RLV12", "",       INST_NONE },
+	{ "RL02",          "RL cartridge disk",      "RL02",  "disk",   INST_UNIT },
+	{ "RK11",          "RK disk controller",     "RK11",  "",       INST_NONE },
+	{ "RKV11",         "RK disk controller",     "RKV11", "",       INST_NONE },
+	{ "RK05",          "RK cartridge disk",      "RK05",  "disk",   INST_UNIT },
+	{ "UDA50",         "MSCP disk controller",   "UDA50", "",       INST_NONE },
+	{ "RA81",          "MSCP disk",              "RA81",  "disk",   INST_UNIT },
+	{ "TQK50",         "TMSCP tape controller",  "TQK50", "",       INST_NONE },
+	{ "TK50",          "TK tape",                "TK50",  "tape",   INST_UNIT },
+	{ "slu_c",         "Serial line unit",       "DL11",  "",       INST_ADDR },
+	{ "ltc_c",         "Line-time clock",        "KW11",  "",       INST_NONE },
+	{ "kw11p_c",       "Programmable clock",     "KW11-P","",       INST_NONE },
+	{ "RX11",          "RX01 floppy controller", "RX11",  "",       INST_NONE },
+	{ "RXV11",         "RX01 floppy controller", "RXV11", "",       INST_NONE },
+	{ "RY211",         "RX02 floppy controller", "RX211", "",       INST_NONE },
+	{ "RXV12",         "RX02 floppy controller", "RXV12", "",       INST_NONE },
+	{ "RX0102uCPU",    "Floppy microcontroller", "",      "",       INST_NONE },
+	{ "RX01",          "RX floppy",              "RX01",  "floppy", INST_UNIT },
+	{ "RX02",          "RX floppy",              "RX02",  "floppy", INST_UNIT },
+	{ "DELQA",         "Ethernet controller",    "DELQA", "",       INST_UNIT },
+	{ "DEUNA",         "Ethernet controller",    "DEUNA", "",       INST_NONE },
+	{ "VCB01",         "Graphics display",       "VCB01", "",       INST_NONE },
+	{ "dzv11_c",       "4-line async serial mux","DZV11", "",       INST_ADDR },
+	{ "dhv11_c",       "8-line async serial mux","DHV11", "",       INST_ADDR },
+	{ "PDP-11/20",     "Emulated CPU",           "KA11",  "",       INST_NONE },
+	{ "PDP-11/34",     "Emulated CPU",           "KD11-EA", "",     INST_NONE },
+	{ "KE11",          "Extended arithmetic element", "KE11-A", "", INST_NONE },
+	{ "m9312_c",       "Bootstrap ROM",          "M9312", "",       INST_NONE },
 };
 
 } // namespace
@@ -83,6 +86,20 @@ std::string device_label(const std::string &type_name, const std::string &name,
 	if (entry == nullptr)
 		return name;    // unknown type: the raw handle still renders
 
+	// A drive leads with its DEC code and the medium it holds — "RL02 disk 0" —
+	// so the type is named once, not repeated in a trailing "(code)".
+	if (entry->kind[0] != '\0') {
+		std::string s = entry->code[0] != '\0' ? entry->code : type_name;
+		s += " ";
+		s += entry->kind;
+		if (entry->instancing == INST_UNIT && !unit.empty()) {
+			s += " ";
+			s += unit;
+		}
+		return s;
+	}
+
+	// Controllers and standalone devices: the role, an instance marker, the code.
 	std::string role = entry->role;
 	if (entry->instancing == INST_UNIT && !unit.empty()) {
 		role += " ";

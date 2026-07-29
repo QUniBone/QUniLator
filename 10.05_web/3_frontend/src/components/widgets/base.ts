@@ -93,9 +93,10 @@ export abstract class DeviceWidget {
   }
   protected statusChip(): ComponentChildren {
     const st = this.d.status;
-    return st
-      ? html`<span class=${'disk-status ' + (DISK_STATUS_CLS[st] || 'idle')}>${st}</span>`
-      : null;
+    // A drive that is off (not enabled) shows no chip: it would only contradict
+    // the panel below, which speaks for the drive's own state.
+    if (!st || st === 'off') return null;
+    return html`<span class=${'disk-status ' + (DISK_STATUS_CLS[st] || 'idle')}>${st}</span>`;
   }
 
   // A widget declares no size: the dashboard measures the card it draws and gives
