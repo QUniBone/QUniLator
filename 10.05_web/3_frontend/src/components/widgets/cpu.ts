@@ -6,7 +6,7 @@ import { liveSetParam } from '../../api';
 import { statusParam } from '../../lib/devmodel';
 import type { LiveParam } from '../../types';
 import { Bit, Cap, DeviceWidget } from './base';
-import type { Cells, WidgetOption } from './base';
+import type { WidgetOption } from './base';
 
 // The processor status word, as its bits are laid out on a PDP-11: the
 // condition codes in the low four, the T bit above them, the priority the CPU
@@ -56,8 +56,8 @@ export class CpuWidget extends DeviceWidget {
   ];
 
   // The readouts the card shows: those the model publishes, and those the live
-  // status option admits. cells() and render() read the same view, so the
-  // card's height always matches what is on it.
+  // status option admits. render() reads this, and the card's height is measured
+  // from what it draws, so the two always agree.
   private view(): {
     psw?: LiveParam;
     ba?: LiveParam;
@@ -73,16 +73,6 @@ export class CpuWidget extends DeviceWidget {
       mmr0: statusParam(this.d, 'MMR0'),
       mmr2: statusParam(this.d, 'MMR2'),
     };
-  }
-
-  cells(): Cells {
-    const v = this.view();
-    // the head takes three cells; each row of the card body takes one
-    let rows = 2; // the PC/SR readouts, and the console switches
-    if (v.psw) rows++; // the status word, spelled out as lamps
-    if (v.ba || v.bd) rows++; // the bus registers
-    if (v.mmr0) rows++; // the memory-management registers
-    return { w: 7, h: 3 + rows };
   }
 
   protected statusChip(): ComponentChildren {

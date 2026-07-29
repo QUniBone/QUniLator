@@ -6,7 +6,6 @@ import type { LiveDev } from '../../types';
 import { liveSetParam } from '../../api';
 import { ImageField } from '../common';
 import { Cap, PanelWidget, ReadyCap, paramVal } from './base';
-import type { Cells } from './base';
 
 const driveRemovable = (d: LiveDev): boolean => d.removable === true;
 function driveLocked(d: LiveDev): boolean {
@@ -51,9 +50,6 @@ export abstract class DriveWidget extends PanelWidget {
 // from statusParams; LOAD and WRITE-PROT are operator buttons that toggle the
 // drive's run/stop and write-protect configuration switches.
 export class RlWidget extends DriveWidget {
-  cells(): Cells {
-    return { w: 6, h: 6 };
-  }
   protected caps(): ComponentChildren {
     const rsToggle = () => {
       const on = this.param('runstopbutton') === '1';
@@ -83,9 +79,6 @@ function ra81Switches(name: string): { wp: boolean; fault: boolean } {
 }
 export class Ra81Widget extends DriveWidget {
   protected panelCls = 'span2';
-  cells(): Cells {
-    return { w: 9, h: 4 };
-  }
   protected caps(): ComponentChildren {
     const [, force] = useState(0);
     const sw = ra81Switches(this.d.name);
@@ -121,9 +114,6 @@ export class Ra81Widget extends DriveWidget {
 // lamp that follows the drive's activity.
 export class DiskWidget extends DriveWidget {
   protected panelCls = 'span2';
-  cells(): Cells {
-    return { w: 9, h: 6 };
-  }
   protected caps(): ComponentChildren {
     const active = this.lamp('accesslamp');
     return html`${html`<${ReadyCap} unit=${this.unit()} lit=${this.lit(this.d.enabled && !active)} />`}
@@ -136,9 +126,6 @@ export class DiskWidget extends DriveWidget {
 // activity, and a WRITE PROT lamp for a write-protected medium. The mounted
 // image and its removable tag sit on the foot, where the operator swaps media.
 export class RemovableDriveWidget extends DriveWidget {
-  cells(): Cells {
-    return { w: 6, h: 4 };
-  }
   protected caps(): ComponentChildren {
     const active = this.lamp('accesslamp');
     return html`${html`<${ReadyCap} unit=${this.unit()} lit=${this.lit(this.loaded() && !active)} />`}

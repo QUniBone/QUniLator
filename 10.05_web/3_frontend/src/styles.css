@@ -559,12 +559,12 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
 .dash-grid { display: grid; align-content: start; justify-content: start; overflow-x: auto; }
 .dash-grid.editing { outline: 1px dashed var(--line); border-radius: var(--r-sm); }
 .dash-grid .grid-item { position: relative; min-width: 0; min-height: 0; }
-/* A card stands at the height its content asks for and the grid rounds that up
-   to whole cells, so the block is an envelope around the card rather than a box
-   the card is stretched into. What is left over reads as grid gap. */
+/* A card fills its grid block: the block is measured up to whole cells from the
+   card's content height, then the card is stretched to that block so its visible
+   box matches the space it reserves. Cards are separated only by the grid gap. */
 .dash-grid .grid-item > .card,
 .dash-grid .grid-item > .rlpanel {
-  width: 100%; height: auto; margin: 0; box-sizing: border-box; overflow: auto;
+  width: 100%; height: 100%; margin: 0; box-sizing: border-box; overflow: auto;
 }
 /* a hidden card in edit mode: a compact, muted placeholder */
 .hidden-card { border-style: dashed; background: var(--surface-2); opacity: .8; }
@@ -906,11 +906,22 @@ button.tree-name:hover .mono { color: var(--accent); }
 /* a panel whose bezel needs the room takes two columns */
 .rlpanel.span2 { grid-column: span 2; }
 /* the VCB01 shows its framebuffer; give it the room and keep pixels crisp */
-.vcb01-widget { grid-column: span 2; }
-.vcb01-screen { margin-top: 8px; background: var(--term-bg); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+/* The screen is a fixed display WIDTH (half the 1024-px framebuffer); its HEIGHT
+   follows the framebuffer's aspect, so the card is exactly as tall as the picture
+   and grows or shrinks with the mode the host programs — the content observer
+   catches the change and the card re-measures. The width is fixed, not 100%, so
+   the two are not coupled and the grid can settle the card. */
+.vcb01-screen {
+  margin-top: 8px; width: var(--vcb-w); box-sizing: content-box;
+  background: var(--term-bg); border: 1px solid var(--line); border-radius: 3px; overflow: hidden;
+}
+/* the display width, chosen so the card lands on a whole grid cell and the screen
+   is not left with a strip of slack beside it */
+.vcb01-widget { --vcb-w: 490px; }
 .vcb01-screen canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; background: var(--term-bg); cursor: crosshair; outline: none; }
 .vcb01-screen canvas:focus { box-shadow: inset 0 0 0 2px var(--phosphor); }
-.vcb01-hint { font-size: var(--fs-1); color: var(--ink-muted); margin-top: 4px; }
+/* the caption never widens the card past the screen: it wraps within it */
+.vcb01-hint { font-size: var(--fs-1); color: var(--ink-muted); margin-top: 4px; max-width: var(--vcb-w); }
 
 .rlpanel .rl-foot { display: flex; align-items: center; gap: 8px; margin-top: auto;
   padding-top: 12px; flex-wrap: wrap; }

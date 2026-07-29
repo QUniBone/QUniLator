@@ -11,14 +11,10 @@ import {
   vcb01Disconnect,
 } from '../../lib/vcb01';
 import { Cap, DeviceWidget, PanelWidget } from './base';
-import type { Cells } from './base';
 
 // An Ethernet interface: a LINK lamp for the installed card and an ACT lamp
 // that follows its traffic, over the host interface and address it carries.
 export class NetworkWidget extends PanelWidget {
-  cells(): Cells {
-    return { w: 6, h: 4 };
-  }
   protected caps(): ComponentChildren {
     return html`${html`<${Cap} cls="cap-white" lit=${this.lit(this.d.enabled)}>LINK</${Cap}>`}
       ${html`<${Cap} cls="cap-yellow" lit=${this.lit(this.lamp('activitylamp'))}>ACT</${Cap}>`}`;
@@ -43,9 +39,6 @@ const DZ_SIGNALS: { key: string; label: string; live: boolean }[] = [
   { key: 'ri', label: 'RI', live: false },
 ];
 export class DzWidget extends DeviceWidget {
-  cells(): Cells {
-    return { w: 5, h: 4 };
-  }
   render(): ComponentChildren {
     const rows = [];
     for (let ln = 0; ln < DZ_LINES; ln++) {
@@ -72,9 +65,6 @@ export class DzWidget extends DeviceWidget {
 // opens it on mount and closes it when the card goes, and the stream's own
 // reconnect stops once the canvas has left the page.
 export class Vcb01Widget extends DeviceWidget {
-  cells(): Cells {
-    return { w: 12, h: 12 };
-  }
   render(): ComponentChildren {
     const cv = useRef<HTMLCanvasElement | null>(null);
     useEffect(() => {

@@ -1,9 +1,9 @@
-// Which widget a device gets, and the dashboard's view of it: the card, its
-// size in grid cells, and the options it offers the operator.
+// Which widget a device gets, and the dashboard's view of it: the card and the
+// options it offers the operator. A widget's size is measured, not declared.
 import type { ComponentChildren } from 'preact';
 import type { LiveDev } from '../../types';
 import { DeviceWidget } from './base';
-import type { Cells, WidgetOption, WidgetOpts } from './base';
+import type { WidgetOption, WidgetOpts } from './base';
 import { DiskWidget, Ra81Widget, RemovableDriveWidget, RlWidget } from './drives';
 import { CpuWidget } from './cpu';
 import { DzWidget, NetworkWidget, Vcb01Widget } from './peripherals';
@@ -39,13 +39,6 @@ const WIDGET_CATEGORIES: Record<string, WidgetClass> = {
 
 export function widgetFor(d: LiveDev): WidgetClass | null {
   return WIDGET_MODELS[d.type] || WIDGET_CATEGORIES[d.category || 'other'] || null;
-}
-
-// A device widget's size in dashboard grid cells (width × height), as the
-// widget itself reports it for the options it is set to.
-export function widgetCells(d: LiveDev, opts: WidgetOpts): Cells {
-  const W = widgetFor(d);
-  return W ? new W(d, opts).cells() : { w: 6, h: 5 };
 }
 
 // The options a device's widget offers; empty for one with nothing to configure.

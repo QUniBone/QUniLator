@@ -9,7 +9,7 @@ import { placeItems, gridRows, fits, occupancyExcept } from '../lib/dashlayout';
 import type { GridItem } from '../lib/dashlayout';
 import { toast } from '../lib/toast';
 import { Led, Chip } from './common';
-import { widgetFor, widgetCells, widgetOptions, WidgetCard } from './widgets';
+import { widgetFor, widgetOptions, WidgetCard } from './widgets';
 import type { Cells, WidgetOpts } from './widgets';
 import type { LiveDev, DashLayout } from '../types';
 
@@ -177,14 +177,15 @@ function ConsoleCard() {
 }
 
 // ---- the arrangeable grid ----
-const CELL = 44; // px per grid square
+const CELL = 47; // px per grid square
 const GAP = 6;
-// the fixed cards, their estimated size in grid cells, and their titles
-const FIXED = [
-  { key: 'controlpanel', w: 13, h: 3, label: 'Control panel' },
-  { key: 'frontpanel', w: 7, h: 3, label: 'Front panel' },
-  { key: 'console', w: 15, h: 10, label: 'Console' },
-];
+// the always-present cards; their size, like every widget's, comes from measuring
+// what they draw, so only their keys are fixed here
+const FIXED = ['controlpanel', 'frontpanel', 'console'];
+// the size a card is drawn at for the one frame before it is measured, in px: big
+// enough that a card does not visibly grow into place, small enough not to shove
+// the grid around. Every card starts here and settles to its measured size.
+const PLACEHOLDER_PX = { w: 320, h: 220 };
 
 // How many whole cells hold a run of `px`, a block of n cells being
 // n·CELL + (n-1)·GAP wide. The half pixel keeps a sub-pixel layout rounding from
@@ -197,29 +198,29 @@ const cellsFor = (px: number): number =>
 const contentParts = (card: HTMLElement): HTMLElement[] =>
   (Array.from(card.children) as HTMLElement[]).filter((c) => !c.classList.contains('card-head'));
 
-// What each card actually needs, read off the cards themselves.
+// The natural size of each card, read off the cards themselves and rounded up to
+// whole cells. The card is stretched to fill its grid block, so it is briefly
+// released — content parts to their max-content width, the card to auto height —
+// to read the size the content lays out at without wrapping or stretching. The
+// head is excluded from the width because its title ellipsizes and must never
+// widen a card. This is the sole source of a card's size: no widget declares one.
 //
-// The height is the card as it stands, a card being drawn at its content
-// height. The width is the widest thing in the card that cannot break — a cap
-// bezel, a screen, a lamp matrix — so a row that is free to wrap still wraps,
-// and it is the widget's own width that decides how wide a card is otherwise.
-// Widening a card can only shorten it and never the other way about, so the two
-// settle together instead of chasing each other.
-//
-// Every card is read in one pass: heights first, since asking for the intrinsic
-// widths disturbs them, then one write and one read across the whole grid,
-// rather than a fresh layout per card.
+// Read in one pass across the whole grid — widths (parts at max-content), then
+// heights (card auto, parts still loose) — rather than a fresh layout per card.
 function measureCards(cards: HTMLElement[]): (Cells | null)[] {
-  const heights = cards.map((c) => c.getBoundingClientRect().height);
   const parts = cards.map(contentParts);
-  const saved = parts.map((ps) => ps.map((p) => p.style.width));
-  parts.forEach((ps) => ps.forEach((p) => (p.style.width = 'min-content')));
+  const savedW = parts.map((ps) => ps.map((p) => p.style.width));
+  parts.forEach((ps) => ps.forEach((p) => (p.style.width = 'max-content')));
   const widths = cards.map(
     (c, i) =>
       parts[i].reduce((m, p) => Math.max(m, p.getBoundingClientRect().width), 0) +
       (c.offsetWidth - c.clientWidth)
   );
-  parts.forEach((ps, i) => ps.forEach((p, j) => (p.style.width = saved[i][j])));
+  const savedH = cards.map((c) => c.style.height);
+  cards.forEach((c) => (c.style.height = 'auto'));
+  const heights = cards.map((c) => c.getBoundingClientRect().height);
+  cards.forEach((c, i) => (c.style.height = savedH[i]));
+  parts.forEach((ps, i) => ps.forEach((p, j) => (p.style.width = savedW[i][j])));
   return heights.map((h, i) => (h ? { w: cellsFor(widths[i]), h: cellsFor(h) } : null));
 }
 const FIXED_LABEL: Record<string, string> = {
@@ -306,20 +307,20 @@ function DashGrid() {
   // one whose entry sets none, leaves every option at its widget's default.
   const optsOf = (key: string): WidgetOpts => layout[key]?.opts || {};
 
-  // fixed cards + device widgets; a hidden card shrinks to a compact tile in
-  // edit mode, and widths are clamped so a card never exceeds the grid.
-  // A card that has been measured is as tall as it draws, and as wide as the
-  // wider of what the widget asks for and what its body cannot fit into less.
-  const sized = (key: string, nat: { w: number; h: number }): GridItem => {
+  // Every card takes the size it was measured at; before that it stands at the
+  // shared placeholder. A hidden card shrinks to a compact tile in edit mode, and
+  // every width is clamped so a card never exceeds the grid.
+  const sized = (key: string): GridItem => {
     if (edit && isHidden(key))
       return { key, w: Math.min(HIDDEN_CELLS.w, cols), h: HIDDEN_CELLS.h };
     const m = measured[key];
-    return { key, w: Math.min(Math.max(nat.w, m ? m.w : 0), cols), h: m ? m.h : nat.h };
+    return {
+      key,
+      w: Math.min(m ? m.w : cellsFor(PLACEHOLDER_PX.w), cols),
+      h: m ? m.h : cellsFor(PLACEHOLDER_PX.h),
+    };
   };
-  const allItems: GridItem[] = [
-    ...FIXED.map((f) => sized(f.key, f)),
-    ...devs.map((d) => sized(d.name, widgetCells(d, optsOf(d.name)))),
-  ];
+  const allItems: GridItem[] = [...FIXED, ...devs.map((d) => d.name)].map(sized);
   const items = allItems.filter((it) => edit || !isHidden(it.key));
   // Pack against a width that honours any stored position past the visible edge,
   // so a card the operator pushed off the right keeps its place instead of
@@ -396,7 +397,14 @@ function DashGrid() {
     const el = gridRef.current;
     if (!el) return;
     const ro = new ResizeObserver(measure);
-    el.querySelectorAll<HTMLElement>('.grid-item[data-measure] > .card').forEach((c) => ro.observe(c));
+    // Observe the content, not the card. The card is stretched to its block and
+    // so keeps a fixed height; its content parts hold the true size and grow when
+    // something arrives late — a font, a status readout, the VCB01 canvas learning
+    // its size from the stream — which is exactly when a re-measure is due.
+    el.querySelectorAll<HTMLElement>('.grid-item[data-measure] > .card').forEach((c) => {
+      ro.observe(c);
+      contentParts(c).forEach((p) => ro.observe(p));
+    });
     return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shape]);

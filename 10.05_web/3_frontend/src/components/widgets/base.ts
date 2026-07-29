@@ -98,14 +98,9 @@ export abstract class DeviceWidget {
       : null;
   }
 
-  // The widget's size in grid cells. The dashboard measures each card once it
-  // is on the page and gives it the height it draws, so this is the estimate a
-  // card is placed at for the frame before that: right enough that a card does
-  // not visibly jump, and never something a widget has to keep exact. The width
-  // is a floor the measurement may raise, never lower.
-  cells(): Cells {
-    return { w: 6, h: 5 };
-  }
+  // A widget declares no size: the dashboard measures the card it draws and gives
+  // it exactly that. Keeping the size out of the widget is what lets the grid's
+  // cell size change without every widget needing to be re-tuned.
 
   abstract render(): ComponentChildren;
 }
