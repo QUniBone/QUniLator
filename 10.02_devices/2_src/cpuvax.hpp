@@ -71,6 +71,12 @@ public:
     parameter_string_c bootdevice = parameter_string_c(this, "bootdevice", "bd",/*readonly*/false,
             "Unit the processor boots from, as the console names it.");
 
+    // The core's own tracing for one of the devices it carries, written to
+    // /tmp/simh-<device>.log. What it says about a controller inside the
+    // processor is what the same controller on the bus can be compared against.
+    parameter_string_c core_debug = parameter_string_c(this, "core_debug", "cdbg",/*readonly*/false,
+            "Trace a device the core carries, e.g. \"RQ\". Empty: off.");
+
     // The UNIBUS adapter's window on the I/O page. With it the processor's
     // register accesses become bus cycles and reach the emulated devices;
     // without it the machine sees only what simh carries inside it.
@@ -143,6 +149,10 @@ public:
                                       true, "1 = the boot device's address is answered by the bus, now.");
     parameter_unsigned_c uba_cr = parameter_unsigned_c(this, "uba_cr", "ucr",/*readonly*/
                                   true, "", "%08x", "UNIBUS adapter control register.", 32, 16);
+    // The bus request level whose vector the adapter is still holding, if any.
+    // Non-zero for long says the processor is not taking what it was given.
+    parameter_unsigned_c intr_pending = parameter_unsigned_c(this, "intr_pending", "ip",/*readonly*/
+                                        true, "", "%u", "BR level whose vector the adapter holds.", 8, 10);
     parameter_unsigned64_c cycle_count = parameter_unsigned64_c(this, "cycle_count", "cc",/*readonly*/
                                          true, "", "%u", "Instructions executed since the last start", 63, 10);
 

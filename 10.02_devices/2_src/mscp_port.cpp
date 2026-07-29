@@ -886,13 +886,19 @@ mscp_port_c::controller_microcode_id(void)
 
 //
 // step1_capability_flags():
-//  Extra SA_S1C_* capability bits advertised in the step-1 SA value. None by
-//  default (the UDA50 disk value); a subclass overrides to advertise more.
+//  Extra SA_S1C_* capability bits advertised in the step-1 SA value.
+//
+//  Extended diagnostics (SA_S1C_DI, 0x0100) and host buffer mapping
+//  (SA_S1C_MP, 0x0040), which is what a Unibus MSCP controller declares and
+//  what its hosts look for: VMS reads the step-1 value before it will carry on
+//  with the handshake, and the TKxx diagnostics require both to run their
+//  init and wrap tests. A Qbus controller adds SA_S1C_Q22 when 22-bit DMA is
+//  configured, which the port ORs in separately.
 //
 uint16_t
 mscp_port_c::step1_capability_flags(void)
 {
-    return 0;
+    return 0x0140;   // SA_S1C_DI | SA_S1C_MP
 }
 
 //

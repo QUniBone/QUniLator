@@ -1408,6 +1408,37 @@ if ((dptr = find_dev (gbuf)) == NULL) {
 return 1;
 }
 
+/* Turn on the core's own tracing for one device. simh's models say what they
+   are doing through sim_debug(), which the shim leaves switched off; a device
+   whose behaviour has to be compared against the same model driven a different
+   way is the case that wants it back. Every debug flag the device declares is
+   enabled. A NULL device closes the trace again. */
+int simh_shim_debug_device (const char *name, const char *filename)
+{
+char gbuf[CBUFSIZE];
+DEVICE *dptr;
+UNIT *uptr;
+
+if (name == NULL) {
+    if ((sim_deb != NULL) && (sim_deb != stdout))
+        fclose (sim_deb);
+    sim_deb = NULL;
+    return 1;
+    }
+shim_get_glyph (name, gbuf, 0, TRUE);
+if ((dptr = find_dev (gbuf)) == NULL) {
+    if ((dptr = find_unit (gbuf, &uptr)) == NULL)
+        return 0;
+    }
+if (sim_deb == NULL) {
+    sim_deb = fopen (filename, "w");
+    if (sim_deb == NULL)
+        return 0;
+    }
+dptr->dctrl = 0xFFFFFFFF;                               /* every flag it has */
+return 1;
+}
+
 simh_shim_status_t simh_shim_attach (const char *unit_name, const char *filename)
 {
 DEVICE *dptr;

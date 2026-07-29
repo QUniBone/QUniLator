@@ -135,6 +135,11 @@ unsigned simh_shim_bus_interrupt_pending (void);
    zero when there is no such device. */
 int simh_shim_device_info (const char *name, unsigned *base_addr, int *enabled);
 
+/* Turn the core's own tracing on for one device, into a file, with every debug
+   flag that device declares. A NULL name closes it. Zero when there is no such
+   device or the file could not be opened. */
+int simh_shim_debug_device (const char *name, const char *filename);
+
 /* Whether the bus, rather than a device the core carries, still answers this
    UNIBUS address. */
 int simh_shim_bus_owns (unsigned unibus_addr);

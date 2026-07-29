@@ -86,6 +86,7 @@ cpuvax_c::cpuvax_c() :
     iopage_claimed.kind = parameter_c::PARAM_STATUS;
     bootdev_on_bus.kind = parameter_c::PARAM_STATUS;
     uba_cr.kind = parameter_c::PARAM_STATUS;
+    intr_pending.kind = parameter_c::PARAM_STATUS;
     halt_switch.kind = parameter_c::PARAM_STATUS;
     start_switch.kind = parameter_c::PARAM_STATUS;
 }
@@ -149,9 +150,11 @@ bool cpuvax_c::bus_read(unsigned addr, unsigned *data)
                                       addr, &word);
     if (!data_transfer_request.success) {
         bus_timeouts.value++;
+        DEBUG("DATI %06o: no answer", addr);
         return false;
     }
     *data = word;
+    DEBUG("DATI %06o = %06o", addr, (unsigned) word);
     return true;
 }
 
@@ -165,8 +168,10 @@ bool cpuvax_c::bus_write(unsigned addr, unsigned data, bool byte)
                                       addr, &word);
     if (!data_transfer_request.success) {
         bus_timeouts.value++;
+        DEBUG("DATO%s %06o = %06o: no answer", byte ? "B" : "", addr, (unsigned) word);
         return false;
     }
+    DEBUG("DATO%s %06o = %06o", byte ? "B" : "", addr, (unsigned) word);
     return true;
 }
 
@@ -401,6 +406,7 @@ void cpuvax_c::publish_status(void)
             bootdev_on_bus.value = simh_shim_bus_owns(ba) != 0;
     }
     uba_cr.value = state.uba_cr;
+    intr_pending.value = simh_shim_bus_interrupt_pending();
     cycle_count.value = (uint64_t) state.instructions - instructions_at_start;
 
     // What the arbitration on the bus compares a device's request against.
@@ -633,6 +639,25 @@ bool cpuvax_c::on_param_changed(parameter_c *param)
             return false;
         bus_deposit.value = bus_deposit.new_value;
         INFO("%06o := %06o", bus_deposit.value, bus_data.value);
+        return true;
+    }
+    if (param == &core_debug) {
+        std::string want = core_debug.new_value;
+        char path[128];
+
+        if (want.empty()) {
+            simh_shim_debug_device(NULL, NULL);
+            INFO("core tracing off");
+        } else {
+            snprintf(path, sizeof path, "/tmp/simh-%s.log", want.c_str());
+            if (!simh_shim_debug_device(want.c_str(), path)) {
+                ERROR("no device %s in the core, or %s could not be opened",
+                      want.c_str(), path);
+                return false;
+            }
+            INFO("tracing %s into %s", want.c_str(), path);
+        }
+        core_debug.value = want;
         return true;
     }
     if (param == &mem_examine) {

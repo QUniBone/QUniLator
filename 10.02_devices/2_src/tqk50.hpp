@@ -35,7 +35,6 @@ public:
     uint32_t controller_identifier(void) override;
     uint16_t controller_class_model(void) override;
     uint16_t controller_microcode_id(void) override;
-    uint16_t step1_capability_flags(void) override;
 
 protected:
     mscp_server_base *make_server(void) override;
