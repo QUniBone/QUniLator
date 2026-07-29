@@ -174,6 +174,19 @@ public:
     parameter_unsigned_c swreg = parameter_unsigned_c(this, "switch_reg", "swr",/*readonly*/
                                  false, "", "%06o", "Console switch register.", 16, 8);
 
+    // What the core is doing, published by core_publish_status() on every
+    // worker pass. The processor status word is the model's own width: the
+    // KA11 keeps priority, T and the condition codes in a byte, the KD11-EA
+    // adds the current and previous mode in the high half.
+    parameter_unsigned_c psw = parameter_unsigned_c(this, "PSW", "psw",/*readonly*/
+                               true, "", "%06o", "Processor status word.", 16, 8);
+    // the bus address and data registers of the data transfer in progress -
+    // the virtual address the CPU issued, before any relocation
+    parameter_unsigned_c bus_addr = parameter_unsigned_c(this, "bus_addr", "ba",/*readonly*/
+                                    true, "", "%06o", "Bus address register of the current data transfer.", 16, 8);
+    parameter_unsigned_c bus_data = parameter_unsigned_c(this, "bus_data", "bd",/*readonly*/
+                                    true, "", "%06o", "Bus data register of the current data transfer.", 16, 8);
+
     parameter_unsigned64_c cycle_count = parameter_unsigned64_c(this, "cycle_count", "cc",/*readonly*/
                                          true, "", "%u", "CPU opcodes executed since last HALT", 63, 10);
 
@@ -222,6 +235,11 @@ public:
     // copy CPU model specific option parameters into the core.
     // called on every worker() loop, most models have none.
     virtual void core_apply_options(void) { }
+    // Copy what the core is doing into the status parameters, so the web
+    // interface and the menus read it without knowing the model. Called on
+    // every worker pass; a model publishes its own extras here too, as the
+    // 11/34 does with its memory management registers.
+    virtual void core_publish_status(void) = 0;
 
     //diagnostic
     trigger_c	trigger ;

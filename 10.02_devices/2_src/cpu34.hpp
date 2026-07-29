@@ -51,6 +51,21 @@ public:
 
     struct KD11EA *kd11ea; // CPU state
 
+    // The KT11-D's own registers, published as status because the machine
+    // drives them. They are not QUNIBUS registers (see the file header), so
+    // this is the only way to read them from outside the CPU.
+    // MMR0 holds the enable bit and, once an abort has frozen it, what caused
+    // it; MMR1 the register changes of the aborted instruction; MMR2 the
+    // virtual address that instruction was fetched from.
+    parameter_unsigned_c mmr0 = parameter_unsigned_c(this, "MMR0", "mmr0",/*readonly*/
+                                true, "", "%06o", "KT11-D status register 0.", 16, 8);
+    parameter_unsigned_c mmr1 = parameter_unsigned_c(this, "MMR1", "mmr1",/*readonly*/
+                                true, "", "%06o", "KT11-D status register 1: register changes of the aborted instruction.", 16, 8);
+    parameter_unsigned_c mmr2 = parameter_unsigned_c(this, "MMR2", "mmr2",/*readonly*/
+                                true, "", "%06o", "KT11-D status register 2: virtual address of the instruction.", 16, 8);
+    parameter_bool_c mmu_enabled = parameter_bool_c(this, "mmu_enabled", "mmu",/*readonly*/
+                                   true, "Memory management: 1 = relocation on, addresses are 18 bit.");
+
     // interface to the KD11-EA emulation core
     void core_condstep(void) override;
     void core_reset(void) override;
@@ -64,6 +79,7 @@ public:
     uint16_t core_get_pc(void) override;
     void core_set_pc(uint16_t value) override;
     void core_set_switches(uint16_t value) override;
+    void core_publish_status(void) override;
     // no core_apply_options(): the 11/34 has no CPU feature parameters.
     // EIS and MFPS/MTPS are always executed, SWAB always clears the V bit.
 };

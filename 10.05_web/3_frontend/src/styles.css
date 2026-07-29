@@ -513,6 +513,29 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
    given that width: the digits, the letter spacing between them, and the
    padding, so the two boxes are the same size and the last digit is not cut. */
 .cpu-swr { width: calc(6ch + 0.36em + 16px); }
+
+/* the status word spelled out: the mode, the priority the CPU runs at, and one
+   lamp per bit, dark when clear */
+.cpu-flags {
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.cpu-bit {
+  font-family: var(--font-mono); font-size: var(--fs-0); font-weight: 700;
+  letter-spacing: .06em; min-width: 2.1em; text-align: center;
+  padding: 2px 4px; border-radius: 3px;
+  background: var(--bezel); color: var(--sw-legend); opacity: .45;
+}
+.cpu-bit.wide { min-width: 3.4em; }
+.cpu-bit.lit { color: #FFEED2; opacity: 1; box-shadow: 0 0 5px rgba(255, 214, 130, .5); }
+/* the mode pair reads "current(previous)", the priority as its BR level */
+.cpu-mode, .cpu-pri {
+  font-family: var(--font-mono); font-size: var(--fs-0); font-weight: 700;
+  letter-spacing: .06em; color: var(--sw-legend);
+  padding: 2px 5px; border-radius: 3px; background: var(--bezel);
+}
+.cpu-prev { opacity: .5; }
+.cpu-prev::before { content: "/"; }
 .cpu-swr:focus { outline: 2px solid var(--cap-red-lit); outline-offset: 1px; }
 
 /* dashboard layout: the control panel and front panel share the top row at equal

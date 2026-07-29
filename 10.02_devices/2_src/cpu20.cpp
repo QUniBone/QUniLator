@@ -123,3 +123,12 @@ void cpu20_c::core_apply_options(void)
 {
     ka11->swab_vbit = (swab_vbit.value == true);
 }
+
+// The KA11 keeps its status in a byte: priority, T and the condition codes.
+// It has no memory management and no modes, so there is nothing above bit 7.
+void cpu20_c::core_publish_status(void)
+{
+    psw.value = ka11->psw;
+    bus_addr.value = ka11->ba;
+    bus_data.value = ka11->bdata;
+}

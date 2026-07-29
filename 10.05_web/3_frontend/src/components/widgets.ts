@@ -43,6 +43,21 @@ function Cap({
     disabled=${!onClick} onClick=${onClick || null}>${children}</button>`;
 }
 
+// One bit of a status word, as a lamp engraved with its name: dark when clear,
+// lit when set. Small enough that a row of them reads as a register.
+function Bit({
+  lit,
+  wide,
+  children,
+}: {
+  lit: boolean;
+  wide?: boolean;
+  children: ComponentChildren;
+}) {
+  return html`<span class=${'cpu-bit' + (wide ? ' wide' : '') + (lit ? ' lit' : '')}
+    >${children}</span>`;
+}
+
 // The READY cap carries the drive's unit number. On a wide cap (the RA81) the
 // number sits in an engraved frame beside the legend; on a narrow cap (the
 // RL02) it stacks above the word.
@@ -291,16 +306,45 @@ function DzWidget({ d }: { d: LiveDev }) {
     </div></div>`;
 }
 
+// The processor status word, as its bits are laid out on a PDP-11: the
+// condition codes in the low four, the T bit above them, the priority the CPU
+// runs at in <7:5>, and on a model with memory management the current and
+// previous mode in the top half. A KA11 keeps the word in a byte and has no
+// modes, so the caller decides whether to ask for them.
+const PSW_MODES = ['K', 'S', '?', 'U']; // <15:14> / <13:12>: kernel, supervisor, user
+function decodePsw(oct: string | undefined) {
+  const w = parseInt(oct || '0', 8) || 0;
+  return {
+    pri: (w >> 5) & 7,
+    t: !!(w & 0o20),
+    flags: [['N', 0o10], ['Z', 0o4], ['V', 0o2], ['C', 0o1]] as [string, number][],
+    value: w,
+    mode: PSW_MODES[(w >> 14) & 3],
+    prevMode: PSW_MODES[(w >> 12) & 3],
+  };
+}
+
 // An emulated CPU, as its console: the RUN lamp, the program counter, the
-// switch register the operator sets, and the three console switches. HALT is a
-// toggle the CPU reads continuously; START and CONTINUE are momentary, so they
-// are pulsed and fall back on their own. Every model carries these, so one
-// widget serves each of them.
+// status word, the bus address and data registers of the transfer in flight,
+// the switch register the operator sets, and the three console switches. HALT
+// is a toggle the CPU reads continuously; START and CONTINUE are momentary, so
+// they are pulsed and fall back on their own.
+//
+// What a model does not have, it does not publish, so the card is built from
+// the status parameters that are actually there: only the 11/34 carries the
+// KT11-D registers, and only a machine with memory management has modes.
 function CpuWidget({ d }: { d: LiveDev }) {
   const powered = store.hw.powered !== false;
   const running = powered && lampOn(d, 'run_led');
   const halted = lampOn(d, 'halt_switch');
   const pc = statusParam(d, 'PC');
+  const psw = statusParam(d, 'PSW');
+  const ba = statusParam(d, 'bus_addr');
+  const bd = statusParam(d, 'bus_data');
+  const mmr0 = statusParam(d, 'MMR0');
+  const mmr2 = statusParam(d, 'MMR2');
+  const hasMmu = !!mmr0;
+  const s = decodePsw(psw?.v);
   const [swr, setSwr] = useState<string | null>(null);
 
   const pulse = (name: string, what: string) => {
@@ -321,11 +365,28 @@ function CpuWidget({ d }: { d: LiveDev }) {
     <div class="card-body diskface">
       <div class="cpu-regs">
         <label>PC<span class="cpu-oct">${pc ? pc.v : '000000'}</span></label>
+        ${psw && html`<label>PSW<span class="cpu-oct">${psw.v}</span></label>`}
         <label>SR<input class="cpu-oct cpu-swr" value=${swrValue}
           onInput=${(e: any) => setSwr(e.currentTarget.value)}
           onBlur=${commitSwr}
           onKeyDown=${(e: any) => { if (e.key === 'Enter') e.currentTarget.blur(); }} /></label>
       </div>
+      ${psw && html`<div class="cpu-flags">
+        ${hasMmu && html`<span class="cpu-mode" title="current mode / previous mode">
+          ${s.mode}<span class="cpu-prev">${s.prevMode}</span></span>`}
+        <span class="cpu-pri" title="priority the CPU runs at">BR${s.pri}</span>
+        <${Bit} lit=${s.t}>T</${Bit}>
+        ${s.flags.map(([n, m]) => html`<${Bit} lit=${!!(s.value & m)}>${n}</${Bit}>`)}
+        ${hasMmu && html`<${Bit} lit=${lampOn(d, 'mmu_enabled')} wide=${true}>MMU</${Bit}>`}
+      </div>`}
+      ${(ba || bd) && html`<div class="cpu-regs">
+        ${ba && html`<label>BA<span class="cpu-oct">${ba.v}</span></label>`}
+        ${bd && html`<label>BD<span class="cpu-oct">${bd.v}</span></label>`}
+      </div>`}
+      ${hasMmu && html`<div class="cpu-regs">
+        <label>MMR0<span class="cpu-oct">${mmr0.v}</span></label>
+        ${mmr2 && html`<label>MMR2<span class="cpu-oct">${mmr2.v}</span></label>`}
+      </div>`}
       <div class="lamps">
         <${Cap} cls="cap-white" lit=${running}>RUN</${Cap}>
         <${Cap} cls="cap-red" lit=${halted}
@@ -365,7 +426,11 @@ export function widgetFor(d: LiveDev): Widget | null {
 // content at the grid cell size.
 export function widgetCells(d: LiveDev): { w: number; h: number } {
   if (d.type === 'VCB01') return { w: 12, h: 12 };
-  if (d.type === 'PDP-11/20') return { w: 7, h: 5 };
+  // A CPU card carries the register readouts, the status word spelled out as
+  // lamps, and the console switches. The 11/34 is taller by the row its memory
+  // management registers take, which the 11/20 has none of.
+  if (d.type === 'PDP-11/20') return { w: 7, h: 7 };
+  if (d.type === 'PDP-11/34') return { w: 7, h: 8 };
   if (d.type === 'dzv11_c') return { w: 5, h: 4 };
   if (d.type === 'RX01' || d.type === 'RX02') return { w: 6, h: 4 };
   if (d.type === 'RA81') return { w: 9, h: 4 };

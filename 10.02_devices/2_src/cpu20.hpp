@@ -60,6 +60,7 @@ public:
     void core_set_pc(uint16_t value) override;
     void core_set_switches(uint16_t value) override;
     void core_apply_options(void) override;
+    void core_publish_status(void) override;
 };
 
 #endif

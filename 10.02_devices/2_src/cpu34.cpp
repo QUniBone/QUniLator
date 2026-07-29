@@ -43,6 +43,12 @@ cpu34_c::cpu34_c() :
     type_name.value = "PDP-11/34";
     log_label = "cpu34";
 
+    // the memory management unit's own state, driven by the machine
+    mmr0.kind = parameter_c::PARAM_STATUS;
+    mmr1.kind = parameter_c::PARAM_STATUS;
+    mmr2.kind = parameter_c::PARAM_STATUS;
+    mmu_enabled.kind = parameter_c::PARAM_STATUS;
+
     // emulation core state. Not in the header, so cpu34.hpp stays free of kd11ea.h
     kd11ea = (struct KD11EA *) calloc(1, sizeof(struct KD11EA));
     assert(kd11ea);
@@ -115,4 +121,19 @@ void cpu34_c::core_set_pc(uint16_t value)
 void cpu34_c::core_set_switches(uint16_t value)
 {
     kd11ea->sw = value;
+}
+
+// The KD11-EA status word carries the current and previous mode above the
+// priority, T bit and condition codes the KA11 also has. The memory
+// management registers go out with it: they are internal to this CPU, so a
+// status parameter is the only way to read them from outside.
+void cpu34_c::core_publish_status(void)
+{
+    psw.value = kd11ea->psw;
+    bus_addr.value = kd11ea->ba;
+    bus_data.value = kd11ea->bdata;
+    mmr0.value = kd11ea->mmu.mmr0;
+    mmr1.value = kd11ea->mmu.mmr1;
+    mmr2.value = kd11ea->mmu.mmr2;
+    mmu_enabled.value = (kd11ea->mmu.enabled != 0);
 }

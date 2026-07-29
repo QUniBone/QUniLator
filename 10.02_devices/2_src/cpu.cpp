@@ -267,6 +267,9 @@ cpu_base_c::cpu_base_c() :
     runmode.kind = parameter_c::PARAM_STATUS;
     pc.kind = parameter_c::PARAM_STATUS;
     cycle_count.kind = parameter_c::PARAM_STATUS;
+    psw.kind = parameter_c::PARAM_STATUS;
+    bus_addr.kind = parameter_c::PARAM_STATUS;
+    bus_data.kind = parameter_c::PARAM_STATUS;
     // The console switches are console state too. START and CONTINUE are
     // momentary: the worker acts on them and clears them again, so what they
     // hold is never a setting. HALT is a switch position, and a configuration
@@ -497,6 +500,7 @@ void cpu_base_c::worker(unsigned instance)
         }
 
         core_apply_options();
+        core_publish_status();
 
         // A running CPU is meant to take the core it is given: every pass
         // executes an instruction. A halted one steps nothing, and this loop
