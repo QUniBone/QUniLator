@@ -70,6 +70,8 @@ cpuvax_c::cpuvax_c() :
     pc.kind = parameter_c::PARAM_STATUS;
     psl.kind = parameter_c::PARAM_STATUS;
     cycle_count.kind = parameter_c::PARAM_STATUS;
+    bus_cycles.kind = parameter_c::PARAM_STATUS;
+    bus_timeouts.kind = parameter_c::PARAM_STATUS;
     halt_switch.kind = parameter_c::PARAM_STATUS;
     start_switch.kind = parameter_c::PARAM_STATUS;
 }
@@ -105,6 +107,53 @@ static void vax_console_put(void *context, int c)
     memset(&byte, 0, sizeof byte);
     byte.c = (uint8_t) (c & 0xff);
     vax->rs232adapter.rs232byte_xmt_send(byte);
+}
+
+/* One register access on the UNIBUS. The processor is a bus master here like
+   any other, so the access goes through qunibusadapter and appears on the bus
+   as a DATI or a DATO; what comes back is whether the bus answered. */
+static int vax_bus_read(void *context, unsigned addr, unsigned *data)
+{
+    cpuvax_c *vax = (cpuvax_c *) context;
+
+    return vax->bus_read(addr, data) ? 1 : 0;
+}
+
+static int vax_bus_write(void *context, unsigned addr, unsigned data, int byte)
+{
+    cpuvax_c *vax = (cpuvax_c *) context;
+
+    return vax->bus_write(addr, data, byte != 0) ? 1 : 0;
+}
+
+bool cpuvax_c::bus_read(unsigned addr, unsigned *data)
+{
+    uint16_t word;
+
+    bus_cycles.value++;
+    qunibusadapter->cpu_DATA_transfer(data_transfer_request, QUNIBUS_CYCLE_DATI,
+                                      addr, &word);
+    if (!data_transfer_request.success) {
+        bus_timeouts.value++;
+        return false;
+    }
+    *data = word;
+    return true;
+}
+
+bool cpuvax_c::bus_write(unsigned addr, unsigned data, bool byte)
+{
+    uint16_t word = (uint16_t) data;
+
+    bus_cycles.value++;
+    qunibusadapter->cpu_DATA_transfer(data_transfer_request,
+                                      byte ? QUNIBUS_CYCLE_DATOB : QUNIBUS_CYCLE_DATO,
+                                      addr, &word);
+    if (!data_transfer_request.success) {
+        bus_timeouts.value++;
+        return false;
+    }
+    return true;
 }
 
 /* The time the core measures itself against: whichever clock the emulation is
@@ -144,6 +193,11 @@ bool cpuvax_c::on_before_install(void)
     if (!configure_machine())
         return false;                           // qunibusdevice_c aborts the enable
 
+    // The processor is the bus master whether or not it is executing: a console
+    // examine reaches a device register on a stopped machine too.
+    if (bus_iopage.value)
+        qunibus->set_arbitrator_active(true);
+
     INFO("VAX-11/780 ready, %u MB of memory", (unsigned) memory_mb.value);
     return true;
 }
@@ -168,6 +222,10 @@ bool cpuvax_c::configure_machine(void)
     host.console_get = vax_console_get;
     host.console_put = vax_console_put;
     host.elapsed_usec = vax_elapsed_usec;
+    if (bus_iopage.value) {
+        host.bus_read = vax_bus_read;
+        host.bus_write = vax_bus_write;
+    }
     host.message_file = stdout;
     simh_shim_bind(&host);
 
@@ -248,6 +306,55 @@ void cpuvax_c::publish_status(void)
     cycle_count.value = (uint64_t) state.instructions - instructions_at_start;
 }
 
+/* Ask the processor's thread for a bus cycle and wait for it. A bus master's
+   transfer is serviced by the adapter against this device's own request, so it
+   has to be issued by the thread that owns it. */
+bool cpuvax_c::request_console_access(enum console_access_e what, unsigned addr)
+{
+    timeout_c timeout;
+    unsigned waited_ms = 0;
+
+    if (!enabled.value) {
+        ERROR("%s is not enabled", name.value.c_str());
+        return false;
+    }
+    console_access_addr = addr;
+    console_access_ok = false;
+    console_access = what;
+    while (console_access != console_access_none && waited_ms < 1000) {
+        timeout.wait_ms(2);
+        waited_ms += 2;
+    }
+    if (console_access != console_access_none) {
+        console_access = console_access_none;
+        ERROR("the processor did not answer for %06o", addr);
+        return false;
+    }
+    if (!console_access_ok) {
+        ERROR("no answer from %06o", addr);
+        return false;
+    }
+    return true;
+}
+
+void cpuvax_c::service_console_access(void)
+{
+    unsigned data = console_access_data;
+
+    switch (console_access) {
+    case console_access_none:
+        return;
+    case console_access_examine:
+        console_access_ok = bus_read(console_access_addr, &data);
+        console_access_data = data;
+        break;
+    case console_access_deposit:
+        console_access_ok = bus_write(console_access_addr, data, false);
+        break;
+    }
+    console_access = console_access_none;
+}
+
 void cpuvax_c::worker(unsigned instance)
 {
     UNUSED(instance);                           // only one
@@ -258,6 +365,8 @@ void cpuvax_c::worker(unsigned instance)
     timeout.wait_us(1);
 
     while (!workers_terminate) {
+        service_console_access();
+
         if (start_switch.value) {
             start_switch.value = false;         // momentary action
             machine_stop(NULL);
@@ -331,11 +440,30 @@ bool cpuvax_c::on_param_changed(parameter_c *param)
     if (param == &enabled)
         return qunibusdevice_c::on_param_changed(param);
 
+    // A console examine or deposit is performed by the processor's own thread,
+    // which is the bus master; this one only asks and waits for the answer.
+    if (param == &bus_examine) {
+        if (!request_console_access(console_access_examine, bus_examine.new_value))
+            return false;
+        bus_examine.value = bus_examine.new_value;
+        bus_data.value = console_access_data;
+        INFO("%06o = %06o", bus_examine.value, bus_data.value);
+        return true;
+    }
+    if (param == &bus_deposit) {
+        console_access_data = bus_data.value;
+        if (!request_console_access(console_access_deposit, bus_deposit.new_value))
+            return false;
+        bus_deposit.value = bus_deposit.new_value;
+        INFO("%06o := %06o", bus_deposit.value, bus_data.value);
+        return true;
+    }
+
     // The machine is built when it is enabled, so its size and its volume are
     // read then; changing them under a running processor would describe a
     // machine that is not there.
-    if ((param == &memory_mb || param == &bootimage || param == &bootdevice)
-            && enabled.value) {
+    if ((param == &memory_mb || param == &bootimage || param == &bootdevice
+            || param == &bus_iopage) && enabled.value) {
         ERROR("%s can only be changed while the processor is disabled",
               param->name.c_str());
         return false;

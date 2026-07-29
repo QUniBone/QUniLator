@@ -18,11 +18,15 @@
  the PDP-11: a sixteen bit program counter, a console switch register, and a
  trap through vector 24 on a power failure. A VAX has none of those.
 
- What is not here yet is the bus. Stage 1 gives the processor memory and a
- console and nothing else, which is what the plan asks of it; the UNIBUS
- adapter's register window and the interrupt path are stage 2. Until then a
- machine is booted from the disk simh carries inside the core, which is
- scaffolding and says so - see docs/vax-host.md.
+ With bus_iopage set, the UNIBUS adapter's window on the I/O page is live and
+ the processor's register accesses become bus cycles, so the emulated devices
+ of 10.02_devices answer them. What is still missing is the other direction: a
+ device raising an interrupt cannot yet reach this processor, because the bus
+ reports a vector without the request level a VAX needs to know which IPL to
+ take it at - see docs/vax-host.md.
+
+ A machine is booted from the disk simh carries inside the core, which is
+ scaffolding until the emulated UDA50 on the bus takes over.
  */
 #ifndef _CPUVAX_HPP_
 #define _CPUVAX_HPP_
@@ -50,6 +54,10 @@ public:
     // like the DL11's, so the web console binds to it the same way.
     rs232adapter_c rs232adapter;
 
+    // A register access the processor makes on the UNIBUS, handled by
+    // qunibusadapter as a DATI or DATO like any other bus master's.
+    dma_request_c data_transfer_request = dma_request_c(this);
+
     parameter_unsigned_c memory_mb = parameter_unsigned_c(this, "memory", "mem",/*readonly*/
                                      false, "MB", "%u", "Main memory size in megabytes.", 8, 10);
 
@@ -61,6 +69,28 @@ public:
 
     parameter_string_c bootdevice = parameter_string_c(this, "bootdevice", "bd",/*readonly*/false,
             "Unit the processor boots from, as the console names it.");
+
+    // The UNIBUS adapter's window on the I/O page. With it the processor's
+    // register accesses become bus cycles and reach the emulated devices;
+    // without it the machine sees only what simh carries inside it.
+    parameter_bool_c bus_iopage = parameter_bool_c(this, "bus_iopage", "bio",/*readonly*/
+                                  false, "1 = UNIBUS register accesses go on the bus.");
+
+    // What a real 780's console does with EXAMINE and DEPOSIT, and the only way
+    // to reach a device register before an operating system has a driver for
+    // it. Writing an address to bus_examine performs a DATI and leaves the
+    // answer in bus_data; writing bus_deposit performs a DATO of bus_data.
+    parameter_unsigned_c bus_examine = parameter_unsigned_c(this, "bus_examine", "bex",/*readonly*/
+                                       false, "", "%06o", "Read this UNIBUS register into bus_data.", 18, 8);
+    parameter_unsigned_c bus_deposit = parameter_unsigned_c(this, "bus_deposit", "bdep",/*readonly*/
+                                       false, "", "%06o", "Write bus_data to this UNIBUS register.", 18, 8);
+    parameter_unsigned_c bus_data = parameter_unsigned_c(this, "bus_data", "bd",/*readonly*/
+                                    false, "", "%06o", "Data of the last examine, or for the next deposit.", 16, 8);
+
+    parameter_unsigned64_c bus_cycles = parameter_unsigned64_c(this, "bus_cycles", "bc",/*readonly*/
+                                        true, "", "%u", "UNIBUS register accesses made", 63, 10);
+    parameter_unsigned64_c bus_timeouts = parameter_unsigned64_c(this, "bus_timeouts", "bt",/*readonly*/
+                                          true, "", "%u", "UNIBUS accesses that were not answered", 63, 10);
 
     // How many instructions worker() runs before it looks at the switches, the
     // power events and the terminate flag again. Long enough that the check
@@ -82,7 +112,25 @@ public:
     parameter_unsigned64_c cycle_count = parameter_unsigned64_c(this, "cycle_count", "cc",/*readonly*/
                                          true, "", "%u", "Instructions executed since the last start", 63, 10);
 
+public:
+    // reached from the seam's C callbacks
+    bool bus_read(unsigned addr, unsigned *data);
+    bool bus_write(unsigned addr, unsigned data, bool byte);
+
 private:
+    // A console examine or deposit asked for from the web thread. The transfer
+    // itself belongs to the processor's own thread, which is the bus master, so
+    // the request is left here and worker() performs it.
+    enum console_access_e { console_access_none, console_access_examine,
+                            console_access_deposit };
+    volatile enum console_access_e console_access = console_access_none;
+    volatile unsigned console_access_addr = 0;
+    volatile unsigned console_access_data = 0;
+    volatile bool console_access_ok = false;
+
+    void service_console_access(void);
+    bool request_console_access(enum console_access_e what, unsigned addr);
+
     bool machine_running = false;       // the core is executing, not halted
     uint64_t instructions_at_start = 0; // sim_gtime() when the machine started
 

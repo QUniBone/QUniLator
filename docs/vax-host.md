@@ -1,8 +1,9 @@
 # The VAX host
 
 Where the VAX UNIBUS host of [`vax-unibus-plan.md`](vax-unibus-plan.md) stands.
-Stages 0 and 1 are complete: the processor runs as a device of the application
-on a backplane-less UniBone, and boots VMS over the web console.
+Stages 0 and 1 are complete and stage 2 is half done: the processor runs as a
+device of the application on a backplane-less UniBone, boots VMS over the web
+console, and reaches the emulated devices' registers on the bus.
 
 ## Stage 0
 
@@ -223,14 +224,54 @@ figure below is lower because its loop reads and writes memory on every pass,
 where an idle VMS mostly does not; both are worth keeping, one for the machine
 and one for the emulator.
 
-## What stage 2 needs next
+## Stage 2 — the I/O page on the bus
 
-- The DW780's register window, with VAX access to UNIBUS I/O space going
-  through `unibone_dati()` and `unibone_dato()` onto the bus.
-- `on_interrupt()` widened to carry the bus request level, and BR4-7 mapped to
-  VAX IPL 14-17 with the adapter's vector offset applied.
-- A bus timeout becoming a UBA error and a VAX machine check.
+The DW780 model reaches a peripheral's registers through simh's dispatch tables,
+which `build_ubus_tab()` fills in from the devices simh itself carries. An
+emulated VAX on a UniBone wants the other kind, so after each reset every
+address in the I/O page that no simh device claimed is pointed at the two
+routines of `cpuvax/simh_shim_bus.c`, which hand the cycle to the device. simh's
+own dispatch keeps its addresses, which is what lets a machine boot from the
+controller inside the core while the devices on the bus are brought up around
+it. Nothing in the vendored tree is edited.
+
+`bus_iopage` turns it on. A cycle then goes through `qunibusadapter` as a DATI
+or DATO like any other bus master's, and `bus_cycles` and `bus_timeouts` count
+what happened.
+
+`bus_examine` and `bus_deposit` are what a real 780's console does, and the only
+way to reach a device register before an operating system has a driver for it.
+They are asked for from the web interface and performed by the processor's own
+thread, because a bus master's transfer is serviced against that thread's
+request.
+
+Against QUniLator's DL11 on `unibone.huebner.org`:
+
+| | |
+|---|---|
+| `bus_examine 777564` | `000200` — the transmitter is ready, which is what an idle DL11 says |
+| `bus_deposit 777564` of `000100` then examine | `000100` — the write reached the model and reads back |
+| `bus_examine 777560` | `000000` — the receiver is idle, and untouched by the write |
+| `bus_examine 764000` | `no answer from 764000`, and the machine keeps running |
+
+That is three of stage 2's four verifications: registers read and written from
+the console with the values the device model reports, and an unpopulated
+address answered with an error rather than a hang.
+
+## What stage 2 still needs
+
+The interrupt path, and it wants a change in the PRU. A device raising an
+interrupt reaches the ARM through `mailbox.events.intr_slave`, which carries the
+vector alone; a VAX needs the bus request level too, to know which IPL to take
+it at. The level is known where it is granted - `sm_arb_worker_cpu()` in
+`pru1_statemachine_arbitration.c` computes `requested_intr_level` - and has to
+be kept until `sm_intr_slave_start()` reports the vector. That is a field in the
+arbitration state, a field in the mailbox event, and two assignments; the
+mailbox is shared with the ARM, so both sides rebuild.
+
+With the level in hand, `unibuscpu_c::on_interrupt()` widens to carry it, BR4-7
+map to VAX IPL 14-17, and the adapter's vector offset applies.
 
 A backplane-less board shortens what follows, because `internal_bus` makes the
-PRU answer its own cycles: the same path carries the register window and the
-DMA of stages 3 and 4 with no external timing deadline to meet.
+PRU answer its own cycles: the same path carries the DMA of stages 3 and 4 with
+no external timing deadline to meet.

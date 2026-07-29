@@ -63,6 +63,20 @@ double simh_shim_elapsed_usec (void)
 return shim_host_bound ? shim_host.elapsed_usec (shim_host.context) : 0.0;
 }
 
+int simh_shim_bus_read (unsigned addr, unsigned *data)
+{
+if (!shim_host_bound || (shim_host.bus_read == NULL))
+    return 0;
+return shim_host.bus_read (shim_host.context, addr, data);
+}
+
+int simh_shim_bus_write (unsigned addr, unsigned data, int byte)
+{
+if (!shim_host_bound || (shim_host.bus_write == NULL))
+    return 0;
+return shim_host.bus_write (shim_host.context, addr, data, byte);
+}
+
 /* ------------------------------------------------------------------------ */
 /* State scp owns                                                            */
 /* ------------------------------------------------------------------------ */
@@ -1285,6 +1299,7 @@ simh_shim_status_t simh_shim_reset (void)
 {
 DEVICE *dptr;
 uint32 i, j;
+t_stat r;
 
 /* simh's file layer settles its endianness and its large-file support here,
    and what it works out is read far from the file layer: the disk layer asks
@@ -1307,7 +1322,16 @@ for (i = 0; (dptr = sim_devices[i]) != NULL; i++)
     for (j = 0; j < dptr->numunits; j++)
         dptr->units[j].dptr = dptr;
 
-return reset_all (0);
+if ((r = reset_all (0)) != SCPE_OK)
+    return r;
+
+/* reset_all() rebuilds the I/O page dispatch from the devices simh carries, so
+   what is left of it goes to the bus afterwards and not before. */
+if (shim_host_bound && (shim_host.bus_read != NULL))
+    simh_shim_bus_install ();
+else
+    simh_shim_bus_remove ();
+return SCPE_OK;
 }
 
 int simh_shim_batch_ended (simh_shim_status_t status)

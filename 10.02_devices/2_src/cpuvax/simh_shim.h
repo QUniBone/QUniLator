@@ -55,6 +55,16 @@ typedef struct {
        calibration divides differences of this, so only the rate matters. */
     double (*elapsed_usec) (void *context);
 
+    /* A register access on the UNIBUS, when the embedding has one. Both return
+       zero when the bus did not answer, which the adapter reports as its own
+       nonexistent memory error. A NULL pair leaves the processor with only the
+       peripherals simh carries inside it.
+
+       The address is an eighteen bit UNIBUS address, and a write with byte set
+       is a DATOB. */
+    int (*bus_read) (void *context, unsigned addr, unsigned *data);
+    int (*bus_write) (void *context, unsigned addr, unsigned data, int byte);
+
     /* Where simulator messages go. NULL sends them to stdout. */
     FILE *message_file;
 } simh_shim_host_t;

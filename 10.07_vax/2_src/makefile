@@ -255,7 +255,8 @@ SHIM_SIM_SRC = sim_fio.c
 # The shim itself, which lives beside the other CPU emulation cores because it
 # is one: the application compiles the same files into cpuvax_c.
 SHIM_SRC = \
-	simh_shim.c simh_shim_console.c simh_shim_timer.c simh_shim_tmxr.c
+	simh_shim.c simh_shim_console.c simh_shim_timer.c simh_shim_tmxr.c \
+	simh_shim_bus.c
 
 # The workstation host, which belongs to this directory and not to the device.
 SHIM_HOST_SRC = shim_main.c

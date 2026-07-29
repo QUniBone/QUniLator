@@ -26,4 +26,13 @@ double simh_shim_ips (void);
    what a device means when it asks to be scheduled a number of ticks ahead. */
 int32 simh_shim_tick_size (int32 tmr);
 
+/* One register access on the embedding's bus. Zero when it did not answer. */
+int simh_shim_bus_read (unsigned addr, unsigned *data);
+int simh_shim_bus_write (unsigned addr, unsigned data, int byte);
+
+/* Point the unclaimed part of the I/O page at that bus, or take it off again.
+   Defined in simh_shim_bus.c, which only a build with a bus links. */
+void simh_shim_bus_install (void);
+void simh_shim_bus_remove (void);
+
 #endif /* SIMH_SHIM_INTERNAL_H_ */
