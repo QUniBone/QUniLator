@@ -291,10 +291,11 @@ function DzWidget({ d }: { d: LiveDev }) {
     </div></div>`;
 }
 
-// The emulated KA11, as its console: the RUN lamp, the program counter and the
+// An emulated CPU, as its console: the RUN lamp, the program counter and the
 // opcode count the CPU keeps, the switch register the operator sets, and the
 // three console switches. HALT is a toggle the CPU reads continuously; START
 // and CONTINUE are momentary, so they are pulsed and fall back on their own.
+// Every model carries these, so one widget serves each of them.
 function CpuWidget({ d }: { d: LiveDev }) {
   const powered = store.hw.powered !== false;
   const running = powered && lampOn(d, 'run_led');
@@ -350,6 +351,7 @@ const WIDGET_MODELS: Record<string, Widget> = {
   RX02: RxWidget,
   dzv11_c: DzWidget,
   'PDP-11/20': CpuWidget,
+  'PDP-11/34': CpuWidget,
 };
 const WIDGET_CATEGORIES: Record<string, Widget> = {
   disk: DiskWidget,
