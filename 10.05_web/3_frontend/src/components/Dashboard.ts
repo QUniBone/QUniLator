@@ -1,5 +1,5 @@
 import { html } from '../html';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import { useStore, store, emit } from '../store';
 import { liveControl, loadConfigs, fetchConfigSnapshot, setConfigLayout } from '../api';
@@ -9,7 +9,8 @@ import { placeItems, gridRows, fits, occupancyExcept } from '../lib/dashlayout';
 import type { GridItem } from '../lib/dashlayout';
 import { toast } from '../lib/toast';
 import { Led, Chip } from './common';
-import { widgetFor, widgetCells, DeviceWidget } from './widgets';
+import { widgetFor, widgetCells, widgetOptions, WidgetCard } from './widgets';
+import type { Cells, WidgetOpts } from './widgets';
 import type { LiveDev, DashLayout } from '../types';
 
 // The running configuration's name and title, with a cog that jumps straight to
@@ -178,12 +179,49 @@ function ConsoleCard() {
 // ---- the arrangeable grid ----
 const CELL = 44; // px per grid square
 const GAP = 6;
-// the fixed cards, their natural size in grid cells, and their titles
+// the fixed cards, their estimated size in grid cells, and their titles
 const FIXED = [
   { key: 'controlpanel', w: 13, h: 3, label: 'Control panel' },
   { key: 'frontpanel', w: 7, h: 3, label: 'Front panel' },
   { key: 'console', w: 15, h: 10, label: 'Console' },
 ];
+
+// How many whole cells hold a run of `px`, a block of n cells being
+// n·CELL + (n-1)·GAP wide. The half pixel keeps a sub-pixel layout rounding from
+// buying a whole cell.
+const cellsFor = (px: number): number =>
+  Math.max(1, Math.ceil((px + GAP - 0.5) / (CELL + GAP)));
+
+// The parts of a card that carry its content: everything but the head, whose
+// title ellipsizes and must never widen a card.
+const contentParts = (card: HTMLElement): HTMLElement[] =>
+  (Array.from(card.children) as HTMLElement[]).filter((c) => !c.classList.contains('card-head'));
+
+// What each card actually needs, read off the cards themselves.
+//
+// The height is the card as it stands, a card being drawn at its content
+// height. The width is the widest thing in the card that cannot break — a cap
+// bezel, a screen, a lamp matrix — so a row that is free to wrap still wraps,
+// and it is the widget's own width that decides how wide a card is otherwise.
+// Widening a card can only shorten it and never the other way about, so the two
+// settle together instead of chasing each other.
+//
+// Every card is read in one pass: heights first, since asking for the intrinsic
+// widths disturbs them, then one write and one read across the whole grid,
+// rather than a fresh layout per card.
+function measureCards(cards: HTMLElement[]): (Cells | null)[] {
+  const heights = cards.map((c) => c.getBoundingClientRect().height);
+  const parts = cards.map(contentParts);
+  const saved = parts.map((ps) => ps.map((p) => p.style.width));
+  parts.forEach((ps) => ps.forEach((p) => (p.style.width = 'min-content')));
+  const widths = cards.map(
+    (c, i) =>
+      parts[i].reduce((m, p) => Math.max(m, p.getBoundingClientRect().width), 0) +
+      (c.offsetWidth - c.clientWidth)
+  );
+  parts.forEach((ps, i) => ps.forEach((p, j) => (p.style.width = saved[i][j])));
+  return heights.map((h, i) => (h ? { w: cellsFor(widths[i]), h: cellsFor(h) } : null));
+}
 const FIXED_LABEL: Record<string, string> = {
   controlpanel: 'Control panel',
   frontpanel: 'Front panel',
@@ -192,12 +230,12 @@ const FIXED_LABEL: Record<string, string> = {
 // a hidden card shows compact in edit mode: just enough cells for its name row
 const HIDDEN_CELLS = { w: 6, h: 2 };
 
-function renderCard(key: string, devByName: Record<string, LiveDev>) {
+function renderCard(key: string, devByName: Record<string, LiveDev>, opts: WidgetOpts) {
   if (key === 'controlpanel') return html`<${ControlPanel} />`;
   if (key === 'frontpanel') return html`<${FrontPanel} />`;
   if (key === 'console') return html`<${ConsoleCard} />`;
   const d = devByName[key];
-  return d ? html`<${DeviceWidget} d=${d} />` : null;
+  return d ? html`<${WidgetCard} d=${d} opts=${opts} />` : null;
 }
 
 // A hidden widget in edit mode: represented by just its title, handle and a
@@ -227,6 +265,9 @@ function DashGrid() {
   const [edit, setEdit] = useState(false);
   const [layout, setLayout] = useState<DashLayout>({});
   const [dirty, setDirty] = useState(false);
+  // what each card measures, once it is on the page; the widgets' own sizes
+  // stand in until then
+  const [measured, setMeasured] = useState<Record<string, Cells>>({});
   const drag = useRef<{ key: string; dx: number; dy: number } | null>(null);
   const [preview, setPreview] = useState<{ key: string; x: number; y: number; ok: boolean } | null>(null);
 
@@ -261,16 +302,23 @@ function DashGrid() {
   const devByName: Record<string, LiveDev> = {};
   devs.forEach((d) => (devByName[d.name] = d));
   const isHidden = (key: string) => !!layout[key]?.hidden;
+  // The widget options stored for a card. A card the layout does not name, or
+  // one whose entry sets none, leaves every option at its widget's default.
+  const optsOf = (key: string): WidgetOpts => layout[key]?.opts || {};
 
   // fixed cards + device widgets; a hidden card shrinks to a compact tile in
-  // edit mode, and widths are clamped so a card never exceeds the grid
+  // edit mode, and widths are clamped so a card never exceeds the grid.
+  // A card that has been measured is as tall as it draws, and as wide as the
+  // wider of what the widget asks for and what its body cannot fit into less.
   const sized = (key: string, nat: { w: number; h: number }): GridItem => {
-    const c = edit && isHidden(key) ? HIDDEN_CELLS : nat;
-    return { key, w: Math.min(c.w, cols), h: c.h };
+    if (edit && isHidden(key))
+      return { key, w: Math.min(HIDDEN_CELLS.w, cols), h: HIDDEN_CELLS.h };
+    const m = measured[key];
+    return { key, w: Math.min(Math.max(nat.w, m ? m.w : 0), cols), h: m ? m.h : nat.h };
   };
   const allItems: GridItem[] = [
     ...FIXED.map((f) => sized(f.key, f)),
-    ...devs.map((d) => sized(d.name, widgetCells(d))),
+    ...devs.map((d) => sized(d.name, widgetCells(d, optsOf(d.name)))),
   ];
   const items = allItems.filter((it) => edit || !isHidden(it.key));
   // Pack against a width that honours any stored position past the visible edge,
@@ -308,6 +356,50 @@ function DashGrid() {
   colsRef.current = cols;
   const previewRef = useRef(preview);
   previewRef.current = preview;
+
+  // Read every card and keep the grid's blocks in step with what the cards
+  // draw. Only a change in whole cells is published, so a reflow of a few pixels
+  // does not re-place the grid; and a measurement taken mid-drag is ignored, the
+  // dragged card being where the operator holds it rather than where it lives.
+  const measure = () => {
+    const el = gridRef.current;
+    if (!el || drag.current) return;
+    const cards = Array.from(
+      el.querySelectorAll<HTMLElement>('.grid-item[data-measure] > .card')
+    );
+    if (!cards.length) return;
+    const found: Record<string, Cells> = {};
+    measureCards(cards).forEach((m, i) => {
+      const key = (cards[i].parentElement as HTMLElement).dataset.measure as string;
+      if (m) found[key] = m;
+    });
+    setMeasured((prev) => {
+      let changed = false;
+      for (const k in found) {
+        const c = prev[k];
+        if (!c || c.w !== found[k].w || c.h !== found[k].h) changed = true;
+      }
+      return changed ? { ...prev, ...found } : prev;
+    });
+  };
+  // What changes the shape of the cards: the set on the grid, the edit mode's
+  // compact tiles, the column count a card is clamped to, and the layout, which
+  // carries the widget options. Anything else a card does on its own — a font
+  // arriving, the VCB01 canvas learning its size from the stream, a status
+  // readout coming or going — is caught by the observer below.
+  const shape = placed.map((p) => p.key).join(',') + '|' + cols + '|' + edit + '|' + JSON.stringify(layout);
+  // measured before the browser paints, so a card settles into its block in the
+  // frame it first appears in
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(measure, [shape]);
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(measure);
+    el.querySelectorAll<HTMLElement>('.grid-item[data-measure] > .card').forEach((c) => ro.observe(c));
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shape]);
 
   // While editing, every card holds an explicit position, so hiding or showing
   // one never reflows the others into the freed space. Freeze the current
@@ -379,6 +471,24 @@ function DashGrid() {
     setPreview({ key, x: p.x, y: p.y, ok: true });
   };
 
+  // The switchable parts of a card's widget, offered in edit mode beside the
+  // eye: one button per option the widget declares, lit while the option is on.
+  // Turning one off resizes the card, so it belongs with the arrangement.
+  const optionToggles = (key: string) => {
+    const d = devByName[key];
+    if (!d) return null;
+    const list = widgetOptions(d);
+    if (!list.length) return null;
+    const cur = optsOf(key);
+    return list.map((o) => {
+      const on = typeof cur[o.key] === 'boolean' ? cur[o.key] : o.def;
+      return html`<button class=${'gi-opt' + (on ? ' on' : '')}
+        title=${o.label + ' — ' + o.info}
+        onMouseDown=${(e: Event) => e.stopPropagation()}
+        onClick=${() => patch(key, { opts: { ...cur, [o.key]: !on } })}>${o.label}</button>`;
+    });
+  };
+
   const save = async () => {
     if (await setConfigLayout(cfg, layout)) {
       setDirty(false);
@@ -417,15 +527,23 @@ function DashGrid() {
         return html`<div
           class=${'grid-item' + (hidden ? ' hidden' : '') + (pv ? ' dragging' + (pv.ok ? '' : ' bad') : '')}
           key=${p.key}
+          data-measure=${edit && hidden ? null : p.key}
           style=${'grid-column:' + (x + 1) + '/span ' + p.w + ';grid-row:' + (y + 1) + '/span ' + p.h + ';'}>
-          ${edit && hidden ? renderHidden(p.key, devByName) : renderCard(p.key, devByName)}
+          ${
+            edit && hidden
+              ? renderHidden(p.key, devByName)
+              : renderCard(p.key, devByName, optsOf(p.key))
+          }
           ${
             edit
               ? html`<div class="gi-edit" onMouseDown=${onDown(p.key)}>
                   <span class="gi-move mono">⠿ ${p.key}</span>
-                  <button class="gi-eye" title=${hidden ? 'show' : 'hide'}
-                    onMouseDown=${(e: Event) => e.stopPropagation()}
-                    onClick=${() => patch(p.key, { hidden: !hidden })}>${hidden ? '🙈' : '👁'}</button>
+                  <div class="gi-tools">
+                    ${hidden ? null : optionToggles(p.key)}
+                    <button class="gi-eye" title=${hidden ? 'show' : 'hide'}
+                      onMouseDown=${(e: Event) => e.stopPropagation()}
+                      onClick=${() => patch(p.key, { hidden: !hidden })}>${hidden ? '🙈' : '👁'}</button>
+                  </div>
                 </div>`
               : null
           }

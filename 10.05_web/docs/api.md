@@ -423,14 +423,19 @@ holds is refused with `409`; a value outside `0`..`15` with `422`. Answers
 ### `PUT /api/configs/<name>/layout`
 
 ```json
-{"value": {"controlpanel": {"x": 0, "y": 0}, "rl0": {"x": 6, "y": 0, "hidden": true}}}
+{"value": {"controlpanel": {"x": 0, "y": 0},
+           "rl0": {"x": 6, "y": 0, "hidden": true},
+           "cpu": {"x": 0, "y": 3, "opts": {"status": false}}}}
 ```
 
-Stores the dashboard arrangement for `<name>`: a map from card key (a device
+Stores the dashboard presentation of `<name>`: a map from card key (a device
 name, or `controlpanel` / `frontpanel` / `console`) to its top-left grid cell
-`{x, y}` and optional `hidden`. It is per-configuration metadata — switching
-configurations switches the dashboard layout — and is opaque to the backend,
-which neither validates nor interprets it. The current pointer and the running
+`{x, y}`, an optional `hidden`, and an optional `opts` object holding the
+switchable parts of that card's widget — for a CPU card, `status` carries the
+live register readouts, and a card without them is shorter. It is
+per-configuration display state — switching configurations switches the
+dashboard — and is opaque to the backend, which neither validates nor interprets
+it; the option keys belong to the widgets. The current pointer and the running
 machine are untouched. A `null` value clears the layout. Answers `{"ok": true}`;
 `404` for an unknown configuration.
 

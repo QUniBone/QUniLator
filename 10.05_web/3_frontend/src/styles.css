@@ -559,9 +559,12 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
 .dash-grid { display: grid; align-content: start; justify-content: start; overflow-x: auto; }
 .dash-grid.editing { outline: 1px dashed var(--line); border-radius: var(--r-sm); }
 .dash-grid .grid-item { position: relative; min-width: 0; min-height: 0; }
+/* A card stands at the height its content asks for and the grid rounds that up
+   to whole cells, so the block is an envelope around the card rather than a box
+   the card is stretched into. What is left over reads as grid gap. */
 .dash-grid .grid-item > .card,
 .dash-grid .grid-item > .rlpanel {
-  width: 100%; height: 100%; margin: 0; box-sizing: border-box; overflow: auto;
+  width: 100%; height: auto; margin: 0; box-sizing: border-box; overflow: auto;
 }
 /* a hidden card in edit mode: a compact, muted placeholder */
 .hidden-card { border-style: dashed; background: var(--surface-2); opacity: .8; }
@@ -579,10 +582,19 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
   font-size: var(--fs-0); color: var(--accent); background: var(--surface);
   padding: 1px 6px; border-radius: 4px; max-width: 80%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.grid-item .gi-tools { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .grid-item .gi-eye {
   cursor: pointer; background: var(--surface); border: 1px solid var(--line);
   border-radius: 4px; font-size: var(--fs-1); line-height: 1; padding: 2px 6px;
 }
+/* a switchable part of the widget, lit while it is shown; turning it off
+   shrinks the card, so the toggle sits with the arrangement controls */
+.grid-item .gi-opt {
+  cursor: pointer; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 4px; font-size: var(--fs-0); line-height: 1.4; padding: 2px 6px;
+  color: var(--ink-muted); white-space: nowrap;
+}
+.grid-item .gi-opt.on { border-color: var(--accent); color: var(--accent); }
 .grid-item.dragging { z-index: 10; }
 .grid-item.dragging .gi-edit { background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent) inset; }
 .grid-item.dragging.bad .gi-edit { border-color: var(--err); background: var(--err-soft); box-shadow: 0 0 0 2px var(--err) inset; }

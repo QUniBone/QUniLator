@@ -160,11 +160,16 @@ export interface ConfigDeviceSnapshot {
   enabled: boolean;
   params?: Record<string, string>;
 }
-// A dashboard card's placement: top-left grid cell, and whether it is hidden.
+// How a dashboard card is shown: its top-left grid cell, whether it is hidden,
+// and the switchable parts of its widget the operator has turned on or off.
+// This is display state throughout — it says how a device appears on the
+// dashboard, never what the device does, which is why it is stored beside the
+// configuration's device set rather than among a device's parameters.
 export interface WidgetPlace {
   x: number;
   y: number;
   hidden?: boolean;
+  opts?: Record<string, boolean>;
 }
 export type DashLayout = Record<string, WidgetPlace>;
 
