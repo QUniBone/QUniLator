@@ -275,6 +275,7 @@ uint8_t sm_arb_worker_cpu() {
 				// GRANT request,  set GRANT line:
 				// BG4 is signal bit mask 0x01, 0x02, etc ...
 				sm_arb.arbitrator_grant_mask = BIT(requested_intr_level - 4);
+				sm_arb.granted_intr_level = requested_intr_level;
 				// 320 ns ???
 				timeout_set(TIMEOUT_SACK, MILLISECS(ARB_MASTER_SACK_TIMOUT_MS));
 			}

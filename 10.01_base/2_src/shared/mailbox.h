@@ -251,6 +251,8 @@ typedef struct {
 	uint8_t signaled; // PRU->ARM, one of BR4/IRQ,5,6,7 vector on QBUS/UNIBUS
 	uint8_t acked; // ARM->PRU
 	uint16_t vector; // received vector
+	uint8_t level; // BR level 4..7 the INTR was granted at
+	uint8_t _dummy[3]; // make it dword-sized
 } mailbox_event_intr_slave_t;
 
 // change of INIT signal

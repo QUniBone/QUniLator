@@ -46,7 +46,7 @@ public:
                                   uint8_t unibus_control, DATO_ACCESS access) override;
     void on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge) override;
     void on_init_changed(void) override;
-    void on_interrupt(uint16_t vector) override;
+    void on_interrupt(uint16_t vector, uint8_t level) override;
     void worker(unsigned instance) override;
 
     // The console terminal of the machine, which on a 780 is part of the
@@ -91,6 +91,8 @@ public:
                                         true, "", "%u", "UNIBUS register accesses made", 63, 10);
     parameter_unsigned64_c bus_timeouts = parameter_unsigned64_c(this, "bus_timeouts", "bt",/*readonly*/
                                           true, "", "%u", "UNIBUS accesses that were not answered", 63, 10);
+    parameter_unsigned64_c bus_interrupts = parameter_unsigned64_c(this, "bus_interrupts", "bi",/*readonly*/
+                                            true, "", "%u", "interrupts taken from the bus", 63, 10);
 
     // How many instructions worker() runs before it looks at the switches, the
     // power events and the terminate flag again. Long enough that the check
@@ -109,6 +111,8 @@ public:
                               true, "", "%08x", "Program counter.", 32, 16);
     parameter_unsigned_c psl = parameter_unsigned_c(this, "PSL", "psl",/*readonly*/
                                true, "", "%08x", "Processor status longword.", 32, 16);
+    parameter_unsigned_c ipl = parameter_unsigned_c(this, "IPL", "ipl",/*readonly*/
+                               true, "", "%02x", "Interrupt priority level.", 8, 16);
     parameter_unsigned64_c cycle_count = parameter_unsigned64_c(this, "cycle_count", "cc",/*readonly*/
                                          true, "", "%u", "Instructions executed since the last start", 63, 10);
 
@@ -132,6 +136,7 @@ private:
     bool request_console_access(enum console_access_e what, unsigned addr);
 
     bool machine_running = false;       // the core is executing, not halted
+    uint8_t published_priority = 0xff;  // last level given to the arbitration
     uint64_t instructions_at_start = 0; // sim_gtime() when the machine started
 
     bool configure_machine(void);       // memory, disk, boot; leaves it ready to run

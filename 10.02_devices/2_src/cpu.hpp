@@ -207,7 +207,7 @@ public:
     void on_after_register_access(qunibusdevice_register_t *device_reg, uint8_t unibus_control, DATO_ACCESS access)
     override;
 
-    void on_interrupt(uint16_t vector) override;
+    void on_interrupt(uint16_t vector, uint8_t level) override;
 
     /*** interface to the CPU model specific emulation core ***/
     // implemented by cpu20_c, cpu34_c, ... by forwarding to their C core.

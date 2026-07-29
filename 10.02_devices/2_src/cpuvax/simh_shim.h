@@ -100,10 +100,19 @@ const char *simh_shim_status_text (simh_shim_status_t status);
 typedef struct {
     uint32_t pc;
     uint32_t psl;
+    unsigned ipl;                                       /* current priority */
     double instructions;
 } simh_shim_state_t;
 
 void simh_shim_state (simh_shim_state_t *state);
+
+/* A device on the bus is interrupting, at the bus request level it was granted
+   at. Returns zero when the processor could not take it - an unknown level, or
+   one still pending - and the caller should leave the request asserted.
+
+   Called from whatever thread watches the bus, not from the one running the
+   processor. */
+int simh_shim_bus_interrupt (unsigned vector, unsigned br_level);
 
 /* True when the last run ended because the processor executed HALT. */
 int simh_shim_halted (simh_shim_status_t status);

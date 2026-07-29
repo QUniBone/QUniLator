@@ -39,6 +39,7 @@
 #include "pru1_buslatches.h"
 #include "pru1_utils.h"
 
+#include "pru1_statemachine_arbitration.h"
 #include "pru1_statemachine_intr_slave.h"
 
 // states
@@ -65,6 +66,9 @@ statemachine_state_func sm_intr_slave_start() {
 
 	// signal ARM, wait for event to be processed
 	mailbox.events.intr_slave.vector = (uint16_t) latch6val << 8 | latch5val ;
+	// the BR level this INTR was granted at, which a CPU with priority levels
+	// needs to know at which of them to take the vector
+	mailbox.events.intr_slave.level = sm_arb.granted_intr_level ;
 
 	EVENT_SIGNAL(mailbox,intr_slave) ; 	// signal to ARM
 	

@@ -95,3 +95,36 @@ for (i = 0; i < (IOPAGESIZE >> 1); i++) {
         iodispW[i] = NULL;
     }
 }
+
+/* ------------------------------------------------------------------------ */
+/* An interrupt from the bus                                                 */
+/*                                                                           */
+/* The adapter keeps a bitmask of pending requests per hardware IPL and a     */
+/* vector for each bit in it, and hands the processor whichever it finds when */
+/* the processor is ready to look. A request from the bus takes one reserved  */
+/* bit: the arbitration lets one interrupt through at a time, holding further */
+/* grants until the processor has taken this one, so one is enough.           */
+/*                                                                           */
+/* This runs on the thread that watches the bus, not on the one executing     */
+/* instructions, which is how the PDP-11 cores here take an interrupt too.    */
+/* ------------------------------------------------------------------------ */
+
+#define SHIM_INT_BIT    31                      /* reserved for the bus */
+
+extern int32 int_req[IPL_HLVL];
+extern int32 int_vec[IPL_HLVL][32];
+extern void uba_eval_int (void);
+
+int simh_shim_bus_interrupt (unsigned vector, unsigned br_level)
+{
+int32 lvl = (int32) br_level - 4;                       /* BR4..BR7 -> 0..3 */
+
+if ((lvl < 0) || (lvl >= IPL_HLVL))
+    return 0;
+if (int_req[lvl] & (1 << SHIM_INT_BIT))                 /* one still pending */
+    return 0;
+int_vec[lvl][SHIM_INT_BIT] = (int32) vector;
+int_req[lvl] |= (1 << SHIM_INT_BIT);
+uba_eval_int ();
+return 1;
+}

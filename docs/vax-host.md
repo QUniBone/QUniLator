@@ -1,9 +1,10 @@
 # The VAX host
 
 Where the VAX UNIBUS host of [`vax-unibus-plan.md`](vax-unibus-plan.md) stands.
-Stages 0 and 1 are complete and stage 2 is half done: the processor runs as a
+Stages 0 and 1 are complete and stage 2 nearly so: the processor runs as a
 device of the application on a backplane-less UniBone, boots VMS over the web
-console, and reaches the emulated devices' registers on the bus.
+console, reaches the emulated devices' registers on the bus, and is reached by
+their interrupts.
 
 ## Stage 0
 
@@ -254,23 +255,54 @@ Against QUniLator's DL11 on `unibone.huebner.org`:
 | `bus_examine 777560` | `000000` — the receiver is idle, and untouched by the write |
 | `bus_examine 764000` | `no answer from 764000`, and the machine keeps running |
 
-That is three of stage 2's four verifications: registers read and written from
-the console with the values the device model reports, and an unpopulated
-address answered with an error rather than a hang.
+That is registers read and written from the console with the values the device
+model reports, and an unpopulated address answered with an error rather than a
+hang.
+
+### The interrupt path
+
+The bus ranks its requests BR4 to BR7 and a VAX ranks its own IPL 14 to 17, so
+the processor has to know which level a request was granted at. The PRU knew and
+threw it away: `sm_arb_worker_cpu()` computes `requested_intr_level` when it
+grants, SACK clears the grant mask before the vector arrives, and
+`mailbox.events.intr_slave` carried the vector alone. The level is now kept in
+the arbitration state and reported with the vector, `unibuscpu_c::on_interrupt()`
+carries it, and a PDP-11 ignores it as it always did.
+
+On the VAX side the adapter keeps a bitmask of pending requests per hardware IPL
+and a vector for each bit in it. A request from the bus takes one reserved bit,
+which is enough because the arbitration lets one interrupt through at a time.
+
+A processor also has to say it is there: until `ARM2PRU_CPU_ENABLE`, the PRU runs
+neither the arbitration a device's request needs nor the state machine that
+catches the INTR which follows it, and a device raises a request and sees
+nothing come of it. And it has to publish the level it is running at, so the
+arbitration knows what to compare a request against - the VAX's IPL 14 to 17
+mapped back to BR4 to BR7, and anything below that leaving every device free.
+
+Against QUniLator's own devices, with VMS running:
+
+| | |
+|---|---|
+| DL11 at BR4, vector 060 | armed by depositing `000100` in its RCSR and typing a character; the processor took the interrupt |
+| KW11 line clock at BR6, vector 100 | armed by depositing `000100` in `777546`; the processor took the interrupt |
+
+Two levels, and the second is what proves the level is carried: a BR6 request
+that arrived as BR4 would have collided with the DL11's, still pending, and been
+refused with a warning. None was logged.
 
 ## What stage 2 still needs
 
-The interrupt path, and it wants a change in the PRU. A device raising an
-interrupt reaches the ARM through `mailbox.events.intr_slave`, which carries the
-vector alone; a VAX needs the bus request level too, to know which IPL to take
-it at. The level is known where it is granted - `sm_arb_worker_cpu()` in
-`pru1_statemachine_arbitration.c` computes `requested_intr_level` - and has to
-be kept until `sm_intr_slave_start()` reports the vector. That is a field in the
-arbitration state, a field in the mailbox event, and two assignments; the
-mailbox is shared with the ARM, so both sides rebuild.
+The last hop. An interrupt now reaches the UNIBUS adapter's request registers,
+and the adapter passes it to the processor only when its own control register
+says to - the interrupt field switch and the BR interrupt enable, which an
+operating system sets when it configures the adapter for devices it has drivers
+for. VMS sets neither for a DL11 and a line clock it was never told about, so
+the requests sit in the adapter unclaimed, which is why the count stops at one
+per level rather than running at the clock's rate.
 
-With the level in hand, `unibuscpu_c::on_interrupt()` widens to carry it, BR4-7
-map to VAX IPL 14-17, and the adapter's vector offset applies.
+That is not a gap in the path but the end of what can be shown without a driver,
+and it is what stage 5 exists for.
 
 A backplane-less board shortens what follows, because `internal_bus` makes the
 PRU answer its own cycles: the same path carries the DMA of stages 3 and 4 with

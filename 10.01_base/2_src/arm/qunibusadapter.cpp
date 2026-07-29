@@ -1347,7 +1347,8 @@ void qunibusadapter_c::worker(unsigned instance)
                 // If CPU emulation enabled: a device INTR was detected on bus,
                 assert(registered_cpu); // if INTR events are enabled, cpu must be instantiated
                 // see register_device()
-                registered_cpu->on_interrupt(mailbox->events.intr_slave.vector);
+                registered_cpu->on_interrupt(mailbox->events.intr_slave.vector,
+                                             mailbox->events.intr_slave.level);
                 // clear SSYN, INTR cycle completes
                 EVENT_ACK(*mailbox, intr_slave);
                 // mailbox->arbitrator.cpu_priority_level now CPU_PRIORITY_LEVEL_FETCHING

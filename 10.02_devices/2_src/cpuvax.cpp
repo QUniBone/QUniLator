@@ -18,10 +18,12 @@
 
 #include "logger.hpp"
 #include "timeout.hpp"
+#include "mailbox.h"
 #include "qunibus.h"
 #include "qunibusadapter.hpp"
 #include "cpuvax.hpp"
 
+#include "cpu_bus_adapter.h"          // unibone_prioritylevelchange()
 #include "cpuvax/simh_shim.h"
 
 /* What one instruction is worth on the emulation's own clock. A VAX-11/780 runs
@@ -72,6 +74,8 @@ cpuvax_c::cpuvax_c() :
     cycle_count.kind = parameter_c::PARAM_STATUS;
     bus_cycles.kind = parameter_c::PARAM_STATUS;
     bus_timeouts.kind = parameter_c::PARAM_STATUS;
+    bus_interrupts.kind = parameter_c::PARAM_STATUS;
+    ipl.kind = parameter_c::PARAM_STATUS;
     halt_switch.kind = parameter_c::PARAM_STATUS;
     start_switch.kind = parameter_c::PARAM_STATUS;
 }
@@ -193,10 +197,13 @@ bool cpuvax_c::on_before_install(void)
     if (!configure_machine())
         return false;                           // qunibusdevice_c aborts the enable
 
-    // The processor is the bus master whether or not it is executing: a console
-    // examine reaches a device register on a stopped machine too.
-    if (bus_iopage.value)
+    // The processor is the bus master whether or not it is executing, so a
+    // console examine reaches a device register on a stopped machine too.
+    if (bus_iopage.value) {
+        mailbox->param = 1;
+        mailbox_execute(ARM2PRU_CPU_ENABLE);
         qunibus->set_arbitrator_active(true);
+    }
 
     INFO("VAX-11/780 ready, %u MB of memory", (unsigned) memory_mb.value);
     return true;
@@ -273,6 +280,15 @@ void cpuvax_c::machine_start(void)
     cycle_count.value = 0;
     machine_running = true;
     runmode.value = true;
+
+    // Tell the board there is a processor on the bus. Until this, the PRU runs
+    // neither the arbitration a device's request needs nor the state machine
+    // that catches the INTR which follows it, so a device can raise a request
+    // and see nothing come of it.
+    mailbox->param = 1;
+    mailbox_execute(ARM2PRU_CPU_ENABLE);
+    qunibus->set_arbitrator_active(true);
+    published_priority = 0xff;              // republish on the next pass
 #ifdef CPU_CONTROLLED_TIME
     // Every device model's delays are then measured against the machine rather
     // than against the board, at the cost of a guest clock that runs at
@@ -290,6 +306,9 @@ void cpuvax_c::machine_stop(const char *why)
         return;
     machine_running = false;
     runmode.value = false;
+    mailbox->param = 0;
+    mailbox_execute(ARM2PRU_CPU_ENABLE);
+    qunibus->set_arbitrator_active(false);
     the_flexi_timeout_controller->set_mode(flexi_timeout_c::world_time);
     publish_status();
     if (why != NULL)
@@ -303,7 +322,21 @@ void cpuvax_c::publish_status(void)
     simh_shim_state(&state);
     pc.value = state.pc;
     psl.value = state.psl;
+    ipl.value = state.ipl;
     cycle_count.value = (uint64_t) state.instructions - instructions_at_start;
+
+    // What the arbitration on the bus compares a device's request against. The
+    // VAX ranks its own interrupts IPL 14 to 17 where the bus ranks them BR4 to
+    // BR7, and anything below that leaves every device free to interrupt.
+    if (bus_iopage.value) {
+        uint8_t arbitration_level = (state.ipl >= 0x14)
+                                    ? (uint8_t) (state.ipl - 0x10) : 0;
+
+        if (arbitration_level != published_priority) {
+            published_priority = arbitration_level;
+            unibone_prioritylevelchange(arbitration_level);
+        }
+    }
 }
 
 /* Ask the processor's thread for a bus cycle and wait for it. A bus master's
@@ -382,6 +415,12 @@ void cpuvax_c::worker(unsigned instance)
             continue;
         }
 
+        // Let the arbitration on the bus give a device its GRANT, so a
+        // request raised since the last pass becomes an INTR the processor can
+        // take in this one. The KA11 does the same from its own service step.
+        if (bus_iopage.value)
+            unibone_grant_interrupts();
+
         uint64_t before = cycle_count.value;
         simh_shim_status_t r = simh_shim_run((int) batch_size.value);
 
@@ -416,12 +455,18 @@ void cpuvax_c::on_after_register_access(qunibusdevice_register_t *device_reg,
     // no registers on the bus
 }
 
-void cpuvax_c::on_interrupt(uint16_t vector)
+/* A device on the bus is interrupting. The bus ranks its requests BR4 to BR7
+   and the VAX ranks its own IPL 14 to 17; the UNIBUS adapter is what lines the
+   two up, one for one, and hands the processor the vector at the matching
+   level. */
+void cpuvax_c::on_interrupt(uint16_t vector, uint8_t level)
 {
-    UNUSED(vector);
-    // Stage 2 widens this to carry the bus request level and hands it to the
-    // core as a VAX interrupt at the matching IPL. Until the UNIBUS adapter is
-    // modelled there is nothing on the bus to interrupt this processor.
+    if (!simh_shim_bus_interrupt(vector, level)) {
+        WARNING("interrupt vector %06o at BR%u not taken", (unsigned) vector,
+                (unsigned) level);
+        return;
+    }
+    bus_interrupts.value++;
 }
 
 void cpuvax_c::on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge)
