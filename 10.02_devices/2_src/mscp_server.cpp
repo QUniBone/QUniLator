@@ -171,10 +171,15 @@ mscp_server_base::AbortPollingThread(void)
 //  come round again - so a controller that stops at the first empty read of the
 //  ring leaves that command sitting there, and neither side moves.
 //
-//  The window is the time the host needs to see the response and answer it.
+//  The window is the time the host needs to see the response and answer it,
+//  measured against the world while the host runs at whatever speed the
+//  emulation manages - which varies by a factor of several when the processor
+//  is being traced. So it is generous: a window too short deadlocks, while one
+//  too long only costs a descriptor read every few milliseconds in an idle
+//  controller.
 //
-#define POLL_LINGER_INTERVAL_US 2000
-#define POLL_LINGER_TOTAL_US    500000
+#define POLL_LINGER_INTERVAL_US 5000
+#define POLL_LINGER_TOTAL_US    3000000
 
 bool
 mscp_server_base::LingerForNextCommand(void)

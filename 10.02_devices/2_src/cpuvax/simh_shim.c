@@ -1439,6 +1439,44 @@ dptr->dctrl = 0xFFFFFFFF;                               /* every flag it has */
 return 1;
 }
 
+/* The core's instruction history: a ring of the last N instructions the
+   processor executed, with the operands and the registers each one touched.
+   It is the only view of what the processor does that does not go through a
+   device, which is what an interrupt that reaches the processor and then has no
+   visible effect needs. */
+extern t_stat cpu_set_hist (UNIT *uptr, int32 val, CONST char *cptr, void *desc);
+extern t_stat cpu_show_hist_records (FILE *st, t_bool do_header, int32 start,
+                                     int32 count);
+extern int32 hst_lnt;
+extern int32 hst_p;
+
+int simh_shim_history (unsigned instructions)
+{
+char buf[32];
+
+snprintf (buf, sizeof buf, "%u", instructions);
+return cpu_set_hist (NULL, 0, instructions ? buf : "0", NULL) == SCPE_OK;
+}
+
+int simh_shim_history_dump (const char *filename, unsigned instructions)
+{
+FILE *f;
+int32 lnt, di;
+
+if (hst_lnt == 0)
+    return 0;
+lnt = (instructions == 0) || ((int32) instructions > hst_lnt)
+      ? hst_lnt : (int32) instructions;
+if ((f = fopen (filename, "w")) == NULL)
+    return 0;
+di = hst_p - lnt;                                       /* oldest kept first */
+if (di < 0)
+    di = di + hst_lnt;
+cpu_show_hist_records (f, TRUE, di, lnt);
+fclose (f);
+return 1;
+}
+
 simh_shim_status_t simh_shim_attach (const char *unit_name, const char *filename)
 {
 DEVICE *dptr;

@@ -87,6 +87,8 @@ cpuvax_c::cpuvax_c() :
     bootdev_on_bus.kind = parameter_c::PARAM_STATUS;
     uba_cr.kind = parameter_c::PARAM_STATUS;
     intr_pending.kind = parameter_c::PARAM_STATUS;
+    uba_dr.kind = parameter_c::PARAM_STATUS;
+    nexus_req.kind = parameter_c::PARAM_STATUS;
     halt_switch.kind = parameter_c::PARAM_STATUS;
     start_switch.kind = parameter_c::PARAM_STATUS;
 }
@@ -407,6 +409,8 @@ void cpuvax_c::publish_status(void)
     }
     uba_cr.value = state.uba_cr;
     intr_pending.value = simh_shim_bus_interrupt_pending();
+    uba_dr.value = state.uba_dr;
+    nexus_req.value = state.nexus_req;
     cycle_count.value = (uint64_t) state.instructions - instructions_at_start;
 
     // What the arbitration on the bus compares a device's request against.
@@ -519,6 +523,13 @@ void cpuvax_c::worker(unsigned instance)
         uint64_t before = cycle_count.value;
         simh_shim_status_t r = simh_shim_run((int) batch_size.value);
 
+        // The passes right after an interrupt hold the processor's answer to
+        // it, so the history is written out once they have run.
+        if (history_countdown > 0 && --history_countdown == 0) {
+            if (simh_shim_history_dump("/tmp/vax-history.log", 0))
+                INFO("instruction history written to /tmp/vax-history.log");
+        }
+
         publish_status();
 
         // Charge the emulation clock for what the batch executed, so a device
@@ -606,6 +617,8 @@ void cpuvax_c::on_interrupt(uint16_t vector, uint8_t level)
         return;
     }
     bus_interrupts.value++;
+    if (core_history.value)
+        history_countdown = 2;                  // let the dispatch run, then dump
 }
 
 void cpuvax_c::on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge)
@@ -659,6 +672,23 @@ bool cpuvax_c::on_param_changed(parameter_c *param)
             INFO("tracing %s into %s", want.c_str(), path);
         }
         core_debug.value = want;
+        return true;
+    }
+    if (param == &core_history) {
+        // The core frees and reallocates the ring, and the thread running
+        // instructions writes into it, so the size is only settable while that
+        // thread is not running.
+        if (machine_running) {
+            ERROR("core_history can only be changed while the processor is stopped");
+            return false;
+        }
+        if (!simh_shim_history(core_history.new_value)) {
+            ERROR("the core would not keep %u instructions of history",
+                  (unsigned) core_history.new_value);
+            return false;
+        }
+        core_history.value = core_history.new_value;
+        INFO("keeping %u instructions of history", (unsigned) core_history.value);
         return true;
     }
     if (param == &mem_examine) {

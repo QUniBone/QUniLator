@@ -130,6 +130,8 @@ extern unsigned shim_iopage_claimed;
 extern unsigned shim_iopage_dispatches;
 extern uint32 uba_uiip;
 extern int32 uba_cr;
+extern uint32 uba_dr;
+extern int32 nexus_req[IPL_HLVL];
 
 state->iopage_claimed = shim_iopage_claimed;
 state->iopage_dispatches = shim_iopage_dispatches;
@@ -138,6 +140,14 @@ state->iopage_dispatches = shim_iopage_dispatches;
    nothing where its controller should be wants this looked at first. */
 state->uba_init = (unsigned) uba_uiip;
 state->uba_cr = (unsigned) uba_cr;
+/* The other half of the gate uba_eval_int() applies, and what it produces: a
+   request the adapter is holding for the processor shows here as a bit per
+   bus request level. */
+state->uba_dr = (unsigned) uba_dr;
+state->nexus_req = ((unsigned) (nexus_req[0] != 0) << 0)
+                 | ((unsigned) (nexus_req[1] != 0) << 1)
+                 | ((unsigned) (nexus_req[2] != 0) << 2)
+                 | ((unsigned) (nexus_req[3] != 0) << 3);
 }
 state->instructions = sim_gtime ();
 }

@@ -183,7 +183,18 @@ if (int_req[lvl] & (1 << SHIM_INT_BIT))                 /* one still pending */
     return 0;
 int_vec[lvl][SHIM_INT_BIT] = (int32) vector;
 int_req[lvl] |= (1 << SHIM_INT_BIT);
-uba_eval_int ();
+
+/* The adapter's nexus requests are not rebuilt here. eval_int() calls
+   uba_eval_int() itself, on the thread executing instructions, and reads
+   int_req when it does - so the request set just above is picked up there
+   without this thread touching the adapter at all.
+
+   Doing it here as well is a race, not a shortcut: uba_eval_int() clears every
+   nexus request the adapter holds and re-raises them from int_req, while the
+   processor is clearing the one it has just taken. Run between the processor
+   taking a request and the driver reading the vector out of BRRVR, it raises
+   that request a second time, and the second one finds BRRVR empty - which is
+   what a driver reads as an interrupt from a device that is not asking. */
 return 1;
 }
 

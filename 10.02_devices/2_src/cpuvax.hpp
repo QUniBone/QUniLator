@@ -77,6 +77,13 @@ public:
     parameter_string_c core_debug = parameter_string_c(this, "core_debug", "cdbg",/*readonly*/false,
             "Trace a device the core carries, e.g. \"RQ\". Empty: off.");
 
+    // The last N instructions the processor executed. Written to
+    // /tmp/vax-history.log one pass after an interrupt arrives from the bus,
+    // which is the moment worth seeing: what the processor does with a vector
+    // it has been given cannot be watched from the device's side of the bus.
+    parameter_unsigned_c core_history = parameter_unsigned_c(this, "core_history", "chst",/*readonly*/
+                                        false, "", "%u", "Instructions of history kept. 0: off.", 32, 10);
+
     // The UNIBUS adapter's window on the I/O page. With it the processor's
     // register accesses become bus cycles and reach the emulated devices;
     // without it the machine sees only what simh carries inside it.
@@ -153,6 +160,10 @@ public:
     // Non-zero for long says the processor is not taking what it was given.
     parameter_unsigned_c intr_pending = parameter_unsigned_c(this, "intr_pending", "ip",/*readonly*/
                                         true, "", "%u", "BR level whose vector the adapter holds.", 8, 10);
+    parameter_unsigned_c uba_dr = parameter_unsigned_c(this, "uba_dr", "udr",/*readonly*/
+                                  true, "", "%08x", "UNIBUS adapter diagnostic control register.", 32, 16);
+    parameter_unsigned_c nexus_req = parameter_unsigned_c(this, "nexus_req", "nrq",/*readonly*/
+                                     true, "", "%x", "Adapter requests the processor has not taken, BR4..BR7.", 8, 16);
     parameter_unsigned64_c cycle_count = parameter_unsigned64_c(this, "cycle_count", "cc",/*readonly*/
                                          true, "", "%u", "Instructions executed since the last start", 63, 10);
 
@@ -176,6 +187,7 @@ private:
     void service_console_access(void);
     bool request_console_access(enum console_access_e what, unsigned addr);
 
+    unsigned history_countdown = 0;     // passes left before the history is written
     bool machine_running = false;       // the core is executing, not halted
     uint64_t instructions_at_start = 0; // sim_gtime() when the machine started
 

@@ -110,6 +110,8 @@ typedef struct {
     unsigned uba_init;                                  /* adapter init in progress */
     unsigned iopage_dispatches;                         /* I/O page accesses the core made */
     unsigned uba_cr;                                    /* adapter control register */
+    unsigned uba_dr;                                    /* adapter diagnostic control */
+    unsigned nexus_req;                                 /* nexus requests, BR4..BR7 */
     double instructions;
 } simh_shim_state_t;
 
@@ -139,6 +141,12 @@ int simh_shim_device_info (const char *name, unsigned *base_addr, int *enabled);
    flag that device declares. A NULL name closes it. Zero when there is no such
    device or the file could not be opened. */
 int simh_shim_debug_device (const char *name, const char *filename);
+
+/* Keep the last N instructions the processor executed, and write them out.
+   Zero instructions switches the history off and frees it. The dump is the
+   oldest kept first, which is the order they ran in. */
+int simh_shim_history (unsigned instructions);
+int simh_shim_history_dump (const char *filename, unsigned instructions);
 
 /* Whether the bus, rather than a device the core carries, still answers this
    UNIBUS address. */
