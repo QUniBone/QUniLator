@@ -139,6 +139,17 @@ int simh_shim_device_info (const char *name, unsigned *base_addr, int *enabled);
    UNIBUS address. */
 int simh_shim_bus_owns (unsigned unibus_addr);
 
+/* Where the adapter's map registers send an eighteen bit UNIBUS address. Zero
+   when the entry covering it is not valid, leaving *phys alone. Asking leaves
+   the adapter's own error state as it was, so a trace may call it freely. */
+int simh_shim_map_addr (unsigned unibus_addr, unsigned *phys);
+
+/* One longword of the processor's memory, by physical address, which is what a
+   780's console EXAMINE and DEPOSIT reach. Zero when the address is outside the
+   memory the machine has. The address is taken to the longword it lies in. */
+int simh_shim_mem_read (unsigned phys_addr, unsigned *value);
+int simh_shim_mem_write (unsigned phys_addr, unsigned value);
+
 /* A device on the bus is moving data to or from memory. The address is the
    eighteen bit one the device drives; what it reaches is the processor's memory
    through the adapter's map registers, which is where an unallocated map entry

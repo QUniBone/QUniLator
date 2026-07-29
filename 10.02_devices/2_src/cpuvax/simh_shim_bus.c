@@ -212,6 +212,36 @@ return 0;
 
 extern int32 Map_ReadW (uint32 ba, int32 bc, uint16 *buf);
 extern int32 Map_WriteW (uint32 ba, int32 bc, const uint16 *buf);
+extern t_bool uba_map_addr_c (uint32 ua, uint32 *ma);
+
+int simh_shim_map_addr (unsigned unibus_addr, unsigned *phys)
+{
+uint32 ma = 0;
+
+if (!uba_map_addr_c ((uint32) unibus_addr, &ma))
+    return 0;
+*phys = (unsigned) ma;
+return 1;
+}
+
+/* The console's window on memory. A 780's console reads and writes the
+   processor's memory by physical address whether or not it is running, which is
+   how an operator looks at what a program is doing to itself. */
+int simh_shim_mem_read (unsigned phys_addr, unsigned *value)
+{
+if (!ADDR_IS_MEM (phys_addr))
+    return 0;
+*value = (unsigned) M[phys_addr >> 2];
+return 1;
+}
+
+int simh_shim_mem_write (unsigned phys_addr, unsigned value)
+{
+if (!ADDR_IS_MEM (phys_addr))
+    return 0;
+M[phys_addr >> 2] = (uint32) value;
+return 1;
+}
 
 int simh_shim_bus_dma (int write, unsigned addr, uint16_t *buffer, unsigned words)
 {

@@ -93,6 +93,16 @@ public:
     parameter_unsigned_c bus_data = parameter_unsigned_c(this, "bus_data", "bd",/*readonly*/
                                     false, "", "%06o", "Data of the last examine, or for the next deposit.", 16, 8);
 
+    // The other half of what a 780's console reaches: the processor's own
+    // memory, by physical address. Writing an address to mem_examine leaves the
+    // longword there in mem_data; writing mem_deposit puts mem_data back.
+    parameter_unsigned_c mem_examine = parameter_unsigned_c(this, "mem_examine", "mex",/*readonly*/
+                                       false, "", "%08x", "Read this physical longword into mem_data.", 32, 16);
+    parameter_unsigned_c mem_deposit = parameter_unsigned_c(this, "mem_deposit", "mdep",/*readonly*/
+                                       false, "", "%08x", "Write mem_data to this physical longword.", 32, 16);
+    parameter_unsigned_c mem_data = parameter_unsigned_c(this, "mem_data", "md",/*readonly*/
+                                    false, "", "%08x", "Data of the last memory examine, or for the next deposit.", 32, 16);
+
     parameter_unsigned64_c bus_cycles = parameter_unsigned64_c(this, "bus_cycles", "bc",/*readonly*/
                                         true, "", "%u", "UNIBUS register accesses made", 63, 10);
     parameter_unsigned64_c bus_timeouts = parameter_unsigned64_c(this, "bus_timeouts", "bt",/*readonly*/
@@ -146,7 +156,8 @@ private:
     // itself belongs to the processor's own thread, which is the bus master, so
     // the request is left here and worker() performs it.
     enum console_access_e { console_access_none, console_access_examine,
-                            console_access_deposit };
+                            console_access_deposit, console_access_mem_examine,
+                            console_access_mem_deposit };
     volatile enum console_access_e console_access = console_access_none;
     volatile unsigned console_access_addr = 0;
     volatile unsigned console_access_data = 0;

@@ -466,6 +466,13 @@ void cpuvax_c::service_console_access(void)
     case console_access_deposit:
         console_access_ok = bus_write(console_access_addr, data, false);
         break;
+    case console_access_mem_examine:
+        console_access_ok = simh_shim_mem_read(console_access_addr, &data) != 0;
+        console_access_data = data;
+        break;
+    case console_access_mem_deposit:
+        console_access_ok = simh_shim_mem_write(console_access_addr, data) != 0;
+        break;
     }
     console_access = console_access_none;
 }
@@ -550,14 +557,20 @@ bool cpuvax_c::on_dma(uint8_t qunibus_cycle, uint32_t unibus_addr,
     bool write = (qunibus_cycle != QUNIBUS_CYCLE_DATI);
 
     // The first transfers of a machine's life are the ones worth seeing: the
-    // command ring a bootstrap hands over, and whether what the controller
-    // reads back is what the processor wrote.
+    // command ring a bootstrap hands over, whether what the controller reads
+    // back is what the processor wrote, and where the map registers send it -
+    // a bootstrap loading an image writes consecutive pages, and a translation
+    // that piles them on one address shows up here before anywhere else.
     static unsigned traced = 0;
 
-    if (traced < 40) {
+    if (traced < 200) {
+        unsigned phys = 0;
+        int mapped = simh_shim_map_addr(unibus_addr, &phys);
+
         traced++;
-        DEBUG("dma %s %06o, %u words, first %06o %06o", write ? "write" : "read",
-              (unsigned) unibus_addr, (unsigned) wordcount,
+        DEBUG("dma %s %06o -> %s%08x, %u words, first %06o %06o",
+              write ? "write" : "read", (unsigned) unibus_addr,
+              mapped ? "" : "invalid ", phys, (unsigned) wordcount,
               (unsigned) buffer[0], wordcount > 1 ? (unsigned) buffer[1] : 0);
     }
 
@@ -567,7 +580,7 @@ bool cpuvax_c::on_dma(uint8_t qunibus_cycle, uint32_t unibus_addr,
                 (unsigned) wordcount, (unsigned) unibus_addr);
         return true;                            // answered, and it failed
     }
-    if (traced <= 40 && !write)
+    if (traced <= 200 && !write)
         DEBUG("dma read  %06o gave %06o %06o", (unsigned) unibus_addr,
               (unsigned) buffer[0], wordcount > 1 ? (unsigned) buffer[1] : 0);
     dma_words.value += wordcount;
@@ -620,6 +633,22 @@ bool cpuvax_c::on_param_changed(parameter_c *param)
             return false;
         bus_deposit.value = bus_deposit.new_value;
         INFO("%06o := %06o", bus_deposit.value, bus_data.value);
+        return true;
+    }
+    if (param == &mem_examine) {
+        if (!request_console_access(console_access_mem_examine, mem_examine.new_value))
+            return false;
+        mem_examine.value = mem_examine.new_value;
+        mem_data.value = console_access_data;
+        INFO("%08x = %08x", (unsigned) mem_examine.value, (unsigned) mem_data.value);
+        return true;
+    }
+    if (param == &mem_deposit) {
+        console_access_data = mem_data.value;
+        if (!request_console_access(console_access_mem_deposit, mem_deposit.new_value))
+            return false;
+        mem_deposit.value = mem_deposit.new_value;
+        INFO("%08x := %08x", (unsigned) mem_deposit.value, (unsigned) mem_data.value);
         return true;
     }
 

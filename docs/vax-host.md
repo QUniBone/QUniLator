@@ -443,16 +443,63 @@ processor opens a grant window once per batch:
 | 10000 | 754 | 8526 |
 | 100000 | 8840 | |
 
-### Where it stands
+### The console's window on memory
 
-The boot does not complete. The bootstrap reads its way through the file system
-and then starts the same sequence again - home block, index file, directory -
-without ever printing its first line, so it is retrying a lookup rather than
-waiting on anything. Every read the controller performs succeeds and no map
-entry is refused, which leaves what the reads *contain*: data that satisfies the
-controller and not the bootstrap points at the translation between them, and
-that is the byte offset and the map registers the rest of this stage has still
-to verify.
+A 780's console reads and writes the processor's memory by physical address, and
+`mem_examine`, `mem_deposit` and `mem_data` are that, alongside the `bus_*` trio
+that reaches the I/O page. It is what identified the loop the machine sits in,
+and it is the tool the rest of this stage is worked out with.
+
+The map registers are right, which it settled first. Each transfer's destination
+is traced beside it, and the bootstrap reprogramming register 0 between reads
+shows up as it should:
+
+	MSCP RWE 0x21 ... count 512 lbn 1
+	dma write 000030 -> 00100018, 256 words
+	MSCP RWE 0x21 ... count 512 lbn 155658
+	dma write 000000 -> 0000e000, 256 words
+
+### Where it stands: the machine waits for a controller that is asleep
+
+The processor sits at PC 107F, and the two instructions there are
+
+	107F  B5 CF 57 FF   TSTW  0FDA
+	1083  19 FA         BLSS  107F
+
+which is the bootstrap polling the top half of the response ring descriptor -
+the OWN bit - and looping while the controller still owns it. Memory says the
+same:
+
+	0FD4  00010001      the two ring transition words, both set
+	0FD8  C003DE18      response descriptor, OWN set
+	0FDC  C003DDE4      command descriptor, OWN set
+
+So the host has handed the controller a command and a response slot and is
+waiting. The controller has both and is doing nothing, because its polling
+thread only runs when the host rings its doorbell, which is a *read* of IP.
+Reading IP by hand from the console proves it - the machine runs on at once:
+
+| | words moved | register cycles |
+|---|---|---|
+| stalled | 1132 | 69 |
+| after one read of IP | 9532 | 91 |
+
+and then stops the same way again. Every stall in this stage has been this one,
+at a different command each time, which is what a race between the host's insert
+and the controller going back to sleep looks like.
+
+The comm area layout is not the difference. simh's own RQ, which this same
+bootstrap drives to a login prompt, puts the response ring at the comm base, the
+command ring after it, the command interrupt word at base-4 and the response
+interrupt word at base-2, and the model here agrees with all four. Nor is it a
+lost wakeup: a doorbell arriving while the thread is executing commands leaves
+the state at InitRun, which the end of the pass turns back into Run rather than
+Wait.
+
+What is left is why the bootstrap stops ringing at all. It rings for the first
+two commands and then never again, so it believes the controller does not need
+telling - which is a statement about what the controller told it, in the ring
+transition words or in the credits it granted.
 
 A caution for anyone reading the counters: `dma_words` and the rest accumulate
 from when the device was installed, not from the last START, so progress is the
