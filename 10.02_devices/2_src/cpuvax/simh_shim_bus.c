@@ -70,16 +70,20 @@ return SCPE_OK;
 
 /* Point every unclaimed word of the I/O page at the bus. Called after each
    reset, because reset_all() rebuilds the tables from the devices simh has. */
-void simh_shim_bus_install (void)
+unsigned simh_shim_bus_install (void)
 {
 uint32 i;
+unsigned claimed = 0;
 
 for (i = 0; i < (IOPAGESIZE >> 1); i++) {
-    if (iodispR[i] == NULL)
+    if (iodispR[i] == NULL) {
         iodispR[i] = &shim_bus_read;
+        claimed++;
+        }
     if (iodispW[i] == NULL)
         iodispW[i] = &shim_bus_write;
     }
+return claimed;
 }
 
 /* And take it off again, so a build with no bus behind it - the workstation
@@ -127,4 +131,32 @@ int_vec[lvl][SHIM_INT_BIT] = (int32) vector;
 int_req[lvl] |= (1 << SHIM_INT_BIT);
 uba_eval_int ();
 return 1;
+}
+
+/* ------------------------------------------------------------------------ */
+/* DMA from a device on the bus                                              */
+/*                                                                           */
+/* A device names an eighteen bit UNIBUS address; the memory it means is the  */
+/* processor's, somewhere in a much larger space, and the adapter's map       */
+/* registers are what join the two. The vendored model already does all of    */
+/* it - the map lookup, the byte offset bit that lets a transfer start on an  */
+/* odd boundary, and the invalid map entry that must fail the transfer rather */
+/* than corrupt memory - so a transfer here is one call into it.              */
+/*                                                                           */
+/* The direction is the device's: a device performing DATO is writing memory. */
+/* ------------------------------------------------------------------------ */
+
+extern int32 Map_ReadW (uint32 ba, int32 bc, uint16 *buf);
+extern int32 Map_WriteW (uint32 ba, int32 bc, const uint16 *buf);
+
+int simh_shim_bus_dma (int write, unsigned addr, uint16_t *buffer, unsigned words)
+{
+int32 bytes = (int32) (words * 2);
+int32 untransferred;
+
+if (write)
+    untransferred = Map_WriteW (addr, bytes, (const uint16 *) buffer);
+else
+    untransferred = Map_ReadW (addr, bytes, (uint16 *) buffer);
+return (untransferred == 0);
 }

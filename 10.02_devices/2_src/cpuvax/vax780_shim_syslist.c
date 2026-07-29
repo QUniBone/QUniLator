@@ -125,6 +125,10 @@ void simh_shim_state (simh_shim_state_t *state)
 state->pc = (uint32_t) PC;
 state->psl = (uint32_t) PSL;
 state->ipl = (unsigned) PSL_GETIPL (PSL);
+{
+extern unsigned shim_iopage_claimed;
+state->iopage_claimed = shim_iopage_claimed;
+}
 state->instructions = sim_gtime ();
 }
 

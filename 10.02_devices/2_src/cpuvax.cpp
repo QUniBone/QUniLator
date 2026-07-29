@@ -75,6 +75,8 @@ cpuvax_c::cpuvax_c() :
     bus_cycles.kind = parameter_c::PARAM_STATUS;
     bus_timeouts.kind = parameter_c::PARAM_STATUS;
     bus_interrupts.kind = parameter_c::PARAM_STATUS;
+    dma_words.kind = parameter_c::PARAM_STATUS;
+    dma_failures.kind = parameter_c::PARAM_STATUS;
     ipl.kind = parameter_c::PARAM_STATUS;
     halt_switch.kind = parameter_c::PARAM_STATUS;
     start_switch.kind = parameter_c::PARAM_STATUS;
@@ -205,7 +207,13 @@ bool cpuvax_c::on_before_install(void)
         qunibus->set_arbitrator_active(true);
     }
 
-    INFO("VAX-11/780 ready, %u MB of memory", (unsigned) memory_mb.value);
+    {
+        simh_shim_state_t state;
+
+        simh_shim_state(&state);
+        INFO("VAX-11/780 ready, %u MB of memory, %u words of the I/O page on the bus",
+             (unsigned) memory_mb.value, state.iopage_claimed);
+    }
     return true;
 }
 
@@ -236,6 +244,18 @@ bool cpuvax_c::configure_machine(void)
     host.message_file = stdout;
     simh_shim_bind(&host);
 
+    // Which MSCP controller the machine has. With a volume named here it is the
+    // one inside the core, which is scaffolding; with none, the address is left
+    // to whatever answers it on the bus - the emulated UDA50 - and the
+    // controller inside is disabled but still known, so a boot command can read
+    // where it would have answered and tell the bootstrap.
+    bool internal_disk = !bootimage.value.empty();
+
+    if ((r = simh_shim_set(internal_disk ? "RQ ENABLED" : "RQ DISABLED")) != 0) {
+        ERROR("VAX cannot configure its MSCP controller: %s", simh_shim_status_text(r));
+        return false;
+    }
+
     if ((r = simh_shim_reset()) != 0) {
         ERROR("VAX reset failed: %s", simh_shim_status_text(r));
         return false;
@@ -250,20 +270,24 @@ bool cpuvax_c::configure_machine(void)
         return false;
     }
 
-    if (bootimage.value.empty()) {
-        INFO("no bootimage set, the VAX comes up with its console only");
-        return true;
-    }
-
-    if ((r = simh_shim_attach(bootdevice.value.c_str(), bootimage.value.c_str())) != 0) {
+    if (internal_disk
+            && (r = simh_shim_attach(bootdevice.value.c_str(), bootimage.value.c_str())) != 0) {
         ERROR("VAX cannot attach %s to %s: %s", bootimage.value.c_str(),
               bootdevice.value.c_str(), simh_shim_status_text(r));
         return false;
     }
+
+    if (bootdevice.value.empty()) {
+        INFO("no bootdevice set, the VAX comes up with its console only");
+        return true;
+    }
+
     if ((r = simh_shim_boot(bootdevice.value.c_str())) != 0) {
         ERROR("VAX cannot boot %s: %s", bootdevice.value.c_str(), simh_shim_status_text(r));
         return false;
     }
+    INFO("booting from %s%s", bootdevice.value.c_str(),
+         internal_disk ? "" : " on the bus");
     return true;
 }
 
@@ -453,6 +477,28 @@ void cpuvax_c::on_after_register_access(qunibusdevice_register_t *device_reg,
     UNUSED(unibus_control);
     UNUSED(access);
     // no registers on the bus
+}
+
+/* A device on the bus is moving data. The memory it means is this processor's,
+   reached through the adapter's map registers, so the transfer is answered here
+   and never goes to the bus. */
+bool cpuvax_c::on_dma(uint8_t qunibus_cycle, uint32_t unibus_addr,
+                      uint16_t *buffer, uint32_t wordcount)
+{
+    if (!bus_iopage.value)
+        return false;                           // no adapter, no map
+
+    // The device's direction: DATO and DATOB write memory, DATI reads it.
+    bool write = (qunibus_cycle != QUNIBUS_CYCLE_DATI);
+
+    if (!simh_shim_bus_dma(write ? 1 : 0, unibus_addr, buffer, wordcount)) {
+        dma_failures.value++;
+        WARNING("the map registers refused %u words at %06o",
+                (unsigned) wordcount, (unsigned) unibus_addr);
+        return true;                            // answered, and it failed
+    }
+    dma_words.value += wordcount;
+    return true;
 }
 
 /* A device on the bus is interrupting. The bus ranks its requests BR4 to BR7

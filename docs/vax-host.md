@@ -291,6 +291,43 @@ Two levels, and the second is what proves the level is carried: a BR6 request
 that arrived as BR4 would have collided with the DL11's, still pending, and been
 refused with a warning. None was logged.
 
+## Stage 3 — the map and DMA, so far
+
+A device on the bus names an eighteen bit address; the memory it means is the
+processor's, and the adapter's map registers join the two. The vendored model
+already does all of that - the map lookup, the byte offset bit that lets a
+transfer start on an odd boundary, and the invalid map entry that must fail a
+transfer rather than corrupt memory - so `simh_shim_bus_dma()` is one call into
+`Map_ReadW()` or `Map_WriteW()`.
+
+`qunibusadapter` offers a device's transfer to the installed processor before
+scheduling it, through a new `unibuscpu_c::on_dma()`. A processor whose memory
+is its own answers it and the cycles never reach the bus, which is what this
+stage asks for; stage 4 moves the same translation into the PRU. `dma_words`
+and `dma_failures` count what happened.
+
+Booting from a controller on the bus needs simh's own MSCP controller out of the
+way but still known: `SET RQ DISABLED` takes it out of the I/O page while
+leaving it in the device list, so the boot command still reads from its
+descriptor where it would have answered and tells the bootstrap. With no
+`bootimage` set, that is what the processor does, and the address is left to
+whatever answers it on the bus.
+
+Bringing this up found one fault of the same family as stage 1's: a boot resets
+the machine, `reset_all()` rebuilds the I/O page dispatch from the devices simh
+carries, and that dropped everything the bus had claimed - so a bootstrap found
+nothing where its controller should have been. Every path that resets now goes
+through one place that takes the I/O page back afterwards.
+
+**Where it stands.** With the emulated UDA50 at 772150 and simh's controller
+disabled, the whole I/O page - all 4096 words - is claimed by the bus, and VMB
+runs and fails with `%BOOT-F-Failed to initialize device` having made no bus
+cycle at all. The dispatch is proven installed, so what refuses the access is
+above it: `ReadUb()` and `WriteUb()` answer every I/O page address with a
+nonexistent memory error while `uba_uiip`, the adapter's UNIBUS-init-in-progress
+flag, is set. That flag is raised by `uba_ubpdn()` and cleared by an event, and
+whether the event is firing is the next thing to find out.
+
 ## What stage 2 still needs
 
 The last hop. An interrupt now reaches the UNIBUS adapter's request registers,

@@ -47,6 +47,8 @@ public:
     void on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge) override;
     void on_init_changed(void) override;
     void on_interrupt(uint16_t vector, uint8_t level) override;
+    bool on_dma(uint8_t qunibus_cycle, uint32_t unibus_addr,
+                uint16_t *buffer, uint32_t wordcount) override;
     void worker(unsigned instance) override;
 
     // The console terminal of the machine, which on a 780 is part of the
@@ -93,6 +95,10 @@ public:
                                           true, "", "%u", "UNIBUS accesses that were not answered", 63, 10);
     parameter_unsigned64_c bus_interrupts = parameter_unsigned64_c(this, "bus_interrupts", "bi",/*readonly*/
                                             true, "", "%u", "interrupts taken from the bus", 63, 10);
+    parameter_unsigned64_c dma_words = parameter_unsigned64_c(this, "dma_words", "dw",/*readonly*/
+                                       true, "", "%u", "words a device moved through the map", 63, 10);
+    parameter_unsigned64_c dma_failures = parameter_unsigned64_c(this, "dma_failures", "df",/*readonly*/
+                                          true, "", "%u", "transfers the map registers refused", 63, 10);
 
     // How many instructions worker() runs before it looks at the switches, the
     // power events and the terminate flag again. Long enough that the check

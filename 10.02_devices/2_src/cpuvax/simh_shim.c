@@ -672,6 +672,20 @@ if (uptr == NULL)
     return SCPE_NXUN;
 unit_named = (find_dev (gbuf) == NULL);                 /* a name with a number */
 
+/* ENABLED and DISABLED are scp's own and belong to no modifier table. A
+   disabled device keeps its place in the device list and its address in its
+   descriptor - which is what a boot command reads to find out where it would
+   have answered - but takes no part in building the I/O page, so the address
+   is free for whatever else claims it. */
+if (MATCH_CMD (cptr, "DISABLED") == 0) {
+    dptr->flags |= DEV_DIS;
+    return SCPE_OK;
+    }
+if (MATCH_CMD (cptr, "ENABLED") == 0) {
+    dptr->flags &= ~DEV_DIS;
+    return SCPE_OK;
+    }
+
 while (*cptr != 0) {
     cptr = get_glyph (cptr, gbuf, ',');
     if ((r = shim_set_one (dptr, uptr, unit_named, gbuf)) != SCPE_OK)
@@ -691,6 +705,29 @@ return sim_messagef (SCPE_NOFNC, "SHOW %s is not available in the embedded build
 /* ------------------------------------------------------------------------ */
 /* Reset                                                                     */
 /* ------------------------------------------------------------------------ */
+
+/* Reset every device, and then take the I/O page back.
+
+   reset_all() rebuilds the dispatch tables from the devices simh carries, which
+   drops whatever the bus had claimed, so every path that resets has to come
+   through here. A boot resets too - that is where this was first missed, and a
+   bootstrap then found nothing where its controller should have been. */
+unsigned shim_iopage_claimed = 0;       /* words of the I/O page left to the bus */
+
+t_stat shim_reset_devices (void)
+{
+t_stat r;
+
+if ((r = reset_all (0)) != SCPE_OK)
+    return r;
+if (shim_host_bound && (shim_host.bus_read != NULL))
+    shim_iopage_claimed = simh_shim_bus_install ();
+else {
+    simh_shim_bus_remove ();
+    shim_iopage_claimed = 0;
+    }
+return SCPE_OK;
+}
 
 t_stat reset_all (uint32 start)
 {
@@ -1168,7 +1205,7 @@ while (sim_clock_queue != QUEUE_LIST_END)               /* empty the queue */
     sim_cancel (sim_clock_queue);
 sim_time = 0.0;
 noqueue_time = sim_interval = 0;
-if ((r = reset_all (0)) != SCPE_OK)
+if ((r = shim_reset_devices ()) != SCPE_OK)
     return r;
 return dptr->boot ((int32) (uptr - dptr->units), dptr);
 }
@@ -1299,7 +1336,6 @@ simh_shim_status_t simh_shim_reset (void)
 {
 DEVICE *dptr;
 uint32 i, j;
-t_stat r;
 
 /* simh's file layer settles its endianness and its large-file support here,
    and what it works out is read far from the file layer: the disk layer asks
@@ -1322,16 +1358,7 @@ for (i = 0; (dptr = sim_devices[i]) != NULL; i++)
     for (j = 0; j < dptr->numunits; j++)
         dptr->units[j].dptr = dptr;
 
-if ((r = reset_all (0)) != SCPE_OK)
-    return r;
-
-/* reset_all() rebuilds the I/O page dispatch from the devices simh carries, so
-   what is left of it goes to the bus afterwards and not before. */
-if (shim_host_bound && (shim_host.bus_read != NULL))
-    simh_shim_bus_install ();
-else
-    simh_shim_bus_remove ();
-return SCPE_OK;
+return shim_reset_devices ();
 }
 
 int simh_shim_batch_ended (simh_shim_status_t status)

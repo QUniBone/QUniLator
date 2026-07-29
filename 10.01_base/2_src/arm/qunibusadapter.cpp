@@ -661,6 +661,21 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
         dma_request.complete = true;
         return;
     }
+
+    // An emulated processor whose memory is its own - the VAX, whose memory
+    // sits behind the UNIBUS adapter's map registers rather than on the bus -
+    // answers a device's transfer itself. The cycles never reach the bus,
+    // which is what stage 3 of docs/vax-unibus-plan.md asks for and what
+    // stage 4 moves into the PRU.
+    if (registered_cpu != NULL && !dma_request.is_cpu_access
+            && registered_cpu->on_dma(qunibus_cycle, unibus_addr, buffer, wordcount)) {
+        dma_request.qunibus_start_addr = unibus_addr;
+        dma_request.qunibus_end_addr = unibus_addr + 2 * wordcount - 2;
+        dma_request.success = true;
+        dma_request.complete = true;
+        return;
+    }
+
     pthread_mutex_lock(&requests_mutex); // lock schedule table operations
 
     // In contrast to re-raised INTR, overlapping DMA requests from same board

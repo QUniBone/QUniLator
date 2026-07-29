@@ -32,7 +32,11 @@ int simh_shim_bus_write (unsigned addr, unsigned data, int byte);
 
 /* Point the unclaimed part of the I/O page at that bus, or take it off again.
    Defined in simh_shim_bus.c, which only a build with a bus links. */
-void simh_shim_bus_install (void);
+unsigned simh_shim_bus_install (void);
 void simh_shim_bus_remove (void);
+
+/* Reset every device and then take the I/O page back, which every path that
+   resets has to use: reset_all() alone drops what the bus had claimed. */
+t_stat shim_reset_devices (void);
 
 #endif /* SIMH_SHIM_INTERNAL_H_ */

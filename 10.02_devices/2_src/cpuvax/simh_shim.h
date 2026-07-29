@@ -101,6 +101,7 @@ typedef struct {
     uint32_t pc;
     uint32_t psl;
     unsigned ipl;                                       /* current priority */
+    unsigned iopage_claimed;                            /* I/O page words on the bus */
     double instructions;
 } simh_shim_state_t;
 
@@ -113,6 +114,15 @@ void simh_shim_state (simh_shim_state_t *state);
    Called from whatever thread watches the bus, not from the one running the
    processor. */
 int simh_shim_bus_interrupt (unsigned vector, unsigned br_level);
+
+/* A device on the bus is moving data to or from memory. The address is the
+   eighteen bit one the device drives; what it reaches is the processor's memory
+   through the adapter's map registers, which is where an unallocated map entry
+   fails the transfer. write is the device's direction: a device performing DATO
+   is writing memory. Returns zero when the transfer did not complete.
+
+   Called from the device's thread, not the processor's. */
+int simh_shim_bus_dma (int write, unsigned addr, uint16_t *buffer, unsigned words);
 
 /* True when the last run ended because the processor executed HALT. */
 int simh_shim_halted (simh_shim_status_t status);

@@ -50,6 +50,15 @@ class unibuscpu_c: public qunibusdevice_c {
 	virtual void on_interrupt(uint16_t vector, uint8_t level) = 0 ;
 
 	
+	// A processor whose memory is not on the bus answers a device's DMA
+	// itself. Returns true when it did, and the transfer does not go to the
+	// bus at all; the default is false, which leaves memory where it was.
+	virtual bool on_dma(uint8_t qunibus_cycle, uint32_t unibus_addr,
+			uint16_t *buffer, uint32_t wordcount) {
+		(void) qunibus_cycle; (void) unibus_addr; (void) buffer; (void) wordcount;
+		return false;
+	}
+
 	virtual void on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge) ;
 	virtual void on_init_changed(void) ;
 };
