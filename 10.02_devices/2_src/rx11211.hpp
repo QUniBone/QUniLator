@@ -124,13 +124,20 @@ private:
         state_base,
         state_wait_rx2wc, // wait for RXDB write fo RX2WC
         state_wait_rx2ba, // wait for RXDB write fo RX2BA
+        state_wait_rx2ba_ext, // Q22: wait for 2nd RXDB write = extended (high) bus address
         state_dma_busy // worker() doing DMA and trasnfer to uCPU
     } ;
     // written by on_after_register_access() on the PRU event thread and read
     // by worker(): everything shared between threads must be volatile
     volatile enum state_enum state ;
 
-    uint8_t extended_address ; // bit 17,16 of DMA address
+    // Q22 (22-bit DMA, DSD MXV-22 mode): a command with RX_Q22 set loads the bus
+    // address as two RX2BA writes (low 16 bits, then the extended high 6 bits),
+    // giving the full 22-bit address instead of the 18-bit RXV21 scheme. Set from
+    // the RX2CS command write, consumed when latching the extended address.
+    bool	q22_mode ;
+
+    uint8_t extended_address ; // DMA address bits above 15 (2 bits RXV21, 6 bits Q22)
 
     uint8_t function_select ;
     bool	function_density ;
@@ -160,6 +167,14 @@ private:
 public:
     RX211_c(void) ;
     ~RX211_c(void);
+
+    // Emulate a 22-bit controller (DSD MXV-22) instead of an 18-bit DEC RXV21.
+    // When on, RX2CS reads advertise RX_Q22 and the controller accepts the full
+    // 22-bit bus address as a 2nd RX2BA write. 2.11BSD needs this: with a plain
+    // RXV21 it drives an 18-bit software-map address that truncates a DMA buffer
+    // above 256 KB. Off by default so XXDP and other guests see a stock RXV21.
+    parameter_bool_c mxv22 = parameter_bool_c(this, "mxv22", "mxv22", false,
+        "22-bit DMA (DSD MXV-22): enables Q22 addressing; needed by 2.11BSD") ;
 
     // DMA stuff  visible tp UCPU
     uint16_t rx2ba ; // bit<15:0> of DMA bus address

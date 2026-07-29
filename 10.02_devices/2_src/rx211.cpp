@@ -163,6 +163,12 @@ bool RX211_c::on_param_changed(parameter_c *param)
         intr_request.set_level(intr_level.new_value);
     } else if (param == &intr_vector) {
         intr_request.set_vector(intr_vector.new_value);
+    } else if (param == &mxv22) {
+        // Refresh the RX2CS read-back so the RX_Q22 capability bit tracks this
+        // change immediately: a restart does not power-cycle the controller, so
+        // the guest's rxattach would otherwise read a stale CS at the next boot.
+        mxv22.value = mxv22.new_value ;
+        update_status("mxv22 param changed") ;
     }
 
     return storagecontroller_c::on_param_changed(param); // more actions (for enable)
@@ -182,6 +188,7 @@ void RX211_c::reset(void)
     state = state_base ;
     done = true ;
     extended_address = 0 ;
+    q22_mode = false ;
     rx2ba = 0 ;
     uCPU->extended_status[1] = rx2wc = 0;
     error_dma_nxm = false ;
@@ -238,6 +245,12 @@ void RX211_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 
             // CS<13:12> is bus address <17:16>
             extended_address = (w >> 12) & 3;
+
+            // CS<10> = RX_Q22: 22-bit DMA (DSD MXV-22). When the host sets it, the
+            // full bus address arrives as two RX2BA writes (low 16 bits, then the
+            // high 6 bits) instead of the RXV21 2-bit CS<13:12> extension. Only
+            // honored in MXV-22 mode; a stock RXV21 ignores it and stays 18-bit.
+            q22_mode = mxv22.value && !!(w & BIT(10));
 
             // "future use", but must be read back
             csr09_10 = (w >> 10) & 3;
@@ -297,11 +310,26 @@ void RX211_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 				update_status("on_after_register_access() state_wait_rx2ba -> update_status") ; // may trigger interrupt
                 break ;
             case state_wait_rx2ba:
-                rx2ba = w ; // save bus address
+                rx2ba = w ; // save bus address <15:0>
+                if (q22_mode) {
+                    // Q22: extended high address bits follow as a 2nd RX2BA write;
+                    // hold off the DMA until they arrive.
+                    state = state_wait_rx2ba_ext ;
+                    update_status("on_after_register_access() state_wait_rx2ba_ext -> update_status") ;
+                    break ;
+                }
                 state = state_dma_busy ;
 				update_status("on_after_register_access() state_dma_busy -> update_status") ; // may trigger interrupt
                 // wake up worker()
                 // do DMA! with dma_buffer and dma_cycle DATI/DATO
+                pthread_cond_signal(&on_after_register_access_cond);
+                break ;
+            case state_wait_rx2ba_ext:
+                // Q22 2nd RX2BA write = extended address <21:16> (6 bits),
+                // superseding the 2-bit CS<13:12> extension.
+                extended_address = w & 077 ;
+                state = state_dma_busy ;
+                update_status("on_after_register_access() state_dma_busy(q22) -> update_status") ;
                 pthread_cond_signal(&on_after_register_access_cond);
                 break ;
             case state_dma_busy:
@@ -361,6 +389,14 @@ void RX211_c::update_status(const char *debug_info)
 
     tmp |= BIT(11); // we are RX02
 
+    // Advertise RX_Q22 (CS<10>): 22-bit DMA capable, the DSD MXV-22 signature.
+    // rxattach() in 2.11BSD tests this bit; when set it takes the direct 22-bit
+    // DMA path (full address in a 2nd RX2BA write) instead of the software
+    // UNIBUS map, whose 18-bit address truncates a buffer above 256 KB. Only in
+    // MXV-22 mode; a stock RXV21 leaves it clear so XXDP sees a standard part.
+    if (mxv22.value)
+        tmp |= BIT(10);
+
     // RX2DB can accept data
     // - when controller waits for DMA wc,ba
     // - when the uCPU waits for some function parameter
@@ -371,6 +407,7 @@ void RX211_c::update_status(const char *debug_info)
         break ;
     case state_wait_rx2wc:
     case state_wait_rx2ba:
+    case state_wait_rx2ba_ext:
         tr = true ;
         break ;
     case state_dma_busy:
