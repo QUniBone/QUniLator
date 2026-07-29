@@ -24,7 +24,7 @@
 #include "mscp_server.hpp"
 
 mscp_drive_c::mscp_drive_c(storagecontroller_c *_controller, uint32_t _driveNumber) :
-    storagedrive_c(_controller), _useImageSize(false) 
+    storagedrive_c(_controller), _useImageSize(true)
 {
     set_workers_count(0) ; // needs no worker()
     log_label = "MSCPD";
