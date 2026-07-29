@@ -347,30 +347,39 @@ bool webevents_is_powered(void) {
 	return cur_powered;
 }
 
-// Lamp parameters (RL02 panel etc.) are updated by direct value assignment
-// on the device threads, which bypasses the change hook — poll them.
-static void poll_lamps(void) {
-	static std::map<parameter_c *, bool> last;
+// Status parameters carry what the machine itself drives - the panel lamps, a
+// drive's state, the CPU's RUN lamp, program counter and opcode count. The
+// device threads move them by direct value assignment, which bypasses the
+// change hook every operator-set parameter reports through, so nothing
+// announces them and a browser would show whatever it read when it loaded.
+// Poll them here and publish what changed.
+//
+// PARAM_STATUS is the selector because it is what "the emulator drives this"
+// already means: GET /api/devices reports exactly these as "statusparams", and
+// the frontend replays exactly these over a refetched model. A CPU running an
+// operating system moves its PC and opcode count constantly, so this poll's
+// interval is what bounds their event rate.
+static void poll_status_params(void) {
+	static std::map<parameter_c *, std::string> last;
 	std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
 	for (device_c *dev : device_c::mydevices) {
 		// activity lamps are lit for a fixed span, expired here
 		dev->refresh_activity();
 		for (parameter_c *p : dev->parameter) {
-			if (!p->readonly || p->name.length() < 4
-					|| p->name.compare(p->name.length() - 4, 4, "lamp") != 0)
+			if (p->kind != parameter_c::PARAM_STATUS)
 				continue;
-			parameter_bool_c *pb = dynamic_cast<parameter_bool_c *>(p);
-			if (pb == nullptr)
+			// compare rendered values, so one path serves every parameter type
+			picojson::value v = param_value_json(p);
+			std::string rendered = v.serialize();
+			std::map<parameter_c *, std::string>::iterator it = last.find(p);
+			if (it != last.end() && it->second == rendered)
 				continue;
-			std::map<parameter_c *, bool>::iterator it = last.find(p);
-			if (it != last.end() && it->second == pb->value)
-				continue;
-			last[p] = pb->value;
+			last[p] = rendered;
 			picojson::object event;
 			event["t"] = picojson::value("param");
 			event["dev"] = picojson::value(dev->name.value);
 			event["param"] = picojson::value(p->name);
-			event["value"] = picojson::value(pb->value);
+			event["value"] = v;
 			enqueue(event);
 		}
 	}
@@ -459,7 +468,7 @@ static void broadcast_loop(void) {
 		if (!running)
 			break;
 		poll_hardware();
-		poll_lamps();
+		poll_status_params();
 		publish_config(false); // emit a config event when the modified flag flips
 		if (batch.empty())
 			continue;
