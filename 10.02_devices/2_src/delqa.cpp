@@ -290,22 +290,21 @@ void delqa_c::update_csr(uint16_t set_bits, uint16_t clear_bits)
     if ((saved_csr ^ csr) & CSR_EL)
         update_prom_registers();
 
-    if ((saved_csr ^ csr) & CSR_IE) {
-        // IE transitioning
-        if ((clear_bits & CSR_IE) && interrupt_asserted)
-            clear_interrupt();
-        if ((set_bits & CSR_IE) && (csr & CSR_XIRI) && !interrupt_asserted)
-            set_interrupt();
-    } else if (csr & CSR_IE) {
-        if (((saved_csr ^ csr) & (set_bits & CSR_XIRI)) && !interrupt_asserted) {
-            // XI or RI raised
-            set_interrupt();
-        } else if (((saved_csr ^ csr) & (clear_bits & CSR_XIRI))
-                && !(csr & CSR_XIRI) && interrupt_asserted) {
-            // both requests now clear
-            clear_interrupt();
-        }
-    }
+    // The DEQNA/DELQA interrupt is level-sensitive: it stands asserted while
+    // (XI | RI) & IE is true and a vector is programmed, and drops only when the
+    // host clears the requesting bit (W1C) or IE. The QBUS adapter delivers one
+    // vector per INTR() and forgets the request once the PRU grants it, so the
+    // level must be re-presented whenever it is still high after a CSR change or
+    // a completion — otherwise a second source that becomes ready while an
+    // earlier interrupt is still pending is stranded with no vector of its own,
+    // and the driver's ring reaping stalls the CPU at the device's BR level.
+    bool want_intr = (csr & CSR_IE) && (csr & CSR_XIRI) && (var & VAR_IV);
+    if (want_intr && !interrupt_asserted)
+        set_interrupt();
+    else if (want_intr && interrupt_asserted)
+        qunibusadapter->INTR(intr_request, NULL, 0); // re-arm; deduped if still pending
+    else if (!want_intr && interrupt_asserted)
+        clear_interrupt();
 }
 
 // software_reset(): CSR SR transition 1 -> 0, bus INIT or power cycle.
