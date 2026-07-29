@@ -404,28 +404,23 @@ void qunibus_c::powercycle(int phase)
         timeout_c::wait_ms(delay_ms);
     }
     if (phase & 0x02) { // Power Up
-        // "Power supply logic negates BDCOK H during power up and asserts
-        // BDCOK H 3 ms minimum after dc power is restored to voltages
-        // within specification."
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_DCOK;
-        mailbox->initializationsignal.val = 1;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
-        timeout_c::wait_ms(delay_ms);
-        // "The processor asserts BINIT L after receiving nominal power
-        // and negates BINIT L 0 nsec minimum after the assertion of BDCOK H.""
-        // "Power supply logic negates BPOK H during power up and asserts
-        // BPOK H 70 ms minimum after the assertion of BDCOK H>. If
-        // power does not remain stable for 70 ms, BDCOK H will be
-        // negated, therefore, devices should suspend critical actions
-        // until BPOK H is asserted. The assertion of BPOK H will cause
-        // a processor interrupt."
+        // The DEC sequence asserts BDCOK first and BPOK ~70 ms later, and "the
+        // assertion of BPOK H will cause a processor interrupt". Released as
+        // BDCOK asserts, the CPU boots during that gap and takes the BPOK
+        // interrupt through the power-fail vector mid-boot ("power fail in boot").
+        // Assert BPOK first, while BINIT still holds the CPU, so it cold-starts
+        // with power already up and the boot runs uninterrupted.
         mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_POK;
         mailbox->initializationsignal.val = 1;
         mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
         timeout_c::wait_ms(delay_ms);
-        // "BPOK H must remain asserted for a minimum of 3 ms. BDCOK H
-        // must remain asserted 4 ms minimum after the negation of BPOK H."
-        // CPU executes power fail vector
+        // "Power supply logic ... asserts BDCOK H 3 ms minimum after dc power is
+        // restored." The processor negates BINIT after the assertion of BDCOK H
+        // and starts from the power-up vector, with BPOK already asserted.
+        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_DCOK;
+        mailbox->initializationsignal.val = 1;
+        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        timeout_c::wait_ms(delay_ms);
     }
 #endif
 }
