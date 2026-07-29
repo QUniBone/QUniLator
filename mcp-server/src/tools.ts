@@ -349,6 +349,12 @@ export function registerTools(server: McpServer, qbone: QBoneClient): void {
       inputSchema: {
         diagnostic: z.string().describe("XXDP file, e.g. ZTKAE0"),
         config: z.string().optional().describe("config to apply first, e.g. xxdp"),
+        console: channelSchema
+          .optional()
+          .describe(
+            "console the machine talks on: 'ext' (a CPU with its own SLU, the " +
+              "default) or '0' (an emulated CPU's emulated DL11)",
+          ),
         setup: z
           .array(
             z.object({
@@ -368,11 +374,20 @@ export function registerTools(server: McpServer, qbone: QBoneClient): void {
         run_timeout_ms: z.number().int().positive().optional(),
       },
     },
-    async ({ diagnostic, config, setup, answers, pass_pattern, run_timeout_ms }) =>
+    async ({
+      diagnostic,
+      config,
+      console: channel,
+      setup,
+      answers,
+      pass_pattern,
+      run_timeout_ms,
+    }) =>
       run(() =>
         qbone.runXxdpDiagnostic({
           diagnostic,
           config,
+          console: channel as ConsoleChannel | undefined,
           setup,
           answers,
           passPattern: pass_pattern,
