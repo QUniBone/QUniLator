@@ -534,9 +534,44 @@ itself. The interrupt path opens at the same moment: `bus_interrupts` leaves
 zero for the first time, because VMS - unlike the bootstrap - asks the
 controller for a vector and is served at the level the adapter grants.
 
-The machine then runs on at IPL 0 without further disk traffic, which is the
-next thing to look at. It is executing, not stopped: the program counter and
-the instruction count move, and interrupts keep arriving.
+### Where it stands: VMS's own driver re-initialises the controller forever
+
+The banner is as far as it goes. What follows it is the handover from the
+bootstrap to VMS's own disk driver, and that driver cannot get the controller
+initialised. The loop is exact and repeats about every four seconds:
+
+	Transition to Init state S1          the controller offers S1, SA = 004000
+	DATO SA  ... 122377                  the host writes its S1 word, 0xA4FF
+	  resp ring 0x10, cmd ring 0x10, vector 0x1fc, ie 1
+	Transition to Init state S2          SA = 010244, and an interrupt
+	INTR() req: dev uda, level/vector 5/774
+	DATO IP                              the host writes IP - a hard init
+	Reset due to IP write
+
+The bootstrap asked for one-entry rings and no interrupts; VMS asks for sixteen
+of each, interrupts enabled, and vector 0774. So this is the first time the
+controller's interrupt path carries a driver's traffic rather than a poll.
+
+What has been ruled out. The step-2 value is what simh's own RQ returns for the
+same S1 word - `S2 | (s1dat >> 8)`, 010244 for 0xA4FF - and that controller
+boots this same image to a login prompt. The adapter is configured and open:
+`uba_cr` reads 7C, so IFS and BRIE are both set and `uba_get_ubvector` will
+hand a device vector over. The vector fits: `UBA_VEC_MASK` is 0x1FC and the
+requested vector is 0x1FC exactly. `uba_uiip` is zero, and BR5 is inside the
+range `uba_eval_int` scans, so the nexus request is raised.
+
+What changed while looking. SA was being published with the interrupt grant
+rather than when the step was reached, which left it reading the previous step
+for as long as the arbitration took; a controller loads SA and then requests
+the interrupt. Fixing that ended the delayed grants and took the transfers the
+map registers refused during the handover from three to none, but did not
+change the loop.
+
+So the question is what VMS does with the step-2 interrupt. It is delivered -
+the count rises in step with the loop - and the machine keeps executing at
+IPL 0 rather than stopping. The next thing to look at is the other side of it:
+what the processor does when it takes the interrupt, which the console's memory
+examine can now be pointed at.
 
 A caution for anyone reading the counters: `dma_words` and the rest accumulate
 from when the device was installed, not from the last START, so progress is the
