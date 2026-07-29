@@ -17,6 +17,7 @@
 
 #include "scp.h"
 #include "sim_tmxr.h"
+#include "simh_shim_internal.h"
 
 /* sim_tmxr.h redirects the scheduling calls of any file that includes it to the
    multiplexer's own, so that a line's polling stays aligned with its clock.
@@ -60,16 +61,18 @@ t_stat tmxr_clock_coschedule_abs (UNIT *uptr, int32 interval)
 return sim_activate_abs (uptr, interval);
 }
 
+/* Coscheduling counts in ticks of a calibrated clock, not in instructions: the
+   VAX interval timer asks to be woken one tick from now for its usual 10ms
+   interval, and a tick is however many instructions the core gets through in
+   that time. */
 t_stat tmxr_clock_coschedule_tmr (UNIT *uptr, int32 tmr, int32 ticks)
 {
-(void) tmr;
-return sim_activate (uptr, ticks);
+return sim_activate (uptr, ticks * simh_shim_tick_size (tmr));
 }
 
 t_stat tmxr_clock_coschedule_tmr_abs (UNIT *uptr, int32 tmr, int32 ticks)
 {
-(void) tmr;
-return sim_activate_abs (uptr, ticks);
+return sim_activate_abs (uptr, ticks * simh_shim_tick_size (tmr));
 }
 
 /* Lines. There are none. */

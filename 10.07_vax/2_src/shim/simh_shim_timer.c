@@ -2,17 +2,17 @@
  *
  * simh's sim_timer.c calibrates a simulator's interval clock against the host's
  * wall clock: it measures how many simulated instructions a real tick took and
- * adjusts the interval so the guest's line clock keeps real time, and it sleeps
- * the host when the guest is idle.
+ * adjusts the interval so the guest's line clock keeps real time. It also
+ * sleeps the host when the guest is idle.
  *
- * The shim does neither. The interval a device asks for is the interval it
- * gets, and the guest's clock runs at whatever rate the embedding executes
- * instructions. On the BeagleBone the emulation has a time source of its own -
- * the flexible timeout controller the other device models share - and the
- * calibration belongs there, against that clock, not against the workstation's.
+ * The calibration is kept, because a guest needs it: an operating system paces
+ * itself by its interval clock, and a clock that ticks faster than the core
+ * gets work done leaves it running its own timer routine and nothing else. It
+ * is measured here against the elapsed time the embedding supplies, which on
+ * the BeagleBone will be the time source the other device models already share.
  *
- * Idling is off for the same reason: an embedded core must not put its host
- * thread to sleep, because the host thread has a bus to serve.
+ * Idling is not kept: an embedded core must not put its host thread to sleep,
+ * because that thread has a bus to serve.
  */
 
 #include "simh_shim.h"
@@ -55,8 +55,37 @@ now->tv_sec = (time_t) (usec / 1000000.0);
 now->tv_nsec = (long) ((usec - (double) now->tv_sec * 1000000.0) * 1000.0);
 }
 
-/* The nominal interval, unadjusted. A device asks for the number of simulated
-   instructions its tick is worth and gets exactly that back. */
+/* How fast the core is actually running, in instructions per second of the
+   host's time. A guest measures its own progress against its interval clock,
+   so the number of instructions a tick is worth has to track the rate the
+   embedding is executing them at: a clock left at a nominal rate ticks tens of
+   times too often for the work done between ticks, and an operating system
+   then spends every instruction in its own timer routine.
+
+   The estimate starts at what the processor model publishes and is remeasured
+   whenever a calibrated clock asks, over a window long enough that the
+   measurement is not noise. */
+#define SHIM_CALIBRATE_USEC     200000.0
+
+static double shim_ips = 0.0;
+static int32 shim_currd[SIM_NTIMERS + 1];               /* instructions per tick */
+
+double simh_shim_ips (void)
+{
+return (shim_ips > 0.0) ? shim_ips : (double) sim_vm_initial_ips;
+}
+
+/* A clock nobody has calibrated yet is assumed to tick at the rate the VAX
+   line clock does, which is the only one the 780 has. */
+int32 simh_shim_tick_size (int32 tmr)
+{
+if ((tmr < 0) || (tmr > SIM_NTIMERS))
+    tmr = SIM_NTIMERS;
+if (shim_currd[tmr] > 0)
+    return shim_currd[tmr];
+return (int32) (simh_shim_ips () / 100.0);
+}
+
 int32 sim_rtcn_init_unit (UNIT *uptr, int32 time, int32 tmr)
 {
 (void) uptr;
@@ -66,10 +95,36 @@ return (time > 0) ? time : 1;
 
 int32 sim_rtcn_calb (uint32 ticksper, int32 tmr)
 {
-(void) tmr;
+static double base_usec[SIM_NTIMERS + 1];
+static double base_gtime[SIM_NTIMERS + 1];
+double now, executed, elapsed, per_tick;
+
+if ((tmr < 0) || (tmr > SIM_NTIMERS))
+    tmr = SIM_NTIMERS;
+now = simh_shim_elapsed_usec ();
+if (base_usec[tmr] == 0.0) {                            /* first time here */
+    base_usec[tmr] = now;
+    base_gtime[tmr] = sim_gtime ();
+    }
+else {
+    elapsed = now - base_usec[tmr];
+    executed = sim_gtime () - base_gtime[tmr];
+    if ((elapsed >= SHIM_CALIBRATE_USEC) && (executed > 0.0)) {
+        shim_ips = (executed * 1000000.0) / elapsed;
+        base_usec[tmr] = now;
+        base_gtime[tmr] = sim_gtime ();
+        }
+    }
+
 if (ticksper == 0)
-    return sim_vm_initial_ips;
-return (int32) (sim_vm_initial_ips / (int32) ticksper);
+    return (int32) simh_shim_ips ();
+per_tick = simh_shim_ips () / (double) ticksper;
+if (per_tick < 1.0)
+    per_tick = 1.0;
+if (per_tick > (double) 0x3FFFFFFF)
+    per_tick = (double) 0x3FFFFFFF;
+shim_currd[tmr] = (int32) per_tick;
+return shim_currd[tmr];
 }
 
 t_stat sim_rtcn_tick_ack (uint32 time, int32 tmr)

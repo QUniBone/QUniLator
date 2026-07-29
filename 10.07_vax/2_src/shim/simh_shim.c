@@ -78,6 +78,8 @@ t_bool sim_idle_enab = FALSE;                           /* no host sleeping */
 uint32 sim_brk_dflt = 0;
 uint32 sim_brk_summ = 0;
 uint32 sim_brk_types = 0;
+int32 sim_quiet = 0;                                    /* suppress messages */
+int32 sim_show_message = 1;                             /* show command results */
 const char *sim_savename = NULL;
 CTAB *sim_vm_cmd = NULL;
 const char **sim_clock_precalibrate_commands = NULL;
@@ -205,6 +207,19 @@ void sim_debug_bits (uint32 dbits, DEVICE *dptr, BITFIELD *bitdefs,
                      uint32 before, uint32 after, int terminate)
 {
 sim_debug_bits_hdr (dbits, dptr, "", bitdefs, before, after, terminate);
+}
+
+/* A block of transferred data, which scp prints as a hex and character dump.
+   Here it is the length and where it went; a reader after the bytes themselves
+   wants the device's own trace. */
+void sim_data_trace (DEVICE *dptr, UNIT *uptr, const uint8 *data, const char *position,
+                     size_t len, const char *txt, uint32 reason)
+{
+(void) data;
+if ((sim_deb == NULL) || (dptr == NULL) || !(dptr->dctrl & reason))
+    return;
+fprintf (sim_deb, "%s %s %s %u bytes at %s\n", sim_dname (dptr), sim_uname (uptr),
+         txt ? txt : "", (unsigned) len, position ? position : "");
 }
 
 /* ------------------------------------------------------------------------ */
@@ -337,12 +352,39 @@ else {
 return val;
 }
 
+/* Leading switches, as scp reads them. The core builds its own command strings
+   and the switches in them carry meaning: the boot code is placed with "-O
+   <file> <offset>", and losing that origin leaves a bootstrap at address zero
+   and a processor started somewhere else. */
+static int32 shim_switch_mask (const char *letters)
+{
+int32 mask = 0;
+
+if (*letters == 0)
+    return -1;
+for (; *letters != 0; letters++) {
+    if (isdigit ((unsigned char) *letters)) {           /* a radix, not a switch */
+        sim_switch_number = (int32) strtol (letters, NULL, 10);
+        break;
+        }
+    if (!isalpha ((unsigned char) *letters))
+        return -1;
+    mask |= SWMASK (toupper ((unsigned char) *letters));
+    }
+return mask;
+}
+
 CONST char *get_sim_sw (CONST char *cptr)
 {
-/* The embedded build has no command line, so a core asking for the switches of
-   the command that reached it always sees none set. */
-sim_switches = 0;
-sim_switch_number = 0;
+char gbuf[CBUFSIZE];
+int32 mask;
+
+while ((cptr != NULL) && (*cptr == '-')) {
+    cptr = get_glyph (cptr, gbuf, 0);
+    if ((mask = shim_switch_mask (gbuf + 1)) < 0)
+        return NULL;
+    sim_switches |= mask;
+    }
 return cptr;
 }
 
@@ -352,6 +394,73 @@ t_bool get_yn (const char *ques, t_bool deflt)
    question is reported so a run that hit one can be recognised. */
 sim_printf ("%s %s\n", ques, deflt ? "Y" : "N");
 return deflt;
+}
+
+/* The tail of a file name when it ends in the given extension, and NULL when it
+   does not. simh's disk layer asks this of a container's name. */
+CONST char *match_ext (CONST char *fnam, const char *ext)
+{
+const char *dot = strrchr (fnam, '.');
+size_t i;
+
+if ((dot == NULL) || (ext == NULL))
+    return NULL;
+for (i = 0; ext[i] != 0; i++)
+    if (toupper ((unsigned char) dot[1 + i]) != toupper ((unsigned char) ext[i]))
+        return NULL;
+return (dot[1 + i] == 0) ? (CONST char *) (dot + 1) : NULL;
+}
+
+/* A number with thousands separators, for a message. */
+const char *sim_fmt_numeric (double number)
+{
+static char shim_numeric_buf[64];
+
+snprintf (shim_numeric_buf, sizeof shim_numeric_buf, "%.0f", number);
+return shim_numeric_buf;
+}
+
+/* A unit's capacity in the units its device counts in, as scp prints it. */
+const char *sprint_capac (DEVICE *dptr, UNIT *uptr)
+{
+static char shim_capac_buf[64];
+double bytes = (double) uptr->capac;
+const char *width = ((dptr->dwidth / dptr->aincr) > 8) ? "W" : "B";
+
+if (dptr->flags & DEV_SECTORS)
+    bytes *= 512.0;
+if (bytes >= 1024.0 * 1024.0)
+    snprintf (shim_capac_buf, sizeof shim_capac_buf, "%.0fM%s", bytes / (1024.0 * 1024.0), width);
+else if (bytes >= 1024.0)
+    snprintf (shim_capac_buf, sizeof shim_capac_buf, "%.0fK%s", bytes / 1024.0, width);
+else
+    snprintf (shim_capac_buf, sizeof shim_capac_buf, "%.0f%s", bytes, width);
+return shim_capac_buf;
+}
+
+/* A name a device gives one of its units, which the shim keeps as the unit's
+   own so sim_uname() reports it. */
+const char *sim_set_uname (UNIT *uptr, const char *uname)
+{
+free (uptr->uname);
+uptr->uname = uname ? strdup (uname) : NULL;
+return uptr->uname;
+}
+
+/* Randomness, for the device models that vary a latency or seed a pack id.
+   scp.h redirects every caller's rand() and srand() here, so the redirection
+   has to come off before the host's own can be reached. */
+#undef rand
+#undef srand
+
+int sim_rand (void)
+{
+return rand ();
+}
+
+void sim_srand (unsigned int seed)
+{
+srand (seed);
 }
 
 t_stat sim_decode_quoted_string (const char *iptr, uint8 *optr, uint32 *osize)
@@ -419,8 +528,10 @@ if (uptr->dptr)
     return uptr->dptr;
 for (i = 0; sim_devices[i] != NULL; i++)
     for (j = 0; j < sim_devices[i]->numunits; j++)
-        if (uptr == (sim_devices[i]->units + j))
+        if (uptr == (sim_devices[i]->units + j)) {
+            uptr->dptr = sim_devices[i];        /* remember, as scp does */
             return sim_devices[i];
+            }
 return NULL;
 }
 
@@ -470,6 +581,96 @@ for (rptr = dptr->registers; rptr->name != NULL; rptr++)
         return rptr;
         }
 return NULL;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Setting a parameter                                                       */
+/*                                                                           */
+/* SET is the one command of scp's that an embedded core genuinely needs. A   */
+/* device's modifier table is where its drive types, its controller types and */
+/* its write locks live, and both the embedding and simh's own disk layer     */
+/* reach them only this way: sim_disk_attach() names the drive type a         */
+/* container was made for and sets it, which is how attaching an image picks  */
+/* the right geometry.                                                       */
+/* ------------------------------------------------------------------------ */
+
+/* One "NAME" or "NAME=VALUE" against a device's modifier table. */
+static t_stat shim_set_one (DEVICE *dptr, UNIT *uptr, t_bool unit_named, char *glyph)
+{
+MTAB *mptr;
+char *value = strchr (glyph, '=');
+
+if (value != NULL)
+    *value++ = 0;
+if (dptr->modifiers == NULL)
+    return SCPE_NOPARAM;
+/* A modifier's match string carries its syntax after the name, as in
+   "FORMAT={AUTO|SIMH|VHD|RAW}", so what is compared is the name the caller
+   gave against the head of the modifier's string, which is what scp's
+   MATCH_CMD does. */
+for (mptr = dptr->modifiers; (mptr->mask != 0) || (mptr->pstring != NULL); mptr++) {
+    if ((mptr->mstring == NULL) || (MATCH_CMD (glyph, mptr->mstring) != 0))
+        continue;
+    if (mptr->mask & MTAB_XTD) {
+        if (MODMASK (mptr, MTAB_VUN) && !unit_named && (dptr->numunits > 1))
+            return sim_messagef (SCPE_ARG, "%s: %s needs a unit\n", sim_dname (dptr), glyph);
+        if (mptr->valid != NULL)
+            return mptr->valid (uptr, (int32) mptr->match, (CONST char *) value, mptr->desc);
+        return SCPE_ARG;
+        }
+    /* A plain modifier names a value for a field of the unit's flags, and may
+       carry a routine besides: the memory sizes of a CPU are written this way,
+       and the routine is what resizes the memory array behind them. */
+    if (mptr->valid != NULL) {
+        t_stat r = mptr->valid (uptr, (int32) mptr->match, (CONST char *) value, mptr->desc);
+
+        if (r != SCPE_OK)
+            return r;
+        }
+    uptr->flags = (uptr->flags & ~mptr->mask) | (mptr->match & mptr->mask);
+    return SCPE_OK;
+    }
+return SCPE_NXPAR;
+}
+
+t_stat set_cmd (int32 flag, CONST char *cptr)
+{
+char gbuf[CBUFSIZE];
+DEVICE *dptr;
+UNIT *uptr;
+t_bool unit_named;
+t_stat r;
+
+(void) flag;
+cptr = get_glyph (cptr, gbuf, 0);
+
+/* The settings scp keeps for itself, which simh's disk layer turns off around
+   an attach it does not want narrated. */
+if (strcmp (gbuf, "NOMESSAGE") == 0) { sim_show_message = 0; return SCPE_OK; }
+if (strcmp (gbuf, "MESSAGE") == 0)   { sim_show_message = 1; return SCPE_OK; }
+if (strcmp (gbuf, "QUIET") == 0)     { sim_quiet = 1; return SCPE_OK; }
+if (strcmp (gbuf, "NOQUIET") == 0)   { sim_quiet = 0; return SCPE_OK; }
+
+if ((dptr = find_unit (gbuf, &uptr)) == NULL)
+    return sim_messagef (SCPE_NXDEV, "no such device: %s\n", gbuf);
+if (uptr == NULL)
+    return SCPE_NXUN;
+unit_named = (find_dev (gbuf) == NULL);                 /* a name with a number */
+
+while (*cptr != 0) {
+    cptr = get_glyph (cptr, gbuf, ',');
+    if ((r = shim_set_one (dptr, uptr, unit_named, gbuf)) != SCPE_OK)
+        return sim_messagef (r, "%s: cannot set %s\n", sim_dname (dptr), gbuf);
+    }
+return SCPE_OK;
+}
+
+/* SHOW writes to a terminal scp owns, and the embedding has its own way of
+   reporting what a device is doing. */
+t_stat show_cmd (int32 flag, CONST char *cptr)
+{
+(void) flag;
+return sim_messagef (SCPE_NOFNC, "SHOW %s is not available in the embedded build\n", cptr);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -627,25 +828,32 @@ double sim_gtime (void)
 return sim_time;
 }
 
-/* Batching. sim_instr() runs until something aborts it, so a caller that wants
-   a bounded run gets its bound here: sim_interval is held down to what is left
-   of the batch wherever the queue sets it, and the instruction loop calls
-   sim_process_event() when it expires. */
-static double shim_batch_end = 0.0;
-static t_bool shim_batch_limited = FALSE;
-
-static void shim_cap_interval (void)
+/* The same clock as a wrapping 32-bit count, which a device uses to stamp the
+   start of a transfer and schedule its completion against. */
+uint32 sim_grtime (void)
 {
-double remaining;
-
-if (!shim_batch_limited)
-    return;
-remaining = shim_batch_end - sim_time;
-if (remaining < 1.0)
-    remaining = 1.0;
-if ((double) sim_interval > remaining)
-    sim_interval = (int32) remaining;
+return (uint32) sim_time;
 }
+
+/* Batching. sim_instr() runs until something aborts it, so a caller that wants
+   a bounded run gets its bound as an event: a unit of the shim's own, queued
+   for the end of the batch, whose service routine stops the processor.
+
+   The bound has to be an event and not a cap on sim_interval, because the
+   queue's accounting rests on sim_interval being the time remaining to the
+   entry at its head. Shortening it behind the queue's back makes the next
+   update charge the difference as though those instructions had run, and the
+   simulated clock then runs away from the work actually done. */
+static t_stat shim_batch_svc (UNIT *uptr)
+{
+(void) uptr;
+return SCPE_STOP;
+}
+
+/* Left empty here and given its service routine at reset: simh's UDATA() macro
+   names only the first few members of a UNIT, which this project's warning
+   level counts as an incomplete initialiser. */
+static UNIT shim_batch_unit;
 
 t_stat sim_activate (UNIT *uptr, int32 event_time)
 {
@@ -678,7 +886,6 @@ uptr->time = event_time - accum;
 if (uptr->next != QUEUE_LIST_END)
     uptr->next->time -= uptr->time;
 sim_interval = sim_clock_queue->time;
-shim_cap_interval ();
 return SCPE_OK;
 }
 
@@ -689,12 +896,12 @@ return sim_activate (uptr, event_time);
 }
 
 /* An interval given in microseconds of wall time. The core uses this for the
-   line clock and for device latencies. It is converted with the instruction
-   rate the CPU model publishes, which is what scp does when the host has no
-   calibrated clock to hang the request on. */
+   line clock and for device latencies, and it is converted with the rate the
+   core is measured to be running at, so a device's delay lasts as long
+   relative to the work around it as the device's own manual says. */
 static int32 shim_usecs_to_interval (double usecs)
 {
-double ticks = (usecs * (double) sim_vm_initial_ips) / 1000000.0;
+double ticks = (usecs * simh_shim_ips ()) / 1000000.0;
 
 if (ticks < 1.0)
     return 1;
@@ -723,6 +930,20 @@ t_stat sim_activate_after_abs_d (UNIT *uptr, double usecs)
 {
 sim_cancel (uptr);
 return sim_activate_after_d (uptr, usecs);
+}
+
+/* Schedule for an absolute point on sim_grtime()'s clock. A point already past
+   fires at the next opportunity. */
+t_stat sim_activate_notbefore (UNIT *uptr, int32 rtime)
+{
+uint32 when = (uint32) rtime;
+uint32 now;
+
+sim_cancel (uptr);
+now = sim_grtime ();
+if ((when - now) >= 0x80000000u)                        /* already past */
+    return sim_activate (uptr, 0);
+return sim_activate (uptr, (int32) (when - now));
 }
 
 t_stat sim_cancel (UNIT *uptr)
@@ -783,7 +1004,7 @@ int32 ticks = sim_activate_time (uptr);
 
 if (ticks == 0)
     return 0.0;
-return ((double) (ticks - 1) * 1000000.0) / (double) sim_vm_initial_ips;
+return ((double) (ticks - 1) * 1000000.0) / simh_shim_ips ();
 }
 
 t_stat sim_process_event (void)
@@ -792,8 +1013,6 @@ UNIT *uptr;
 t_stat reason;
 
 shim_update_time ();
-if (shim_batch_limited && (sim_time >= shim_batch_end))
-    return SCPE_STOP;                                   /* batch spent */
 if (sim_interval > 0)
     return SCPE_OK;
 if (sim_clock_queue == QUEUE_LIST_END) {                /* nothing scheduled */
@@ -817,7 +1036,6 @@ do {
     } while ((sim_interval <= 0) && (sim_clock_queue != QUEUE_LIST_END));
 if (sim_interval <= 0)
     sim_interval = noqueue_time = NOQUEUE_WAIT;
-shim_cap_interval ();
 return SCPE_OK;
 }
 
@@ -872,6 +1090,10 @@ char gbuf[CBUFSIZE];
 FILE *loadfile = NULL;
 t_stat reason;
 
+sim_switches = 0;                                       /* a fresh command */
+sim_switch_number = 0;
+if ((cptr = get_sim_sw (cptr)) == NULL)
+    return SCPE_INVSW;
 if (*cptr == 0)
     return SCPE_2FARG;
 cptr = get_glyph_nc (cptr, gbuf, 0);
@@ -895,11 +1117,45 @@ static t_stat shim_no_command (const char *what)
 return sim_messagef (SCPE_NOFNC, "%s is not available in the embedded build\n", what);
 }
 
+/* Booting. scp's RUN command does three jobs, and only one of them belongs to
+   an embedded core: RUN and CONTINUE start the instruction loop, which here is
+   the embedding's own, but BOOT also empties the event queue, resets the
+   machine and calls the device's boot routine, which is what places a
+   bootstrap in memory and sets the processor at it. That part is real.
+
+   A processor's boot reaches this through its own BOOT command, which parses
+   the device the operator named and sets the registers its bootstrap expects
+   before asking for the CPU to be booted. */
 t_stat run_cmd (int32 flag, CONST char *cptr)
 {
-(void) flag;
-(void) cptr;
-return shim_no_command ("RUN");
+char gbuf[CBUFSIZE];
+DEVICE *dptr;
+UNIT *uptr;
+t_stat r;
+
+if (flag != RU_BOOT)
+    return shim_no_command ("RUN");
+if (*cptr == 0)
+    return SCPE_2FARG;
+get_glyph (cptr, gbuf, 0);
+if ((dptr = find_unit (gbuf, &uptr)) == NULL)
+    return sim_messagef (SCPE_NXDEV, "no such device: %s\n", gbuf);
+if (uptr == NULL)
+    return SCPE_NXUN;
+if (dptr->boot == NULL)
+    return sim_messagef (SCPE_NOFNC, "%s cannot boot\n", sim_dname (dptr));
+if (uptr->flags & UNIT_DIS)
+    return sim_messagef (SCPE_UDIS, "%s is disabled\n", sim_uname (uptr));
+if ((uptr->flags & UNIT_ATTABLE) && !(uptr->flags & UNIT_ATT))
+    return sim_messagef (SCPE_UNATT, "%s has nothing attached\n", sim_uname (uptr));
+
+while (sim_clock_queue != QUEUE_LIST_END)               /* empty the queue */
+    sim_cancel (sim_clock_queue);
+sim_time = 0.0;
+noqueue_time = sim_interval = 0;
+if ((r = reset_all (0)) != SCPE_OK)
+    return r;
+return dptr->boot ((int32) (uptr - dptr->units), dptr);
 }
 
 void run_cmd_message (const char *cmdline, t_stat r)
@@ -982,17 +1238,42 @@ return reason;
 /* Entry points of simh layers the shim build does not carry                 */
 /* ------------------------------------------------------------------------ */
 
-/* The UNIBUS map of pdp11_io_lib.c offers this as the ATTACH-time writer of a
-   DEC standard bad block table, out of simh's disk layer. No controller in the
-   shim build attaches a disk - on the board the disks are emulated devices on
-   the real bus - so reaching it means a device arrived without its support. */
+/* The Ethernet CRC of sim_ether.c, which the disk layer borrows for the
+   checksum in a VHD footer and for a pack id. Reflected CRC-32 over the
+   Autodin II polynomial, inverted at both ends, as its callers expect. */
 
-t_stat sim_disk_pdp11_bad_block (UNIT *uptr, int32 sec, int32 wds)
+uint32 eth_crc32 (uint32 crc, const void *vbuf, size_t len)
 {
-(void) sec;
-(void) wds;
-return sim_messagef (SCPE_NOFNC, "%s: writing a bad block table needs simh's disk layer\n",
-                     sim_uname (uptr));
+static uint32 table[256];
+static int table_built = 0;
+const unsigned char *buf = (const unsigned char *) vbuf;
+
+if (!table_built) {
+    uint32 i, j, entry;
+
+    for (i = 0; i < 256; i++) {
+        entry = i;
+        for (j = 0; j < 8; j++)
+            entry = (entry & 1) ? ((entry >> 1) ^ 0xEDB88320u) : (entry >> 1);
+        table[i] = entry;
+        }
+    table_built = 1;
+    }
+crc ^= 0xFFFFFFFFu;
+while (len-- != 0)
+    crc = (crc >> 8) ^ table[(crc ^ (*buf++)) & 0xFF];
+return crc ^ 0xFFFFFFFFu;
+}
+
+/* simh unpacks a disk container out of a tar archive through scp's TAR command,
+   which shells out to the host's tar. The shim carries no command interpreter
+   and no shell, so a container arrives unpacked or not at all. */
+
+t_stat tar_cmd (int32 flag, CONST char *cptr)
+{
+(void) flag;
+(void) cptr;
+return sim_messagef (SCPE_NOFNC, "TAR is not available in the embedded build\n");
 }
 
 /* ------------------------------------------------------------------------ */
@@ -1001,10 +1282,30 @@ return sim_messagef (SCPE_NOFNC, "%s: writing a bad block table needs simh's dis
 
 t_stat simh_shim_reset (void)
 {
+DEVICE *dptr;
+uint32 i, j;
+
+/* simh's file layer settles its endianness and its large-file support here,
+   and what it works out is read far from the file layer: the disk layer asks
+   sim_toffset_64 whether raw containers are possible at all, and answers no to
+   every format probe while it is unset. scp does this first of all. */
+sim_finit ();
+
 if (stdnul == NULL)
     stdnul = fopen ("/dev/null", "w");
 if (sim_eval == NULL)
     sim_eval = (t_value *) calloc (SHIM_EVAL_SIZE, sizeof (*sim_eval));
+
+shim_batch_unit.action = shim_batch_svc;
+
+/* A unit's back pointer to its device, which scp fills in when it walks
+   sim_devices[] at startup. Device code reads it directly - simh's disk layer
+   names a container's device through it, and sim_debug_unit() finds a device's
+   trace flags through it - so it has to be there before anything runs. */
+for (i = 0; (dptr = sim_devices[i]) != NULL; i++)
+    for (j = 0; j < dptr->numunits; j++)
+        dptr->units[j].dptr = dptr;
+
 return reset_all (0);
 }
 
@@ -1012,12 +1313,17 @@ t_stat simh_shim_run (int32 max_instructions)
 {
 t_stat reason;
 
-shim_batch_limited = (max_instructions > 0);
-shim_batch_end = sim_time + (double) max_instructions;
-shim_cap_interval ();
+sim_cancel (&shim_batch_unit);
+if (max_instructions > 0)
+    sim_activate (&shim_batch_unit, max_instructions);
 reason = sim_instr ();
-shim_batch_limited = FALSE;
+sim_cancel (&shim_batch_unit);
 return reason;
+}
+
+t_stat simh_shim_set (const char *setting)
+{
+return set_cmd (0, setting);
 }
 
 t_stat simh_shim_attach (const char *unit_name, const char *filename)
@@ -1036,14 +1342,14 @@ return attach_unit (uptr, filename);
 
 t_stat simh_shim_boot (const char *unit_name)
 {
-DEVICE *dptr;
-UNIT *uptr;
-uint32 unit;
+CTAB *cmd;
 
-if ((dptr = find_unit (unit_name, &uptr)) == NULL)
-    return SCPE_NXDEV;
-if ((uptr == NULL) || (dptr->boot == NULL))
-    return SCPE_NOFNC;
-unit = (uint32) (uptr - dptr->units);
-return dptr->boot ((int32) unit, dptr);
+/* A processor that defines its own BOOT wants it: on the VAX it is what reads
+   the unit and the R5 flags the operator gave, sets the registers VMB expects,
+   and only then asks for the CPU to be booted. */
+for (cmd = sim_vm_cmd; (cmd != NULL) && (cmd->name != NULL); cmd++)
+    if (strcmp (cmd->name, "BOOT") == 0)
+        return cmd->action (cmd->arg, unit_name);
+
+return run_cmd (RU_BOOT, unit_name);
 }

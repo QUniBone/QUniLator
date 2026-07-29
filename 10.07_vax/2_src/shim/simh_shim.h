@@ -68,6 +68,10 @@ t_stat simh_shim_run (int32 max_instructions);
 /* Attach a file to a unit named as scp names it, "RQ0" or "FL". */
 t_stat simh_shim_attach (const char *unit_name, const char *filename);
 
+/* Set a device or unit parameter out of its modifier table, as scp's SET does:
+   simh_shim_set("RQ0 RD54"), simh_shim_set("RQ UDA50"). */
+t_stat simh_shim_set (const char *setting);
+
 /* Boot from a device, as scp's BOOT does: find it, and call its boot routine. */
 t_stat simh_shim_boot (const char *unit_name);
 

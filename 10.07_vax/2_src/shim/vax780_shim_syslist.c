@@ -11,6 +11,14 @@
  * management, the SBI, the memory controllers, the UNIBUS and MASSBUS adapters,
  * the interval and time-of-year clocks, and the console terminal and floppy.
  *
+ * SHIM_WITH_DISK adds simh's own MSCP controller to that list, for the test
+ * configuration 10.07_vax/2_src/makefile builds as vax780-shim-disk. It exists
+ * so the shim can be shown carrying an operating system before any bus work
+ * starts, and so a later failure can be told apart: a VMS that boots from this
+ * disk and not from the emulated one puts the fault below the shim. It answers
+ * at the address the emulated UDA50 answers at, so the two are alternatives and
+ * never a configuration.
+ *
  * The binary loader is simh's, unchanged in effect: it reads a byte stream into
  * memory or into one of the console ROMs, which is how the 780 console places
  * VMB before starting a boot.
@@ -38,6 +46,9 @@ extern DEVICE tmr_dev;
 extern DEVICE tti_dev, tto_dev;
 extern DEVICE fl_dev;
 extern DEVICE uw_dev;
+#ifdef SHIM_WITH_DISK
+extern DEVICE rq_dev;
+#endif
 
 DEVICE *sim_devices[] = {
     &cpu_dev,
@@ -54,6 +65,9 @@ DEVICE *sim_devices[] = {
     &tto_dev,
     &fl_dev,
     &uw_dev,
+#ifdef SHIM_WITH_DISK
+    &rq_dev,
+#endif
     NULL
     };
 

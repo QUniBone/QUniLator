@@ -45,6 +45,12 @@ Only the headers the 780 build reaches are here: `vax_defs.h`, `vax780_defs.h`,
 model-specific header per `-DVAX_*`; the branches for the other models refer to
 files that were not taken, and `-DVAX_780` never compiles them.
 
+`VAX/tests/` — DEC's own VAX processor diagnostics and the script that drives
+them, as upstream carries them: `evkaa.exe`, the `VAX_MINIMUM_DIAGS.dsk` volume
+holding EVKAB, EVKAC and EVKAD for the VAX Diagnostic Supervisor, the help files
+under `diag780/`, and `vax-diag_test.ini`. `10.07_vax/3_tests/vax-diagnostics.sh`
+runs them.
+
 `PDP11/` — the UNIBUS peripherals the 780 shares with the PDP-11 simulator, the
 `VAX780` list again: `pdp11_rq.c` (MSCP/UDA50), `pdp11_tq.c` (TMSCP/TU81),
 `pdp11_rl.c`, `pdp11_rk.c`, `pdp11_rp.c`, `pdp11_tu.c`, `pdp11_hk.c`,

@@ -6,12 +6,15 @@
 # Never use $(BBB_CC) in this file.
 #
 # Targets:
-#	all		both binaries below
+#	all		every binary below
 #	vax780		the stock simh VAX-11/780, built from the vendored
 #			sources of 91_3rd_party/simh_vax
 #	vax780-shim	the same processor with shim/ in place of simh's command
 #			interpreter, console and timer, which is the form the
 #			core takes when it moves into the QUniLator application
+#	vax780-shim-disk  the shimmed core with simh's MSCP controller inside it,
+#			a test configuration and not a device; see the section
+#			that builds it
 #	clean		remove objects and binaries
 #
 # Use "make -j".
@@ -24,7 +27,7 @@
 #	    make QUNIBONE_DIR=/qunibone HOST_CC=arm-linux-gnueabihf-gcc \
 #	         OBJDIR=/qunibone/10.07_vax/4_deploy_arm SIMH_USE_NETWORK=no -j
 #
-# Copy 4_deploy_arm/vax780 and vax780-shim to the board and run 3_tests there.
+# Copy the binaries out of 4_deploy_arm to the board and run 3_tests there.
 
 # Fixed immediately: the generated dependency files are included at the end of
 # this makefile and join MAKEFILE_LIST, so its last word stops naming this file
@@ -115,6 +118,19 @@ else
 SIMH_NETWORK =
 endif
 
+# Regular expressions for EXPECT, which the DEC diagnostics of 3_tests need:
+# the Diagnostic Supervisor reports its error counts in prose, and the script
+# that judges a run reads them with a pattern. Taken when pcre2 is installed and
+# left out when it is not, since nothing else in the project needs it.
+SIMH_USE_REGEX ?= $(shell pkg-config --exists libpcre2-8 2>/dev/null && echo yes || echo no)
+ifeq ($(SIMH_USE_REGEX),yes)
+SIMH_REGEX = -DHAVE_PCRE2_H $(shell pkg-config --cflags libpcre2-8)
+SIMH_REGEX_LDFLAGS = $(shell pkg-config --libs libpcre2-8)
+else
+SIMH_REGEX =
+SIMH_REGEX_LDFLAGS =
+endif
+
 # The reader thread and asynchronous I/O, as the upstream makefile builds them.
 SIMH_ASYNCH = -DUSE_READER_THREAD -DSIM_ASYNCH_IO
 
@@ -174,7 +190,7 @@ endif
 SIMH_CFLAGS = \
 	-std=c99 -U__STRICT_ANSI__ -MMD -MP \
 	-O2 -DNDEBUG=1 -fno-strict-overflow -finline-functions \
-	$(SIMH_MODEL) $(SIMH_HOST) $(SIMH_DLOPEN) $(SIMH_NETWORK) \
+	$(SIMH_MODEL) $(SIMH_HOST) $(SIMH_DLOPEN) $(SIMH_NETWORK) $(SIMH_REGEX) \
 	$(SIMH_ASYNCH) $(SIMH_PROVENANCE) $(SIMH_WARNINGS) \
 	-I$(SIMH_DIR)/sim -I$(SIMH_DIR)/VAX -I$(SIMH_DIR)/PDP11
 
@@ -184,15 +200,15 @@ SIMH_LDFLAGS = -lpthread -lm
 # Rules
 # ---------------------------------------------------------------------------
 
-.PHONY: all clean vax780 vax780-shim
+.PHONY: all clean vax780 vax780-shim vax780-shim-disk
 
-all: vax780 vax780-shim
+all: vax780 vax780-shim vax780-shim-disk
 
 vax780: $(VAX780)
 
 $(VAX780): $(SIMH_OBJECTS)
 	@mkdir -p $(dir $@)
-	$(HOST_CC) $(SIMH_OBJECTS) $(SIMH_LDFLAGS) -o $@
+	$(HOST_CC) $(SIMH_OBJECTS) $(SIMH_LDFLAGS) $(SIMH_REGEX_LDFLAGS) -o $@
 
 $(OBJDIR)/simh/VAX/%.o: $(SIMH_DIR)/VAX/%.c
 	@mkdir -p $(dir $@)
@@ -237,7 +253,7 @@ SHIM_SIM_SRC = sim_fio.c
 
 SHIM_SRC = \
 	simh_shim.c simh_shim_console.c simh_shim_timer.c simh_shim_tmxr.c \
-	vax780_shim_syslist.c shim_main.c
+	shim_main.c
 
 SHIM_OBJECTS = \
 	$(patsubst %.c,$(OBJDIR)/shim/VAX/%.o,$(SHIM_VAX_SRC)) \
@@ -253,11 +269,52 @@ SHIM_CFLAGS = \
 	$(SIMH_MODEL) $(SIMH_HOST) $(SIMH_PROVENANCE) $(SIMH_WARNINGS) \
 	-I$(SIMH_DIR)/sim -I$(SIMH_DIR)/VAX -I$(SIMH_DIR)/PDP11 -Ishim
 
+# The device list is built twice from one source: once as the machine alone, and
+# once with simh's MSCP controller for the disk configuration below.
+SHIM_SYSLIST = $(OBJDIR)/shim/shim/vax780_shim_syslist.o
+SHIM_SYSLIST_DISK = $(OBJDIR)/shim/shim/vax780_shim_syslist_disk.o
+SHIM_NODISK = $(OBJDIR)/shim/shim/simh_shim_nodisk.o
+
 vax780-shim: $(VAX780_SHIM)
 
-$(VAX780_SHIM): $(SHIM_OBJECTS)
+$(VAX780_SHIM): $(SHIM_OBJECTS) $(SHIM_SYSLIST) $(SHIM_NODISK)
 	@mkdir -p $(dir $@)
-	$(HOST_CC) $(SHIM_OBJECTS) $(SIMH_LDFLAGS) -o $@
+	$(HOST_CC) $(SHIM_OBJECTS) $(SHIM_SYSLIST) $(SHIM_NODISK) $(SIMH_LDFLAGS) -o $@
+
+$(SHIM_SYSLIST): shim/vax780_shim_syslist.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) $(SHIM_OWN_CFLAGS) -c $< -o $@
+
+# ---------------------------------------------------------------------------
+# The shimmed core with a disk
+#
+# The same core with simh's MSCP controller and disk layer inside it, so the
+# shim can be shown carrying an operating system before any bus work starts.
+# docs/vax-host.md says what it is for: it is the control for the stages that
+# put the emulated UDA50 on the bus, because a VMS that boots from this disk
+# and not from that one puts the fault below the shim.
+#
+# It is a test configuration and not a device. Its controller answers at 772150,
+# where the emulated UDA50 answers, so the two are alternatives; nothing in the
+# application's configuration model reaches this binary.
+# ---------------------------------------------------------------------------
+
+VAX780_SHIM_DISK = $(OBJDIR)/vax780-shim-disk
+
+SHIM_DISK_OBJECTS = \
+	$(OBJDIR)/shim/PDP11/pdp11_rq.o \
+	$(OBJDIR)/shim/sim/sim_disk.o \
+	$(SHIM_SYSLIST_DISK)
+
+vax780-shim-disk: $(VAX780_SHIM_DISK)
+
+$(VAX780_SHIM_DISK): $(SHIM_OBJECTS) $(SHIM_DISK_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(HOST_CC) $(SHIM_OBJECTS) $(SHIM_DISK_OBJECTS) $(SIMH_LDFLAGS) -o $@
+
+$(SHIM_SYSLIST_DISK): shim/vax780_shim_syslist.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) $(SHIM_OWN_CFLAGS) -DSHIM_WITH_DISK -c $< -o $@
 
 $(OBJDIR)/shim/VAX/%.o: $(SIMH_DIR)/VAX/%.c
 	@mkdir -p $(dir $@)
