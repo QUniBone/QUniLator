@@ -501,11 +501,18 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
   letter-spacing: .08em; color: var(--sw-legend);
 }
 .cpu-oct {
-  font-family: var(--font-mono); font-size: var(--fs-2); letter-spacing: .06em;
+  /* The weight and line height are set here rather than left to the label: an
+     input inherits neither, so the switch register would sit lighter and lower
+     than the readouts beside it. */
+  font-family: var(--font-mono); font-size: var(--fs-2); font-weight: 700;
+  letter-spacing: .06em; line-height: 1.45;
   background: var(--bezel); color: #FFEED2; border: 0; border-radius: 4px;
   padding: 3px 8px; box-shadow: inset 0 1px 4px rgba(0, 0, 0, .6);
 }
-.cpu-swr { width: 8ch; }
+/* A readout is as wide as its six octal digits make it. The field has to be
+   given that width: the digits, the letter spacing between them, and the
+   padding, so the two boxes are the same size and the last digit is not cut. */
+.cpu-swr { width: calc(6ch + 0.36em + 16px); }
 .cpu-swr:focus { outline: 2px solid var(--cap-red-lit); outline-offset: 1px; }
 
 /* dashboard layout: the control panel and front panel share the top row at equal

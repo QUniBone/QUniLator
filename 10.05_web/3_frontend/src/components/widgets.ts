@@ -291,17 +291,16 @@ function DzWidget({ d }: { d: LiveDev }) {
     </div></div>`;
 }
 
-// An emulated CPU, as its console: the RUN lamp, the program counter and the
-// opcode count the CPU keeps, the switch register the operator sets, and the
-// three console switches. HALT is a toggle the CPU reads continuously; START
-// and CONTINUE are momentary, so they are pulsed and fall back on their own.
-// Every model carries these, so one widget serves each of them.
+// An emulated CPU, as its console: the RUN lamp, the program counter, the
+// switch register the operator sets, and the three console switches. HALT is a
+// toggle the CPU reads continuously; START and CONTINUE are momentary, so they
+// are pulsed and fall back on their own. Every model carries these, so one
+// widget serves each of them.
 function CpuWidget({ d }: { d: LiveDev }) {
   const powered = store.hw.powered !== false;
   const running = powered && lampOn(d, 'run_led');
   const halted = lampOn(d, 'halt_switch');
   const pc = statusParam(d, 'PC');
-  const cycles = statusParam(d, 'cycle_count');
   const [swr, setSwr] = useState<string | null>(null);
 
   const pulse = (name: string, what: string) => {
@@ -326,7 +325,6 @@ function CpuWidget({ d }: { d: LiveDev }) {
           onInput=${(e: any) => setSwr(e.currentTarget.value)}
           onBlur=${commitSwr}
           onKeyDown=${(e: any) => { if (e.key === 'Enter') e.currentTarget.blur(); }} /></label>
-        <label>OPS<span class="cpu-oct">${cycles ? cycles.v : '0'}</span></label>
       </div>
       <div class="lamps">
         <${Cap} cls="cap-white" lit=${running}>RUN</${Cap}>
