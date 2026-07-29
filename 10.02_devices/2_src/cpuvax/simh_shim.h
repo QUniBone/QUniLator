@@ -112,6 +112,9 @@ typedef struct {
     unsigned uba_cr;                                    /* adapter control register */
     unsigned uba_dr;                                    /* adapter diagnostic control */
     unsigned nexus_req;                                 /* nexus requests, BR4..BR7 */
+    unsigned intr_vector_cell;                          /* vector the adapter would return */
+    unsigned intr_vector_stored;                        /* vector stored at the last grant */
+    unsigned intr_level_stored;                         /* level it was stored at */
     double instructions;
 } simh_shim_state_t;
 

@@ -89,6 +89,9 @@ cpuvax_c::cpuvax_c() :
     intr_pending.kind = parameter_c::PARAM_STATUS;
     uba_dr.kind = parameter_c::PARAM_STATUS;
     nexus_req.kind = parameter_c::PARAM_STATUS;
+    intr_vector_cell.kind = parameter_c::PARAM_STATUS;
+    intr_vector_stored.kind = parameter_c::PARAM_STATUS;
+    intr_level_stored.kind = parameter_c::PARAM_STATUS;
     halt_switch.kind = parameter_c::PARAM_STATUS;
     start_switch.kind = parameter_c::PARAM_STATUS;
 }
@@ -411,6 +414,9 @@ void cpuvax_c::publish_status(void)
     intr_pending.value = simh_shim_bus_interrupt_pending();
     uba_dr.value = state.uba_dr;
     nexus_req.value = state.nexus_req;
+    intr_vector_cell.value = state.intr_vector_cell;
+    intr_vector_stored.value = state.intr_vector_stored;
+    intr_level_stored.value = state.intr_level_stored;
     cycle_count.value = (uint64_t) state.instructions - instructions_at_start;
 
     // What the arbitration on the bus compares a device's request against.

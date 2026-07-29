@@ -132,6 +132,7 @@ extern uint32 uba_uiip;
 extern int32 uba_cr;
 extern uint32 uba_dr;
 extern int32 nexus_req[IPL_HLVL];
+extern int32 int_vec[IPL_HLVL][32];
 
 state->iopage_claimed = shim_iopage_claimed;
 state->iopage_dispatches = shim_iopage_dispatches;
@@ -144,6 +145,17 @@ state->uba_cr = (unsigned) uba_cr;
    request the adapter is holding for the processor shows here as a bit per
    bus request level. */
 state->uba_dr = (unsigned) uba_dr;
+/* What the adapter would hand over for a request from the bus. The bus takes
+   the top slot of each level, so this is where the vector last granted sits. */
+{
+extern unsigned shim_last_vector_stored;
+extern unsigned shim_last_level_stored;
+/* The cell as it stands now, and what was actually stored into it when the
+   last interrupt was granted. */
+state->intr_vector_cell = (unsigned) int_vec[1][31];
+state->intr_vector_stored = shim_last_vector_stored;
+state->intr_level_stored = shim_last_level_stored;
+}
 state->nexus_req = ((unsigned) (nexus_req[0] != 0) << 0)
                  | ((unsigned) (nexus_req[1] != 0) << 1)
                  | ((unsigned) (nexus_req[2] != 0) << 2)

@@ -164,6 +164,12 @@ public:
                                   true, "", "%08x", "UNIBUS adapter diagnostic control register.", 32, 16);
     parameter_unsigned_c nexus_req = parameter_unsigned_c(this, "nexus_req", "nrq",/*readonly*/
                                      true, "", "%x", "Adapter requests the processor has not taken, BR4..BR7.", 8, 16);
+    parameter_unsigned_c intr_vector_cell = parameter_unsigned_c(this, "intr_vector_cell", "ivc",/*readonly*/
+                                            true, "", "%06o", "Vector the adapter holds for the bus at BR5.", 16, 8);
+    parameter_unsigned_c intr_vector_stored = parameter_unsigned_c(this, "intr_vector_stored", "ivs",/*readonly*/
+                                              true, "", "%06o", "Vector read back at the last grant.", 16, 8);
+    parameter_unsigned_c intr_level_stored = parameter_unsigned_c(this, "intr_level_stored", "ils",/*readonly*/
+                                             true, "", "%u", "Level index it was stored at.", 8, 10);
     parameter_unsigned64_c cycle_count = parameter_unsigned64_c(this, "cycle_count", "cc",/*readonly*/
                                          true, "", "%u", "Instructions executed since the last start", 63, 10);
 

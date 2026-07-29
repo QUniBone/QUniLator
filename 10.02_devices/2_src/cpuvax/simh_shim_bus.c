@@ -74,6 +74,21 @@ if (!simh_shim_bus_write (shim_unibus_addr (pa), (unsigned) (data & 0177777),
 return SCPE_OK;
 }
 
+#define SHIM_INT_BIT    31                      /* reserved for the bus */
+
+extern int32 int_req[IPL_HLVL];
+extern int32 int_vec[IPL_HLVL][32];
+
+/* What the vector cell held immediately after the last grant stored into it,
+   and which level that was, so a vector the adapter never received can be told
+   from one it received and then lost. */
+unsigned shim_last_vector_stored = 0;
+unsigned shim_last_level_stored = 0;
+
+/* The vector last granted at each level, kept because the core's copy does not
+   survive a rebuild of its tables. */
+static unsigned shim_bus_vector[IPL_HLVL];
+
 /* The claim, and one slot of it kept as a witness.
 
    A device may reconfigure itself while the machine runs - simh's MSCP
@@ -88,10 +103,25 @@ static int shim_claim_active = 0;
 
 int simh_shim_bus_reassert (void)
 {
+int32 lvl;
+int restored = 0;
+
+/* init_ubus_tab() clears the vector the adapter would hand over for each
+   request as well as the dispatch, and it leaves the request itself standing.
+   A device on the bus owns no entry there to be rebuilt from, so its vector
+   simply goes - and the adapter then answers the driver's read of BRRVR with a
+   zero, which is what a driver counts as an interrupt from nothing. Anything
+   still pending gets its vector put back. */
+for (lvl = 0; lvl < IPL_HLVL; lvl++)
+    if (shim_bus_vector[lvl] && (int_vec[lvl][SHIM_INT_BIT] == 0)) {
+        int_vec[lvl][SHIM_INT_BIT] = (int32) shim_bus_vector[lvl];
+        restored = 1;
+        }
+
 if (!shim_claim_active)
-    return 0;
+    return restored;
 if (iodispR[shim_claim_witness] == &shim_bus_read)
-    return 0;                                           /* still ours */
+    return restored;                                    /* still ours */
 simh_shim_bus_install (shim_claim_exclusive);
 return 1;
 }
@@ -167,11 +197,6 @@ for (i = 0; i < (IOPAGESIZE >> 1); i++) {
 /* instructions, which is how the PDP-11 cores here take an interrupt too.    */
 /* ------------------------------------------------------------------------ */
 
-#define SHIM_INT_BIT    31                      /* reserved for the bus */
-
-extern int32 int_req[IPL_HLVL];
-extern int32 int_vec[IPL_HLVL][32];
-extern void uba_eval_int (void);
 
 int simh_shim_bus_interrupt (unsigned vector, unsigned br_level)
 {
@@ -181,8 +206,13 @@ if ((lvl < 0) || (lvl >= IPL_HLVL))
     return 0;
 if (int_req[lvl] & (1 << SHIM_INT_BIT))                 /* one still pending */
     return 0;
+shim_bus_vector[lvl] = vector;
 int_vec[lvl][SHIM_INT_BIT] = (int32) vector;
 int_req[lvl] |= (1 << SHIM_INT_BIT);
+/* Read back what was just stored, so a vector that does not survive the store
+   can be told from one the adapter hands over and then loses. */
+shim_last_vector_stored = (unsigned) int_vec[lvl][SHIM_INT_BIT];
+shim_last_level_stored = (unsigned) lvl;
 
 /* The adapter's nexus requests are not rebuilt here. eval_int() calls
    uba_eval_int() itself, on the thread executing instructions, and reads
