@@ -65,6 +65,11 @@ typedef struct {
     int (*bus_read) (void *context, unsigned addr, unsigned *data);
     int (*bus_write) (void *context, unsigned addr, unsigned data, int byte);
 
+    /* Set when every peripheral is on the bus, so the I/O page belongs to it
+       whole. Clear when the machine also carries a controller inside the core,
+       which then keeps its own addresses. */
+    int bus_owns_iopage;
+
     /* Where simulator messages go. NULL sends them to stdout. */
     FILE *message_file;
 } simh_shim_host_t;
@@ -102,6 +107,8 @@ typedef struct {
     uint32_t psl;
     unsigned ipl;                                       /* current priority */
     unsigned iopage_claimed;                            /* I/O page words on the bus */
+    unsigned uba_init;                                  /* adapter init in progress */
+    unsigned uba_cr;                                    /* adapter control register */
     double instructions;
 } simh_shim_state_t;
 

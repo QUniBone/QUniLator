@@ -68,19 +68,26 @@ if (!simh_shim_bus_write (shim_unibus_addr (pa), (unsigned) (data & 0177777),
 return SCPE_OK;
 }
 
-/* Point every unclaimed word of the I/O page at the bus. Called after each
-   reset, because reset_all() rebuilds the tables from the devices simh has. */
-unsigned simh_shim_bus_install (void)
+/* Point the I/O page at the bus. Called after each reset, because reset_all()
+   rebuilds the tables from the devices simh has.
+
+   Exclusive takes the whole page, over the addresses simh's own devices claimed
+   as well. That is what a machine whose peripherals are all on the bus wants,
+   and it leaves those devices otherwise intact - which matters, because a boot
+   command reads a controller's address out of its descriptor, and the address
+   is only put there by the auto-configuration that a device takes part in.
+   Sharing is for a machine that also carries a controller inside the core. */
+unsigned simh_shim_bus_install (int exclusive)
 {
 uint32 i;
 unsigned claimed = 0;
 
 for (i = 0; i < (IOPAGESIZE >> 1); i++) {
-    if (iodispR[i] == NULL) {
+    if (exclusive || (iodispR[i] == NULL)) {
         iodispR[i] = &shim_bus_read;
         claimed++;
         }
-    if (iodispW[i] == NULL)
+    if (exclusive || (iodispW[i] == NULL))
         iodispW[i] = &shim_bus_write;
     }
 return claimed;

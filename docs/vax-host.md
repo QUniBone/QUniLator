@@ -319,14 +319,32 @@ carries, and that dropped everything the bus had claimed - so a bootstrap found
 nothing where its controller should have been. Every path that resets now goes
 through one place that takes the I/O page back afterwards.
 
-**Where it stands.** With the emulated UDA50 at 772150 and simh's controller
-disabled, the whole I/O page - all 4096 words - is claimed by the bus, and VMB
-runs and fails with `%BOOT-F-Failed to initialize device` having made no bus
-cycle at all. The dispatch is proven installed, so what refuses the access is
-above it: `ReadUb()` and `WriteUb()` answer every I/O page address with a
-nonexistent memory error while `uba_uiip`, the adapter's UNIBUS-init-in-progress
-flag, is set. That flag is raised by `uba_ubpdn()` and cleared by an event, and
-whether the event is firing is the next thing to find out.
+### Where it stands
+
+VMB does not boot from the emulated UDA50 yet. It runs, tries to initialise the
+controller, and fails with `%BOOT-F-Failed to initialize device` - having made
+**no bus cycle at all**.
+
+What has been ruled out:
+
+- **The bus path.** A console examine of the UDA50's status register returns
+  `004000`, which is STEP1 of the MSCP initialisation - the emulated controller
+  is alive on the bus and answering the processor, and `bus_cycles` counts it.
+- **The dispatch.** With the bus owning the I/O page, all 4096 words of it point
+  at the bus, reported at enable time.
+- **The adapter's init flag.** `uba_uiip` reads 0 throughout, so `ReadUb()` is
+  not refusing accesses for that reason.
+- **A disabled controller.** Disabling simh's RQ frees the address but leaves
+  `dibp->ba` unset, because the address is assigned by the auto-configuration a
+  disabled device takes no part in - so the boot command told the bootstrap the
+  controller was at zero. The controller now stays configured and the bus takes
+  the page over it instead.
+
+So the processor's own register accesses are not reaching `ReadUb()`, while the
+ones the console makes reach the bus perfectly. The next thing to find out is
+which path a VMB reference to the I/O page actually takes through `vax_mmu.c` -
+whether it reaches `ReadIO()` at all, or is answered somewhere earlier - which
+wants the core traced rather than another guess from outside.
 
 ## What stage 2 still needs
 

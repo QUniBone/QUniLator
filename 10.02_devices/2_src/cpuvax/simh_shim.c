@@ -721,7 +721,7 @@ t_stat r;
 if ((r = reset_all (0)) != SCPE_OK)
     return r;
 if (shim_host_bound && (shim_host.bus_read != NULL))
-    shim_iopage_claimed = simh_shim_bus_install ();
+    shim_iopage_claimed = simh_shim_bus_install (shim_host.bus_owns_iopage);
 else {
     simh_shim_bus_remove ();
     shim_iopage_claimed = 0;

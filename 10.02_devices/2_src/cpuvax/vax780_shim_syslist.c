@@ -127,7 +127,15 @@ state->psl = (uint32_t) PSL;
 state->ipl = (unsigned) PSL_GETIPL (PSL);
 {
 extern unsigned shim_iopage_claimed;
+extern uint32 uba_uiip;
+extern int32 uba_cr;
+
 state->iopage_claimed = shim_iopage_claimed;
+/* While the adapter says a UNIBUS init is in progress it answers every I/O
+   page address with a nonexistent memory error, so a bootstrap that finds
+   nothing where its controller should be wants this looked at first. */
+state->uba_init = (unsigned) uba_uiip;
+state->uba_cr = (unsigned) uba_cr;
 }
 state->instructions = sim_gtime ();
 }

@@ -78,6 +78,8 @@ cpuvax_c::cpuvax_c() :
     dma_words.kind = parameter_c::PARAM_STATUS;
     dma_failures.kind = parameter_c::PARAM_STATUS;
     ipl.kind = parameter_c::PARAM_STATUS;
+    uba_init.kind = parameter_c::PARAM_STATUS;
+    uba_cr.kind = parameter_c::PARAM_STATUS;
     halt_switch.kind = parameter_c::PARAM_STATUS;
     start_switch.kind = parameter_c::PARAM_STATUS;
 }
@@ -237,24 +239,21 @@ bool cpuvax_c::configure_machine(void)
     host.console_get = vax_console_get;
     host.console_put = vax_console_put;
     host.elapsed_usec = vax_elapsed_usec;
+    // Which MSCP controller the machine has. With a volume named here it is the
+    // one inside the core, which is scaffolding and keeps its own addresses;
+    // with none, every peripheral is on the bus and the I/O page belongs to it
+    // whole. The controller inside stays configured either way, because a boot
+    // command reads its address out of its descriptor and that address is only
+    // put there by the auto-configuration a device takes part in.
+    bool internal_disk = !bootimage.value.empty();
+
     if (bus_iopage.value) {
         host.bus_read = vax_bus_read;
         host.bus_write = vax_bus_write;
+        host.bus_owns_iopage = internal_disk ? 0 : 1;
     }
     host.message_file = stdout;
     simh_shim_bind(&host);
-
-    // Which MSCP controller the machine has. With a volume named here it is the
-    // one inside the core, which is scaffolding; with none, the address is left
-    // to whatever answers it on the bus - the emulated UDA50 - and the
-    // controller inside is disabled but still known, so a boot command can read
-    // where it would have answered and tell the bootstrap.
-    bool internal_disk = !bootimage.value.empty();
-
-    if ((r = simh_shim_set(internal_disk ? "RQ ENABLED" : "RQ DISABLED")) != 0) {
-        ERROR("VAX cannot configure its MSCP controller: %s", simh_shim_status_text(r));
-        return false;
-    }
 
     if ((r = simh_shim_reset()) != 0) {
         ERROR("VAX reset failed: %s", simh_shim_status_text(r));
@@ -347,6 +346,8 @@ void cpuvax_c::publish_status(void)
     pc.value = state.pc;
     psl.value = state.psl;
     ipl.value = state.ipl;
+    uba_init.value = state.uba_init;
+    uba_cr.value = state.uba_cr;
     cycle_count.value = (uint64_t) state.instructions - instructions_at_start;
 
     // What the arbitration on the bus compares a device's request against. The

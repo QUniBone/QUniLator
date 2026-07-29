@@ -119,6 +119,10 @@ public:
                                true, "", "%08x", "Processor status longword.", 32, 16);
     parameter_unsigned_c ipl = parameter_unsigned_c(this, "IPL", "ipl",/*readonly*/
                                true, "", "%02x", "Interrupt priority level.", 8, 16);
+    parameter_unsigned_c uba_init = parameter_unsigned_c(this, "uba_init", "ui",/*readonly*/
+                                    true, "", "%u", "UNIBUS adapter init in progress.", 8, 10);
+    parameter_unsigned_c uba_cr = parameter_unsigned_c(this, "uba_cr", "ucr",/*readonly*/
+                                  true, "", "%08x", "UNIBUS adapter control register.", 32, 16);
     parameter_unsigned64_c cycle_count = parameter_unsigned64_c(this, "cycle_count", "cc",/*readonly*/
                                          true, "", "%u", "Instructions executed since the last start", 63, 10);
 
