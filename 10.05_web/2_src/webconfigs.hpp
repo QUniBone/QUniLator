@@ -29,10 +29,6 @@ void webconfigs_init(const std::string &dir);
 void webconfigs_startup(const std::string &override_config);
 
 // Re-select and apply the DIP-matched configuration, as a power-on does. The
-// control API calls this after a power cycle or a dc_on, so changing the DIP
-// switches and cycling power brings up the newly-selected configuration.
-void webconfigs_reload_for_dip(void);
-
 // the configuration the running machine currently represents
 std::string webconfigs_current(void);
 

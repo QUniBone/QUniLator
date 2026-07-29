@@ -37,10 +37,13 @@ Useful endpoints, all under `http://qbone/api`:
 | `GET /images`, `POST /images` | disk images |
 
 **Begin every test run with a power cycle.** `POST /control {"action":"powercycle"}`
-re-applies the selected config's DIP binding, re-jumpers the devices, and drops
-the CPU at a clean boot ROM entry — so a fresh boot dialog is available. Do not
-try to resume a machine you have left `halt`ed or that has fallen into the boot
-ROM's ODT (`@`) prompt; power cycle and drive the boot from the top instead.
+re-jumpers the devices of the running configuration and drops the CPU at a clean
+boot ROM entry — so a fresh boot dialog is available. It keeps whatever
+configuration is loaded: the DIP switches are read only when the backend starts,
+so a power cycle (or `dc_on`, the AUX ON/OFF switch) never re-selects from them.
+To load the configuration the switches name, change them and restart the backend.
+Do not try to resume a machine you have left `halt`ed or that has fallen into the
+boot ROM's ODT (`@`) prompt; power cycle and drive the boot from the top instead.
 
 ## The console
 

@@ -24,7 +24,6 @@ struct control_decision_c {
 	bool do_halt = false;    // assert the HALT line
 	bool do_resume = false;  // release the HALT line (run)
 	int set_powered = -1;    // -1 leave, 0 clear, 1 set the power flag
-	bool reload_config = false; // re-select the DIP-matched configuration (power-on)
 };
 
 // Decide the effect of `action` when the machine's power flag is `powered`.

@@ -548,12 +548,6 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		return 409;
 	}
 
-	// A power-on re-selects the configuration the DIP switches name, so the
-	// device set is in place before the CPU comes up. apply takes its own
-	// operations lock, so it runs before the power-sequence block below.
-	if (dec.reload_config)
-		webconfigs_reload_for_dip();
-
 	// An emulated CPU has no HALT line to pull: its switches are the front
 	// panel, and the run controls belong on them. A board serving a physical
 	// PDP-11 keeps driving the bus signals below.

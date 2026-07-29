@@ -1427,11 +1427,6 @@ void webconfigs_startup(const std::string &override_config) {
 	apply_named_or_fallback(config_for_dip(dip), dip);
 }
 
-void webconfigs_reload_for_dip(void) {
-	int dip = webevents_dip_value();
-	apply_named_or_fallback(config_for_dip(dip), dip);
-}
-
 // /api/configs, /api/configs/<name>, /api/configs/<name>/apply
 static int api_configs_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	const struct mg_request_info *ri = mg_get_request_info(conn);
