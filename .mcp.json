@@ -5,6 +5,12 @@
       "command": "node",
       "args": ["mcp-server/dist/src/index.js"],
       "env": { "QBONE_HOST": "qbone" }
+    },
+    "unibone": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["mcp-server/dist/src/index.js"],
+      "env": { "QBONE_HOST": "unibone.huebner.org" }
     }
   }
 }
