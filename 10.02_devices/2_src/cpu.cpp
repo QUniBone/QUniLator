@@ -293,12 +293,12 @@ bool cpu_base_c::on_before_install(void)
     // The emulation cores reach the ARM side through the global unibone_*()
     // functions, which work on a single installed CPU. And qunibusadapter
     // accepts only one registered CPU too.
-    if (unibone_cpu != NULL && unibone_cpu != this) {
+    if (unibone_cpu != NULL && unibone_cpu != this && unibone_cpu->enabled.value) {
         ERROR("%s can not be enabled: CPU %s is already active, disable it first.",
               name.value.c_str(), unibone_cpu->name.value.c_str());
         return false; // qunibusdevice_c aborts the "enable"
     }
-    unibone_cpu = this; // Singleton, while installed
+    unibone_cpu = this; // the CPU the cores reach, until another one installs
 
     halt_switch.value = false;
 // all other switches parsed synchronically in worker()
@@ -317,7 +317,12 @@ void cpu_base_c::on_after_uninstall(void)
     // HALT disabled CPU
     stop(NULL, show_none);
 
-    unibone_cpu = NULL; // another CPU model may be enabled now
+    // unibone_cpu keeps pointing here. The worker thread is stopped after this
+    // callback returns (device_c::on_param_changed), and until it does it goes
+    // on executing instructions whose bus cycles reach the ARM side through
+    // unibone_cpu - clearing it here is a null pointer under a running CPU.
+    // A disabled CPU with a stopped worker is a harmless target, and the next
+    // model to install takes the pointer over in on_before_install().
 }
 
 bool cpu_base_c::on_param_changed(parameter_c *param)

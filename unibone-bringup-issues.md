@@ -559,3 +559,26 @@ rather than logically. It decides what the second row above promises — real
 cards only, or real cards plus the board's emulated ones. The test is one
 reading of 774400 from a UniBone in a terminated backplane with the physical
 firmware and the emulated RL11 enabled.
+
+### 21. Switching CPU models under a running machine crashed the service
+
+With the 11/34 enabled and running XXDP, applying the `pdp1120` configuration
+killed the service with SIGSEGV. The apply disables the CPU model that is not in
+the snapshot, and `cpu_base_c::on_after_uninstall()` cleared the `unibone_cpu`
+pointer there.
+
+That pointer is how a C emulation core reaches the ARM side: every
+`unibone_dati()`, `unibone_dato()` and `unibone_datob()` dereferences it for the
+trigger probe and the DMA request. The worker thread is stopped *after* the
+callback returns — `qunibusdevice_c::on_param_changed()` forwards to
+`device_c::on_param_changed()`, which calls `workers_stop()` — so for the length
+of that window a running CPU went on executing instructions, and its next bus
+cycle read a null pointer. A halted CPU survived it; one executing XXDP did not.
+
+The pointer now stays on the CPU that was disabled, and is taken over by the
+next model in `on_before_install()`, which refuses only a CPU that is still
+enabled. A disabled CPU with a stopped worker is a harmless target, and there is
+no window in which the pointer is null under a running core.
+
+Applying `pdp1120` against a running 11/34 and `pdp1134` back now swaps the
+model both ways with the machine live, and the 11/34 reboots into XXDP-XM.
