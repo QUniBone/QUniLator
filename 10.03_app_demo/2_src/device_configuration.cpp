@@ -60,7 +60,8 @@ static std::vector<T *> build_mux_pool(unsigned count, const char *base_name,
 
 device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
 		dl11_rcv_stream(std::ios::app | std::ios::in | std::ios::out),
-		dl11b_rcv_stream(std::ios::app | std::ios::in | std::ios::out) {
+		dl11b_rcv_stream(std::ios::app | std::ios::in | std::ios::out),
+		cpuvax_rcv_stream(std::ios::app | std::ios::in | std::ios::out) {
 	// memory mapped blinkenbone panels
 	blinkenbone = new blinkenbone_c();
 
@@ -149,6 +150,8 @@ device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
 		// own memory and its own console, and a machine is a VAX only when an
 		// operator says so.
 		CPUVAX = new cpuvax_c();
+		CPUVAX->rs232adapter.stream_rcv = &cpuvax_rcv_stream;
+		CPUVAX->rs232adapter.stream_xmt = NULL;   // do not echo to stdout
 		CPU20->enabled.set(true);
 	}
 #elif defined(QBUS)

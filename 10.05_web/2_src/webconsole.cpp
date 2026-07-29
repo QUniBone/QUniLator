@@ -1,12 +1,13 @@
-/* webconsole.cpp: /ws/console/<n> — DL11 serial lines over WebSocket
+/* webconsole.cpp: /ws/console/<n> — emulated terminal lines over WebSocket
 
    Copyright (c) 2026, Hans Huebner
    hans@huebner.org
    MIT license, see webserver.hpp for the full text.
 
-   Byte-transparent binary WebSockets bridged to the two DL11 SLUs
-   (0 = console at 777560, 1 = second line at 776500) via their
-   rs232adapters:
+   Byte-transparent binary WebSockets bridged to the emulated terminal lines
+   through their rs232adapters: 0 is the console DL11 at 777560, 1 the second
+   line at 776500, and vax the console of the emulated VAX-11/780, which is
+   part of that processor rather than a device on the bus.
 
    - transmit: the adapter's stream_xmt_tap copies every byte the PDP-11
      sends into a buffer; a flush thread forwards it to all connected
@@ -65,7 +66,8 @@ struct console_c {
 	tap_streambuf tap_buf;
 	std::ostream tap_stream;
 
-	slu_c *dl11 = nullptr;              // set while registered
+	// the line this bridge carries, whatever device owns it
+	rs232adapter_c *adapter = nullptr;  // set while registered
 	std::stringstream *rcv_stream = nullptr;
 
 	console_c() : tap_stream(&tap_buf) {
@@ -73,7 +75,13 @@ struct console_c {
 	}
 };
 
-static console_c consoles[2];
+#if defined(UNIBUS)
+#define CONSOLE_COUNT 3                     // two DL11 lines and the VAX console
+#else
+#define CONSOLE_COUNT 2
+#endif
+
+static console_c consoles[CONSOLE_COUNT];
 
 static std::atomic<bool> running(false);
 static std::thread flusher;
@@ -111,10 +119,12 @@ static int ws_data_handler(struct mg_connection *, int opcode, char *data,
 	if (len == 0 || device_configuration == nullptr)
 		return 1;
 	// inject like the menu's "dl11 rcv" command
-	pthread_mutex_lock(&console->dl11->rs232adapter.mutex);
+	if (console->adapter == nullptr)
+		return 1;
+	pthread_mutex_lock(&console->adapter->mutex);
 	console->rcv_stream->clear();
 	console->rcv_stream->write(data, len);
-	pthread_mutex_unlock(&console->dl11->rs232adapter.mutex);
+	pthread_mutex_unlock(&console->adapter->mutex);
 	return 1;
 }
 
@@ -125,28 +135,38 @@ static void ws_close_handler(const struct mg_connection *conn, void *cbdata) {
 
 void webconsole_register(struct mg_context *ctx) {
 	if (device_configuration != nullptr) {
-		consoles[0].dl11 = device_configuration->DL11;
+		consoles[0].adapter = &device_configuration->DL11->rs232adapter;
 		consoles[0].rcv_stream = &device_configuration->dl11_rcv_stream;
-		consoles[1].dl11 = device_configuration->DL11b;
+		consoles[1].adapter = &device_configuration->DL11b->rs232adapter;
 		consoles[1].rcv_stream = &device_configuration->dl11b_rcv_stream;
+#if defined(UNIBUS)
+		if (device_configuration->CPUVAX != nullptr) {
+			consoles[2].adapter = &device_configuration->CPUVAX->rs232adapter;
+			consoles[2].rcv_stream = &device_configuration->cpuvax_rcv_stream;
+		}
+#endif
 	}
 	mg_set_websocket_handler(ctx, "/ws/console/0", ws_connect_handler,
 			ws_ready_handler, ws_data_handler, ws_close_handler, &consoles[0]);
 	mg_set_websocket_handler(ctx, "/ws/console/1", ws_connect_handler,
 			ws_ready_handler, ws_data_handler, ws_close_handler, &consoles[1]);
+#if defined(UNIBUS)
+	mg_set_websocket_handler(ctx, "/ws/console/vax", ws_connect_handler,
+			ws_ready_handler, ws_data_handler, ws_close_handler, &consoles[2]);
+#endif
 	running = true;
 	flusher = std::thread(flush_loop);
 	for (console_c &console : consoles)
-		if (console.dl11 != nullptr)
-			console.dl11->rs232adapter.stream_xmt_tap = &console.tap_stream;
+		if (console.adapter != nullptr)
+			console.adapter->stream_xmt_tap = &console.tap_stream;
 }
 
 void webconsole_shutdown(void) {
 	if (!running)
 		return;
 	for (console_c &console : consoles)
-		if (console.dl11 != nullptr)
-			console.dl11->rs232adapter.stream_xmt_tap = nullptr;
+		if (console.adapter != nullptr)
+			console.adapter->stream_xmt_tap = nullptr;
 	running = false;
 	flusher.join();
 	for (console_c &console : consoles)

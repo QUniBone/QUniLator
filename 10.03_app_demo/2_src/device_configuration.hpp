@@ -115,6 +115,8 @@ public:
 	// web terminal)
 	std::stringstream dl11_rcv_stream;
 	std::stringstream dl11b_rcv_stream;
+	// the VAX console, which is part of the processor and not a line on the bus
+	std::stringstream cpuvax_rcv_stream;
 
 	device_configuration_c(bool with_emulated_CPU);
 	~device_configuration_c();

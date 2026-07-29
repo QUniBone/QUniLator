@@ -28,3 +28,6 @@ diagnostics/reference/*.pdf
 tools/*.lst
 tools/*.obj
 tools/*.rl02
+
+# clangd compilation database, written by tools/gen-compile-commands.sh
+compile_commands.json

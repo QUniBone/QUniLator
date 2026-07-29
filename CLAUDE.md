@@ -120,9 +120,11 @@ compiler warnings or spurious language-server errors behind.
 - **No spurious editor diagnostics.** The IDE's clangd has none of the makefile's
   `-I` paths or `-D` defines, so without help it reports false "file not found"
   errors (`civetweb.h`, `logger.hpp`, …) that cascade into undeclared-identifier
-  noise. The committed **`.clangd`** at the repo root gives clangd the QBUS
-  build's view so those clear. Keep it in sync when include paths or defines
-  change; add a path there rather than leaving a real header unresolved.
+  noise. **`./tools/gen-compile-commands.sh`** writes `compile_commands.json` by
+  asking the makefiles what they would compile each source with, which is what
+  clears them; run it after adding a directory of sources or changing an include
+  path. The database is generated, not committed. `.clangd` is only the fallback
+  for a file no makefile names yet.
 - **Vendored third-party code** under `91_3rd_party/` is upstream; prefer a
   scoped, documented handling (a per-file suppression or an upstream-safe patch)
   over editing it casually, but the goal is still a clean build.
