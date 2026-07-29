@@ -496,10 +496,47 @@ lost wakeup: a doorbell arriving while the thread is executing commands leaves
 the state at InitRun, which the end of the pass turns back into Run rather than
 Wait.
 
-What is left is why the bootstrap stops ringing at all. It rings for the first
-two commands and then never again, so it believes the controller does not need
-telling - which is a statement about what the controller told it, in the ring
-transition words or in the credits it granted.
+### Why the bootstrap stops ringing, and what a controller owes it
+
+It does not stop. The doorbell is only owed to a controller that has *stopped*
+polling, and the host takes the controller to be polling still while it is
+answering: it writes the next command into the ring as soon as it has read the
+response, and expects the controller to come round and find it. simh's own RQ,
+which the same bootstrap drives to a login prompt, behaves that way by
+construction - its queue service takes one command per scheduled pass and
+reschedules itself, so the ring is looked at again after the host has had its
+turn to run.
+
+The controller here runs on its own thread and drained the ring in a tight loop
+instead, so it read the ring empty microseconds after posting a response - long
+before the host could answer it - and went back to sleep on a command that was
+about to arrive. Neither side then moves: the host waits for a response, the
+controller waits for a doorbell that is not owed.
+
+So a pass that did work now watches the ring for a while before sleeping, and
+the poll ends only when nothing more arrives. The window has to cover the host
+seeing the response and answering it, which on an emulated processor executing
+in batches is a few of those batches.
+
+| linger | words moved in one boot |
+|---|---|
+| none | 2342 |
+| 30 ms | 41860 |
+| 500 ms | 113120, and VMS reaches its banner |
+
+### VMS boots from the emulated UDA50
+
+	  VAX/VMS Version V4.7 28-Oct-1987 13:00
+
+on the console, from an image on a UDA50 that answers on the bus, with every
+transfer carried through the UNIBUS adapter's map registers by the processor
+itself. The interrupt path opens at the same moment: `bus_interrupts` leaves
+zero for the first time, because VMS - unlike the bootstrap - asks the
+controller for a vector and is served at the level the adapter grants.
+
+The machine then runs on at IPL 0 without further disk traffic, which is the
+next thing to look at. It is executing, not stopped: the program counter and
+the instruction count move, and interrupts keep arriving.
 
 A caution for anyone reading the counters: `dma_words` and the rest accumulate
 from when the device was installed, not from the last START, so progress is the

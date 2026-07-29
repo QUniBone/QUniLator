@@ -114,6 +114,14 @@ public:
     Message* GetNextCommand(bool* error);
 
     //
+    // Whether the host has passed the controller a command it has not taken
+    // yet: the descriptor the ring pointer stands on is owned by the
+    // controller. Reads the descriptor and changes nothing, so the polling
+    // thread can ask it on the way to sleeping.
+    //
+    bool CommandPending(void);
+
+    //
     // Posts a response message to the response ring and memory
     // if there is space.
     // Returns FALSE if the ring is full.

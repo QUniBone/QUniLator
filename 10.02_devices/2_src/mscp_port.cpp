@@ -492,6 +492,32 @@ mscp_port_c::update_SA(uint16_t value)
 //  operation -- due to non-existent memory or invalid data.
 //  (In this case nullptr will also be returned.)
 //
+//
+// CommandPending():
+//  Whether the descriptor the command ring pointer stands on is owned by the
+//  controller. A controller that owns a command must execute it, so this is
+//  what the polling thread asks before it goes back to sleep: the host may have
+//  passed one over after the ring last read empty, and with a one entry ring
+//  that window is every command it sends.
+//
+bool
+mscp_port_c::CommandPending(void)
+{
+    if (0 == _ringBase)
+    {
+        return false;                   // no communications area yet
+    }
+
+    DMABufferPtr<Descriptor> cmdDescriptor(
+        reinterpret_cast<Descriptor*>(
+            DMARead(
+                GetCommandDescriptorAddress(_commandRingPointer),
+                sizeof(Descriptor),
+                sizeof(Descriptor))));
+
+    return cmdDescriptor && cmdDescriptor->Word1.Fields.Ownership;
+}
+
 Message*
 mscp_port_c::GetNextCommand(bool* error)
 {
