@@ -599,6 +599,7 @@ bool cpuvax_c::on_dma(uint8_t qunibus_cycle, uint32_t unibus_addr,
    level. */
 void cpuvax_c::on_interrupt(uint16_t vector, uint8_t level)
 {
+    DEBUG("INTR vector %06o at BR%u", (unsigned) vector, (unsigned) level);
     if (!simh_shim_bus_interrupt(vector, level)) {
         WARNING("interrupt vector %06o at BR%u not taken", (unsigned) vector,
                 (unsigned) level);
