@@ -1166,68 +1166,7 @@ bool deuna_c::dma_write_bytes(uint32_t addr, const uint8_t *buffer, size_t len)
     return dma_write_words(aligned, tmp.data(), wordcount);
 }
 
-/*
- * deuna_c::cpu_read_words
- * Purpose: CPU-visible read helper for debugging memory mapping issues.
- * Behavior: performs CPU DATI cycles to read words from UNIBUS space.
- * Notes: serialized with DMA to avoid interleaving with device DMA ops.
- */
-bool deuna_c::cpu_read_words(uint32_t addr, uint16_t *buffer, size_t wordcount)
-{
-    if (wordcount == 0)
-        return true;
 
-    uint64_t addr64 = addr;
-    uint64_t byte_count = static_cast<uint64_t>(wordcount) * 2;
-    uint64_t max = qunibus->addr_space_byte_count;
-    if (max == 0 || addr64 >= max || byte_count > max - addr64)
-        return false;
-
-    std::lock_guard<std::recursive_mutex> lock(dma_mutex);
-    for (size_t i = 0; i < wordcount; ++i) {
-        uint16_t word = 0;
-        qunibusadapter->cpu_DATA_transfer(*qunibus->dma_request, QUNIBUS_CYCLE_DATI,
-                                          addr + static_cast<uint32_t>(i * 2), &word);
-        if (!qunibus->dma_request->success)
-            return false;
-        buffer[i] = word;
-    }
-    return true;
-}
-
-/*
- * deuna_c::cpu_read_bytes
- * Purpose: CPU-visible byte reader layered over cpu_read_words.
- * Behavior: reads aligned words and extracts bytes.
- * Notes: used for diagnostics to compare CPU view with DMA view.
- */
-bool deuna_c::cpu_read_bytes(uint32_t addr, uint8_t *buffer, size_t len)
-{
-    if (len == 0)
-        return true;
-
-    uint64_t addr64 = addr;
-    uint64_t byte_count = static_cast<uint64_t>(len);
-    uint64_t max = qunibus->addr_space_byte_count;
-    if (max == 0 || addr64 >= max || byte_count > max - addr64)
-        return false;
-
-    uint32_t aligned = addr & ~1u;
-    size_t wordcount = (len + (addr & 1u) + 1) / 2;
-    std::vector<uint16_t> tmp(wordcount, 0);
-    if (!cpu_read_words(aligned, tmp.data(), wordcount))
-        return false;
-
-    size_t offset = addr & 1u;
-    for (size_t i = 0; i < len; ++i) {
-        size_t word_index = (i + offset) / 2;
-        bool high = ((i + offset) & 1) != 0;
-        uint16_t w = tmp[word_index];
-        buffer[i] = high ? static_cast<uint8_t>((w >> 8) & 0xff)
-                         : static_cast<uint8_t>(w & 0xff);
-    }
-    return true;
-}
 
 /*
  * deuna_c::process_bootrom
@@ -1320,48 +1259,6 @@ bool deuna_c::transfer_internal_memory(uint32_t udbb, bool to_internal)
     return true;
 }
 
-/*
- * deuna_c::log_pcbb_snapshot
- * Purpose: dump DMA vs CPU-visible snapshots of PCBB and MAC bytes.
- * Behavior: reads PCBB words and the 6-byte MAC via both DMA and CPU paths.
- * Notes: intended for diagnosing mapping mismatches during GETCMD.
- */
-void deuna_c::log_pcbb_snapshot(const char *tag, uint32_t addr)
-{
-    uint16_t dma_words[4] = {0};
-    uint16_t cpu_words[4] = {0};
-    uint8_t dma_mac[6] = {0};
-    uint8_t cpu_mac[6] = {0};
-
-    bool ok_dma = dma_read_words(addr, dma_words, 4);
-    bool ok_cpu = cpu_read_words(addr, cpu_words, 4);
-    bool ok_dma_mac = dma_read_bytes(addr + 2, dma_mac, 6);
-    bool ok_cpu_mac = cpu_read_bytes(addr + 2, cpu_mac, 6);
-
-    WARNING("DEUNA: %s PCBB@%08o dma=%s %06o %06o %06o %06o cpu=%s %06o %06o %06o %06o",
-            tag, addr,
-            ok_dma ? "ok" : "fail",
-            dma_words[0], dma_words[1], dma_words[2], dma_words[3],
-            ok_cpu ? "ok" : "fail",
-            cpu_words[0], cpu_words[1], cpu_words[2], cpu_words[3]);
-
-    WARNING("DEUNA: %s MAC@%08o dma=%s %02x:%02x:%02x:%02x:%02x:%02x cpu=%s %02x:%02x:%02x:%02x:%02x:%02x",
-            tag, addr + 2,
-            ok_dma_mac ? "ok" : "fail",
-            dma_mac[0], dma_mac[1], dma_mac[2], dma_mac[3], dma_mac[4], dma_mac[5],
-            ok_cpu_mac ? "ok" : "fail",
-            cpu_mac[0], cpu_mac[1], cpu_mac[2], cpu_mac[3], cpu_mac[4], cpu_mac[5]);
-
-    if (ok_dma && ok_cpu &&
-        (dma_words[0] != cpu_words[0] || dma_words[1] != cpu_words[1] ||
-         dma_words[2] != cpu_words[2] || dma_words[3] != cpu_words[3])) {
-        WARNING("DEUNA: %s PCBB mismatch (DMA vs CPU)", tag);
-    }
-    if (ok_dma_mac && ok_cpu_mac &&
-        memcmp(dma_mac, cpu_mac, sizeof(dma_mac)) != 0) {
-        WARNING("DEUNA: %s MAC mismatch (DMA vs CPU)", tag);
-    }
-}
 
 /*
  * deuna_c::make_addr
@@ -1522,7 +1419,6 @@ bool deuna_c::execute_command(void)
 
     if (trace.value) {
         WARNING("DEUNA: PCB %06o %06o %06o %06o", pcb[0], pcb[1], pcb[2], pcb[3]);
-        log_pcbb_snapshot("pre-cmd", pcbb);
     }
 
     uint16_t fnc = pcb[0] & 0377;
@@ -1551,8 +1447,6 @@ bool deuna_c::execute_command(void)
             if (!dma_write_bytes(udbb, mac_addr, 6))
                 return false;
         }
-        if (trace.value)
-            log_pcbb_snapshot("post-rdpa", pcbb);
         break;
     case FC_RPA:
         if (trace.value) {
@@ -1573,7 +1467,6 @@ bool deuna_c::execute_command(void)
                         verify[0], verify[1], verify[2],
                         verify[3], verify[4], verify[5]);
             }
-            log_pcbb_snapshot("post-rpa", pcbb);
         }
         break;
     case FC_WPA:
@@ -1596,8 +1489,6 @@ bool deuna_c::execute_command(void)
             if (setup.mac_count < 2)
                 setup.mac_count = 2;
             update_address_filter();
-            if (trace.value)
-                log_pcbb_snapshot("post-wpa", pcbb);
         }
         break;
     case FC_RMAL: {
