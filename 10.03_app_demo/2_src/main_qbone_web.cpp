@@ -174,6 +174,9 @@ int main(int argc, char *argv[])
 
 	// The emulated CPU has no machine around it, so the board supplies the
 	// memory too: everything below the I/O page that no physical card answers.
+	// Claimed here rather than through the MEM card, so a machine that is
+	// nothing but this board comes up with memory whatever configuration is
+	// applied. The card writes the same range, so enabling it takes this over.
 	if (emulated_cpu) {
 		WEB_INFO("Emulated CPU: KA11 (PDP-11/20).");
 		unsigned first_invalid = qunibus->test_sizer();
