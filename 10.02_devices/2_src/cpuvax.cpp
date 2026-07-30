@@ -158,12 +158,6 @@ bool cpuvax_c::bus_read(unsigned addr, unsigned *data)
 {
     uint16_t word;
 
-    // Touching a device's register is what sets a transfer going, and it is
-    // not always a write: a UDA50 is asked to look at its command ring by a
-    // *read* of its IP register. So the map goes out before either.
-    if (bus_dma.value)
-        publish_unibus_map();
-
     bus_cycles.value++;
     qunibusadapter->cpu_DATA_transfer(data_transfer_request, QUNIBUS_CYCLE_DATI,
                                       addr, &word);
@@ -180,9 +174,6 @@ bool cpuvax_c::bus_read(unsigned addr, unsigned *data)
 bool cpuvax_c::bus_write(unsigned addr, unsigned data, bool byte)
 {
     uint16_t word = (uint16_t) data;
-
-    if (bus_dma.value)
-        publish_unibus_map();
 
     bus_cycles.value++;
     qunibusadapter->cpu_DATA_transfer(data_transfer_request,
@@ -534,6 +525,9 @@ bool cpuvax_c::request_console_access(enum console_access_e what, unsigned addr)
 
    Nothing to publish while the transfer is answered here: the core's own map
    is read directly then. */
+/* The whole map at once, which is what starting the machine needs: the copy the
+   bus translates through has to agree with the adapter before any device can
+   move data. Afterwards each register is carried over as it is written. */
 void cpuvax_c::publish_unibus_map(void)
 {
     volatile ddrmem_t *shared = ddrmem->base_virtual;
@@ -553,6 +547,20 @@ void cpuvax_c::publish_unibus_map(void)
             shared->unibus_map[i] = page[i];
     }
     shared->unibus_map_active = 1;
+}
+
+/* One register, carried over the moment the processor writes it. A device can
+   begin a transfer without the processor executing another bus cycle - our MSCP
+   controller finds a command by polling the ring - so a map the bus only learned
+   about at the next cycle would translate that transfer with the entry it had
+   before, and the data would land somewhere else in memory. */
+void simh_shim_map_changed(unsigned index, uint32_t value)
+{
+    volatile ddrmem_t *shared = ddrmem->base_virtual;
+
+    if (shared == NULL || index >= UNIBUS_MAP_REGISTERS)
+        return;
+    shared->unibus_map[index] = value;
 }
 
 void cpuvax_c::service_console_access(void)

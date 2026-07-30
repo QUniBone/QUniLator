@@ -197,6 +197,16 @@ int simh_shim_mem_write (unsigned phys_addr, unsigned value);
    Called from the device's thread, not the processor's. */
 int simh_shim_bus_dma (int write, unsigned addr, uint16_t *buffer, unsigned words);
 
+/* One of the adapter's map registers has taken a new value. The bus hardware
+   translates a device's address through a copy of the map, and a device can
+   start a transfer without the processor executing another bus cycle first, so
+   a change has to reach that copy when it is made rather than when the
+   processor is next seen. Called on the processor's thread.
+
+   simh_shim_map_changed is supplied by the device that owns the machine; the
+   core calls it. */
+void simh_shim_map_changed (unsigned index, uint32_t value);
+
 /* True when the last run ended because the processor executed HALT. */
 int simh_shim_halted (simh_shim_status_t status);
 

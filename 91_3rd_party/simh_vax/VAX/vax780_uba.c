@@ -33,6 +33,7 @@
 */
 
 #include "vax_defs.h"
+#include "simh_shim.h"          /* QUniLator: the bus this adapter drives */
 
 /* Unibus adapter */
 
@@ -405,6 +406,7 @@ if (ofs >= UBAMAP_OF) {                                 /* map? */
     if (idx >= UBA_NMAPR)                               /* valid? */
         return SCPE_NXM;
     uba_map[idx] = val & UBAMAP_WR;
+    simh_shim_map_changed (idx, uba_map[idx]);          /* QUniLator: tell the bus */
     if (DEBUG_PRI (uba_dev, UBA_DEB_MWR))
         fprintf (sim_deb, ">>UBA: map %d write, value = %X\n", idx, val);
     return SCPE_OK;
@@ -923,8 +925,10 @@ for (i = 0; i < IPL_HLVL; i++) {
     uba_svr[i] = 0;
     uba_rvr[i] = 0;
     }
-for (i = 0; i < UBA_NMAPR; i++)
+for (i = 0; i < UBA_NMAPR; i++) {
     uba_map[i] = 0;
+    simh_shim_map_changed (i, 0);                       /* QUniLator: tell the bus */
+    }
 for (i = 0; i < UBA_NDPATH; i++)
     uba_dpr[i] = 0;
 uba_sr = 0;

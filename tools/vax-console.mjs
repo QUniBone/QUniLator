@@ -135,6 +135,10 @@ try {
     else if (step.kind === "restart") {
       await restart();
       from = buf.length;
+      // Everything above this line is the channel's replayed history. Marking
+      // it lets a reader of the log tell this boot's diagnostics from an
+      // earlier boot's, which otherwise look identical.
+      process.stdout.write("\n=== machine restarted ===\n");
     }
     else if (step.kind === "expect") from = await expect(step.value, timeoutMs, from);
     else if (step.kind === "send") {

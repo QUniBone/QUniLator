@@ -8,6 +8,12 @@
 #   ./tools/vax-setup.sh            processor, UDA50 and system disk
 #   ./tools/vax-setup.sh --deuna    the same with the ethernet controller
 #   ./tools/vax-setup.sh --scratch  also the second RA81, for volume tests
+#   ./tools/vax-setup.sh --fresh    throw away what earlier runs wrote first
+#
+# --fresh discards the copy-on-write overlays, so the machine boots the pristine
+# system disk. A run that leaves the guest's filesystem damaged then costs the
+# next run nothing, and a test that passes says so about the image it was given
+# rather than about what the run before it happened to leave behind.
 #
 # It leaves the processor enabled and stopped; ./tools/vax-boot.sh starts it.
 set -e
@@ -17,10 +23,12 @@ API="http://$HOST/api"
 
 DEUNA=no
 SCRATCH=no
+FRESH=no
 for arg in "$@"; do
     case "$arg" in
         --deuna) DEUNA=yes ;;
         --scratch) SCRATCH=yes ;;
+        --fresh) FRESH=yes ;;
         *) echo "unknown option: $arg" >&2; exit 2 ;;
     esac
 done
@@ -49,10 +57,19 @@ if [ "$DEUNA" = yes ]; then
     set_param deuna enabled 1
 fi
 
+# Discarding an overlay wants the drive attached and the processor still
+# stopped, which is where the build has got to.
+if [ "$FRESH" = yes ]; then
+    for img in vms47.dsk scratch_ra81.dsk; do
+        curl -sf -m 60 -u ":$PW" -X POST "$API/images/$img/overlay/discard" \
+            >/dev/null 2>&1 && echo "discarded the overlay on $img"
+    done
+fi
+
 # The board shares 4 MB of its DDR with the bus, and that is the whole of the
 # VAX's memory, so asking for more is refused.
 set_param cpuvax memory ${VAX_MEMORY:-4}
 set_param cpuvax bootdevice RQ0
 set_param cpuvax enabled 1
 
-echo "machine built (deuna=$DEUNA scratch=$SCRATCH); run ./tools/vax-boot.sh"
+echo "machine built (deuna=$DEUNA scratch=$SCRATCH fresh=$FRESH); run ./tools/vax-boot.sh"
