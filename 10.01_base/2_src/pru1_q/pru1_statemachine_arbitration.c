@@ -106,6 +106,8 @@ void sm_arb_reset() {
     sm_arb.device_request_mask = 0;
     sm_arb.device_forwarded_grant_mask = 0;
     sm_arb.device_request_signalled_mask = 0;
+    sm_arb.canceled_request_mask = 0;
+    sm_arb.dmr_holdoff_until = PRU_IEP_TMR_CNT;
 
     sm_arb.intr_level_index = 0 ;
 
@@ -114,7 +116,23 @@ void sm_arb_reset() {
 
 	sm_arb.cpu_bus_inhibit_dmr_mask = 0;
 
-	sm_arb.pending_intr_register_handle = 0 ;
+	sm_arb.pending_intr_register_handle[0] = 0 ;
+	sm_arb.pending_intr_register_handle[1] = 0 ;
+	sm_arb.pending_intr_register_handle[2] = 0 ;
+	sm_arb.pending_intr_register_handle[3] = 0 ;
+}
+
+// BIRQ/DMR line pattern for a request mask: Q-bus devices assert BIRQ4 along
+// with any higher request, and BIRQ6 along with BIRQ7.
+// INTR4 -> BIRQ4; INTR5 -> BIRQ5,4; INTR6 -> BIRQ6,4; INTR7 -> BIRQ7,6,4
+static uint8_t arb_line_pattern(uint8_t request_mask) {
+    uint8_t bus_lines = request_mask;
+    if (bus_lines & (PRIORITY_ARBITRATION_BIT_B5 | PRIORITY_ARBITRATION_BIT_B6 | PRIORITY_ARBITRATION_BIT_B7)) {
+        bus_lines |= PRIORITY_ARBITRATION_BIT_B4 ;
+        if (bus_lines & PRIORITY_ARBITRATION_BIT_B7)
+            bus_lines |= PRIORITY_ARBITRATION_BIT_B6 ;
+    }
+    return bus_lines;
 }
 
 /* sm_arb_workers_*()
@@ -183,36 +201,55 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
         // IRQ: "A device asserts one or more of the IRQ4,IRQ5,IRQ6,IRQ7 lines".
         // Always update QBUS IRQ/DMR lines, are ORed with requests from other devices.
 
+        bus_lines = arb_line_pattern(sm_arb.device_request_mask) ;
+
+        // DMA holdoff around interrupt acknowledges. The KDJ11's interrupt
+        // entry is a multi-cycle microcode sequence (vector read, vector-table
+        // fetches, stack pushes); a DMA transaction inside it latches the
+        // processor up for good - no more fetches, no more grants (observed
+        // on the 11/73, bus trace: SACK+transfer 2.4us after the vector RPLY,
+        // then the parked write cycle never resumes). Real MSCP controllers
+        // never request the bus in that window; this emulator's ARM round-trip
+        // makes a DMA request right after each completion interrupt the norm.
+        // So while an IAK runs, and for a cooldown after the vector transfer,
+        // DMR stays off the bus and a DMA grant is not accepted: the CPU
+        // retracts an unanswered DMGO pulse by itself once RDMR is negated
+        // (also observed in the trace), and the queued request proceeds
+        // normally when the window closes.
+        {
+            bool dma_holdoff;
+            if (buslatches_getbyte(6) & BIT(5)) /* RIAKI: IAK in progress */
+                sm_arb.dmr_holdoff_until = PRU_IEP_TMR_CNT + ARB_IAK_DMR_HOLDOFF_TICKS;
+            dma_holdoff = (int32_t)(PRU_IEP_TMR_CNT - sm_arb.dmr_holdoff_until) < 0;
+            if (dma_holdoff) {
+                bus_lines &= (uint8_t)~PRIORITY_ARBITRATION_BIT_NP;
+                if (granted_requests_mask & PRIORITY_ARBITRATION_BIT_NP)
+                    sm_arb.stat_dma_grant_refused++;
+                granted_requests_mask &= (uint8_t)~PRIORITY_ARBITRATION_BIT_NP;
+            }
+        }
+
         if (sm_arb.cpu_bus_inhibit_dmr_mask)
 			// Inhibit QBUS access of LSI11 CPU via un-ACKed dummy DMR
-			bus_lines = sm_arb.device_request_mask | PRIORITY_ARBITRATION_BIT_NP;
-		else 
-	        bus_lines = sm_arb.device_request_mask ;
-		
-        // set BIRQ<4:7> depending on INTR level, reproduce DMR
-        // INTR4 -> BIRQ4
-        // INTR5 -> BIRQ5,4
-        // INTR6 -> BIRQ6,5
-        // INTR7 -> BIRQ7,6,4
-        // use of const uint_t[] table in ROM difficult and not much faster.
-        if (bus_lines & (PRIORITY_ARBITRATION_BIT_B5 | PRIORITY_ARBITRATION_BIT_B6 | PRIORITY_ARBITRATION_BIT_B7)) {
-            bus_lines |= PRIORITY_ARBITRATION_BIT_B4 ;
-            if (bus_lines & PRIORITY_ARBITRATION_BIT_B7)
-                bus_lines |= PRIORITY_ARBITRATION_BIT_B6 ;
-        }
-        buslatches_setbits(6, PRIORITY_ARBITRATION_BIT_MASK, bus_lines);
-        // buslatches_setbits(6, PRIORITY_ARBITRATION_BIT_MASK, sm_arb.device_request_mask);
+			bus_lines |= PRIORITY_ARBITRATION_BIT_NP;
 
-        // Update the device's interrupt register (e.g. RXCS with DONE) now that
-        // BIRQ carries this request, so DONE becomes visible to the CPU no
-        // earlier than the interrupt request line. Only one INTR per level is
-        // ever in flight (ARM gates on prl->active), so the pending write
-        // belongs to the request whose bit is on the bus. Done once per INTR.
-        if (sm_arb.pending_intr_register_handle
-                && (sm_arb.device_request_mask & sm_arb.pending_intr_arbitration_bit)) {
-            pru_iopage_registers.registers[sm_arb.pending_intr_register_handle].value =
-                    sm_arb.pending_intr_register_value;
-            sm_arb.pending_intr_register_handle = 0;
+        buslatches_setbits(6, PRIORITY_ARBITRATION_BIT_MASK, bus_lines);
+
+        // Update the devices' interrupt registers (e.g. RXCS with DONE) now
+        // that BIRQ carries their requests, so DONE becomes visible to the CPU
+        // no earlier than the interrupt request line. One slot per level; done
+        // once per INTR.
+        {
+            uint8_t level_bit = PRIORITY_ARBITRATION_BIT_B4;
+            uint8_t idx;
+            for (idx = 0; idx < 4; idx++, level_bit <<= 1) {
+                if (sm_arb.pending_intr_register_handle[idx]
+                        && (sm_arb.device_request_mask & level_bit)) {
+                    pru_iopage_registers.registers[sm_arb.pending_intr_register_handle[idx]].value =
+                            sm_arb.pending_intr_register_value[idx];
+                    sm_arb.pending_intr_register_handle[idx] = 0;
+                }
+            }
         }
 
         // now relevant for GRANT forwarding
@@ -225,7 +262,7 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
         sm_arb.device_grant_mask = granted_requests_mask & sm_arb.device_request_mask
                                    & ~sm_arb.device_forwarded_grant_mask;
 		// GRANT mask: only 1 bit set (single IOAKI, or DMG)
-										   
+
         // IRQ: no SACK, but DIN set
         if (sm_arb.device_grant_mask & PRIORITY_ARBITRATION_INTR_MASK) {
             // "Each Bus Option which receives the assertion of RIAKI either
@@ -238,6 +275,39 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
             // DMA: "The Bus Arbitration logic the processor asserts TDMGO 0 nsec
             // minimum	after RDMR	asserts and  0	ns	minimum  after RSACK  negates"
             sm_arb.state = state_arbitration_dma_grant_rply_sync_wait ;
+        } else {
+            // Orphan-IAK rescue. The CPU samples BIRQ and commits to an
+            // interrupt some 100ns before its IAK arrives here; a request
+            // withdrawn in that window (ARM2PRU_INTR_CANCEL travels an ARM
+            // round-trip, microseconds on this emulator vs nanoseconds in a
+            // real device's gates) leaves the acknowledge with no owner. The
+            // vector read of an IAK runs without a bus timeout, so an
+            // unanswered IAK stops the KDJ11's microcode dead - no fetch, no
+            // HALT response, no DMA grants. Answer it with the withdrawn
+            // level's last vector instead: the guest sees the interrupt it
+            // was already committed to, one CSR-less "stray" its OS absorbs.
+            //
+            // A decoded IAKI that the forwarding path passed on belongs to a
+            // requester further down the daisy chain, which answers it. A
+            // decoded IAKI that was neither accepted nor forwarded names a
+            // level this board signalled and then withdrew. No decode at all
+            // (CPLD2 latched the RIRQ lines after the withdrawal cleared
+            // them) leaves only the recorded canceled levels to answer for.
+            if (buslatches_getbyte(6) & BIT(5) /* RIAKI */) {
+                uint8_t decoded = granted_requests_mask & PRIORITY_ARBITRATION_INTR_MASK;
+                uint8_t rescue_mask;
+                if (decoded)
+                    rescue_mask = decoded & ~sm_arb.device_forwarded_grant_mask;
+                else
+                    rescue_mask = sm_arb.canceled_request_mask & PRIORITY_ARBITRATION_INTR_MASK;
+                if (rescue_mask) {
+                    uint8_t idx = PRIORITY_ARBITRATION_INTR_BIT2IDX(rescue_mask);
+                    sm_arb.intr_level_index = idx;
+                    sm_arb.canceled_request_mask &= ~BIT(idx);
+                    sm_arb.stat_orphan_rescued++;
+                    sm_arb.state = state_arbitration_orphan_vector ;
+                }
+            }
         }
         return 0 ; // wait, nothing yet granted
     }
@@ -276,6 +346,13 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
     case state_arbitration_intr_vector: {
         uint8_t intr_idx ; // 0..3 for INTR4..7
         uint16_t intr_vector ; // max 777
+        if (! (buslatches_getbyte(6) & BIT(5))) {
+            // CPU abandoned the IAK before DIN: request still pending,
+            // resume arbitration instead of waiting here forever
+            sm_arb.stat_iak_abandoned++;
+            sm_arb.state = state_arbitration_grant_check ;
+            return 0 ;
+        }
         // detected IAK<4:7> for own INTR request. TDIN already set!
         if (! (buslatches_getbyte(4) & BIT(1)))
             return 0 ; // DIN not yet set despite RPLY missing?
@@ -285,10 +362,13 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
 
         // one of our INTR requests was granted and not forwarded:
         // (device_grant_mask has only 1 bit set, CPLD2!)
-        // clr granted INTR and set RPLY simultaneously
-        buslatches_setbits(6, sm_arb.device_grant_mask, 0) ; // clr granted INTR
-        // clear granted requests internally
+        // clear granted request internally, then rewrite the whole line
+        // pattern: the level combinations (BIRQ4 rides along with BIRQ5-7)
+        // must drop with the request they belong to, or a phantom BIRQ4 with
+        // no requester stands on the bus until the next grant_check pass.
         sm_arb.device_request_mask &= ~sm_arb.device_grant_mask;
+        buslatches_setbits(6, PRIORITY_ARBITRATION_INTR_MASK,
+                           arb_line_pattern(sm_arb.device_request_mask)) ;
         buslatches_setbits(4, BIT(3),BIT(3)) ; // assert RPLY
 
         // "6. The Bus Slave gates the Interrupt Vector (TVECT) address onto
@@ -329,6 +409,11 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
         // if (buslatches_getbyte(4) & BIT(1))
         //	return 0 ; // wait for DIN to negate, "RPLY negate" repeats then
 
+        // the CPU's interrupt-entry microcode runs from here: keep DMR off
+        // the bus until it is done (see grant_check)
+        sm_arb.dmr_holdoff_until = PRU_IEP_TMR_CNT + ARB_IAK_DMR_HOLDOFF_TICKS;
+        sm_arb.stat_intr_answered++;
+
         // signal to ARM which INTR was completed
         // change mailbox only after ARM has ack'ed mailbox.events.event_intr
         // mailbox.events.intr_master.level_index = sm_intr_master.level_index;
@@ -343,7 +428,37 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
 		// signal which request where completed
         return sm_arb.device_request_signalled_mask ;
 
+    case state_arbitration_orphan_vector:
+        // Answer an IAK whose request was withdrawn: same slave protocol as
+        // state_arbitration_intr_vector, with the vector level chosen by the
+        // rescue in grant_check. The ARM already completed the request when it
+        // canceled it, so no request bookkeeping and no completion event.
+        if (! (buslatches_getbyte(6) & BIT(5))) {
+            // CPU abandoned the IAK before DIN
+            sm_arb.stat_iak_abandoned++;
+            sm_arb.state = state_arbitration_grant_check ;
+            return 0 ;
+        }
+        if (! (buslatches_getbyte(4) & BIT(1)))
+            return 0 ; // wait for DIN
+        buslatches_setbits(4, BIT(3),BIT(3)) ; // assert RPLY
+        {
+            uint16_t intr_vector = mailbox.intr.vector[sm_arb.intr_level_index];
+            buslatches_setbyte(0, intr_vector & 0xff);				// DAL7..0
+            buslatches_setbyte(1, (intr_vector >> 8) & 0xff);		// DAL15..8
+        }
+        sm_arb.state = state_arbitration_orphan_complete ;
+        return 0 ;
 
+    case state_arbitration_orphan_complete:
+        if (buslatches_getbyte(6) & BIT(5))
+            return 0 ; // wait for RIAKI to negate
+        buslatches_setbits(4, BIT(3), 0) ; // negate RPLY
+        buslatches_setbyte(0, 0);					// DAL7..0
+        buslatches_setbyte(1, 0);					// DAL15..8
+        sm_arb.dmr_holdoff_until = PRU_IEP_TMR_CNT + ARB_IAK_DMR_HOLDOFF_TICKS;
+        sm_arb.state = state_arbitration_grant_check ;
+        return 0 ;
 
 
         /* worker_noop():

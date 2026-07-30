@@ -69,6 +69,26 @@
 #pragma diag_push
 #pragma diag_remark=515
 
+// CPU-liveness heartbeat and bus trace, read post-mortem via /dev/mem at the
+// addresses the linker map gives. SRUN pulses on every instruction fetch of
+// the physical CPU, so a frozen srun_heartbeat with the machine powered is a
+// definitive "CPU microcode wedged" signal within a second. The trace ring
+// records every change of the DATA-control, REQUEST and GRANT latches with an
+// IEP timestamp (5ns a tick), so the final bus handshake before a freeze can
+// be read back exactly.
+typedef struct {
+	uint32_t ts; // IEP counter at the transition
+	uint8_t l4;  // SYNC/DIN/DOUT/RPLY/WTBT/BS7/REF/INIT
+	uint8_t l6;  // IRQ4-7/DMR/RIAKI/RDMGI/SACK
+	uint8_t l7;  // decoded IAKI4-7/DMG
+	uint8_t arb_state; // sm_arb.state at the transition
+} bus_trace_entry_t;
+#define BUS_TRACE_ENTRIES 64
+bus_trace_entry_t bus_trace[BUS_TRACE_ENTRIES];
+uint32_t bus_trace_count; // total transitions; write slot = count % entries
+uint32_t srun_heartbeat;  // counts SRUN edges
+static uint8_t trace_last_l4, trace_last_l6, trace_last_l7, trace_last_l5;
+
 /***
  3 major states executed in circular 1- 2- 3 order.
 
@@ -149,7 +169,34 @@ void main(void) {
 			// signal INT or PWR FAIL to ARM
 			// before sm_arb_worker(), so INTR/DMR requests are canceled on INIT
 			sm_initialization_func();
-					
+
+			// CPU liveness + bus trace sampling (slave passes only, so DMA
+			// timing is untouched)
+			{
+				uint8_t l5 = buslatches_getbyte(5);
+				uint8_t l4, l6, l7;
+				if ((l5 ^ trace_last_l5) & BIT(5))
+					srun_heartbeat++;
+				trace_last_l5 = l5;
+				l4 = buslatches_getbyte(4);
+				l6 = buslatches_getbyte(6);
+				l7 = buslatches_getbyte(7);
+				if (l4 != trace_last_l4 || l6 != trace_last_l6
+						|| l7 != trace_last_l7) {
+					bus_trace_entry_t *e =
+							&bus_trace[bus_trace_count % BUS_TRACE_ENTRIES];
+					e->ts = PRU_IEP_TMR_CNT;
+					e->l4 = l4;
+					e->l6 = l6;
+					e->l7 = l7;
+					e->arb_state = (uint8_t) sm_arb.state;
+					bus_trace_count++;
+					trace_last_l4 = l4;
+					trace_last_l6 = l6;
+					trace_last_l7 = l7;
+				}
+			}
+
 			if (!emulate_cpu) {
 				// Fast forward device requests GRANTed by physical CPU.
 				// Only one GRANT at a time may be active, else arbitrator/CPLD2 malfunction.
@@ -242,6 +289,8 @@ void main(void) {
 				// start one INTR cycle. May be raised in midst of slave cycle
 				// by ARM, if access to "active" register triggers INTR.
 				sm_arb.device_request_mask |= mailbox.intr.priority_arbitration_bit;
+				// the new request answers its level's IAK from here on
+				sm_arb.canceled_request_mask &= ~mailbox.intr.priority_arbitration_bit;
 				// sm_arb evaluates this, extern Arbitrator raises Grant/performs INTR protocol,
 				// vector of GRANted level is transfered to ARM
 
@@ -254,15 +303,25 @@ void main(void) {
 				// interrupt". Record it as pending; the register is still
 				// updated for a blocked (never-granted) interrupt, because BIRQ
 				// is driven and held whether or not a grant follows.
-				sm_arb.pending_intr_register_handle = mailbox.intr.iopage_register_handle;
-				sm_arb.pending_intr_arbitration_bit = mailbox.intr.priority_arbitration_bit;
-				sm_arb.pending_intr_register_value = mailbox.intr.iopage_register_value;
+				sm_arb.pending_intr_register_handle[mailbox.intr.level_index] =
+						mailbox.intr.iopage_register_handle;
+				sm_arb.pending_intr_register_value[mailbox.intr.level_index] =
+						mailbox.intr.iopage_register_value;
 				mailbox.arm2pru_req = ARM2PRU_NONE;  // done
 				// end of INTR is signaled to ARM with signal
 				break;
 			case ARM2PRU_INTR_CANCEL:
 				// cancels one or more INTR requests. If already Granted, the GRANT is forwarded,
 				// and canceled by reaching a "SACK turnaround terminator" or "No SACK TIMEOUT" in the arbitrator.
+				// Levels whose BIRQ was already on the bus stay recorded: the
+				// CPU may have committed to one of them just before the cancel,
+				// and its acknowledge then arrives with no requester left. The
+				// orphan-IAK rescue in the arbitration worker answers it with
+				// the recorded level's vector (an unanswered IAK wedges the
+				// KDJ11's microcode - the vector read has no bus timeout).
+				sm_arb.canceled_request_mask |= sm_arb.device_request_signalled_mask
+						& mailbox.intr.priority_arbitration_bit
+						& PRIORITY_ARBITRATION_INTR_MASK;
 				sm_arb.device_request_mask &= ~mailbox.intr.priority_arbitration_bit;
 				// no completion event, could interfer with other INTRs?
 				mailbox.arm2pru_req = ARM2PRU_NONE;  // done
