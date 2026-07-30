@@ -63,7 +63,6 @@
 #include "timeout.hpp"
 #include "qunibus.h"
 #include "qunibusadapter.hpp"
-#include "ddrmem.h"
 #include "deuna.hpp"
 
 #if !defined(UNIBUS)
@@ -951,18 +950,6 @@ bool deuna_c::dma_read_words(uint32_t addr, uint16_t *buffer, size_t wordcount)
     if (max == 0 || addr64 >= max || byte_count > max - addr64)
         return false;
 
-    if (ddrmem && ddrmem->enabled &&
-        addr64 >= ddrmem->qunibus_startaddr &&
-        (addr64 + byte_count - 2) <= ddrmem->qunibus_endaddr) {
-        for (size_t i = 0; i < wordcount; ++i) {
-            if (!ddrmem->exam(addr + static_cast<uint32_t>(i * 2), &buffer[i])) {
-                WARNING("DEUNA: DDR exam failed");
-                return false;
-            }
-        }
-        return true;
-    }
-
     std::lock_guard<std::recursive_mutex> lock(dma_mutex);
     qunibusadapter->DMA(dma_request, true, QUNIBUS_CYCLE_DATI, addr, buffer, wordcount);
     return dma_request.success;
@@ -984,18 +971,6 @@ bool deuna_c::dma_write_words(uint32_t addr, const uint16_t *buffer, size_t word
     uint64_t max = qunibus->addr_space_byte_count;
     if (max == 0 || addr64 >= max || byte_count > max - addr64)
         return false;
-
-    if (ddrmem && ddrmem->enabled &&
-        addr64 >= ddrmem->qunibus_startaddr &&
-        (addr64 + byte_count - 2) <= ddrmem->qunibus_endaddr) {
-        for (size_t i = 0; i < wordcount; ++i) {
-            if (!ddrmem->deposit(addr + static_cast<uint32_t>(i * 2), buffer[i])) {
-                WARNING("DEUNA: DDR deposit failed");
-                return false;
-            }
-        }
-        return true;
-    }
 
     std::lock_guard<std::recursive_mutex> lock(dma_mutex);
     qunibusadapter->DMA(dma_request, true, QUNIBUS_CYCLE_DATO, addr,
@@ -1020,16 +995,6 @@ bool deuna_c::desc_read_words(uint32_t addr, uint16_t *buffer, size_t wordcount)
     if (max == 0 || addr64 >= max || byte_count > max - addr64)
         return false;
 
-    if (ddrmem && ddrmem->enabled &&
-        addr64 >= ddrmem->qunibus_startaddr &&
-        (addr64 + byte_count - 2) <= ddrmem->qunibus_endaddr) {
-        for (size_t i = 0; i < wordcount; ++i) {
-            if (!ddrmem->exam(addr + static_cast<uint32_t>(i * 2), &buffer[i]))
-                return false;
-        }
-        return true;
-    }
-
     std::lock_guard<std::recursive_mutex> lock(dma_mutex);
     qunibusadapter->DMA(dma_desc_request, true, QUNIBUS_CYCLE_DATI, addr, buffer, wordcount);
     return dma_desc_request.success;
@@ -1051,16 +1016,6 @@ bool deuna_c::desc_write_words(uint32_t addr, const uint16_t *buffer, size_t wor
     uint64_t max = qunibus->addr_space_byte_count;
     if (max == 0 || addr64 >= max || byte_count > max - addr64)
         return false;
-
-    if (ddrmem && ddrmem->enabled &&
-        addr64 >= ddrmem->qunibus_startaddr &&
-        (addr64 + byte_count - 2) <= ddrmem->qunibus_endaddr) {
-        for (size_t i = 0; i < wordcount; ++i) {
-            if (!ddrmem->deposit(addr + static_cast<uint32_t>(i * 2), buffer[i]))
-                return false;
-        }
-        return true;
-    }
 
     std::lock_guard<std::recursive_mutex> lock(dma_mutex);
     qunibusadapter->DMA(dma_desc_request, true, QUNIBUS_CYCLE_DATO, addr,
