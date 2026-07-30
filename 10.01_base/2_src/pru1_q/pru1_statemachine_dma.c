@@ -104,8 +104,24 @@ static statemachine_state_func sm_dma_state_addr() {
     uint32_t addr = mailbox.dma.cur_addr; // non-volatile snapshot
     uint8_t buscycle = mailbox.dma.buscycle;
 
-    if (mailbox.dma.cur_status != DMA_STATE_RUNNING || mailbox.dma.wordcount == 0)
-        return NULL; // still stopped
+    if (mailbox.dma.cur_status != DMA_STATE_RUNNING || mailbox.dma.wordcount == 0) {
+        // The transfer under way holds SACK; ending it here without
+        // releasing the bus blocks the arbitrator from ever granting again
+        // and freezes the processor (observed as a mid-dump wedge with SACK
+        // standing on an idle bus). Release the bus and complete the
+        // transfer as aborted, so the requesting device gets an error
+        // instead of waiting forever.
+        sm_dma.stat_abandoned++;
+        buslatches_setbits(6, BIT(7), 0); // negate SACK
+        buslatches_setbits(4, BIT(0)+BIT(5), 0); // negate SYNC, BS7
+        mailbox.dma.cur_status = DMA_STATE_TIMEOUTSTOP;
+        EVENT_SIGNAL(mailbox, dma);
+        if (!mailbox.dma.cpu_access) {
+            PRU2ARM_INTERRUPT
+            ;
+        }
+        return NULL;
+    }
 
     sm_dma.state_timeout = 0;
 //if (addr == 01046) // trigger address
