@@ -653,7 +653,10 @@ case "${1:---status}" in
                          install_version "$2" ;;
     --os-upgrade)        do_os_upgrade ;;
     --rollback)          do_rollback ;;
-    --status)            if [ -f "$STATUS" ]; then cat "$STATUS"; else write_status; fi ;;
+    # a board where the check has never run has no status file yet; make one, so
+    # this always answers with a status document rather than with silence
+    --status)            [ -f "$STATUS" ] || write_status
+                         cat "$STATUS" ;;
     --help|-h)           sed -n '17,25p' "$0" | sed 's/^# \{0,1\}//' ;;
     *)                   die "unknown option \"$1\"" ;;
 esac

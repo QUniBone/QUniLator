@@ -41,9 +41,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Run the updater against a fake board
+        # The failure paths - a package whose service will not start, a dpkg that
+        # dies, a repository that has gone away - are the ones hardest to arrange
+        # on hardware and worst to get wrong, so they are exercised here against
+        # stubbed apt/dpkg/systemd.
+        run: ./packaging/tests/updater-test.sh
+
       - name: Check the shell tools parse
         run: |
           for s in packaging/version.sh packaging/build-deb.sh \
+                   packaging/tests/updater-test.sh \
+                   packaging/tests/updater-sandbox.sh \
                    packaging/debian/qunilator-update \
                    packaging/debian/qunilator-network \
                    packaging/debian/qunilator-setup \
