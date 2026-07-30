@@ -37,7 +37,19 @@
 */
 
 #include "vax_defs.h"
-#include "simh_shim.h"          /* QUniLator: the bus outside the core */
+
+/* QUniLator: hooks toward the bus outside the core. The stock simulator has no
+   such bus, so they default to doing nothing; the shim's definitions override
+   these weak ones when it is linked in. */
+int __attribute__((weak)) simh_shim_bus_reassert (void)
+{
+return 0;
+}
+void __attribute__((weak)) simh_shim_map_changed (unsigned index, uint32_t value)
+{
+(void) index;
+(void) value;
+}
 
 #ifdef DONT_USE_INTERNAL_ROM
 #define BOOT_CODE_FILENAME "vmb.exe"

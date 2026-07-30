@@ -33,7 +33,10 @@
 */
 
 #include "vax_defs.h"
-#include "simh_shim.h"          /* QUniLator: the bus this adapter drives */
+
+/* QUniLator: the map is mirrored outside the core; a weak default in
+   vax780_sbi.c makes the stock build self-contained. */
+extern void simh_shim_map_changed (unsigned index, uint32_t value);
 
 /* Unibus adapter */
 
