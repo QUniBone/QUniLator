@@ -794,3 +794,65 @@ and it is what stage 5 exists for.
 A backplane-less board shortens what follows, because `internal_bus` makes the
 PRU answer its own cycles: the same path carries the DMA of stages 3 and 4 with
 no external timing deadline to meet.
+
+## Stage 4 — the transfers happen on the wire
+
+	Logfile is SYS$SYSROOT:[SYSMGR]OPERATOR.LOG;24
+	  SYSTEM       job terminated at 30-JUL-2026 18:00:33.02
+
+	ints 1026   transfers answered here 0
+
+VMS boots from the emulated UDA50 exactly as it did in stage 3, and the count of
+transfers this program answered is zero. Every one of them went out as bus
+cycles and was answered by the PRU.
+
+### Where the memory went
+
+A device's transfer can only happen on the wire if the memory it reaches is
+somewhere the bus hardware can see, which the heap the core allocates from is
+not. The board already shares a range with the PRU for emulating memory, so the
+processor's memory is put there - the same range and the same memory, because a
+device's transfer and the processor's own fetches are two ways of reaching one
+array.
+
+The core allocates it and the shim moves it, and that has to be reversible: the
+core frees the array whenever it resizes memory, so it must be holding an
+allocation of its own by then. Hence the pair, `relocate` and `restore`, with
+the sizing step calling `restore` first. The shared range is four megabytes, so
+the machine is that size rather than eight; VMS boots in it.
+
+### What the PRU does with an address now
+
+A device drives eighteen bits and knows nothing about what is behind them. The
+slave path takes the map register for the page - one read of DDR, so it is taken
+once and kept - and applies it, and a page whose register is not allocated
+answers nothing, which is what a real adapter does. The map sits in the shared
+range beside the memory it translates onto, with a word next to it saying
+whether to apply it at all. Both are cleared when the range is mapped, because
+it is reserved physical memory that keeps whatever the last program left in it.
+
+The map the PRU reads is a copy, so it has to be current whenever a device could
+act on a command. A device is set going by a touch of its registers - and not
+always a write: **a UDA50 is asked to look at its command ring by a *read* of
+IP**. Publishing only on writes left the copy holding a map from before the host
+had programmed the page its buffer was in, and every data transfer was refused
+as nonexistent memory - MSCP status 69, host buffer access error, subcode NXM -
+while the comm area, whose pages were mapped earlier, worked. So the map goes
+out before either kind of access.
+
+### What is not verified
+
+**The added slave latency is not measured.** The lookup costs two more reads of
+DDR per slave memory cycle, the map register and the word saying whether to
+apply it, and this project's own note on that range puts a PRU read of ARM DDR
+at up to 400 ns. That is far inside the time a master waits before calling a bus
+timeout, but it is arithmetic rather than a measurement: this board has no
+backplane, so there is no bus to put an analyser on, and the internal-bus PRU
+answers its own cycles with no real timing to meet. The second of those two
+reads can be removed by keeping the switch in the PRU's own data memory rather
+than in DDR, which would halve the addition.
+
+**A real third-party UNIBUS DMA board is not tried**, and cannot be on this
+board for the same reason. It is the sharpest test stage 4 has - a real
+controller running the same driver as an emulated one - and it needs a UniBone
+in a backplane.

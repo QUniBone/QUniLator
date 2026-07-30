@@ -65,6 +65,12 @@ cpuvax_c::cpuvax_c() :
     // The bus takes the I/O page whole by default: a machine whose peripherals
     // are on the bus wants nothing of the core's own answering there.
     bus_exclusive.value = true;
+    // The peripherals of this machine are on the bus, and a device's transfer
+    // goes out on it as well, which is what a device on a real UNIBUS does.
+    // Clearing bus_dma puts the translation back in this program, which is
+    // worth having to compare against but is not how the machine runs.
+    bus_iopage.value = true;
+    bus_dma.value = true;
 
     runmode.value = false;
     halt_switch.value = false;
@@ -349,7 +355,7 @@ bool cpuvax_c::configure_machine(void)
         // With the transfers going out as bus cycles, the board has to answer
         // them: everything below the I/O page is memory, and the map registers
         // say which part of the processor's memory each page of it reaches.
-        if (bus_dma.value) {
+        if (bus_iopage.value && bus_dma.value) {
             if (!ddrmem->set_range(0, qunibus->iopage_start_addr - 2)) {
                 ERROR("the board would not answer memory below the I/O page");
                 return false;
