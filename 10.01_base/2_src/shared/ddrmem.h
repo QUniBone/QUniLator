@@ -100,6 +100,40 @@ extern ddrmem_c *ddrmem;
 
 #else
 // included by PRU code
+
+// What a device's address reaches.
+//
+// On a machine without an adapter it reaches memory directly, and the address
+// on the bus is the address of the word. Behind a UNIBUS adapter it does not:
+// the adapter's map register for the page supplies the frame the transfer
+// really lands in, and only the offset within the page carries over. A device
+// drives eighteen bits either way and knows nothing about it.
+//
+// An unallocated register answers nothing, which is what a real adapter does
+// with a page nobody has assigned - the transfer fails rather than reaching
+// some other program's memory. DDRMEM_MAPPED_ADDR returns that as an address
+// past the end of memory, which the caller already treats as no answer.
+#define DDRMEM_MAP_UNMAPPED	0xffffffff
+
+// Whether the adapter's map is to be applied at all.
+#define DDRMEM_MAP_ACTIVE \
+	( mailbox.ddrmem_base_physical->unibus_map_active )
+
+// The register covering a device's address. Costs a read of DDR, so a caller
+// takes it once and keeps it.
+#define DDRMEM_MAP_ENTRY(addr) \
+	( mailbox.ddrmem_base_physical->unibus_map[(addr) >> UNIBUS_MAP_PAGE_SHIFT] )
+
+// Whether a device's address has a register at all: the map covers the low
+// part of the eighteen bit space, and the I/O page at the top has none.
+#define DDRMEM_MAP_COVERS(addr) \
+	( ((addr) >> UNIBUS_MAP_PAGE_SHIFT) < UNIBUS_MAP_REGISTERS )
+
+// Where the register sends it: its page frame, with the offset carried over.
+#define DDRMEM_MAP_APPLY(entry,addr) \
+	( (((entry) & UNIBUS_MAP_FRAME) << UNIBUS_MAP_PAGE_SHIFT) \
+	  | ((addr) & ((1u << UNIBUS_MAP_PAGE_SHIFT) - 1)) )
+
 // set a word in simulated memory
 #define DDRMEM_MEMSET_W(addr,dataw) \
     	( mailbox.ddrmem_base_physical->memory.words[(addr)/2] = (dataw) )
