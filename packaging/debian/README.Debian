@@ -136,6 +136,51 @@ simply means the emulator's service is active. The unit is enabled on the distri
 image and shipped disabled in the package; `systemctl disable --now
 qunilator-leds` returns the LEDs to the kernel on the next boot.
 
+Updating
+--------
+
+The web interface tells you when a newer package is published, shows what
+changed, and installs it. That path is the one to use: it says what an update
+costs before it starts, watches the new service come up, and puts the old
+version back if it does not.
+
+qunilator-update is the same mechanism from the command line:
+
+    qunilator-update --check       refresh the index, report installed/candidate
+    qunilator-update --changelog   the candidate's changelog since installed
+    qunilator-update --status      the status file the interface publishes
+    qunilator-update --rollback    put the cached previous version back
+
+It reads the apt repository /etc/apt/sources.list.d/<name>.list names, which
+the appliance image configures, so apt checks the signed index and the package
+hash and there is no unsigned install path. A board installed by hand with
+"dpkg -i" has no such source and reports so: `apt install` from the repository
+once makes it updateable.
+
+qunilator-update-check.timer runs the check five minutes after boot and daily
+after that, with a randomised delay. Nothing is ever installed without someone
+asking for it, and /etc/apt/apt.conf.d/51qunilator-unattended keeps
+unattended-upgrades away from the emulator package - an unattended upgrade
+would stop the emulated machine with no warning.
+
+Installing a new version restarts the service, which stops the emulated
+machine. The device set is shut down in order, so the disk images are flushed,
+but a running Unix or RSX has its buffer cache cut, and the board comes back up
+in its startup configuration. Halt the guest first if that matters.
+
+The updater's state lives in /var/lib/qunilator/updates, root-only: the status
+file, the requested version, the staged candidate and a cached copy of the
+version the board runs, which is what a rollback reinstalls.
+
+    journalctl -u qunilator-update          an install
+    journalctl -u qunilator-update-check    the daily check
+
+The board's other packages are reported by the same check and upgraded with
+"qunilator-update --os-upgrade", or from the interface. That path has no
+rollback - apt cannot undo an upgrade - so it holds the emulator package back,
+upgrades nothing that would remove another package, and never reboots the
+board. The kernel stays held from the image build.
+
 Admin password
 --------------
 

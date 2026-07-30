@@ -101,6 +101,7 @@ chmod 755 "$STAGE"
 install -d -m 755 $STAGE/DEBIAN \
     $STAGE/etc/modprobe.d \
     $STAGE/etc/modules-load.d \
+    $STAGE/etc/apt/apt.conf.d \
     $STAGE/usr/bin \
     $STAGE/usr/share/qunilator/frontend/assets \
     $STAGE/usr/share/doc/$NAME \
@@ -111,6 +112,11 @@ install -d -m 755 $STAGE/DEBIAN \
     $STAGE/usr/share/qunilator/network \
     $STAGE/var/lib/qunilator/images \
     $STAGE/var/lib/qunilator/configs
+# The updater's state: staged packages, the cached previous package and the
+# version the interface requested. It sits inside the state directory the file
+# shares are chrooted to, so the private mode is what keeps a share login away
+# from it.
+install -d -m 700 $STAGE/var/lib/qunilator/updates
 
 # The emulator, built for this board's bus
 install -m 755 $BINARY $STAGE/usr/bin/$NAME
@@ -149,13 +155,20 @@ done
 # whichever bus it bridges, so it installs exactly as it is in the repository.
 install -m 755 packaging/debian/qunilator-network packaging/debian/qunilator-setup \
     packaging/debian/qunilator-resize packaging/debian/qunilator-announce \
-    packaging/debian/qunilator-rename $STAGE/usr/sbin/
+    packaging/debian/qunilator-rename packaging/debian/qunilator-update $STAGE/usr/sbin/
 # status LEDs: a tiny standalone daemon, cross-compiled here
 arm-linux-gnueabihf-gcc -O2 -Wall -o $STAGE/usr/sbin/qunilator-leds packaging/debian/qunilator-leds.c
 install -m 644 packaging/debian/qunilator-network.service \
     packaging/debian/qunilator-setup.service packaging/debian/qunilator-leds.service \
     packaging/debian/qunilator-resize.service packaging/debian/qunilator-announce.service \
+    packaging/debian/qunilator-update.service packaging/debian/qunilator-update-os.service \
+    packaging/debian/qunilator-update-check.service \
+    packaging/debian/qunilator-update-check.timer \
     $STAGE/lib/systemd/system/
+# An unattended upgrade would stop the operator's running machine with no
+# warning, which is what the interface's install dialog exists to prevent.
+install -m 644 packaging/debian/apt-unattended-qunilator.conf \
+    $STAGE/etc/apt/apt.conf.d/51qunilator-unattended
 install -m 644 packaging/debian/network.conf $STAGE/etc/qunilator/network.conf
 # The bundled empty configuration. The service adopts it as the default on a
 # board that has never had one set, so a valid startup configuration always
@@ -224,7 +237,10 @@ INSTALLED_KB=$(du -sk $STAGE | cut -f1)
     # not here. Spelled out rather than taken from packaging/debian/control,
     # whose ${misc:Depends} is a debhelper substitution this build does not do,
     # and which has no ${shlibs:Depends} to compute the libraries either.
-    echo "Depends: libc6, libstdc++6, libgcc-s1, libx11-6, iproute2, device-tree-compiler, cpp, make, python3"
+    # curl is what qunilator-update's health check speaks HTTP to the loopback
+    # with, after an install; the appliance image uses curl in the build
+    # container, not in the chroot, so it has to be declared rather than assumed.
+    echo "Depends: libc6, libstdc++6, libgcc-s1, libx11-6, iproute2, device-tree-compiler, cpp, make, python3, curl"
     # the two boards ship the same cape overlay and firmware files, and a BBB
     # carries one cape, so they are mutually exclusive on a machine
     echo "Conflicts: $OTHER"
@@ -239,6 +255,7 @@ INSTALLED_KB=$(du -sk $STAGE | cut -f1)
     echo "/etc/qunilator/network.conf"
     echo "/etc/modprobe.d/bone.conf"
     echo "/etc/modules-load.d/bone.conf"
+    echo "/etc/apt/apt.conf.d/51qunilator-unattended"
 } > $STAGE/DEBIAN/conffiles
 
 cat > $STAGE/DEBIAN/preinst <<'PREINST'
@@ -302,6 +319,10 @@ if [ "$1" = configure ]; then
     fi
     install -d -m 755 /var/lib/qunilator/images
     chown -R qunilator:qunilator /var/lib/qunilator/images || true
+    # The updater's state stays root-only: it sits inside the tree the SMB/FTP/
+    # SFTP shares are chrooted to, and holds staged packages and the requested
+    # version. Re-asserted on every upgrade in case a mode was widened.
+    install -d -m 700 -o root -g root /var/lib/qunilator/updates
     # Seed the bundled empty configuration as the startup fallback, without
     # ever clobbering an operator's own default.json.
     if [ ! -e /var/lib/qunilator/configs/default.json ]; then
@@ -311,6 +332,11 @@ if [ "$1" = configure ]; then
     fi
     if [ -d /run/systemd/system ]; then
         systemctl daemon-reload || true
+        # The update check, enabled on an upgrade as well as on a first install,
+        # so a board that predates self-update starts checking once it has been
+        # updated by hand. The timer only reads a version and writes a status
+        # file; nothing is installed without an operator asking for it.
+        systemctl enable --now qunilator-update-check.timer || true
         # $2 is the previously configured version, empty on a first install.
         # Enabling only then keeps a unit the operator disabled disabled.
         # The emulator needs boot settings qunilator-setup applies and a reboot to
@@ -333,6 +359,7 @@ cat > $STAGE/DEBIAN/prerm <<'PRERM'
 #!/bin/sh
 set -e
 if [ "$1" = remove ] && [ -d /run/systemd/system ]; then
+    systemctl stop qunilator-update-check.timer || true
     systemctl stop qbone.service || true
     systemctl stop qunilator-network.service || true
 fi
@@ -346,7 +373,8 @@ if [ -x /usr/bin/dpkg-maintscript-helper ] \
         /etc/bone/network.conf /etc/qunilator/network.conf 1.12.0-1~ -- "$@"
 fi
 if [ "$1" = remove ] && [ -d /run/systemd/system ]; then
-    systemctl disable qbone.service qunilator-network.service || true
+    systemctl disable qbone.service qunilator-network.service \
+        qunilator-update-check.timer || true
     systemctl daemon-reload || true
 fi
 POSTRM

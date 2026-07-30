@@ -1,0 +1,18 @@
+[Unit]
+Description=Check whether a newer emulator package is published
+Documentation=file:/usr/share/qunilator/README.Debian
+# apt needs a resolver and a route, and this runs from a timer rather than in
+# anyone's way, so it can afford to wait for them.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/qunilator-update --check
+# The check refreshes one apt source and reads the package's changelog; a
+# repository that has gone away must not leave the unit running for the default
+# hour. The emulator's own threads never wait on this - the web service publishes
+# what the check wrote to its status file.
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal

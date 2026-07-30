@@ -1,0 +1,22 @@
+[Unit]
+Description=Install the requested emulator package version
+Documentation=file:/usr/share/qunilator/README.Debian
+
+[Service]
+Type=oneshot
+# The version to install is in /var/lib/qunilator/updates/request.json, written
+# by the web service after checking it against the version apt offers. No string
+# from an HTTP request ever reaches this command line.
+ExecStart=/usr/sbin/qunilator-update --install-requested
+# The install stops and restarts the emulator's unit, so it must not be a child
+# of it: systemd kills a unit's whole cgroup on stop, and a dpkg interrupted
+# there is the failure most worth engineering against. Started with
+# "systemctl start --no-block", this unit is that separate cgroup.
+#
+# A download, dpkg, and a health check that waits up to 70 s for the new service
+# together run well past the default start timeout, and a killed install is
+# exactly what this unit exists to prevent. Bounded generously rather than not at
+# all, so a hung apt cannot leave the unit running for ever.
+TimeoutStartSec=1800
+StandardOutput=journal
+StandardError=journal

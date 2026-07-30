@@ -1,0 +1,14 @@
+[Unit]
+Description=Upgrade the board's operating-system packages
+Documentation=file:/usr/share/qunilator/README.Debian
+
+[Service]
+Type=oneshot
+# The emulator package is held for the duration, so the one action that stops the
+# operator's machine stays the deliberate one. Nothing here reboots the board.
+ExecStart=/usr/sbin/qunilator-update --os-upgrade
+# Its own cgroup for the same reason the install has one, and a longer bound: a
+# base-OS upgrade unpacks far more than one package, on a BeagleBone's card.
+TimeoutStartSec=3600
+StandardOutput=journal
+StandardError=journal

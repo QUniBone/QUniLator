@@ -1,0 +1,659 @@
+#!/bin/sh
+# Update the emulator package, and report what else the board could upgrade.
+#
+# This is the whole board-side mechanism: the only thing here that runs apt, and
+# the owner of the status file the web interface publishes. The interface never
+# runs apt itself and never builds a command line out of a request - it writes
+# the version it wants to request.json and starts qunilator-update.service, so
+# the install runs in its own systemd cgroup. That matters because the install
+# stops and restarts the emulator's unit: a dpkg running as a child of that unit
+# would be killed with it, mid-install, which is the one failure most worth
+# engineering against.
+#
+# The update source is the apt repository the appliance image configures. apt
+# verifies the signed index and the package hash, so there is no unsigned
+# install path, nothing extra to host and nothing extra to sign.
+#
+# usage:
+#   qunilator-update --check              refresh the index and report versions
+#   qunilator-update --changelog [ver]    the candidate's stanzas since installed
+#   qunilator-update --install-requested  install the version in request.json
+#   qunilator-update --install <ver>      install a version named here
+#   qunilator-update --os-upgrade         upgrade the board's other packages
+#   qunilator-update --rollback           reinstall the cached previous package
+#   qunilator-update --status             print the status file
+
+set -eu
+
+# ---------------------------------------------------------------- identity ----
+# The qunilator-* tools are installed into both boards' packages unrebranded,
+# which is what keeps them one implementation. So the brand is resolved at
+# runtime from the package that owns this script; every apt, systemctl and path
+# expression below derives from it.
+resolve_pkg() {
+    p=$(dpkg -S /usr/sbin/qunilator-update 2>/dev/null | cut -d: -f1 | head -1)
+    case "$p" in
+        qbone|unibone) echo "$p"; return 0 ;;
+    esac
+    # A script run from a checkout, or copied onto a board by hand, is owned by
+    # no package: fall back to whichever emulator package is installed.
+    for p in qbone unibone; do
+        if dpkg-query -W -f '${Status}' "$p" 2>/dev/null \
+                | grep -q 'install ok installed'; then
+            echo "$p"; return 0
+        fi
+    done
+    return 1
+}
+
+PKG=$(resolve_pkg) \
+    || { echo "qunilator-update: no emulator package owns this script" >&2; exit 1; }
+UNIT="$PKG.service"
+SOURCE_LIST="/etc/apt/sources.list.d/$PKG.list"
+
+# 0700 root:root: it sits inside the state directory the SMB/FTP/SFTP shares are
+# chrooted to, so the mode is what keeps the staged packages and the request file
+# out of reach of a share login.
+STATE_DIR=/var/lib/qunilator/updates
+STATUS="$STATE_DIR/status.json"
+REQUEST="$STATE_DIR/request.json"
+CACHE="$STATE_DIR/cache"
+STAGING="$STATE_DIR/staging"
+LOCK="$STATE_DIR/lock"
+# Facts that outlive the call that computed them, one per file, so a --check does
+# not have to parse the last install's outcome back out of the status file.
+CHECKED_AT="$STATE_DIR/checked.at"
+OS_FILE="$STATE_DIR/os.json"
+LAST_FILE="$STATE_DIR/last.json"
+
+export DEBIAN_FRONTEND=noninteractive
+# --force-confold keeps an operator's edited /etc/qunilator/network.conf.
+# Lock::Timeout waits out a concurrent apt rather than failing at once.
+# APT::Sandbox::User=root keeps apt from dropping to the _apt user for
+# downloads: _apt cannot reach a 0700 directory, and the private mode is what
+# the state directory is for.
+APT_OPTS="-o DPkg::Lock::Timeout=300 -o Dpkg::Options::=--force-confold -o APT::Sandbox::User=root"
+
+say() { echo "qunilator-update: $*"; }
+die() { echo "qunilator-update: $*" >&2; exit 1; }
+
+# --------------------------------------------------------------- json bits ----
+# The status file is written here and read by the web service, so it is
+# assembled from shell strings rather than by a JSON tool the appliance may not
+# carry. Everything interpolated is a version, a package name, an apt message or
+# a journal line, so quoting, backslashes and control characters are all a
+# string needs handled.
+json_str() {
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
+        | tr -d '\000-\010\013\014\016-\037'
+}
+
+json_q() { printf '"%s"' "$(json_str "$1")"; }
+
+# a JSON array of strings, one per input line
+json_lines() {
+    sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\010\013\014\016-\037' |
+        awk 'BEGIN {printf "["} {printf "%s\"%s\"", (NR>1 ? "," : ""), $0} END {printf "]"}'
+}
+
+now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# the file's content, or $2 when it is absent
+file_or() {
+    if [ -s "$1" ]; then cat "$1"; else printf '%s' "$2"; fi
+}
+
+installed_version() {
+    dpkg-query -W -f '${Version}' "$PKG" 2>/dev/null || true
+}
+
+# ------------------------------------------------------------- status file ----
+# One writer, and the whole file each time: a partly-updated status is worse than
+# a slightly stale one, and the file is small. Written through a temporary and
+# renamed, so the service never reads it half written - it watches the mtime and
+# publishes what it finds.
+#
+# "dismissed" is not here: which version an operator has dismissed belongs to the
+# board's settings.json, and the service merges it into what it publishes.
+STATE=idle
+ERROR=""
+JOURNAL="[]"
+CANDIDATE=""
+# whether populate_cache managed to keep a copy of the running version; consulted
+# when an install has to be undone
+ROLLBACK=false
+NEEDS_REPAIR=false
+
+# Whether the board could step back a version: a cached package exists and it is
+# not the one installed. Derived rather than remembered, so a check cannot report
+# a rollback the cache does not hold, or forget one it does.
+can_roll_back() {
+    [ -f "$CACHE/$PKG.deb" ] || return 1
+    ws_cached=$(dpkg-deb -f "$CACHE/$PKG.deb" Version 2>/dev/null || true)
+    [ -n "$ws_cached" ] && [ "$ws_cached" != "$(installed_version)" ]
+}
+
+write_status() {
+    install -d -m 0700 "$STATE_DIR"
+    src=false
+    [ -f "$SOURCE_LIST" ] && src=true
+    rb=false
+    can_roll_back && rb=true
+    tmp="$STATUS.new"
+    {
+        printf '{'
+        printf '"state":%s' "$(json_q "$STATE")"
+        printf ',"package":%s' "$(json_q "$PKG")"
+        printf ',"source_configured":%s' "$src"
+        printf ',"checked_at":%s' "$(json_q "$(file_or "$CHECKED_AT" '')")"
+        printf ',"installed":%s' "$(json_q "$(installed_version)")"
+        printf ',"candidate":%s' "$(json_q "$CANDIDATE")"
+        printf ',"rollback":%s' "$rb"
+        printf ',"needs_repair":%s' "$NEEDS_REPAIR"
+        printf ',"os":%s' \
+            "$(file_or "$OS_FILE" '{"count":0,"packages":[],"held_back":[],"reboot_required":false}')"
+        printf ',"last":%s' "$(file_or "$LAST_FILE" '{}')"
+        printf ',"error":%s' "$(json_q "$ERROR")"
+        printf ',"journal":%s' "$JOURNAL"
+        printf '}\n'
+    } > "$tmp"
+    chmod 600 "$tmp"
+    mv "$tmp" "$STATUS"
+}
+
+# A phase of a running operation, so the interface can follow it.
+phase() {
+    STATE=$1
+    write_status
+    say "$1"
+}
+
+# ------------------------------------------------------------------- locks ----
+# One update at a time, emulator or OS: a second request is refused rather than
+# queued, because both stop and start units and interleaving them is how a board
+# ends up with neither version installed. Its own file, not status.json, which is
+# replaced by rename on every write and so cannot hold a lock.
+take_lock() {
+    install -d -m 0700 "$STATE_DIR"
+    : >> "$LOCK"
+    exec 9<> "$LOCK"
+    flock -n 9 || die "an update is already running"
+}
+
+# -------------------------------------------------------------- apt basics ----
+# Refresh only this package's own source. A Debian mirror that is slow or down
+# would otherwise make the daily check slow or red, and the check is about one
+# package.
+apt_update_own() {
+    [ -f "$SOURCE_LIST" ] || return 0
+    apt-get update -qq \
+        -o Dir::Etc::sourcelist="$SOURCE_LIST" \
+        -o Dir::Etc::sourceparts=- \
+        -o APT::Get::List-Cleanup=0 2>&1
+}
+
+# Refresh everything, tolerating a failure from any source other than this
+# package's, so an install can still resolve a new dependency from Debian while
+# a third-party source that has gone away does not block it.
+apt_update_all() {
+    apt-get update -qq >/dev/null 2>&1 || true
+    apt_update_own >/dev/null || return 1
+    return 0
+}
+
+candidate_version() {
+    v=$(LC_ALL=C apt-cache policy "$PKG" 2>/dev/null |
+        sed -n 's/^[[:space:]]*Candidate:[[:space:]]*\(.*\)$/\1/p' | head -1)
+    [ "$v" = "(none)" ] && v=""
+    printf '%s' "$v"
+}
+
+# Every version of the package the repository offers, one per line.
+available_versions() {
+    LC_ALL=C apt-cache madison "$PKG" 2>/dev/null |
+        awk -F'|' 'NF>1 {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}'
+}
+
+# dpkg left mid-install by a power loss, which every install must repair first.
+dpkg_needs_repair() {
+    [ -n "$(dpkg --audit 2>/dev/null)" ]
+}
+
+# --------------------------------------------------------- other packages ----
+# apt list --upgradable minus the emulator itself. The emulator is upgraded only
+# by the deliberate path below, so the one action that stops the operator's
+# machine stays the one action that warns about it.
+os_report() {
+    or_held=$(LC_ALL=C apt-mark showhold 2>/dev/null | grep -v "^$PKG\$" | json_lines)
+    or_reboot=false
+    [ -e /var/run/reboot-required ] && or_reboot=true
+    or_body=$(LC_ALL=C apt list --upgradable 2>/dev/null | sed 1d |
+        awk -v self="$PKG" '
+            # libfoo/trixie 1.2-3 armhf [upgradable from: 1.2-2]
+            /\/.* .* \[upgradable from: .*\]/ {
+                split($1, a, "/")
+                if (a[1] == self) next
+                from = $0
+                sub(/^.*\[upgradable from: /, "", from)
+                sub(/\].*$/, "", from)
+                printf "%s{\"name\":\"%s\",\"to\":\"%s\",\"from\":\"%s\"}", \
+                    (n++ ? "," : ""), a[1], $2, from
+            }
+            END {printf "\n%d\n", n + 0}')
+    or_pkgs=$(printf '%s' "$or_body" | sed '$d')
+    or_count=$(printf '%s\n' "$or_body" | tail -1)
+    install -d -m 0700 "$STATE_DIR"
+    printf '{"count":%s,"packages":[%s],"held_back":%s,"reboot_required":%s}\n' \
+        "${or_count:-0}" "$or_pkgs" "$or_held" "$or_reboot" > "$OS_FILE"
+    chmod 600 "$OS_FILE"
+}
+
+# --------------------------------------------------------------- the check ----
+# Reports installed against candidate, whether the package system needs repair,
+# and what else on the board has updates. Runs from the timer and by hand; never
+# installs anything.
+do_check() {
+    STATE=checking
+    write_status
+
+    if [ ! -f "$SOURCE_LIST" ]; then
+        # A board installed by hand with dpkg -i has no source entry, so it has
+        # no self-update at all. Recorded once, in the status file, rather than
+        # reported as a failure every day.
+        STATE=idle
+        CANDIDATE=""
+        ERROR="no update source configured"
+        write_status
+        say "no $SOURCE_LIST: this board has no update source"
+        return 0
+    fi
+
+    if ! out=$(apt_update_own); then
+        STATE=idle
+        ERROR="the repository could not be reached: $(printf '%s' "$out" | tail -1)"
+        write_status
+        die "$ERROR"
+    fi
+
+    dpkg_needs_repair && NEEDS_REPAIR=true
+
+    inst=$(installed_version)
+    CANDIDATE=$(candidate_version)
+
+    # What the rest of the board could upgrade. A full refresh for that, whose
+    # failures are tolerated - the emulator's own answer above is already in.
+    apt-get update -qq >/dev/null 2>&1 || true
+    os_report
+
+    if [ -n "$CANDIDATE" ] && [ -n "$inst" ] \
+            && dpkg --compare-versions "$CANDIDATE" lt "$inst"; then
+        # A development board carrying a hand-built package is offered nothing,
+        # and told why rather than left looking broken.
+        STATE=ahead
+    else
+        STATE=idle
+    fi
+    now_iso > "$CHECKED_AT"
+    write_status
+    say "installed ${inst:-none}, candidate ${CANDIDATE:-none}"
+}
+
+# ---------------------------------------------------------- the changelog ----
+# Straight out of the candidate package: every package ships its complete
+# changelog, so the text shown is the text that shipped, byte for byte, with no
+# second artifact to keep in step. The download doubles as the staging step an
+# install wants anyway - at ~1.7 MB it costs nothing to fetch before the
+# operator has decided.
+do_changelog() {
+    [ -f "$SOURCE_LIST" ] || die "no update source configured"
+    inst=$(installed_version)
+    want=${1:-$(candidate_version)}
+    [ -n "$want" ] || die "no candidate version"
+    deb=$(stage_download "$want") || die "version $want could not be downloaded"
+    doc="usr/share/doc/$PKG/changelog.Debian.gz"
+    dpkg-deb --fsys-tarfile "$deb" | tar -xO "./$doc" 2>/dev/null | gunzip |
+        stanzas_since "$inst"
+}
+
+# The changelog stanzas newer than $1. A stanza starts at a line in column 1
+# naming a version, and dpkg --compare-versions decides what is newer, so the
+# ordering is the package system's rather than a text sort.
+#
+# POSIX shell functions share one variable namespace, so every function here
+# prefixes its working variables: an assignment inside one would otherwise
+# overwrite the caller's variable of the same name.
+stanzas_since() {
+    ss_since=$1
+    ss_keep=0
+    while IFS= read -r ss_line; do
+        case "$ss_line" in
+            [a-z]*\(*\)*)
+                ss_ver=$(printf '%s' "$ss_line" | sed -n 's/^[^ ]* (\([^)]*\)).*/\1/p')
+                if [ -n "$ss_ver" ]; then
+                    if [ -z "$ss_since" ] \
+                            || dpkg --compare-versions "$ss_ver" gt "$ss_since"; then
+                        ss_keep=1
+                    else
+                        ss_keep=0
+                    fi
+                fi
+                ;;
+        esac
+        [ "$ss_keep" = 1 ] && printf '%s\n' "$ss_line"
+    done
+    return 0
+}
+
+# ----------------------------------------------------------------- install ----
+# apt-get download into staging/, so apt checks the hash against the signed
+# index before anything is unpacked. Prints the path of the file it fetched.
+stage_download() {
+    sd_want=$1
+    install -d -m 0700 "$STAGING"
+    rm -f "$STAGING"/*.deb
+    ( cd "$STAGING" && apt-get download -qq $APT_OPTS "$PKG=$sd_want" >/dev/null 2>&1 ) \
+        || return 1
+    sd_deb=$(ls "$STAGING"/*.deb 2>/dev/null | head -1)
+    [ -n "$sd_deb" ] || return 1
+    printf '%s' "$sd_deb"
+}
+
+# The package the board runs, kept so a failed update can be undone. The copy the
+# previous update left is preferred; failing that the repository still offers the
+# installed version and it is fetched.
+populate_cache() {
+    pc_inst=$1
+    install -d -m 0700 "$CACHE"
+    if [ -f "$CACHE/$PKG.deb" ] \
+            && [ "$(dpkg-deb -f "$CACHE/$PKG.deb" Version 2>/dev/null)" = "$pc_inst" ]; then
+        return 0
+    fi
+    # Exactly one package is ever cached, so anything already here - including a
+    # file an interrupted earlier run left under its download name - goes first.
+    rm -f "$CACHE"/*.deb
+    ( cd "$CACHE" && apt-get download -qq $APT_OPTS "$PKG=$pc_inst" >/dev/null 2>&1 ) \
+        || return 1
+    pc_got=$(ls "$CACHE"/*.deb 2>/dev/null | head -1)
+    [ -n "$pc_got" ] || return 1
+    [ "$pc_got" = "$CACHE/$PKG.deb" ] || mv "$pc_got" "$CACHE/$PKG.deb"
+    return 0
+}
+
+# Room on / for the package to unpack. A full root filesystem is what turns a
+# routine dpkg into a repair job, so it is refused before dpkg starts.
+check_space() {
+    cs_need_kb=$(dpkg-deb -f "$1" Installed-Size 2>/dev/null || echo 0)
+    # the unpacked size twice over - the new files land beside the old ones - and
+    # room for dpkg's working copies and the journal
+    cs_need_kb=$((cs_need_kb * 2 + 50000))
+    cs_free_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+    if [ "$cs_free_kb" -lt "$cs_need_kb" ]; then
+        ERROR="not enough space: $((cs_free_kb / 1024)) MB free, $((cs_need_kb / 1024)) MB needed"
+        return 1
+    fi
+    return 0
+}
+
+# The last lines of a unit's journal, so a failure can be read in the interface
+# instead of over ssh.
+journal_tail() {
+    journalctl -u "$1" -n 50 --no-pager -o cat 2>/dev/null | json_lines
+}
+
+# The service answers, and the instance answering is the one just installed.
+# Both matter: a unit that is "active" may be a process that is about to die, and
+# a 200 from /api/version may come from the old instance in the moment before
+# systemd replaces it. /run/qunilator/version is the new instance's own
+# statement, needs no credentials on a password-protected board, and is removed
+# with the unit so it cannot be stale.
+health_check() {
+    hc_want=$1
+    hc_i=0
+    while [ "$hc_i" -lt 60 ]; do
+        if systemctl is-active --quiet "$UNIT" \
+                && [ "$(cat /run/qunilator/version 2>/dev/null || true)" = "$hc_want" ]; then
+            # 401 counts: on a password-protected board it proves the server answers
+            hc_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+                    http://127.0.0.1/api/version 2>/dev/null || echo 000)
+            case "$hc_code" in
+                200|401)
+                    # A service that comes up and dies is not a healthy one, so
+                    # require it to still be there a moment later.
+                    sleep 10
+                    systemctl is-active --quiet "$UNIT" && return 0
+                    return 1
+                    ;;
+            esac
+        fi
+        hc_i=$((hc_i + 1))
+        sleep 1
+    done
+    return 1
+}
+
+reinstall_cached() {
+    [ -f "$CACHE/$PKG.deb" ] || return 1
+    apt-get install -y --allow-downgrades $APT_OPTS "$CACHE/$PKG.deb" >/dev/null 2>&1
+}
+
+record_outcome() {
+    install -d -m 0700 "$STATE_DIR"
+    printf '{"state":%s,"from":%s,"to":%s,"at":%s}\n' \
+        "$(json_q "$1")" "$(json_q "$2")" "$(json_q "$3")" "$(json_q "$(now_iso)")" \
+        > "$LAST_FILE"
+    chmod 600 "$LAST_FILE"
+    STATE=$1
+    write_status
+}
+
+do_install_requested() {
+    take_lock
+    [ -f "$REQUEST" ] || die "no update requested"
+    want=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$REQUEST" \
+        | head -1)
+    rm -f "$REQUEST"
+    [ -n "$want" ] || die "the request names no version"
+    install_version "$want"
+}
+
+install_version() {
+    want=$1
+    from=$(installed_version)
+    ERROR=""
+    JOURNAL="[]"
+
+    # 1. a package system left mid-install is repaired before anything is added
+    if dpkg_needs_repair; then
+        NEEDS_REPAIR=true
+        phase installing
+        say "repairing an interrupted install"
+        dpkg --configure -a >/dev/null 2>&1 || true
+        NEEDS_REPAIR=false
+        if dpkg_needs_repair; then
+            NEEDS_REPAIR=true
+            ERROR="the package system needs repair: dpkg --configure -a did not clear it"
+            record_outcome failed "$from" "$want"
+            die "$ERROR"
+        fi
+    fi
+
+    # 2. every source refreshed, so a new dependency can resolve
+    phase downloading
+    if ! apt_update_all; then
+        ERROR="the repository could not be reached"
+        record_outcome failed "$from" "$want"
+        die "$ERROR"
+    fi
+
+    # 3. the version asked for must be one the repository offers
+    if ! available_versions | grep -qx -- "$want"; then
+        ERROR="version $want is not available from the repository"
+        record_outcome failed "$from" "$want"
+        die "$ERROR"
+    fi
+
+    # 4. staged, so apt checks the hash against the signed index; nothing is
+    #    installed until this succeeds
+    if ! deb=$(stage_download "$want"); then
+        ERROR="version $want could not be downloaded"
+        record_outcome failed "$from" "$want"
+        die "$ERROR"
+    fi
+
+    # 5. room to unpack, before dpkg starts
+    if ! check_space "$deb"; then
+        record_outcome failed "$from" "$want"
+        die "$ERROR"
+    fi
+
+    # 6. the running version, kept for the rollback. A board that cannot supply
+    #    it goes ahead and records that this update cannot be undone.
+    ROLLBACK=false
+    if [ -n "$from" ] && populate_cache "$from"; then
+        ROLLBACK=true
+    else
+        say "no cached copy of ${from:-the installed version}: this update cannot be rolled back"
+    fi
+
+    # 7. installing the local file lets apt resolve dependencies from the
+    #    repository. The package's own postinst restarts the unit, which was
+    #    active - so the machine stops here.
+    phase installing
+    if ! out=$(apt-get install -y --allow-change-held-packages --allow-downgrades \
+            $APT_OPTS "$deb" 2>&1); then
+        ERROR="the install failed: $(printf '%s' "$out" | tail -3 | tr '\n' ' ')"
+        JOURNAL=$(printf '%s\n' "$out" | tail -50 | json_lines)
+        rollback_to "$from" "$want"
+        die "$ERROR"
+    fi
+
+    # 8. the new service must come up and stay up
+    phase verifying
+    if ! health_check "$want"; then
+        ERROR="the new version did not come up"
+        JOURNAL=$(journal_tail "$UNIT")
+        rollback_to "$from" "$want"
+        die "$ERROR"
+    fi
+
+    rm -f "$STAGING"/*.deb
+    CANDIDATE=""
+    record_outcome done "$from" "$want"
+    say "updated ${from:-none} -> $want"
+}
+
+# The cached package back, health-checked again, and the outcome recorded with the
+# journal tail so the interface can show why the new version was refused.
+rollback_to() {
+    rb_from=$1
+    rb_want=$2
+    if [ "$ROLLBACK" != true ]; then
+        record_outcome failed "$rb_from" "$rb_want"
+        return 0
+    fi
+    say "rolling back to $rb_from"
+    if reinstall_cached && health_check "$rb_from"; then
+        record_outcome rolled-back "$rb_want" "$rb_from"
+    else
+        ERROR="$ERROR; the rollback to $rb_from did not come up either"
+        record_outcome failed "$rb_from" "$rb_want"
+    fi
+}
+
+# The automatic rollback covers the failure the interface can detect. This is the
+# same step on demand, for a board that came up on a version which runs but
+# misbehaves - rare enough to be worth an ssh session, which also keeps the
+# interface from having to explain an empty cache.
+do_rollback() {
+    take_lock
+    [ -f "$CACHE/$PKG.deb" ] || die "no cached package to roll back to"
+    to=$(dpkg-deb -f "$CACHE/$PKG.deb" Version)
+    from=$(installed_version)
+    [ "$to" != "$from" ] || die "the cached package is the installed version ($to)"
+    ERROR=""
+    JOURNAL="[]"
+    phase installing
+    if ! reinstall_cached; then
+        ERROR="the rollback install failed"
+        JOURNAL=$(journal_tail "$UNIT")
+        record_outcome failed "$from" "$to"
+        die "$ERROR"
+    fi
+    phase verifying
+    if ! health_check "$to"; then
+        ERROR="$to did not come up"
+        JOURNAL=$(journal_tail "$UNIT")
+        record_outcome failed "$from" "$to"
+        die "$ERROR"
+    fi
+    record_outcome rolled-back "$from" "$to"
+    say "rolled back $from -> $to"
+}
+
+# ------------------------------------------------------------- OS upgrade ----
+# The board's other packages, under the same lock as the emulator update so the
+# two can never overlap. This path has no rollback: apt cannot undo an upgrade,
+# so a base-OS upgrade that breaks the board is an ssh session or a reflash.
+# Three things keep the blast radius small: the kernel stays held from the image
+# build, "upgrade" removes nothing and pulls nothing new in, and the emulator is
+# held out of it, so a running machine is not stopped by an OS upgrade at all.
+# Nothing here reboots the board.
+do_os_upgrade() {
+    take_lock
+    ERROR=""
+    JOURNAL="[]"
+
+    if dpkg_needs_repair; then
+        say "repairing an interrupted install"
+        dpkg --configure -a >/dev/null 2>&1 || true
+    fi
+
+    free_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+    if [ "$free_kb" -lt 300000 ]; then
+        ERROR="not enough space: $((free_kb / 1024)) MB free, 300 MB needed"
+        STATE=failed
+        write_status
+        die "$ERROR"
+    fi
+
+    phase os-upgrading
+    apt-get update -qq >/dev/null 2>&1 || true
+
+    was_held=false
+    apt-mark showhold 2>/dev/null | grep -qx "$PKG" && was_held=true
+    apt-mark hold "$PKG" >/dev/null 2>&1 || true
+
+    rc=0
+    out=$(apt-get -y $APT_OPTS upgrade 2>&1) || rc=$?
+
+    [ "$was_held" = true ] || apt-mark unhold "$PKG" >/dev/null 2>&1 || true
+
+    os_report
+    if [ "$rc" -ne 0 ]; then
+        ERROR="the upgrade failed: $(printf '%s' "$out" | tail -3 | tr '\n' ' ')"
+        JOURNAL=$(printf '%s\n' "$out" | tail -50 | json_lines)
+        STATE=failed
+        write_status
+        die "$ERROR"
+    fi
+    JOURNAL=$(printf '%s\n' "$out" | grep -E '^(Setting up|Unpacking|Get:)' | tail -50 \
+        | json_lines)
+    STATE=done
+    write_status
+    say "operating-system upgrade complete"
+}
+
+# ------------------------------------------------------------------- entry ----
+case "${1:---status}" in
+    --check)             do_check ;;
+    --changelog)         do_changelog "${2:-}" ;;
+    --install-requested) do_install_requested ;;
+    --install)           [ -n "${2:-}" ] || die "--install needs a version"
+                         take_lock
+                         install_version "$2" ;;
+    --os-upgrade)        do_os_upgrade ;;
+    --rollback)          do_rollback ;;
+    --status)            if [ -f "$STATUS" ]; then cat "$STATUS"; else write_status; fi ;;
+    --help|-h)           sed -n '17,25p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *)                   die "unknown option \"$1\"" ;;
+esac

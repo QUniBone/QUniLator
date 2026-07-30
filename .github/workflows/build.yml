@@ -33,6 +33,43 @@ jobs:
       - name: Run the MAINDEC diagnostics against both CPU cores
         run: make -C 10.06_cputest/2_src -j"$(nproc)" test
 
+  appliance-scripts:
+    # The appliance's shell tools and units, checked without a board: the
+    # updater drives apt and systemd on a live machine, so a syntax error or a
+    # malformed unit is found here rather than on the board it would strand.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the shell tools parse
+        run: |
+          for s in packaging/version.sh packaging/build-deb.sh \
+                   packaging/debian/qunilator-update \
+                   packaging/debian/qunilator-network \
+                   packaging/debian/qunilator-setup \
+                   packaging/debian/qunilator-resize \
+                   packaging/debian/qunilator-announce \
+                   packaging/debian/qunilator-rename; do
+            case "$(head -1 "$s")" in
+              *bash) bash -n "$s" ;;
+              *) sh -n "$s" ;;
+            esac
+            echo "ok $s"
+          done
+
+      - name: Check the units are well formed
+        # systemd-analyze verify resolves the unit as systemd would; it warns
+        # about the executables and units it cannot find on a runner, which is
+        # not this repository's business, so only the syntax findings count.
+        run: |
+          out=$(systemd-analyze verify packaging/debian/*.service \
+                packaging/debian/*.timer 2>&1 || true)
+          echo "$out"
+          # drop the runner's missing-file and unknown-unit noise
+          bad=$(printf '%s\n' "$out" | grep -v -e "Command .* is not executable" \
+                -e "not found" -e "does not exist" -e "Unknown key" || true)
+          [ -z "$bad" ] || { echo "unit problems above" >&2; exit 1; }
+
   package:
     runs-on: ubuntu-latest
     strategy:

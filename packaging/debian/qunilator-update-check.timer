@@ -1,0 +1,16 @@
+[Unit]
+Description=Daily check for a newer emulator package
+Documentation=file:/usr/share/qunilator/README.Debian
+
+[Timer]
+# Five minutes after boot, so a board that has been off for a while knows where
+# it stands soon after coming up, and daily after that. The randomised delay
+# spreads a fleet of boards over the hour instead of having them all reach the
+# repository at once.
+OnBootSec=5min
+OnCalendar=daily
+RandomizedDelaySec=1h
+Unit=qunilator-update-check.service
+
+[Install]
+WantedBy=timers.target
