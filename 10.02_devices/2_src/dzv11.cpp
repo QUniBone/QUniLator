@@ -692,13 +692,21 @@ void dzv11_c::worker_xmt(void)
 			pthread_mutex_lock(&state_mutex);
 			continue;
 		}
-		if (!csr_trdy) {
-			// scanner off, or no enabled line: wait for a CSR/TCR change
-			pthread_cond_wait(&xmt_cond, &state_mutex);
-			continue;
-		}
-		// TRDY presented, waiting for the CPU to write TDR
-		pthread_cond_wait(&xmt_cond, &state_mutex);
+		// The hardware transmit scanner free-runs: it re-evaluates the lines
+		// continuously and presents TRDY within ~1.4 us of one becoming ready
+		// (TM 3.2.1), regardless of whether the ready state was produced by a
+		// register access. So this loop never blocks indefinitely — a register
+		// write (CSR/TCR/TDR) signals xmt_cond for immediate service, and the
+		// timed wait bounds the latency of any transition that produced no
+		// register access, keeping the scan (and the TRDY interrupt it derives)
+		// alive. 2.11BSD's dz start path depends on this: a boot that enables a
+		// line and then waits at spl5 for the transmitter interrupt wedges the
+		// machine if the scan stops with the interrupt not yet delivered.
+		struct timespec ts;
+		clock_gettime(CLOCK_REALTIME, &ts);
+		ts.tv_nsec += 50000000L; // 50 ms scan period when idle
+		if (ts.tv_nsec >= 1000000000L) { ts.tv_sec++; ts.tv_nsec -= 1000000000L; }
+		pthread_cond_timedwait(&xmt_cond, &state_mutex, &ts);
 	}
 	pthread_mutex_unlock(&state_mutex);
 }
