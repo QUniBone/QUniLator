@@ -12,7 +12,7 @@ This is the community-maintained mainline of QUniBone, continuing the work of
 **Jörg Hoppe** (retrocmp.com: [UniBone](http://retrocmp.com/projects/unibone/),
 [QBone](http://retrocmp.com/projects/qbone/)). The original reference codebase
 is preserved at
-[`QUniBone/QUniBone-classic`](https://github.com/QUniBone/QUniBone-classic).
+[`QUniBone/QUniBoneClassic`](https://github.com/QUniBone/QUniBoneClassic).
 Licensed BSD 2-Clause; Jörg's copyright is retained.
 
 ## How this code is maintained
@@ -23,7 +23,7 @@ largely agent-authored. This is the ongoing method, not a one-off experiment.
 
 If you would rather not run or contribute to software produced this way, stop
 here — Jörg Hoppe's original codebase is preserved at
-[`QUniBone/QUniBone-classic`](https://github.com/QUniBone/QUniBone-classic).
+[`QUniBone/QUniBoneClassic`](https://github.com/QUniBone/QUniBoneClassic).
 
 ## Status
 
@@ -64,11 +64,11 @@ boot.
 Download the image for your bus. These links always give you the newest
 release:
 
-- **[qbone-dist.img.xz](https://github.com/QUniBone/QUniBone/releases/latest/download/qbone-dist.img.xz)** — QBUS
-- **[unibone-dist.img.xz](https://github.com/QUniBone/QUniBone/releases/latest/download/unibone-dist.img.xz)** — UNIBUS (untested; see Status)
+- **[qbone-dist.img.xz](https://github.com/QUniBone/QUniLator/releases/latest/download/qbone-dist.img.xz)** — QBUS
+- **[unibone-dist.img.xz](https://github.com/QUniBone/QUniLator/releases/latest/download/unibone-dist.img.xz)** — UNIBUS (untested; see Status)
 
 Release notes are on the [latest release
-page](https://github.com/QUniBone/QUniBone/releases/latest).
+page](https://github.com/QUniBone/QUniLator/releases/latest).
 
 ### 2. Write it to a microSD card
 

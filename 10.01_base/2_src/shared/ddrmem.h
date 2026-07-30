@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include "qunibus.h"
+#include "iopageregister.h"
 
 /***** start of shared structs *****/
 // on PRU. all struct are byte-packed, no "#pragma pack" there
@@ -17,10 +18,33 @@
 #pragma pack(push,1)
 #endif
 
+// A UNIBUS adapter's map register file, as the DW780 of a VAX-11/780 has it:
+// one register per 512 byte page of the eighteen bit address space. A device
+// drives an eighteen bit address, the register indexed by its page supplies
+// the page frame the transfer really reaches, and the offset within the page
+// carries over. The layout is the adapter's, so a register is valid only with
+// its top bit set - see UNIBUS_MAP_VALID.
+#define UNIBUS_MAP_REGISTERS	496		// pages of the 18 bit space that map
+#define UNIBUS_MAP_PAGE_SHIFT	9		// 512 bytes to a page
+#define UNIBUS_MAP_VALID	0x80000000	// register is allocated
+#define UNIBUS_MAP_BYTE_OFFSET	0x02000000	// transfer moves up one byte
+#define UNIBUS_MAP_DATA_PATH	0x01e00000	// buffered data path number
+#define UNIBUS_MAP_FRAME	0x001fffff	// page frame of the answer
+
 typedef struct {
 	// DDR mem is only used to emulate QBUS/UNIBUS memory
 	// This slow DDR RAM is not used otherwise
 	qunibus_memory_t memory;
+
+	// The map registers a processor behind a UNIBUS adapter puts between a
+	// device's address and its own memory. Empty, and the PRU translates
+	// nothing: a device's address is the address memory answers at, which is
+	// what a PDP-11 has. The ARM fills it in for a machine that has an adapter.
+	uint32_t unibus_map[UNIBUS_MAP_REGISTERS];
+
+	// Whether the map above is to be applied at all. Kept beside it so the PRU
+	// reads one word to find out, rather than scanning the file.
+	uint32_t unibus_map_active;
 } ddrmem_t;
 
 #ifdef ARM
@@ -42,10 +66,13 @@ public:
 	// physical ddrmem_base address, for access by PRU
 	uint32_t base_physical;
 
-	// emulated address range
-	bool enabled = false; // true if startaddr <= endaddr
-	uint32_t qunibus_startaddr;
-	uint32_t qunibus_endaddr; 
+	// the emulated address ranges, one per DDRMEM_RANGE_* slot
+	struct range_t {
+		bool enabled = false; // true if startaddr <= endaddr
+		uint32_t startaddr = 0;
+		uint32_t endaddr = 0; // last address of the range, included
+	};
+	range_t ranges[DDRMEM_RANGE_COUNT];
 
 	uint32_t pmi_address_overlay ;
 
@@ -54,10 +81,21 @@ public:
 	void save(char *fname);
 	void load(char *fname);
 	void clear(void);
+	void clear_range(uint32_t startaddr, uint32_t endaddr);
+	void fill_range(uint32_t startaddr, uint32_t endaddr, uint16_t fillword);
 	void fill_pattern(void);
 	void fill_pattern_pru(void);
 	void unibus_slave(uint32_t startaddr, uint32_t endaddr);
-	bool set_range(uint32_t startaddr, 	uint32_t endaddr);
+	bool set_range(unsigned slot, uint32_t startaddr, uint32_t endaddr);
+	bool range_enabled(unsigned slot) const { return ranges[slot].enabled ; }
+	uint32_t range_start(unsigned slot) const { return ranges[slot].startaddr ; }
+	uint32_t range_end(unsigned slot) const { return ranges[slot].endaddr ; }
+	// the slot serving addr, or -1: which range a bus address falls into
+	int slot_of(uint32_t addr) const;
+	// an enabled range other than slot sharing an address with [start,end], or -1
+	int overlapping_slot(unsigned slot, uint32_t startaddr, uint32_t endaddr) const;
+	// does one emulated range hold the whole of [addr, addr+byte_count) ?
+	bool contains(uint32_t addr, unsigned byte_count) const;
 	bool deposit(uint32_t addr, uint16_t w);
 	bool exam(uint32_t addr, uint16_t *w);
 
@@ -77,6 +115,53 @@ extern ddrmem_c *ddrmem;
 
 #else
 // included by PRU code
+
+// Is addr served out of DDR? Tested on every bus cycle the board sees, before
+// the I/O page decode, so the slots are compared in line rather than in a loop,
+// and combined with "|" so neither compare needs a branch. An unused slot holds
+// limit 0, which the first compare rejects.
+#if DDRMEM_RANGE_COUNT != 2
+#error "DDRMEM_ADDR_EMULATED is unrolled for two slots"
+#endif
+#define DDRMEM_ADDR_EMULATED(addr) ( \
+	  ((addr) < pru_iopage_registers.memory_limit_addr[0] \
+	    && (addr) >= pru_iopage_registers.memory_start_addr[0]) \
+	| ((addr) < pru_iopage_registers.memory_limit_addr[1] \
+	    && (addr) >= pru_iopage_registers.memory_start_addr[1]) )
+
+// What a device's address reaches.
+//
+// On a machine without an adapter it reaches memory directly, and the address
+// on the bus is the address of the word. Behind a UNIBUS adapter it does not:
+// the adapter's map register for the page supplies the frame the transfer
+// really lands in, and only the offset within the page carries over. A device
+// drives eighteen bits either way and knows nothing about it.
+//
+// An unallocated register answers nothing, which is what a real adapter does
+// with a page nobody has assigned - the transfer fails rather than reaching
+// some other program's memory. DDRMEM_MAPPED_ADDR returns that as an address
+// past the end of memory, which the caller already treats as no answer.
+#define DDRMEM_MAP_UNMAPPED	0xffffffff
+
+// Whether the adapter's map is to be applied at all.
+#define DDRMEM_MAP_ACTIVE \
+	( mailbox.ddrmem_base_physical->unibus_map_active )
+
+// The register covering a device's address. Costs a read of DDR, so a caller
+// takes it once and keeps it.
+#define DDRMEM_MAP_ENTRY(addr) \
+	( mailbox.ddrmem_base_physical->unibus_map[(addr) >> UNIBUS_MAP_PAGE_SHIFT] )
+
+// Whether a device's address has a register at all: the map covers the low
+// part of the eighteen bit space, and the I/O page at the top has none.
+#define DDRMEM_MAP_COVERS(addr) \
+	( ((addr) >> UNIBUS_MAP_PAGE_SHIFT) < UNIBUS_MAP_REGISTERS )
+
+// Where the register sends it: its page frame, with the offset carried over.
+#define DDRMEM_MAP_APPLY(entry,addr) \
+	( (((entry) & UNIBUS_MAP_FRAME) << UNIBUS_MAP_PAGE_SHIFT) \
+	  | ((addr) & ((1u << UNIBUS_MAP_PAGE_SHIFT) - 1)) )
+
 // set a word in simulated memory
 #define DDRMEM_MEMSET_W(addr,dataw) \
     	( mailbox.ddrmem_base_physical->memory.words[(addr)/2] = (dataw) )

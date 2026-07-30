@@ -3,6 +3,8 @@
 10.03_app_demo/4_deploy_u/
 # host-built CPU core test binary, objects and per-run stamps
 10.06_cputest/4_deploy/
+# host-built VAX simulators, objects and test run output
+10.07_vax/4_deploy/
 # c-kermit source + binary, fetched/built by 91_3rd_party/ckermit/build.sh
 91_3rd_party/ckermit/build/
 
@@ -26,3 +28,10 @@ diagnostics/reference/*.pdf
 tools/*.lst
 tools/*.obj
 tools/*.rl02
+
+.claude/worktrees/
+
+# clangd compilation database, written by tools/gen-compile-commands.sh
+compile_commands.json
+# clangd's background index, rebuilt from the sources on demand
+.cache/

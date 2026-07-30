@@ -523,6 +523,35 @@ uint32_t qunibus_c::test_sizer(void)
     return dma_request->qunibus_end_addr; // first non implemented address
 }
 
+/* probe_range(): does anything on the bus answer inside [startaddr, endaddr]?
+ *
+ * DATIs both ends and one word every "step" bytes, and returns the lowest
+ * address that answered, else QUNIBUS_PROBE_NONE. Used before claiming a range
+ * for emulated memory: two slaves answering one cycle drive the bus against
+ * each other, and the damage shows up somewhere else entirely.
+ *
+ * The board answers its own emulated ranges, so probe before claiming, not
+ * after. A range that stays silent is not proven free — a card may decode
+ * addresses it does not answer — so this can only refuse, never confirm.
+ */
+uint32_t qunibus_c::probe_range(uint32_t startaddr, uint32_t endaddr, uint32_t step)
+{
+    uint16_t w;
+    if (startaddr > endaddr || step < 2)
+        return QUNIBUS_PROBE_NONE;
+
+    for (uint32_t addr = startaddr; addr <= endaddr; addr += step) {
+        if (dma(true, QUNIBUS_CYCLE_DATI, addr, &w, 1))
+            return addr;
+        if (endaddr - addr < step)
+            break; // last step would wrap
+    }
+    // the end of the range need not fall on a step boundary
+    if (dma(true, QUNIBUS_CYCLE_DATI, endaddr, &w, 1))
+        return endaddr;
+    return QUNIBUS_PROBE_NONE;
+}
+
 /*
  * Test memory from 0 .. end_addr
  * mode = 1: fill every word with its address, then check endlessly,

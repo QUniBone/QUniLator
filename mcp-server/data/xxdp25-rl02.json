@@ -1,0 +1,4161 @@
+[
+ {
+  "name": "XXDPXM.SYS",
+  "date": "1989-03-01",
+  "blocks": 39
+ },
+ {
+  "name": "XXDPSM.SYS",
+  "date": "1989-03-01",
+  "blocks": 29
+ },
+ {
+  "name": "DRSXM.SYS",
+  "date": "1989-03-01",
+  "blocks": 48
+ },
+ {
+  "name": "DRSSM.SYS",
+  "date": "1989-03-01",
+  "blocks": 24
+ },
+ {
+  "name": "DIR.SYS",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "DB.SYS",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "DD.SYS",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "DL.SYS",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "DM.SYS",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "DR.SYS",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "DU.SYS",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "DY.SYS",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "LP.SYS",
+  "date": "1989-03-01",
+  "blocks": 1
+ },
+ {
+  "name": "MM.SYS",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "MS.SYS",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "MU.SYS",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "DATE.SYS",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "DUSZ.SYS",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "UPDAT.BIC",
+  "date": "1989-03-01",
+  "blocks": 29,
+  "title": "ERROR WHILE LOADING DRIVER FOR"
+ },
+ {
+  "name": "XTECO.BIC",
+  "date": "1989-03-01",
+  "blocks": 26,
+  "title": "WHILE LOADING DRIVER FOR"
+ },
+ {
+  "name": "DXCL.BIN",
+  "date": "1989-03-01",
+  "blocks": 44,
+  "title": "WHILE LOADING DRIVER FOR"
+ },
+ {
+  "name": "SETUP.BIC",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "SETUP - XXDP V2 SETUP UTILITY REVISION F"
+ },
+ {
+  "name": "PATCH.BIC",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "? INPUT TABLE EMPTY"
+ },
+ {
+  "name": "HELP.TXT",
+  "date": "1989-03-01",
+  "blocks": 29
+ },
+ {
+  "name": "11V23Q.CCC",
+  "date": "1989-03-01",
+  "blocks": 1
+ },
+ {
+  "name": "11T23Q.CCC",
+  "date": "1989-03-01",
+  "blocks": 1
+ },
+ {
+  "name": "11V3LQ.CCC",
+  "date": "1989-03-01",
+  "blocks": 1
+ },
+ {
+  "name": "11T23H.CCC",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "MNC11A.CCC",
+  "date": "1989-03-01",
+  "blocks": 1
+ },
+ {
+  "name": "MNC11.CCC",
+  "date": "1989-03-01",
+  "blocks": 1
+ },
+ {
+  "name": "MINC11.CCC",
+  "date": "1989-03-01",
+  "blocks": 1
+ },
+ {
+  "name": "11T3LQ.CCC",
+  "date": "1989-03-01",
+  "blocks": 1
+ },
+ {
+  "name": "11T3LH.CCC",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "11V3LH.CCC",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "11T03E.BIN",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "%DEC/X11. DXQAE-D SHORT MONITOR"
+ },
+ {
+  "name": "PDT130.CCC",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "11T03D.CCC",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "11T03Q.CCC",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "11T03H.CCC",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "MNC11F.CCC",
+  "date": "1989-03-01",
+  "blocks": 1
+ },
+ {
+  "name": "11T23B.CCC",
+  "date": "1989-03-01",
+  "blocks": 1
+ },
+ {
+  "name": "T.CCC",
+  "date": "1989-03-01",
+  "blocks": 15
+ },
+ {
+  "name": "BKMAA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 1,
+  "title": ""
+ },
+ {
+  "name": "CMFAF0.BIC",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "PC=         ICNT="
+ },
+ {
+  "name": "CMSBB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 10,
+  "title": "INSTRUCTION CHANGED"
+ },
+ {
+  "name": "EFPAA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 59,
+  "title": "MAINDEC-11-DEFPA-A...PDP 11-45/55/70...FP11-C DIAGNOSTIC PART 1"
+ },
+ {
+  "name": "EFPBA1.BIC",
+  "date": "1989-03-01",
+  "blocks": 46,
+  "title": "MAINDEC-11-DEFPB-A...PDP11-45/55/70...FP11-C DIAGNOSTIC PART 2"
+ },
+ {
+  "name": "EKBAD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 11,
+  "title": "CEKBAD0 11/70 CPU #1"
+ },
+ {
+  "name": "EKBBF0.BIC",
+  "date": "1989-03-01",
+  "blocks": 61,
+  "title": ">%>:>@>%>:>v>%>:>"
+ },
+ {
+  "name": "EKBCD1.BIC",
+  "date": "1989-03-01",
+  "blocks": 44,
+  "title": "CEKBC-D  11/70 CACHE #1"
+ },
+ {
+  "name": "EKBDE1.BIC",
+  "date": "1989-03-01",
+  "blocks": 78,
+  "title": "PROGRAMMABLE RP04 DRIVES WILL NOT BE USED BY TEST 35"
+ },
+ {
+  "name": "EKBEE1.BIC",
+  "date": "1989-03-01",
+  "blocks": 61,
+  "title": "CPU UNDER TEST FOUND TO BE A"
+ },
+ {
+  "name": "EKBFD1.BIC",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "POWER FAILURE, RESTARTING PROGRAM"
+ },
+ {
+  "name": "EKBGC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "[UNIBUS EXERCISER WILL BE USED]"
+ },
+ {
+  "name": "EMJAD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 9,
+  "title": "TRAPPED TO 4 PC="
+ },
+ {
+  "name": "EMKAB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 81,
+  "title": "UNEXPECTED TRAP TO 170 (IIST) - PROGRAM CONTINUING!"
+ },
+ {
+  "name": "EQKCE1.BIC",
+  "date": "1989-03-01",
+  "blocks": 58,
+  "title": "CEQKC-E...PDP 11/70 CPU EXERCISER"
+ },
+ {
+  "name": "ERHAE1.BIC",
+  "date": "1989-03-01",
+  "blocks": 54,
+  "title": "WARNING:  PROGRAMMABLE DRIVES MAY BE USED"
+ },
+ {
+  "name": "ERSAA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 22,
+  "title": "COULD NOT FIND DRIVE WILL TEST DRIVE 0 IF YOU CONT6"
+ },
+ {
+  "name": "ERSBC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 18,
+  "title": "COULD NOT FIND DRIVE"
+ },
+ {
+  "name": "ERSCB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 26,
+  "title": "TEST ALL DRIVES? (Y OR N)"
+ },
+ {
+  "name": "ERSDD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 24,
+  "title": "TEST ALL DRIVES? (Y OR N)"
+ },
+ {
+  "name": "FFPAA1.BIN",
+  "date": "1989-03-01",
+  "blocks": 60,
+  "title": "DFFPA, FP11-A 11/34 FPP DIAGNOSTIC PART 1"
+ },
+ {
+  "name": "FFPBA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 59,
+  "title": "DFFPB, FP11-A 11/34 FPP DIAGNOSTIC PART 2"
+ },
+ {
+  "name": "FFPCB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 59,
+  "title": "q:neoBr~qPneoBr~qyn"
+ },
+ {
+  "name": "FKAAC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 24,
+  "title": "CFKAAC0 11/34 BSC INST TST"
+ },
+ {
+  "name": "FKABD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 15,
+  "title": "CFKABD0 11/34 TRAPS TST DONE"
+ },
+ {
+  "name": "FKACA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": ""
+ },
+ {
+  "name": "FKKAB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 37,
+  "title": "HALT ON ERROR AT"
+ },
+ {
+  "name": "FKTGC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": ""
+ },
+ {
+  "name": "FKTHB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 44,
+  "title": "CFKTHB0  11/34 MEMORY MGMT. DIAG."
+ },
+ {
+  "name": "GKAAA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 14,
+  "title": ""
+ },
+ {
+  "name": "GKABC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 15,
+  "title": ""
+ },
+ {
+  "name": "JDLAA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 19,
+  "title": "KDF11-B AND DLV11-J TEST"
+ },
+ {
+  "name": "JFPAA1.BIC",
+  "date": "1989-03-01",
+  "blocks": 50,
+  "title": "a(IF](_$aBIw](_$a\\I"
+ },
+ {
+  "name": "JFPBA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 39,
+  "title": "CJFPBA -- FPF11 DIAGNOSTIC, PART 2"
+ },
+ {
+  "name": "JKDAD1.BIC",
+  "date": "1989-03-01",
+  "blocks": 28,
+  "title": "CJKDAD0 KTF11-AA MMU DIAG."
+ },
+ {
+  "name": "JKDBD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 52,
+  "title": "|%|'|?|W|Z|_|e|g|o|w|"
+ },
+ {
+  "name": "JKDCB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 52,
+  "title": "CJKDCB, KEF11-A FP DIAGNOSTIC PART 1"
+ },
+ {
+  "name": "JKDDB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 32,
+  "title": "CJKDDB KEF11-A DIAGNOSTIC PART 2"
+ },
+ {
+  "name": "JKDEB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 90,
+  "title": "|%|'|?|W|Z|_|e|g|o|w|"
+ },
+ {
+  "name": "JKDFB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 25,
+  "title": "SLU1 TCSR DONE NOT SET WITH RESET"
+ },
+ {
+  "name": "JKDHB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 56,
+  "title": "{ABCDEFGHI}JKLMNOPQR"
+ },
+ {
+  "name": "JKDIB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 22,
+  "title": "SLU1 TCSR DONE NOT SET WITH RESET"
+ },
+ {
+  "name": "JKDJB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 93,
+  "title": "FAILURE DURING Q BUS EXERCISER TESTS"
+ },
+ {
+  "name": "JKL5B0.BIC",
+  "date": "1989-03-01",
+  "blocks": 93,
+  "title": "FAILURE DURING Q BUS EXERCISER TESTS"
+ },
+ {
+  "name": "KFPAD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 62,
+  "title": "CKFPAD0 FP11F FLTG PNT PRT A"
+ },
+ {
+  "name": "KFPBC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 60,
+  "title": "lFnRu\"s3mFnRu\"shmFnRu\"s"
+ },
+ {
+  "name": "KFPCD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 64,
+  "title": "CKFPCD0 FP11F FLTG PNT PRT C"
+ },
+ {
+  "name": "KKAAB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 36,
+  "title": "END OF  CKKAAB0 11/44 CPU/EIS"
+ },
+ {
+  "name": "KKABD1.BIC",
+  "date": "1989-03-01",
+  "blocks": 21,
+  "title": "|%|'|?|O|Z|_|e|g|"
+ },
+ {
+  "name": "KKACC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 9,
+  "title": "CKKACC0 11/44 POWER FAIL"
+ },
+ {
+  "name": "KKKAC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 42,
+  "title": "UNIBUS  EXERCISER NOT USED- DMA TESTS NOT PERFORMED"
+ },
+ {
+  "name": "KKTAB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "CKKTAB 11/44 MEM MGMT PRT A"
+ },
+ {
+  "name": "KKTBD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 30,
+  "title": "POWER MONITOR BIT WAS FOUND SET"
+ },
+ {
+  "name": "KKUAE0.BIN",
+  "date": "1989-03-01",
+  "blocks": 28,
+  "title": "POWER MONITOR BIT FOUND SET"
+ },
+ {
+  "name": "NDMAA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "DMV-11 U-CONTRL LOGIC DIAG - PART 1 OF 2"
+ },
+ {
+  "name": "NDMBA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 30,
+  "title": "DMV-11 U-CONTRL LOGIC DIAG - PART 2 OF 2"
+ },
+ {
+  "name": "NDMCA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 30,
+  "title": "DMV-11 LINE UNIT TESTS - PART 1 OF 3"
+ },
+ {
+  "name": "NDMDA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "DMV-11 LINE UNIT TESTS - PART 2 OF 3"
+ },
+ {
+  "name": "NDMEA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "DMV-11 LINE UNIT TESTS - PART 3 OF 3"
+ },
+ {
+  "name": "NKMBB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 13,
+  "title": "KMV11A LINE CNT DIAGNOSTIC"
+ },
+ {
+  "name": "NKMCA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 30,
+  "title": "KMV11-A FUNCTIONAL  DIAGNOSTIC"
+ },
+ {
+  "name": "NKMDA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 19,
+  "title": "KMV11A.B  LOGIC DIAGNOSTIC"
+ },
+ {
+  "name": "NKMEA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "KMV11B LINE CNT DIAG."
+ },
+ {
+  "name": "NKTCA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 20,
+  "title": "S TIMEOUT - NO IOP PRESENT, OR KXT11 INTERFACE ERROR"
+ },
+ {
+  "name": "NKXAB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 24,
+  "title": "NKXAB0 KXT-11 DIAGNOSTIC"
+ },
+ {
+  "name": "NQNAA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 45,
+  "title": "DEQNA FUNCTIONAL TEST"
+ },
+ {
+  "name": "NRLGA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 19,
+  "title": "CNRLG TESTS CONTROLLER FUNCTIONS, INTERFACE LOGIC, REGISTER OPERATION"
+ },
+ {
+  "name": "NTSAA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 37,
+  "title": "\"BUS-INIT\" DIDN'T INITIALIZE CONTROLLER"
+ },
+ {
+  "name": "NTSBA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 61,
+  "title": "\"BUS-INIT\" DIDN'T INITIALIZE CONTROLLER"
+ },
+ {
+  "name": "NTSCA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 73,
+  "title": "\"BUS-INIT\" DIDN'T INITIALIZE CONTROLLER"
+ },
+ {
+  "name": "NTSDA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 68,
+  "title": "\"BUS-INIT\" DIDN'T INITIALIZE CONTROLLER"
+ },
+ {
+  "name": "NTSEA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 24,
+  "title": "-B.DATA RELIABILITY TEST"
+ },
+ {
+  "name": "OEEAA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 4,
+  "title": "Drive not readyMedia not bootableNo disk presentNo tape presentNo controller,Non existent driveInvalid unit number Invalid deviceController errorDrive error"
+ },
+ {
+  "name": "OEEBA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 5,
+  "title": "Aandrijver niet gereedMedia niet opstartbaarGeen schijf aanwezigGeen tape aanwezigNiet-bestaande besturingsmodule,Niet-bestaande aandrijverOngeldig eenheidsnummer Ongeldig apparaatFout in besturingsmoduleFout in aandrijver"
+ },
+ {
+  "name": "OEECA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 5,
+  "title": "TAPEZ LES NOMS DES PROGRAMMES DE CHARGEMENT"
+ },
+ {
+  "name": "OEEDA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 5,
+  "title": "Laufwerk nicht betriebsbereitDatentraeger kann nicht geladen werdenKeine Platte/Diskette eingelegtKein Band eingelegtSteuermodul nicht vorhandenLaufwerk nicht vorhandenUngueltige Geraetenummer Ungueltiges GeraetFehler im SteuermodulLaufwerkfehler"
+ },
+ {
+  "name": "OEEEA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 5,
+  "title": "EEPROM write error, PCR page X, address"
+ },
+ {
+  "name": "OEEFA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 4,
+  "title": "EEPROM write error, PCR page X, address Q"
+ },
+ {
+  "name": "OEEGB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 4,
+  "title": "EEPROM write error, PCR page X, address p"
+ },
+ {
+  "name": "OEEHA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 2,
+  "title": "EEPROM write error, PCR page X, address u"
+ },
+ {
+  "name": "OKDAG0.BIC",
+  "date": "1989-03-01",
+  "blocks": 102,
+  "title": "KDJ11-B CPU DIAGNOSTIC - COKDAG0"
+ },
+ {
+  "name": "OKDBA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 13,
+  "title": "MAIN COMMANDS MENU"
+ },
+ {
+  "name": "OKDDD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 32,
+  "title": "TRAP ON HALT IS ENABLED, JUMPER IS NOT INSTALLED"
+ },
+ {
+  "name": "OKTAC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "COKTAC0 KTJ11-B DIAGNOSTIC"
+ },
+ {
+  "name": "EPOMUT.BIN",
+  "date": "1989-03-01",
+  "blocks": 92,
+  "title": "%DEC/X-11 EXERCISER MONITOR \"LIB. - D\"  -  V02.5%  \"MD-ZZ-CXMON-D\"  10-SEP-81%MONITOR:  E"
+ },
+ {
+  "name": "CPOMUT.CNF",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "EPOMUR.BIN",
+  "date": "1989-03-01",
+  "blocks": 93,
+  "title": "%DEC/X-11 EXERCISER MONITOR \"LIB. - D\"  -  V02.5%  \"MD-ZZ-CXMON-D\"  10-SEP-81%MONITOR:  E"
+ },
+ {
+  "name": "CPOMUR.CNF",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "EPOMRT.BIN",
+  "date": "1989-03-01",
+  "blocks": 90,
+  "title": "%DEC/X-11 EXERCISER MONITOR \"LIB. - D\"  -  V02.5%  \"MD-ZZ-CXMON-D\"  10-SEP-81%MONITOR:  E"
+ },
+ {
+  "name": "CPOMRT.CNF",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "RDTAC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 33,
+  "title": "MAINDEC-11-CRDTAC  DT07 TEST"
+ },
+ {
+  "name": "RIIAB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 35,
+  "title": "DIP11-A (IIST) SINGLE-INTERFACE DIAGNOSTIC  MAINDEC-11-CRIIA-B"
+ },
+ {
+  "name": "RLPAB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 48,
+  "title": "CRLPAB   LPA-11 SYSTEM EXERCISER"
+ },
+ {
+  "name": "RLPBB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 19,
+  "title": "CRLPBB0   LPA/AA11-K DIAGNOSTIC TEST"
+ },
+ {
+  "name": "RLPFC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 20,
+  "title": "CRLPFC   LPA/DR11-K  INPUT-OUTPUT DIAGNOSTIC"
+ },
+ {
+  "name": "RLPGC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 28,
+  "title": "CRLPGC   LPA/KW11-K  DIAGNOSTIC"
+ },
+ {
+  "name": "RLPKC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 19,
+  "title": "SETTLING TEST-- TYPE DESIRED 'FROM' CHANNEL & CR:"
+ },
+ {
+  "name": "RLPLA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 32,
+  "title": "MAINDEC-11-DRLPL-A"
+ },
+ {
+  "name": "RLPMB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 24,
+  "title": "MAINDEC-11-CRLPM-B"
+ },
+ {
+  "name": "RLPNA1.BIC",
+  "date": "1989-03-01",
+  "blocks": 26,
+  "title": "; TOTAL ERRORS"
+ },
+ {
+  "name": "VAAAA1.BIC",
+  "date": "1989-03-01",
+  "blocks": 13,
+  "title": "AAV11 DIAGNOSTIC TEST, (MAINDEC-11-DVAAA-A0)"
+ },
+ {
+  "name": "VADAC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "NDPASS  GOOD UNITS"
+ },
+ {
+  "name": "VAXAB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "CVAXAB  AXV11-C/ADV11-C DIAGNOSTIC"
+ },
+ {
+  "name": "SY84C0.CCC",
+  "date": "1989-03-01",
+  "blocks": 6
+ },
+ {
+  "name": "VCDAB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "MEMORY SIMULATOR DIAG."
+ },
+ {
+  "name": "VCDBB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "STATE ANALYZER DIAG."
+ },
+ {
+  "name": "VCDCB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 30,
+  "title": "TARGET EMULATOR DIAG."
+ },
+ {
+  "name": "VCDDB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 29,
+  "title": "SYSTEM BUS DIAG."
+ },
+ {
+  "name": "VCLHC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 34,
+  "title": "$A THE QUICK BROWN FOX JUMPED OVER THE LAZY DOG."
+ },
+ {
+  "name": "VCMAA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 15,
+  "title": "/@^U//@^G//SWR= //@  NEW = //@?/"
+ },
+ {
+  "name": "VDHAE0.BIN",
+  "date": "1989-03-01",
+  "blocks": 29,
+  "title": "DHV11-M FUNC TST PART 1"
+ },
+ {
+  "name": "VDHBE0.BIN",
+  "date": "1989-03-01",
+  "blocks": 29,
+  "title": "DHV11-M FUNC TEST PART 2"
+ },
+ {
+  "name": "VDHCE1.BIN",
+  "date": "1989-03-01",
+  "blocks": 29,
+  "title": "DHV11-M FUNC TEST PART 3"
+ },
+ {
+  "name": "VDHEC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 50,
+  "title": "DHV11 TEST, ORION UFD"
+ },
+ {
+  "name": "VDLAB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "CVDLAB0 DLV11-J TEST"
+ },
+ {
+  "name": "VDMAC1.BIN",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "DMV-11 U-CONTRL LOGIC DIAG - PART 1 OF 2"
+ },
+ {
+  "name": "VDMBC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 30,
+  "title": "DMV-11 U-CONTRL LOGIC DIAG - PART 2 OF 2"
+ },
+ {
+  "name": "VDMCC1.BIN",
+  "date": "1989-03-01",
+  "blocks": 30,
+  "title": "DMV-11 LINE UNIT TESTS - PART 1 OF 3"
+ },
+ {
+  "name": "VDMDC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "DMV-11 LINE UNIT TESTS - PART 2 OF 3"
+ },
+ {
+  "name": "VDMEC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "DMV-11 LINE UNIT TESTS - PART 3 OF 3"
+ },
+ {
+  "name": "VDPVC1.BIN",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+ },
+ {
+  "name": "VDRAC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 13,
+  "title": "MD-11-CVDRA-C  DRV11B DMA INTERFACE DIAG"
+ },
+ {
+  "name": "VDRBA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 7,
+  "title": "MD-11-DVDRB-A  DRV11B INTERPROCESSOR EXERCISER"
+ },
+ {
+  "name": "VDRCC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "RESTARTED FROM PWR FAIL"
+ },
+ {
+  "name": "VDRDB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 15,
+  "title": "RESTARTED FROM PWR FAIL"
+ },
+ {
+  "name": "VDVAD1.BIN",
+  "date": "1989-03-01",
+  "blocks": 14,
+  "title": "ZZ-CVDVA-D  DLV11-E OFFLINE TEST"
+ },
+ {
+  "name": "VDVCC1.BIN",
+  "date": "1989-03-01",
+  "blocks": 13,
+  "title": "I HAVE NO DEVICE TO TEST."
+ },
+ {
+  "name": "VDZAD3.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "1ST CSR ADDRESS (174000:177770)"
+ },
+ {
+  "name": "VDZBE0.BIN",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "1ST CSR ADDRESS (174000:177770)"
+ },
+ {
+  "name": "VDZCB2.BIN",
+  "date": "1989-03-01",
+  "blocks": 12,
+  "title": "1ST CSR ADDRESS (174000:177770)"
+ },
+ {
+  "name": "VDZDA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 4,
+  "title": "THERE WAS A RECEIVER ERROR. REGISTER (SEL 2) ="
+ },
+ {
+  "name": "VHQAE0.BIN",
+  "date": "1989-03-01",
+  "blocks": 78,
+  "title": "DHV-DHQ11,CXA16,CXY08,CXF32 FUNCTIONAL DIAG"
+ },
+ {
+  "name": "VIBAB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 13,
+  "title": "CVIBAB IBV11A DIAGNOSTIC"
+ },
+ {
+  "name": "VIBBA1.BIC",
+  "date": "1989-03-01",
+  "blocks": 12,
+  "title": "CVIBBA IBV11A DIAGNOSTIC"
+ },
+ {
+  "name": "VKAAC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": ""
+ },
+ {
+  "name": "VKABB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": ""
+ },
+ {
+  "name": "VKACC1.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "DVKACC - LSI-11 FIS  INSTRUCTION TEST"
+ },
+ {
+  "name": "VKADC1.BIC",
+  "date": "1989-03-01",
+  "blocks": 13,
+  "title": "CVKADC0 LSI-11 TRAPS TEST"
+ },
+ {
+  "name": "VKAEB2.BIC",
+  "date": "1989-03-01",
+  "blocks": 7,
+  "title": "MAINDEC-11-DVKAE-B"
+ },
+ {
+  "name": "VKAFE0.BIN",
+  "date": "1989-03-01",
+  "blocks": 5,
+  "title": "CVKAF-E0   DRV11 DIAGNOSTIC"
+ },
+ {
+  "name": "VKAHA1.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": ""
+ },
+ {
+  "name": "VKAIB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 15,
+  "title": ""
+ },
+ {
+  "name": "VKAJB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": ""
+ },
+ {
+  "name": "VKALA1.BIC",
+  "date": "1989-03-01",
+  "blocks": 12,
+  "title": ""
+ },
+ {
+  "name": "VKMAC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 19,
+  "title": "KMV11A.B  LOGIC DIAGNOSTIC"
+ },
+ {
+  "name": "VKMBC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "KMV11A LINE CNT DIAGNOSTIC"
+ },
+ {
+  "name": "VKMCA1.BIN",
+  "date": "1989-03-01",
+  "blocks": 30,
+  "title": "KMV11-A FUNCTIONAL  DIAGNOSTIC"
+ },
+ {
+  "name": "VKMEB1.BIN",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "KMV11B LINE CNT DIAG."
+ },
+ {
+  "name": "VKMHA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "VKMHA0 KMV11-C LOGIC  DIAGNOSTIC"
+ },
+ {
+  "name": "VKMJA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 57,
+  "title": "KMV11-C FUNCTIONAL  DIAGNOSTIC"
+ },
+ {
+  "name": "VKUAA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "CVKUA-A, KUV11-AA WRITABLE CONTROL STORE DIAGNOSTIC"
+ },
+ {
+  "name": "VKWAC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "CVKWAC   KWV11 DIAGNOSTIC"
+ },
+ {
+  "name": "VM8AF0.BIC",
+  "date": "1989-03-01",
+  "blocks": 14,
+  "title": "READ/WRITE REGISTER"
+ },
+ {
+  "name": "VMEMA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "CZKMA OR VMSA DIAGNOSTICS BEFORE RUNNING THIS"
+ },
+ {
+  "name": "VMJAB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 59,
+  "title": "F(F(F(F(F(F(F(F(F(F(F("
+ },
+ {
+  "name": "VMNAC1.BIC",
+  "date": "1989-03-01",
+  "blocks": 48,
+  "title": "CVMNA-C    MNCAD (A/D) DIAGNOSTIC"
+ },
+ {
+  "name": "VMNBB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 18,
+  "title": "MNCDI (DIGITAL IN) DIAGNOSTIC"
+ },
+ {
+  "name": "VMNCB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 21,
+  "title": "MNCKW (CLOCK) DIAGNOSTIC"
+ },
+ {
+  "name": "VMNDA1.BIC",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "CVMND-A  MNCAA (D/A) DIAGNOSTIC"
+ },
+ {
+  "name": "VMNEA1.BIC",
+  "date": "1989-03-01",
+  "blocks": 14,
+  "title": "MNCDO (DIGIAL OUT) DIAGNOSTIC"
+ },
+ {
+  "name": "VMNFC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 9,
+  "title": "MINC-11 OPTION SIZER PROGRAM"
+ },
+ {
+  "name": "VMNGA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 3,
+  "title": "MINC-11 CHAIN TERMINATOR PROGRAM"
+ },
+ {
+  "name": "VMSAC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 25,
+  "title": "KT11 (MEMORY MANAGEMENT) AVAILABLE"
+ },
+ {
+  "name": "VMSBD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 9,
+  "title": "K bytes.  Test time -"
+ },
+ {
+  "name": "VMXAA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 15,
+  "title": "CVMXAA0 MXV11A DIAGNOSTIC"
+ },
+ {
+  "name": "VMXBA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 23,
+  "title": "CVMXBA0 MXV11B DIAGNOSTIC"
+ },
+ {
+  "name": "VNIAE0.BIC",
+  "date": "1989-03-01",
+  "blocks": 45,
+  "title": "CVNIE DEQNA - DELQA - DESQA NI EXERCISER"
+ },
+ {
+  "name": "VPCAH0.BIC",
+  "date": "1989-03-01",
+  "blocks": 83,
+  "title": "CVPCAH0  CSS PROCESS CONTROL I/O SUBSYSTEM TEST"
+ },
+ {
+  "name": "VRLAC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 24,
+  "title": "NO DRIVE CONNECTED"
+ },
+ {
+  "name": "VRLBC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 28,
+  "title": "RLV12, RLV11, OR RL11"
+ },
+ {
+  "name": "VTSAC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 37,
+  "title": "\"BUS-INIT\" DIDN'T INITIALIZE CONTROLLER"
+ },
+ {
+  "name": "VTSBE0.BIC",
+  "date": "1989-03-01",
+  "blocks": 61,
+  "title": "\"BUS-INIT\" DIDN'T INITIALIZE CONTROLLER"
+ },
+ {
+  "name": "VTSCD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 74,
+  "title": "\"BUS-INIT\" DIDN'T INITIALIZE CONTROLLER"
+ },
+ {
+  "name": "VTSDE0.BIC",
+  "date": "1989-03-01",
+  "blocks": 68,
+  "title": "\"BUS-INIT\" DIDN'T INITIALIZE CONTROLLER"
+ },
+ {
+  "name": "VTSED0.BIC",
+  "date": "1989-03-01",
+  "blocks": 24,
+  "title": "-L.DATA RELIABILITY TEST"
+ },
+ {
+  "name": "VVSAB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 76,
+  "title": "**** VSV11-VS11 DIAGNOSTIC ****"
+ },
+ {
+  "name": "VVTAA1.BIN",
+  "date": "1989-03-01",
+  "blocks": 18,
+  "title": "[ IS THE CONTROLLER JUMPERED FOR 525 OR 626 LINES,[ TYPE 5 OR 6......@[VTV30-H/J OR VT30-H DIAGNOSTIC AND EXERCISER[PART1-----LOGIC TESTS[START ADDRESS IS 1000, OR 200[RESTART ADDRESS IS 1200[YOU ARE STRONGLY ADVISED TO READ THE[OPTION DESCRIPTION BEFORE PROCEEDING,[ANY FURTHER.[FOR DETAILS OF BUS AND VECTOR ADDRESSES[PLEASE REFER TO THE OPTION DESCRIPTION[[[@[SELECT DESIRED SWITCH REGISTER OPTIONS[@[TEST NO@[END OF PASS[d"
+ },
+ {
+  "name": "VVTBA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 20,
+  "title": "[ IS THE CONTROLLER JUMPERED FOR 525 OR 625 LINES,[ TYPE 5 OR 6 .....@[VTV30-H/J OR VT30-H DIAGNOSTIC ANDEXERCISER[PART2----- DISPLAY TESTS[START ADDRESS IS 1000, OR 200[RESTART ADDRESS"
+ },
+ {
+  "name": "VVTCA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 19,
+  "title": "[M736?/M737?..@[T.V. ENCODED?(Y OR N)..@[DECIMAL NUMBER OF UNITS(1)..@[ENTER IN OCTAL THE CHARACTER[CODE TO BE DISPLAYED....@[VTV30K DIAGNOSTIC[START ADDRESS 1000, RESTART 1200[PLEASE READ THE LISTIN"
+ },
+ {
+  "name": "XAAAD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XAABC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XAACB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XAAVA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "XADAE0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XADBB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 8
+ },
+ {
+  "name": "XADCB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 8
+ },
+ {
+  "name": "XADVA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "XAFAE0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XARAC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 8
+ },
+ {
+  "name": "XBBAB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XBEAC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 8
+ },
+ {
+  "name": "XBMCN0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 5
+ },
+ {
+  "name": "XBMDE0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XBMEB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XBMFB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XBMGB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XBMHB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XBMIB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XBTAB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XBTBB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XBTCD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XCBAE0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XCBBE0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "XCBCF0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XCDAG0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XCIAB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XCMAC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XCMJB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XCPAG0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 5
+ },
+ {
+  "name": "XCPBK0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XCRAG0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XCSTA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XDCAG0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XDFAB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 10
+ },
+ {
+  "name": "XDHAL0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XDHUA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 10
+ },
+ {
+  "name": "XDHVI0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 9
+ },
+ {
+  "name": "XDJAL0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 8
+ },
+ {
+  "name": "XDLAL0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 5
+ },
+ {
+  "name": "XDLBD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XDMBJ0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XDMCC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 6
+ },
+ {
+  "name": "XDMDF0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 11
+ },
+ {
+  "name": "XDMEC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 11
+ },
+ {
+  "name": "XDMRC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 9
+ },
+ {
+  "name": "XDMSA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XDNAH0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XDPAE0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 6
+ },
+ {
+  "name": "XDPBB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 6
+ },
+ {
+  "name": "XDPVC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XDQAI0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XDRAD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XDRBJ0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "XDRCI0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XDRDC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XDREC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 8
+ },
+ {
+  "name": "XDRFE0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 6
+ },
+ {
+  "name": "XDRJC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XDRKA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XDRUA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XDRVB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 9
+ },
+ {
+  "name": "XDRWD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "XDTAD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XDUAI0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XDUBE0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 11
+ },
+ {
+  "name": "XDVAB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 18
+ },
+ {
+  "name": "XDXAG0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XDZAG0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 6
+ },
+ {
+  "name": "XDZBC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XDZMA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 5
+ },
+ {
+  "name": "XFPAG0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XFPBF0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 8
+ },
+ {
+  "name": "XFPCA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 6
+ },
+ {
+  "name": "XGTAE0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XIBAD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XICAD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "XICBC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 6
+ },
+ {
+  "name": "XIEAB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XIEBA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XIECA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 12
+ },
+ {
+  "name": "XKCTA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 28
+ },
+ {
+  "name": "XKEAD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XKGAD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XKLAE0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 6
+ },
+ {
+  "name": "XKMAA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 12
+ },
+ {
+  "name": "XKMCD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 10
+ },
+ {
+  "name": "XKMDB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 6
+ },
+ {
+  "name": "XKMKA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 6
+ },
+ {
+  "name": "XKMSA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XKUAB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 8
+ },
+ {
+  "name": "XKWAH0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "XKWBL0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XKWCB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XKWDB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 8
+ },
+ {
+  "name": "XKWEB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 5
+ },
+ {
+  "name": "XKWFB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XKWGB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XKXAA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 8
+ },
+ {
+  "name": "XLKAB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XLPAF0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XLPBF0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XLPCE0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XLPDF0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 6
+ },
+ {
+  "name": "XLPED0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 5
+ },
+ {
+  "name": "XLPFB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 5
+ },
+ {
+  "name": "XLPHE0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 22
+ },
+ {
+  "name": "XLPJC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "XMLAA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 8
+ },
+ {
+  "name": "XMNAB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 6
+ },
+ {
+  "name": "XMNBB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 11
+ },
+ {
+  "name": "XMNCB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XMNDB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XMNEB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XMONF0.LIB",
+  "date": "1989-03-01",
+  "blocks": 158
+ },
+ {
+  "name": "XNCAD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 5
+ },
+ {
+  "name": "XNCBB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XPAAF0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XPABG0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XPCCE0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 2
+ },
+ {
+  "name": "XPCSC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 5
+ },
+ {
+  "name": "XPLAC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 5
+ },
+ {
+  "name": "XQNAF0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 9
+ },
+ {
+  "name": "XRCAD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 5
+ },
+ {
+  "name": "XRCFC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 12
+ },
+ {
+  "name": "XRFAG0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 6
+ },
+ {
+  "name": "XRHAA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XRKAG0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XRKBH1.OBJ",
+  "date": "1989-03-01",
+  "blocks": 11
+ },
+ {
+  "name": "XRLAK0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XRMBC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 12
+ },
+ {
+  "name": "XRMDB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 16
+ },
+ {
+  "name": "XRNAB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 13
+ },
+ {
+  "name": "XRQAI0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 17
+ },
+ {
+  "name": "XRXAE0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 8
+ },
+ {
+  "name": "XRXBC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 13
+ },
+ {
+  "name": "XTAAD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XTCAG0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 6
+ },
+ {
+  "name": "XTKAC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 13
+ },
+ {
+  "name": "XTKBB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 11
+ },
+ {
+  "name": "XTMAJ0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 6
+ },
+ {
+  "name": "XTMBM0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 11
+ },
+ {
+  "name": "XTMDB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 15
+ },
+ {
+  "name": "XTRAD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 8
+ },
+ {
+  "name": "XTSAC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 9
+ },
+ {
+  "name": "XTSVA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 10
+ },
+ {
+  "name": "XTUAD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 9
+ },
+ {
+  "name": "XTUCB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 13
+ },
+ {
+  "name": "XUACB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 10
+ },
+ {
+  "name": "XUADB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 10
+ },
+ {
+  "name": "XUDAD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "XVSAC0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 11
+ },
+ {
+  "name": "XVSBB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 8
+ },
+ {
+  "name": "XVSCB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 15
+ },
+ {
+  "name": "XVSVA0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 9
+ },
+ {
+  "name": "XVTAB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XVTBB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 8
+ },
+ {
+  "name": "XVTCB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 7
+ },
+ {
+  "name": "XVTVB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XXYAD0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 4
+ },
+ {
+  "name": "XXYBB0.OBJ",
+  "date": "1989-03-01",
+  "blocks": 3
+ },
+ {
+  "name": "ZAACB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 21,
+  "title": "11-K DIAGNOSTIC TEST, (MAINDEC-11-DZAAC-B0)"
+ },
+ {
+  "name": "ZAAFA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 46,
+  "title": "DRX11-C VECTOR ADDRESS"
+ },
+ {
+  "name": "ZAAVA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 25,
+  "title": "DIGITAL TO ANALOG CONVERTER SUBSYSTEM"
+ },
+ {
+  "name": "ZADVA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "ANALOG TO DIGITAL CONVERTER SUBSYSTEM"
+ },
+ {
+  "name": "ZAFAC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 15,
+  "title": "AFC-11 DIAGNOSTIC"
+ },
+ {
+  "name": "ZCDAD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 15,
+  "title": "CZCDAD0 CD11 CARD READER DIAG"
+ },
+ {
+  "name": "ZCDBB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 39,
+  "title": "MAINDEC-11-DZCDB    REV. B"
+ },
+ {
+  "name": "ZCLKC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 33,
+  "title": "CZCLKC0 DMR, DMC-11 DATA COMM. LINK TEST"
+ },
+ {
+  "name": "ZCLMC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 42,
+  "title": "CZCLMC0 DMP DMV-11 DATA COMM. LINK TEST"
+ },
+ {
+  "name": "ZCMBB1.BIN",
+  "date": "1989-03-01",
+  "blocks": 14,
+  "title": "/@PRESS CARD READER 'RESET' AND WAIT FOR THE 'RESET' LIGHT//@THEN HIT 'CONTINUE' ON THE CONSOLE//@PRESS CARD READER 'READ STOP'//@THE INTERRUPT LEVEL WAS //@REMOVE ALL CARDS FROM THE INPUT HOPPER//@RESTORE CARDS IN THE INPUT HOPPER//@LOWER T"
+ },
+ {
+  "name": "ZCMJC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 26,
+  "title": "CZCMJC0 CMR(V)-11 HOST EXERCISER   30-OCT-84&&      *** CAUTION ***&THIS PROGRAM IS CAPABLE OF ALTERING THE STATE&OF ANY FIELD EQUIPMENT ATTACHED TO ANY OF THE&REMOTES ON THIS CMR-11.&&PROCEED WITH CAUTION IF FIELD HAR"
+ },
+ {
+  "name": "ZCTAA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "CZCTAA0-CTS11-JC-7 BIT ASCII-TEST ****&"
+ },
+ {
+  "name": "ZCTBA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 18,
+  "title": "CZCTBA-CTS11-JC-HOLLERITH 12-BITS-TEST &&"
+ },
+ {
+  "name": "ZDAVA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 10,
+  "title": "CZDAVA0 DAV11-A/B INTERPROCESSOR EXERCISER"
+ },
+ {
+  "name": "ZDCLB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 34,
+  "title": "$A THE QUICK BROWN FOX JUMPED OVER THE LAZY DOG."
+ },
+ {
+  "name": "ZDFBB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 62,
+  "title": "%N2%AMEMORY FOR MODEM %T%A:%N"
+ },
+ {
+  "name": "ZDHAD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 18,
+  "title": "DH11 STATIC LOGIC TEST"
+ },
+ {
+  "name": "ZDHBC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 11,
+  "title": "DH11 MEMORY TEST"
+ },
+ {
+  "name": "ZDHCC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "DH11 TRANSMITTER AND RECEIVER LOGIC TEST"
+ },
+ {
+  "name": "ZDHDD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 14,
+  "title": "DH11 SPEED SELECTION LOGIC TEST"
+ },
+ {
+  "name": "ZDHEC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "DH11 CHARACTER LENGTH AND BASIC DATA TEST"
+ },
+ {
+  "name": "ZDHFC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+ },
+ {
+  "name": "ZDHGC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 12,
+  "title": "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+ },
+ {
+  "name": "ZDHHC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 14,
+  "title": "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+ },
+ {
+  "name": "ZDHID0.BIN",
+  "date": "1989-03-01",
+  "blocks": 12,
+  "title": "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+ },
+ {
+  "name": "ZDHJC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 8,
+  "title": "CZDHJ REVISION C0"
+ },
+ {
+  "name": "ZDHKF0.BIN",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "CZDHK-F    -----MODEM CONTROL DIAGNOSTIC-----%\"@%\"VECTOR ADDRESS-@%\"CONTROL REGISTER ADDRESS-@%\"LINE SELECT PARAMETER -@%\"TEST-@  ?@%\"@%\"SINGLE LINE CABLE TEST%\"@%\"LINE NUMBER-@FATAL ERROR%\"CSTAT  LSTAT@%\"TRANSITION DETECTED%\"CSTAT  LSTAT@%\"j"
+ },
+ {
+  "name": "ZDHLC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 4,
+  "title": "THERE WAS A RECEIVER ERROR. REGISTER (SEL 2) ="
+ },
+ {
+  "name": "ZDHMD2.BIC",
+  "date": "1989-03-01",
+  "blocks": 33,
+  "title": "CZDHM-D-0  DH11 DIAGNOSTIC"
+ },
+ {
+  "name": "ZDHND0.BIC",
+  "date": "1989-03-01",
+  "blocks": 29,
+  "title": "CZDHN-D DH11 DATA RELIABILITY TEST"
+ },
+ {
+  "name": "ZDHUB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 29,
+  "title": "DHU-11 FUNC TST PART1"
+ },
+ {
+  "name": "ZDHVB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "DHU-11 FUNC TST PART2"
+ },
+ {
+  "name": "ZDHWB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 14,
+  "title": "DHU-11 FUNC TST PART3"
+ },
+ {
+  "name": "ZDHXA1.BIN",
+  "date": "1989-03-01",
+  "blocks": 28,
+  "title": "DHU-11 FUNC TST PART4"
+ },
+ {
+  "name": "ZDLAH0.BIN",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "CZDLA-H%%MAP OF DEVICES PRESENT%@              %@%TYPE IN PROGRAM NUMBER    @%NONE FOUND%@%T    PC=         RXCSR=         @%%PRG0 - INPUT-OUTPUT LOGIC TESTS. %DISCONNECT DL11-E FROM MODEM AND CONNECT JUMPER TO CABLE.%@TXCSR S/B:         WAS:       @RXCSR S/B:         WAS:        @TX SPEEDS NOT IN ASCENDING ORDER.@RX SPEEDS NOT IN ASCENDING ORDER.@%%PRG1 - TRANSMITTER SCOPE LOOP@%%PRG2 - RECEIVER SCOPE LOOp"
+ },
+ {
+  "name": "ZDLBC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 14,
+  "title": "CZDLBC0 DL11-E ON LINE TEST%%MAP OF DEVICES PRESENT%%LINE  D-ADR     TRAP AT%@                      %@%NONE FOUND%@%TYPE IN PROGRAM NUMBER    @%ERROR - UNEXPECTED TRAPQ"
+ },
+ {
+  "name": "ZDLCD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 18,
+  "title": "CZDLCD0 DL11-C,D,E OFLNE TST"
+ },
+ {
+  "name": "ZDLDI0.BIN",
+  "date": "1989-03-01",
+  "blocks": 22,
+  "title": "CZDLDI0 DL11-W 11/44 MFM SLU"
+ },
+ {
+  "name": "ZDMCD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "CZDMC-D0 BASIC DMC11 CONTROLLER TEST"
+ },
+ {
+  "name": "ZDMED2.BIC",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "CZDME"
+ },
+ {
+  "name": "ZDMFC2.BIC",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "CZDMFC0 BTSTUF MD LN UNT TSTS"
+ },
+ {
+  "name": "ZDMGD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 24,
+  "title": "MAINDEC-11-CZDMG-D"
+ },
+ {
+  "name": "ZDMHC1.BIC",
+  "date": "1989-03-01",
+  "blocks": 18,
+  "title": "CZDMH"
+ },
+ {
+  "name": "ZDMID3.BIC",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "DMR-11 FUNCTIONAL TESTS"
+ },
+ {
+  "name": "ZDMPD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 28,
+  "title": "M8207 DIAG. #1 OF 2"
+ },
+ {
+  "name": "ZDMQE0.BIC",
+  "date": "1989-03-01",
+  "blocks": 23,
+  "title": "M8207 DIAG. #2 OF 2"
+ },
+ {
+  "name": "ZDMRF0.BIC",
+  "date": "1989-03-01",
+  "blocks": 29,
+  "title": "M8203 STATIC LOGIC TESTS - PART 1 OF 2"
+ },
+ {
+  "name": "ZDMSF0.BIC",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "M8203 STATIC LOGIC TESTS - PART 2 OF 2"
+ },
+ {
+  "name": "ZDMTF0.BIC",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "DMP OR DMV-11 FUNCTIONAL DIAG."
+ },
+ {
+  "name": "ZDNAD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 10,
+  "title": "CZDNA-D    DN11 DIALEX%@"
+ },
+ {
+  "name": "ZDPBC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 25,
+  "title": "CZDPBC"
+ },
+ {
+  "name": "ZDPCD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 22,
+  "title": "CZDPCC"
+ },
+ {
+  "name": "ZDPDD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 20,
+  "title": "CZDPDC"
+ },
+ {
+  "name": "ZDPEC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 10,
+  "title": "CZDPEC"
+ },
+ {
+  "name": "ZDRBI0.BIC",
+  "date": "1989-03-01",
+  "blocks": 12,
+  "title": "CZDRBI0 DR11-B/DA11-B NPR DIA   _&"
+ },
+ {
+  "name": "ZDRCH1.BIC",
+  "date": "1989-03-01",
+  "blocks": 8,
+  "title": "YOU ARE ON AN XOR TESTER"
+ },
+ {
+  "name": "ZDRGE0.BIC",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "MAINDEC-11-CZDRG-E"
+ },
+ {
+  "name": "ZDRHA1.BIN",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "4.4.1 TERMINAL CHANGE REQUIRED (Y OR N)?"
+ },
+ {
+  "name": "ZDRIB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 5,
+  "title": ""
+ },
+ {
+  "name": "ZDRKB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 15,
+  "title": "DR11W INTERPROCESSOR EXERCISER"
+ },
+ {
+  "name": "ZDRLD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 41,
+  "title": "CZDRLD0 DR11 GEN NPR INTFC LOGIC TEST"
+ },
+ {
+  "name": "ZDRMA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "NON-EXISTENT DRIVE ERROR"
+ },
+ {
+  "name": "ZDRQA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 44,
+  "title": "FUNCTIONAL DIAGNOSTIC"
+ },
+ {
+  "name": "ZDRUA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "CZDRUA0[[[                       **NOTES**[[1.  BE SURE NPR JUMPER BETWEEN CA1 AND CB1 ON BACKPLANE[    IS REMOVED.[2.  TO RUN TEST 1 THRU 30 THE TEST LOOP BACK CABLE MUST[    BE INSTALLED FROM J1 TO J2.[3.  RUN TEST 23 TO ADJUST DMA TIMING POTENTIOMETER RV1.][[[ENTER FIRST REGISTER ADDRESS OF DRU11-C[(DEFAULT IS 164200)][ENTER VECTOR ADDRESS OF DRU11-C[(DEFAULT IS 270)][[IS T-"
+ },
+ {
+  "name": "ZDRVD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 23,
+  "title": "MD C-ZDRVD-0 DRV11-WA DMA INTERFACE DIAG"
+ },
+ {
+  "name": "ZDTAB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 23,
+  "title": "<*@*H*P*X*^*j*v*|*"
+ },
+ {
+  "name": "ZDUOB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 4,
+  "title": "THERE WAS A RECEIVER ERROR. REGISTER (SEL 2) ="
+ },
+ {
+  "name": "ZDUQC1.BIN",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "CZDUQ-C0 DUV11 TAPE A"
+ },
+ {
+  "name": "ZDURB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "DUV11 DZDUR-B TAPE B"
+ },
+ {
+  "name": "ZDUSB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "DUV11 DZDUS-B TAPE C"
+ },
+ {
+  "name": "ZDUTB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "DUV11 DZDUT-B TAPE D"
+ },
+ {
+  "name": "ZDUUB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "DUV11 DZDUU-B TAPE E"
+ },
+ {
+  "name": "ZDUVB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "DUV11 DZDUV-B TAPE F"
+ },
+ {
+  "name": "ZDVAC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 28,
+  "title": "CZDVAC0 BSC TST & ROM INST EX"
+ },
+ {
+  "name": "ZDVBC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 21,
+  "title": "CZDVBC0 DV11 STAT LN CD TSTS"
+ },
+ {
+  "name": "ZDVCD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 20,
+  "title": "CZDVCD0 DV11 ROM TST PRT1"
+ },
+ {
+  "name": "ZDVDD1.BIC",
+  "date": "1989-03-01",
+  "blocks": 22,
+  "title": "CZDVDD0 DV11 ROM TST PRT2"
+ },
+ {
+  "name": "ZDVEC1.BIC",
+  "date": "1989-03-01",
+  "blocks": 20,
+  "title": "CZDVEC0 DV11 MODEM CNTRL"
+ },
+ {
+  "name": "ZDVFA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 32,
+  "title": "MAINDEC-11-DZDVF-A"
+ },
+ {
+  "name": "ZDVOB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 5,
+  "title": "THERE WAS A RECEIVER ERROR. REGISTER (SEL 2) ="
+ },
+ {
+  "name": "ZDZAJ0.BIN",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "CZDZAJ0 DZ11 LN ASYNC MUX TSTS"
+ },
+ {
+  "name": "ZDZGA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 9,
+  "title": "CZDZGA0 GS3WD.DZ11 LGC DIAG"
+ },
+ {
+  "name": "ZDZHA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 40,
+  "title": "8p8q8r8s8t8u8v8w8x8y8z8{8|8}8~0~(~ ~"
+ },
+ {
+  "name": "FLOAT.BIN",
+  "date": "1989-03-01",
+  "blocks": 18,
+  "title": "CZFLA FLOAT UTILITY PROG - VERSION: D0"
+ },
+ {
+  "name": "ZFPAA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 33,
+  "title": "COMMAND BRIDGE INTERFACE DIAGNOSTIC"
+ },
+ {
+  "name": "ZFPBA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "COMMAND BRIDGE LINK MODE DIAGNOSTIC"
+ },
+ {
+  "name": "ZFPCA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 3,
+  "title": "BUS ADDRESS TEST UTILITY"
+ },
+ {
+  "name": "ZFPDA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 2,
+  "title": "ROM OR PROM CHECKSUM CHECK"
+ },
+ {
+  "name": "ZGSAA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 9,
+  "title": "CZGSAA0 GS03-WD DZQ11 LGC DIAG"
+ },
+ {
+  "name": "ZGSBA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 9,
+  "title": "CZGSBA0 GS03-WD DHV11 LGC DIAG"
+ },
+ {
+  "name": "ZICAD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 24,
+  "title": "ICS-11 FIELD TEST PROGRAM - MAINDEC-11-DZICA-D"
+ },
+ {
+  "name": "ZIDVA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "MODE REGISTER ADDRESS"
+ },
+ {
+  "name": "ZIEAC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 63,
+  "title": "(((((((((UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU"
+ },
+ {
+  "name": "ZIEBA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 21,
+  "title": "#[IEC11-A BUS CONTROLLER BASIC TESTS[AC-T883A-MC][ENTER VECTOR ADDRESS OF IEC11-A[(DEFAULT IS 270)][ENTER IEC BUS  ADDRESS OF IEC11-A[(DEFAULT IS 35)]1"
+ },
+ {
+  "name": "ZIECA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "CZIECA0[CSS MUNICH MARCH 1979[MODIFIED FOR SDC SUBMISSION MARCH 1984][[[ENTER FIRST REGISTER ADDRESS OF IEC11-A[(DEFAULT IS 160010)][ENTER VECTOR ADDRESS OF IEC11-A[(DEFAULT IS 270)][ENTER FIRST REGISTER ADDRESS OF IEC11-B[(DEFAULT IS 160020)][ENTER VECTOR ADDRESS OF IEC11-B[(DEFAULT IS 274)][ENTER IEC-BUS ADDRESS OF IEC11-A[(DEFAULT IS 35)][VECTOR INPUT IS NOT EQUAL TO CONTENT"
+ },
+ {
+  "name": "ZIRAA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 29,
+  "title": "ICR11 CONTROLLER DIAGNOSTIC MAINDEC-11-DZIRA-A"
+ },
+ {
+  "name": "ZIRBA1.BIN",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "- MAINDEC-11-DZIRB-A"
+ },
+ {
+  "name": "ZIXVB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 67,
+  "title": "MODE REGISTER ADDRESS"
+ },
+ {
+  "name": "ZKAQH0.BIN",
+  "date": "1989-03-01",
+  "blocks": 5,
+  "title": "CZKAQH POWER FAIL"
+ },
+ {
+  "name": "ZKCAA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 33,
+  "title": "MAINDEC-11-DZKCA-A"
+ },
+ {
+  "name": "ZKCCA1.BIC",
+  "date": "1989-03-01",
+  "blocks": 32,
+  "title": "MAINDEC-11-DZKCC-A"
+ },
+ {
+  "name": "ZKCDA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 19,
+  "title": "MAINDEC-11-DZKCD"
+ },
+ {
+  "name": "ZKCEB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 28,
+  "title": "CZCKEB"
+ },
+ {
+  "name": "ZKCFB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 28,
+  "title": "CZKCF"
+ },
+ {
+  "name": "ZKCGA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 30,
+  "title": "CZKCGA0 KMC FREE RUNNING TEST"
+ },
+ {
+  "name": "ZKCTA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 44,
+  "title": "%N%N%A***** TESTING UNIT %D2%A *****"
+ },
+ {
+  "name": "ZKDJB2.BIC",
+  "date": "1989-03-01",
+  "blocks": 37,
+  "title": "CZKDJ-B-0 KDJ11 CPU DIAGNOSTIC"
+ },
+ {
+  "name": "ZKDKB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 19,
+  "title": "CZKDK-B-0 KDJ11 MEMORY MANAGEMENT DIAGNOSTIC"
+ },
+ {
+  "name": "ZKDLB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 33,
+  "title": "CZKDL-B-0 KDJ11 FLOATING POINT DIAGNOSTIC"
+ },
+ {
+  "name": "ZKDMB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 12,
+  "title": "CZKDM-B-0 KDJ11 CACHE MEMORY SYSTEM DIAGNOSTIC"
+ },
+ {
+  "name": "ZKEEC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 76,
+  "title": "CZKEEC0 PDP-11 CIS INSTRUCTION EXERCISER"
+ },
+ {
+  "name": "ZKGAB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 6,
+  "title": "KG11A - CYCLIC REDUNDANCY CHECK TE"
+ },
+ {
+  "name": "ZKHAB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 10,
+  "title": "SEND-RECIEVE DATA ERROR"
+ },
+ {
+  "name": "ZKMAF0.BIC",
+  "date": "1989-03-01",
+  "blocks": 9,
+  "title": ""
+ },
+ {
+  "name": "ZKMBA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 33,
+  "title": "CZKMBA0 KMC11-B STATIC PART1"
+ },
+ {
+  "name": "ZKMCA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 24,
+  "title": "CZKMCA0 KMC11-B STATIC PART2"
+ },
+ {
+  "name": "ZKMDA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 41,
+  "title": "CZKMDA0 DMS11-DA STATIC"
+ },
+ {
+  "name": "ZKMEA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 43,
+  "title": "CZKMEA0 DMS11-BA DYNAMIC DIAGN"
+ },
+ {
+  "name": "ZKMFA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 20,
+  "title": "CZKMFA0 KMS11-BD INTERACTION TEST%\"%\"TEST GROUP 0:%\"OFF LINE TESTS USEING H3256 TEST CONNECTORS AND H317-M PANEL.%\"FIRST TEST = 000%\"TEST GROUP 1:%\"OFF LINE TESTS USEING H3256 TEST CONNECTORS AND H317-M PANEL.%\"FIRST TEST= 100%\"@%\"DM11 VECTOR ADDRESS-@%\"KMS11 VECTOR ADDRESS-@%\"DM11 CSR ADDRESS-@%\"KMS11 CSR ADDRESS-@%\"KMS11 LINE @ IS DEAD%\"@%\"TEST-@  ?@%\"@%\"SINGLE LINE CABLE TEST%\"@%\"LINE NUMBER-@FATAL ERROR%\"CSTAT  LSTAT@%\"T"
+ },
+ {
+  "name": "ZKMGA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "CZKMGA0 DM11-BA MODEM CONTRL%\"%\"TEST GROUP 0:%\"OFF LINE TESTS USEING 54-14700 TEST CONNECTORS. FIRST TEST= 0%\"TEST GROUP 1:%\"OFF LINE TESTS USEING H3256 TEST CONNECTORS AND H317-M PANEL.%\"FRIST TEST= 100%\"TEST GROUP 2:%\"CONNECT/DISCONNECT TEST FOR BELL 103A MODEMS-FIRST TEST= 200:%\"TEST GROUP 3:%\"C"
+ },
+ {
+  "name": "ZKMSA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 49,
+  "title": "CZKMSA0 KMS11-BD,BE DATA COMM. LINK TEST"
+ },
+ {
+  "name": "ZKMUA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 32,
+  "title": "CZKMUA0 KMS11-BL PDP-11 DCLT"
+ },
+ {
+  "name": "ZKMVA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 9,
+  "title": "KMS11-K DIAGNOSTIC"
+ },
+ {
+  "name": "ZKTCA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 20,
+  "title": "CZKTCA KXT11-CA LSI-11 BUS DIAGNOSTIC"
+ },
+ {
+  "name": "ZKUAE0.BIN",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "CZKUA-E"
+ },
+ {
+  "name": "ZKUBC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 25,
+  "title": "CZKUB-C"
+ },
+ {
+  "name": "ZKWAG0.BIC",
+  "date": "1989-03-01",
+  "blocks": 11,
+  "title": "CZKWA-G LINE FREQUENCY CLOCK TEST"
+ },
+ {
+  "name": "ZKWBJ1.BIC",
+  "date": "1989-03-01",
+  "blocks": 11,
+  "title": "CZKWBJ KW11-P RT CLK TST@//@RESTARTING AFTER A POWER FAILURE@@/"
+ },
+ {
+  "name": "ZKWCC2.BIN",
+  "date": "1989-03-01",
+  "blocks": 11,
+  "title": "%LOGIC TEST%@T1%@T2%@T3%@T4%@T5%j"
+ },
+ {
+  "name": "ZKWKA2.BIC",
+  "date": "1989-03-01",
+  "blocks": 26,
+  "title": "STARTING INTR.  TEST 154"
+ },
+ {
+  "name": "ZKWLA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 25,
+  "title": "MAINDEC-11-CZKWLA0-KW11C"
+ },
+ {
+  "name": "ZKXAB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 51,
+  "title": "CZKXAB - FUNCTIONAL TEST OF KXJ11-CA ID#"
+ },
+ {
+  "name": "ZKXCA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 20,
+  "title": "CZKXCA KXJ11-CA LSI-11 BUS DIAGNOSTIC"
+ },
+ {
+  "name": "ZLABA1.BIC",
+  "date": "1989-03-01",
+  "blocks": 15,
+  "title": "@%#RIGHT MARGIN TEST%#@%#SPACE  TEST%#@%#LINE FEED TEST%#@%#CHARACTER TESTS%#@%#WORST CASE PATTERN TEST%#@%#KYBD TEST%#@%PRESS A KEY WITHIN 10 SECONDS.@%#ECHO TEST%CHARACTER KEYED WILL BE TYPED.%RUBOUT ENDS ROUTINE.%#@%#OCTAL EQUIVALENT TEST@%     %@%NO KEYBOARD REQUEST.@%FALSE KYBD INTERRUPT@%#DISPLAY EXERCISER%#@%#TYPE IN DATA :@U @     %#NON-PRINTING CHARACTER TEST%#@%#WORST CASE NOISE%#@%#TYPE DATA - RUBOUT OR 80 CHAR ENDS DATA%#@%#LAST CHARACTER VISIBILITY TEST%#@%#ECHO TEST%CHARACTER KEYED WI8"
+ },
+ {
+  "name": "ZLACF0.BIN",
+  "date": "1989-03-01",
+  "blocks": 14,
+  "title": "CZLACF0 LA36 TERM (DL11 & KL11)"
+ },
+ {
+  "name": "ZLADD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "000  NUL001  SOH002  STX006  ACK020  DLE021  DC1022  DC2023  DC3024  DC4025  NAK026  SYN027  ETB030  CAN031  EM 032  SUB034  FS 035  GS 036  RS 037  US 177  DEL"
+ },
+ {
+  "name": "ZLAEB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 15,
+  "title": "MAINDEC-11-DZLAE-B"
+ },
+ {
+  "name": "ZLAFA1.BIN",
+  "date": "1989-03-01",
+  "blocks": 18,
+  "title": "CZLAFA0   LA36 OPTIONS TESTS"
+ },
+ {
+  "name": "ZLAIB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 36,
+  "title": "CZLAIB0 LA00, LA34 DMT PROG"
+ },
+ {
+  "name": "ZLCPA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "CZLCP0 COLOR PRINTER DIAGNOSTIC"
+ },
+ {
+  "name": "ZLNAD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 69,
+  "title": "CZLNAD0 LINE PRINTER DIAGNOSTIC"
+ },
+ {
+  "name": "ZLPAB1.BIN",
+  "date": "1989-03-01",
+  "blocks": 9,
+  "title": "%@    ERROR COUNT@%MAINDEC-11-DZLPA-B LINE PRINTER TEST@%RESTART ADDRESS 600@%POWER ON-TURN ON LINE@%ON LINE OK-TRY TORN PAPER SWITCH@%ERROR SET OK-TRY DRUM GATE SWITCH@%ERROR SET OK-TURN ON LINE @"
+ },
+ {
+  "name": "ZLPKH0.BIN",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "%    ERROR COUNT%"
+ },
+ {
+  "name": "ZLPLG0.BIN",
+  "date": "1989-03-01",
+  "blocks": 32,
+  "title": "CZLPLG0 LINE PRINTER DIAGNOSTIC"
+ },
+ {
+  "name": "ZLQPB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 20,
+  "title": "0\"#!\"! \"* %N%N%ATEST 1 - SELF TEST"
+ },
+ {
+  "name": "ZLSAB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 13,
+  "title": "MAINDEC-11-DZLSAB"
+ },
+ {
+  "name": "ZLVAB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 14,
+  "title": "MAINDEC-11-DZLVA-B PRINTER PLOTTER TEST"
+ },
+ {
+  "name": "ZLXAC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 54,
+  "title": "ERROR COUNT%"
+ },
+ {
+  "name": "ZM9AE0.BIC",
+  "date": "1989-03-01",
+  "blocks": 7,
+  "title": "TYPE CRC VALUE:"
+ },
+ {
+  "name": "ZM9BE0.BIN",
+  "date": "1989-03-01",
+  "blocks": 11,
+  "title": "CZM9BE0 M9312/1144 UBI BOOT"
+ },
+ {
+  "name": "ZMLAD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 73,
+  "title": "IS UUT DRIVE OPTION TYPE AN 'ML11A' ?"
+ },
+ {
+  "name": "ZMLBB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 49,
+  "title": "CZMLBB ML11 PERFORMANCE EXERCISER"
+ },
+ {
+  "name": "ZMLCB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 67,
+  "title": "DUT DRIVE NUMBER"
+ },
+ {
+  "name": "ZMRAA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 6,
+  "title": "@% PC= @@%PRG#=@@%ROM DATA%@@%@@%ROM ADDRESS/IMAGE ADDRESS ROM DATA*IMAGE DATA%@@/@@ @@*@"
+ },
+ {
+  "name": "ZMSDD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 63,
+  "title": "CZMSDD - MS11L/M MEMORY DIAGNOSTIC"
+ },
+ {
+  "name": "ZMSPC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 65,
+  "title": "CZMSPC  MS11-L/M/P MEMORY DIAGNOSTIC"
+ },
+ {
+  "name": "ZNCCC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 44,
+  "title": "NCV11 DIAGNOSTIC"
+ },
+ {
+  "name": "ZNCDB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 11,
+  "title": "CZNCDB   NCV-11 EXERCISER"
+ },
+ {
+  "name": "ZPLAC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 30,
+  "title": "CZPLAC0  (JUN-79)"
+ },
+ {
+  "name": "ZPLBC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "CZPLBC0  06-JUN-79&@&SELECT TEST (<CR> = HELP)..@&&RESPOND WITH ONE OF THE FOLLOWING:&     1 = RUN TRANSMd"
+ },
+ {
+  "name": "ZQKBH0.BIC",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "T17-4K SYSTEM EXERCISER"
+ },
+ {
+  "name": "ZQMCH0.BIC",
+  "date": "1989-03-01",
+  "blocks": 26,
+  "title": "KT11 (MEMORY MANAGEMENT) AVAILABLE"
+ },
+ {
+  "name": "ZQNAJ0.BIC",
+  "date": "1989-03-01",
+  "blocks": 53,
+  "title": "CZQNA DEQNA-DELQA-DESQA FUNCTIONAL TST"
+ },
+ {
+  "name": "ZR6AD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 58,
+  "title": "RK611 DISKLESS DIAGNOSTIC: PART 1 CZR6AD0"
+ },
+ {
+  "name": "ZR6BD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 51,
+  "title": "RK611 DISKLESS DIAGNOSTIC: PART 2 CZR6BD0"
+ },
+ {
+  "name": "ZR6CE0.BIN",
+  "date": "1989-03-01",
+  "blocks": 54,
+  "title": "CZR6CE0 RK611 DSKLS CTRL PRT3"
+ },
+ {
+  "name": "ZR6DD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 46,
+  "title": "IuQpBNC$JVQpBNC$JdQpBNC$JuQpBNCRJVQpBNCRJdQpBNCRJuQpBNC"
+ },
+ {
+  "name": "ZR6EC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 40,
+  "title": "RK611 DISKLESS DIAGNOSTIC: PART 5  CZR6EC0"
+ },
+ {
+  "name": "ZR6GC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 55,
+  "title": "UNIBUS RK06-RK07 DUAL PORT DRIVE DIAGNOSTIC"
+ },
+ {
+  "name": "ZR6HF0.BIC",
+  "date": "1989-03-01",
+  "blocks": 58,
+  "title": "OTHERWISE, CARTRIDGE FORMATTING AND,OR THE DRIVE"
+ },
+ {
+  "name": "ZR6IF0.BIC",
+  "date": "1989-03-01",
+  "blocks": 43,
+  "title": "OTHERWISE, CARTRIDGE FORMATTING AND, OR THE DRIVE"
+ },
+ {
+  "name": "ZR6JF0.BIN",
+  "date": "1989-03-01",
+  "blocks": 45,
+  "title": "INITIALLY, DRIVES TO BE TESTED SHOULD HAVE:"
+ },
+ {
+  "name": "ZR6KG0.BIN",
+  "date": "1989-03-01",
+  "blocks": 51,
+  "title": "Q'Q3QGQ[QDRIVE SELECT"
+ },
+ {
+  "name": "ZR6LD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 38,
+  "title": "MOUNT AN RK06K-RK07K DISK CARTRIDGE"
+ },
+ {
+  "name": "ZR6ME1.BIC",
+  "date": "1989-03-01",
+  "blocks": 52,
+  "title": "FCLCICFTLTITS0S1S2S3ISPTMA"
+ },
+ {
+  "name": "ZR6NE3.BIC",
+  "date": "1989-03-01",
+  "blocks": 56,
+  "title": "REMOVE XXDP PACK FROM DRIVE, INSTALL SCRATCH"
+ },
+ {
+  "name": "ZR6PD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 57,
+  "title": "RK611/RK06-RK07 PERFORMANCE EXERCISER: MAINDEC CZR6P-D"
+ },
+ {
+  "name": "ZR6QC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 42,
+  "title": "TYPE NAME OF NEXT SUBSYS TO TEST (A-P) :"
+ },
+ {
+  "name": "ZR6RC1.BIN",
+  "date": "1989-03-01",
+  "blocks": 37,
+  "title": "DRIVE STATUS NOT VALID"
+ },
+ {
+  "name": "ZRCAB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 11,
+  "title": "@%POWER HAS FAILED@%MEMORY PARITY"
+ },
+ {
+  "name": "ZRCBB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 10,
+  "title": "%DATA ERROR @%STATUS ERROR @%DRIVE ADDRESS ERROR @%@%ERROR"
+ },
+ {
+  "name": "ZRCCB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 6,
+  "title": "%DATA ERROR @%STATUS ERROR @%OVERFLO X-FER ERROR @%DISK ADDRESS ERROR @%@       RCDA @       RCCS @       RCER@     WORD COUNT@       WORD ADR.@"
+ },
+ {
+  "name": "ZRCDC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 59,
+  "title": "RUN DM EXERCISER INSTEAD OF MULTI-DRIVE SUBTEST"
+ },
+ {
+  "name": "ZRCFC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 65,
+  "title": "DRIVE BOARD FOR UNIT #:"
+ },
+ {
+  "name": "ZRCHB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 63,
+  "title": "RC25 DISK FORMATTER"
+ },
+ {
+  "name": "ZRFAB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 11,
+  "title": "%@    ERROR COUNT @       GOOD DATA  @       BAD DATA@%END@%MEMORY PARITY ERROR@% POWER HAS FAILED@"
+ },
+ {
+  "name": "ZRFBB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 14,
+  "title": "S @       HRD ERR@     WRD CNT@       WRD ADDR.@       GD DATA @       BD DATA @?@/@       WRD1 @       WRD2 @%UNIT NO.@  @  READ @%CPU BKGRND TIMED OUT@%OK!@%DATA TEST ONLY? @%MULTI DK MODE?@%# OF DKS 1 TO 10 OCTAL?@%EX. DK?@%OPT WRD CNT? @%LENGTH (1 TO 1000)?@%WRD ADDR?@%OPT. DATA PAT. #?@%WRITE?@%WRITE CHECK?@%READ?@%POWER HAS FAILED@%END@%MEMORY PARITY ERROR@   @%PATTERN @%DRIVE ZERO OFF LINE@%DRIVE(S) ON LINE@"
+ },
+ {
+  "name": "ZRFCB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 6,
+  "title": "DATA ERROR @%STATUS ERROR @%OVERFLO X-FER ERROR @%DISK ADDRESS ERROR @%@       DAR @   DAE @       DCS @       HARD ERROR@     WORD COUNT@       WORD ADR.@"
+ },
+ {
+  "name": "ZRHBF0.BIC",
+  "date": "1989-03-01",
+  "blocks": 63,
+  "title": "RH 11 AND 70 I O AND CONTROLLER DIAGNOSTIC"
+ },
+ {
+  "name": "ZRJAD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 43,
+  "title": "PROGRAMMABLE-DRIVE WILL NOT BE USED"
+ },
+ {
+  "name": "ZRJBD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 24,
+  "title": "WARNING: PROGRAMMABLE DRIVES MAY BE USED"
+ },
+ {
+  "name": "ZRJCB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 20,
+  "title": "DO NOT SELECT DRIVE UNTIL HEAD ALIGNMENT TEST BOX HAS BEEN CONNECTED"
+ },
+ {
+  "name": "ZRJDE0.BIC",
+  "date": "1989-03-01",
+  "blocks": 45,
+  "title": "CZRJDE0 - RP04/5/6 MULTI DRIVE LOGIC TEST"
+ },
+ {
+  "name": "ZRJED0.BIN",
+  "date": "1989-03-01",
+  "blocks": 59,
+  "title": "CZRJED0 - RP04/5/6 DUAL CONTROLLER TEST, PT 1"
+ },
+ {
+  "name": "ZRJFA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 26,
+  "title": "MAINDEC-11-DZRJF-A"
+ },
+ {
+  "name": "ZRJGE0.BIC",
+  "date": "1989-03-01",
+  "blocks": 55,
+  "title": "CZRJGE0 - RP04/5/6 DISKLESS TEST, PT 1"
+ },
+ {
+  "name": "ZRJHE0.BIC",
+  "date": "1989-03-01",
+  "blocks": 49,
+  "title": "CZRJHE0 - RP04/5/6 DISKLESS TEST, PT 2"
+ },
+ {
+  "name": "ZRJID0.BIC",
+  "date": "1989-03-01",
+  "blocks": 60,
+  "title": "CZRJI-D"
+ },
+ {
+  "name": "ZRJJD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 52,
+  "title": "CZRJJ-D"
+ },
+ {
+  "name": "ZRJKB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 24,
+  "title": "%N%ADRIVE   RPCS1   RPWC    RPBA    RPDA    RPCS2   RPDS"
+ },
+ {
+  "name": "ZRJLB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 34,
+  "title": "RP07 FUNCTIONAL TEST"
+ },
+ {
+  "name": "ZRJMB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 35,
+  "title": "%N%ADRIVE %O1%A, PG"
+ },
+ {
+  "name": "ZRJNA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 65,
+  "title": "%N%ADRIVE %O1%A & %O1%A, PG"
+ },
+ {
+  "name": "ZRJOB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 54,
+  "title": "RP07 PERFORMANCE EXERCISER"
+ },
+ {
+  "name": "ZRKHG0.BIC",
+  "date": "1989-03-01",
+  "blocks": 28,
+  "title": "MAINDEC-11-DZRKH-G"
+ },
+ {
+  "name": "ZRKIF0.BIN",
+  "date": "1989-03-01",
+  "blocks": 21,
+  "title": "MAINDEC-11-DZRKI-E"
+ },
+ {
+  "name": "ZRKJE0.BIC",
+  "date": "1989-03-01",
+  "blocks": 11,
+  "title": "MAINDEC-11-DZRKJ-E"
+ },
+ {
+  "name": "ZRKKF2.BIC",
+  "date": "1989-03-01",
+  "blocks": 28,
+  "title": "MAINDEC-11-CZRKKF"
+ },
+ {
+  "name": "ZRKLE0.BIC",
+  "date": "1989-03-01",
+  "blocks": 23,
+  "title": "MAINDEC-11-DZRKL-E"
+ },
+ {
+  "name": "ZRLGE0.BIC",
+  "date": "1989-03-01",
+  "blocks": 19,
+  "title": "CZRLG TESTS CONTROLLER FUNCTIONS, INTERFACE LOGIC, REGISTER OPERATION"
+ },
+ {
+  "name": "ZRLHB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "CZRLH TESTS WRITE DATA, READ DATA, AND WRITE CHECK OPERATIONS"
+ },
+ {
+  "name": "ZRLID1.BIN",
+  "date": "1989-03-01",
+  "blocks": 30,
+  "title": "CZRLI TESTS THE RL01-02 INTERFACE AND BASIC DRIVE LOGIC"
+ },
+ {
+  "name": "ZRLJC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 23,
+  "title": "CZRLJ TESTS OUTER & INNER GUARD BAND DETECTION AND SEEK OPERATIONS"
+ },
+ {
+  "name": "ZRLKB3.BIC",
+  "date": "1989-03-01",
+  "blocks": 26,
+  "title": "CZRLK PERFORMS RANDOM OPERATIONS OF GET STATUS, SEEK, READ, AND WRITE"
+ },
+ {
+  "name": "ZRLLC1.BIN",
+  "date": "1989-03-01",
+  "blocks": 14,
+  "title": "CZRLL VERIFIES INTERCHANGEABILITY OF CARTRIDGES BETWEEN DRIVES"
+ },
+ {
+  "name": "ZRLMB1.BIN",
+  "date": "1989-03-01",
+  "blocks": 23,
+  "title": "CZRLM IS A UTILITY PROGRAM FOR FORMATTING BAD SECTOR FILES"
+ },
+ {
+  "name": "ZRLNC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 29,
+  "title": "CZRLN TESTS SEEK, ROTATIONAL TIMING AND WRITE & READ DATA"
+ },
+ {
+  "name": "ZRMLB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 35,
+  "title": "CZRMLB0 - RM05/3/2 FORMATTER"
+ },
+ {
+  "name": "ZRMMB2.BIC",
+  "date": "1989-03-01",
+  "blocks": 72,
+  "title": "CZRMMB0 - RM05/3/2 FUNCTIONAL TEST, PT 1"
+ },
+ {
+  "name": "ZRMNB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 69,
+  "title": "CZRMNB0 - RM05/3/2 FUNCTIONAL TEST, PT 2"
+ },
+ {
+  "name": "ZRMOB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 74,
+  "title": "CZRMOB0 - RM05/3/2 FUNCTIONAL TEST, PT 3"
+ },
+ {
+  "name": "ZRMPB3.BIC",
+  "date": "1989-03-01",
+  "blocks": 75,
+  "title": "CZRMPB0 - RM05/3/2 DISKLESS TEST, PT 1"
+ },
+ {
+  "name": "ZRMQB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 48,
+  "title": "CZRMQB0 - RM05/3/2 DISKLESS TEST, PT 2"
+ },
+ {
+  "name": "ZRMRB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 67,
+  "title": "CZRMRB0 - RM05/3/2 DUAL PORT LOGIC TEST, PT 1"
+ },
+ {
+  "name": "ZRMSB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 22,
+  "title": "CZRMSB0 - RM05/3/2 DUAL PORT LOGIC TEST, PT 2"
+ },
+ {
+  "name": "ZRMTB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 36,
+  "title": "CZRMTB0 - RM05/3/2 DRIVE COMPATIBILITY TST"
+ },
+ {
+  "name": "ZRMUB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 48,
+  "title": "CZRMUB0 - RM05/3/2 PERFORMANCE EXERCISER"
+ },
+ {
+  "name": "ZRMVB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 46,
+  "title": "CZRMVB0 - RM05/3/2 EXTENDED DRIVE TEST"
+ },
+ {
+  "name": "ZRNAA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 49,
+  "title": "CZRNAA0 - RM80 PERFORMANCE EXERCISER"
+ },
+ {
+  "name": "ZRNBA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 75,
+  "title": "CZRNBA0 - RM80 DISKLESS TEST, PT 1"
+ },
+ {
+  "name": "ZRNCA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 47,
+  "title": "CZRNCA0 - RM80 DISKLESS TEST, PT 2"
+ },
+ {
+  "name": "ZRNDA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 73,
+  "title": "CZRNDA0 - RM80 FUNCTIONAL TEST, PT 1"
+ },
+ {
+  "name": "ZRNEA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 70,
+  "title": "CZRNEA0 - RM80 FUNCTIONAL TEST, PT 2"
+ },
+ {
+  "name": "ZRNFA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 72,
+  "title": "CZRNFA0 - RM80 FUNCTIONAL TEST, PT 3"
+ },
+ {
+  "name": "ZRNGA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 37,
+  "title": "CZRNGA0 - RM80 FUNCTIONAL TEST, PT 4"
+ },
+ {
+  "name": "ZRNHA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 67,
+  "title": "CZRNHA0 - RM80 DUAL PORT TEST, PT 1"
+ },
+ {
+  "name": "ZRNIA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 22,
+  "title": "CZRNIA0 - RM80 DUAL PORT TEST, PT 2"
+ },
+ {
+  "name": "ZRNJB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 91,
+  "title": "CZRNJB0 - RM80 FORMATTER UTILITY"
+ },
+ {
+  "name": "ZRP1C0.BIC",
+  "date": "1989-03-01",
+  "blocks": 29,
+  "title": "CONTROLLER ERROR"
+ },
+ {
+  "name": "ZRP2B0.BIN",
+  "date": "1989-03-01",
+  "blocks": 11,
+  "title": "MAINDEC-11-DZRP2-B, RP11E DISK PACK FORMATTER"
+ },
+ {
+  "name": "ZRPAD1.BIN",
+  "date": "1989-03-01",
+  "blocks": 13,
+  "title": "HOW MANY DRIVES ARE THERE?"
+ },
+ {
+  "name": "ZRPBE0.BIN",
+  "date": "1989-03-01",
+  "blocks": 25,
+  "title": "MULTI DRIVE MODE?(Y OR N)"
+ },
+ {
+  "name": "ZRPCD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 7,
+  "title": "CZRPCD0, RP11C MULTI DRIVE"
+ },
+ {
+  "name": "ZRPDB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 8,
+  "title": "&&UNIT: @&&INPUT THE SECTOR NUMBERS(0-9) IN THE ORDER DESIRED.@&0: @&1: @&2: @&3: @&4: @&5: @&6: @&7: @&8: @&9: @&&SET THE FORMAT ENABLE SWITCH.&SET THE RP11 WRITE ENABLE SWITCH.&SET THE SELECTED UNIT WRITE ENABLE SWITCH.&STRIKE ANY TELETYPE KEY WHEN READY.&@&&RESET THE FORMAT ENABLE SWITCH TO NORMAL.&STRIKE ANY TELETYPE KEY WHEN READY.&@"
+ },
+ {
+  "name": "ZRPEA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 9,
+  "title": "&&ERROR AT ADDRESS @&CALLED FROM SUBROUTINE AT"
+ },
+ {
+  "name": "ZRPFB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "MULTI DRIVE MODE?(Y OR N)"
+ },
+ {
+  "name": "ZRPGB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 7,
+  "title": "REQUESTED CYLINDER="
+ },
+ {
+  "name": "ZRPHA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 8,
+  "title": "&&UNIT: @&&INPUT THE SECTOR N"
+ },
+ {
+  "name": "ZRPWC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "MAINDEC-11-DZRPW-C, RP11-E DISKLESS LOGIC TEST"
+ },
+ {
+  "name": "ZRPYD1.BIC",
+  "date": "1989-03-01",
+  "blocks": 37,
+  "title": "DRIVE(S) TO BE USED"
+ },
+ {
+  "name": "ZRPZC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 21,
+  "title": "MD-11-DZRPZ-C, RP11E DRIVE POSITIONING TEST"
+ },
+ {
+  "name": "ZRQAH0.BIN",
+  "date": "1989-03-01",
+  "blocks": 67,
+  "title": "Test entire customer area of this disk"
+ },
+ {
+  "name": "ZRQBC1.BIN",
+  "date": "1989-03-01",
+  "blocks": 20,
+  "title": "RD51/52 DISK FORMATTER"
+ },
+ {
+  "name": "ZRQCH0.BIN",
+  "date": "1989-03-01",
+  "blocks": 72,
+  "title": "Formattable Winchester (RDnn) or Floppy (RX33) Drives"
+ },
+ {
+  "name": "ZRQDA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 71,
+  "title": "Test entire customer area of this disk"
+ },
+ {
+  "name": "ZRQEC1.BIC",
+  "date": "1989-03-01",
+  "blocks": 77,
+  "title": "Which Exerciser mode do you want ?"
+ },
+ {
+  "name": "ZRQFC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 34,
+  "title": "Logical Drive (0-255)"
+ },
+ {
+  "name": "ZRQGC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 74,
+  "title": "RD/RX Disk Summary Diagnostic"
+ },
+ {
+  "name": "ZRXAF0.BIC",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "MAINDEC-11-CZRXA-F"
+ },
+ {
+  "name": "ZRXBF0.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "CZRXBF0 RX11 INTERFACE TEST"
+ },
+ {
+  "name": "ZRXCA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 7,
+  "title": ""
+ },
+ {
+  "name": "ZRXDC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 30,
+  "title": "RX02 SS PERF EXER"
+ },
+ {
+  "name": "ZRXEA2.BIC",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "CZRXEA0 RX02 FMTR PROG%#%      RXCS ADDRESS (OCT) = #%            VECTOR (OCT) = #%END OF PASS # ? #%NO SYSTEM AVAILABLE TO FORMAT #%%FORMAT COMPLETED #%  INTERRUPT DID NOT OCCUR #%UNIT NOT RESPONDING TO ADDRESS #%ADDRESSING TEST #%  EXPECT    RCVD      ACTUAL%  #%%FORMAT DONE ON FOLLOWING #  TRACK (OCT) =#  SECTOR (OCT) =#DRIVE:#SIDE:#   #% CRC ERROR -> #% T"
+ },
+ {
+  "name": "ZRXFB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "%A  DISK DENSITY MIXED OR WRG"
+ },
+ {
+  "name": "ZSCMC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 22,
+  "title": "Signal Conditioning Module (M7505) for BTR01 and BTR53"
+ },
+ {
+  "name": "ZTEAE0.BIN",
+  "date": "1989-03-01",
+  "blocks": 26,
+  "title": "CZTEAE0)%***ASSURE TAPE IS AT BOT***%TYPE <CR> TO TERMINATE RESPONSE & ^C TO RESTART%#%DRIVE NUMBER OR (CR) WHEN DONE #%%FOR DRIVE ADDRESS TEST;% ENTER EXPT DRIVE NUMBER, ALL OTHERS SHOULD BE NON-EXISTANT.#%NON-EXIST DRIVE #%RH DETECTED #%TM03 DETECTED #EXPT-NOT RECVD#RCVD-NOT EXPT#%SLAVE NUMBER OR (CR) WHEN DONE #%%FOR SLAV"
+ },
+ {
+  "name": "ZTEBC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "CZTEBC0)%***ASSURE TAPE IS AT BOT***%TYPE <CR> TO TERMINATE RESPONSE & ^C TO RESTART%#EXPT-NOT RECVD#RCVD-NOT EXPT#%NON-EXIST SLAVE #%READ CONT BUS PAR #%WRITE CONT BUS PAR # EXPT # RCVD #%MR BITS 4-0#%MR BITS 15-7#%ITER: #%TC BITS 12-"
+ },
+ {
+  "name": "ZTECF0.BIN",
+  "date": "1989-03-01",
+  "blocks": 18,
+  "title": "CZTECF0)%TYPE <CR> TO TERMINATE RESPONSE & ^C TO RESTART%#%REGISTER START = #%VECTOR = #%END OF PASS # ? #%POSITION ERROR: #%IS CONTROLLER JUMPERED IN NON-STANDARD MODE"
+ },
+ {
+  "name": "ZTEDE0.BIN",
+  "date": "1989-03-01",
+  "blocks": 22,
+  "title": "CZTEDE0)%"
+ },
+ {
+  "name": "ZTEEE0.BIN",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "CZTEEE0)"
+ },
+ {
+  "name": "ZTEFB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 6,
+  "title": "%^G#%SWR= #  NEW= #?%#"
+ },
+ {
+  "name": "ZTKAE0.BIN",
+  "date": "1989-03-01",
+  "blocks": 23,
+  "title": "NCZTKAE0 TKxx FUNCTIONAL"
+ },
+ {
+  "name": "ZTKBD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 35,
+  "title": "LCZTKBD0 TKxx DATA RELIABILITY"
+ },
+ {
+  "name": "ZTKEB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 36,
+  "title": "CZTKEB TK-25 FRT END FUNC #1"
+ },
+ {
+  "name": "ZTKFA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 41,
+  "title": "CZTKFA TK-25 FRT END FUNC #2"
+ },
+ {
+  "name": "ZTKGA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 52,
+  "title": "CZTKGA TK-25 FRT END FUNC #3"
+ },
+ {
+  "name": "ZTKHB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 47,
+  "title": "CZTKHB TK-25 FRT END FUNC #4"
+ },
+ {
+  "name": "ZTKIB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 24,
+  "title": "/V/DATA RELIABILITY TEST"
+ },
+ {
+  "name": "ZTMAI0.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "CZTMAI0 TM,A,B-11 INSTR TST//@SET SW0=1 IF 7 CHANNEL@//@  PC    STATUS  COMAND   BYTE     CA    DATA B  READ L   TEMP  CRC CAL@//@//@TO INHIBIT MANUAL INTERVENTION TEST:  SET SW10=1 AND PRESS CONTINUE@OTHERWISE SET SW10=0, SELECT"
+ },
+ {
+  "name": "ZTMBG0.BIN",
+  "date": "1989-03-01",
+  "blocks": 13,
+  "title": "CZTMBG0@RECORD LIMITS IN BYTES@MINLEN  MAXLEN@ /,@EXERCISING UNITS,,@NO DRIVES AVAILABLE,/  RECORD DATA COMPARES//XIRG WRITTEN 4 TIMES//   SSTP //   RNDM //   NSTP //M-MAX//M-MIN//MIN  //MAX  //@WRITE ERRORS = //@RECOVERED ATj"
+ },
+ {
+  "name": "ZTMCD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 12,
+  "title": "CZTMCD0 TM11 DATA RELIAB@RECORD LIMITS IN BYTES@MINLEN  MAXLEN@//@EXERCISING UNITS//XIRG WRITTEN 4 TIMES// SSTP // RNDM // NSTP //M-MAX//M-MIN//MIN  //MAX  //@WRITE ERRORS = //@RECOVERED AT 0 //@PERMANENT BADSPOTS = //@READ STATUS ERRORS = //@DATA ERRORS = //@NON RECOVERABLE ERRORS = //@********************WRITE PASS  //@********************READ PASS   //   200//   556//   8"
+ },
+ {
+  "name": "ZTMDE0.BIN",
+  "date": "1989-03-01",
+  "blocks": 10,
+  "title": "/@@MD-11-DZTMD-E         TM-11 DRIVE FUNCTION TIMER@//@FUNCTION         // UNIT //  //@WRITE FROM BOT     //@WRITE SHUTDOWN     //@WRITE START        //@SETTLE DOWN DELAY  //@WRITE TO ERASE HEAD//@WRITE NONSTOP GAP  //@BACKSPACE SHUTDOWN //@READ SHUTDOWN      //@GAPS SHOULD = 8>7>6>5>4>1, 1-2<1.7, 2=3(+1.1, -0.2).//@GAP 1              //@WRITE XIRG         //@READ FROM BOT DELAY//@LAST"
+ },
+ {
+  "name": "ZTMEE0.BIC",
+  "date": "1989-03-01",
+  "blocks": 11,
+  "title": "CZTMEE0 TMA,B-11 DR FCTN TMR@TU10 TIMING INFO REFERENCE 6.2@TE10W (M8926) TIMING INFO REFERENCE 6.3@TU10W (M8926) TIMING INFO REFERENCE 6.4@TU10N/TE10N (M8927) TIMING INFO REFERENCE 6.5@//@@ERROR-NOT AT BOT AFTER REWIND-HALT@@//@@LOC.176 MUST BE LOADED PRIOR TO EXECUTION-HALT@@//@@CANNOT TEST LOAD MEDIUM@@/"
+ },
+ {
+  "name": "ZTMFF0.BIC",
+  "date": "1989-03-01",
+  "blocks": 8,
+  "title": "CZTMFF0 TMA,B-11 SPLMTL INSTR #%UNIT NUMBER: #%!END OF PASS: #%!!REWIND ERROR: NO BOT#%MTS: #%MTC: #%MTBC: #%MTCA: #%!!BACKSPACE ERROR#%!!NOT READY#%!!NO INTERRUPT#%DATA ERROR#%CN: #%G: #%B: #?#%WRITE ERROR#"
+ },
+ {
+  "name": "ZTMGC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 4,
+  "title": ""
+ },
+ {
+  "name": "ZTMHF0.BIC",
+  "date": "1989-03-01",
+  "blocks": 27,
+  "title": "U% #*RN #%          BAD RECORD%%# F***# R***#%EOT   NO. #%UNIT WILL REWIND AND BE%RESTARTED ON BLOCK ONE%WHEN ALL AVAIL UNITS REACH EOT#%!!!ILLEGAL BOT%%%#%COMD #%NO INTERRUPT RETURNED%#%!!!NO CONTROLLER READY !!! STOP:%PRESS CONTINUE TO RESUME TESTING%#%DROPS: #%PICKS: #%STAT #%%TM,A,B-11:TS03 OR TU10,N,W MULTIDRIVE DATA RELIABILTY EXERCISER (DZTMH-F)%#ENTER CONDITIONS IN OCTAL%#%UNIT NUMBER = #%DENSITY = #%PARITY = #%RECORD COUNT = #%CHARACTER COUNT = #%PATTERN NUMBER = #%SINGLE PASS = #!!!%END OF"
+ },
+ {
+  "name": "ZTRBD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 3,
+  "title": ""
+ },
+ {
+  "name": "ZTSAA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 37,
+  "title": "\"BUS-INIT\" DIDN'T INITIALIZE CONTROLLER"
+ },
+ {
+  "name": "ZTSBA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 65,
+  "title": "\"BUS-INIT\" DIDN'T INITIALIZE CONTROLLER"
+ },
+ {
+  "name": "ZTSCA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 75,
+  "title": "\"BUS-INIT\" DIDN'T INITIALIZE CONTROLLER"
+ },
+ {
+  "name": "ZTSDA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 70,
+  "title": "\"BUS-INIT\" DIDN'T INITIALIZE CONTROLLER"
+ },
+ {
+  "name": "ZTSEB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 11,
+  "title": "CZTSEB0 TS03 DR FCTN TMR//   RANGE MAX - MIN@ //@NO UNITS AVAILABLE FOR TEST @PRESS CONTINUE WHEN READY@//@REGISTER START: //@SPEED TEST (1=YES-0=NO): //@MOUNT SKEW TAPE ON ALL AVAILABLE UNITS: TYPE CR WHEN READY// ? // 621.0 - 509.0//  17.6 - 13.6//  39.0 - 32.0//  36.0 - 30.0//  76.0 - 58.0//   7.7 - 6.3//   7.7 - 6.3//  39.0 - 32.0// 366.0 - 300.0// 258.0"
+ },
+ {
+  "name": "ZTSFD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 8,
+  "title": "CZTSFD0 TS03 SPLMTL INSTR#%ENTER UNIT NUMBER:#%%!END OF PASS: #%!!REWIND ERROR: NO BOT#%MTS: #%MTC: #%MTBC: #%MTCA: #%!!BACKSPACE ERROR#%!!NOT READY#%!!NO INTERRUPT#%DATA ERROR#%CN: #"
+ },
+ {
+  "name": "ZTSGB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 4,
+  "title": ""
+ },
+ {
+  "name": "ZTSHD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 21,
+  "title": ")DATA RELIABILITY TEST"
+ },
+ {
+  "name": "ZTSIC0.BIN",
+  "date": "1989-03-01",
+  "blocks": 28,
+  "title": "7T8z8CONTROL LOGIC TEST"
+ },
+ {
+  "name": "ZTU1A0.BIN",
+  "date": "1989-03-01",
+  "blocks": 35,
+  "title": "CONTROLLER ERROR"
+ },
+ {
+  "name": "ZTU2E0.BIN",
+  "date": "1989-03-01",
+  "blocks": 20,
+  "title": "JCZTU2E0 TU81 FUNCTIONAL DIAGNOSTIC"
+ },
+ {
+  "name": "ZTUAJ0.BIN",
+  "date": "1989-03-01",
+  "blocks": 24,
+  "title": "CZTUAJ0)%#%%CZTUAJ0 TM02-TU16/TE16 RELIAB%%#%SLAVE NUMBER = #%DENSITY = #%PARITY = #%RECORD COUNT = #%CHARACTER COUNT = #%PATTERN NUMBER = #%SINGLE PASS = #%ENTER STALLS%READ = #%WRITE = #%TURN AROUND = #%?%#%ENTER YOZZLE STALL = #%ERR AMT #%FC #%CA #%!NO BOT ON REWIND: HALT%# NOT AVAIL # ILLEGAL DRIVE TYPE #%%DRIVE NUMBER = #%FORMAT = #*WE TM#*SE TM# TM# NON-EXIST SLAVE#%CRC #%LR"
+ },
+ {
+  "name": "ZTUBH0.BIN",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "CZTUBH0) %ENTER CONDITIONS IN OCTAL%#%REGISTER START = #%VECTOR = #%END OF PASS # ? #%#%POSITION ERROR: #%DRIVE NUMBER: #%SLAVE NUMBER: #%WRITE ERROR #%READ REVERSE ERROR #%READ FORWARD ERROR #%WRITE TM ERROR #%REVERSE ERROR #%FORWARD ERROR # NRZ # PE # EXPT: # RCVD: #%BUS TRAP: #%WC: #%BA: #%DB: #%INIT DID NOT CLEAR RH #L"
+ },
+ {
+  "name": "ZTUCG0.BIN",
+  "date": "1989-03-01",
+  "blocks": 32,
+  "title": "CZTUCG0)#ENTER CONDITIONS IN OCTAL%#%DRIVE NUMBER #%%FOR DRIVE ADDRESS TEST;% ENTER EXPT DRIVE NUMBER, ALL OTHERS SHOULD BE NON-EXISTANT.#%NON-EXIST DRIVE #%RH DETECTED #%TM02 DETECTED #EXPT-NOT RECVD#RCVD-N"
+ },
+ {
+  "name": "ZTUDD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 15,
+  "title": "TU16 DRIVE FUNCTION TIMER (DZTUD-D)"
+ },
+ {
+  "name": "ZTUED0.BIN",
+  "date": "1989-03-01",
+  "blocks": 6,
+  "title": "%^G#%SWR= #  NEW= #?%#"
+ },
+ {
+  "name": "ZTUFA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 4,
+  "title": "%%EXTERNAL DATA TAPE CREATE PROGRAM%MAXIMUM OF 377 OCTAL CHARACTERS%ENTER 3 DIGITS(0-7)FOR EACH CHARACTER%CR WILL ECHO CR-LF%CONTROL C ENDS INPUT AT LESS THAN 377.%A SINGLE CHARACTER CORRECTION MAY BE DONE%BY TYPING A SLASH AND RETYPING THE CHARACTER.%#"
+ },
+ {
+  "name": "ZTUGC1.BIC",
+  "date": "1989-03-01",
+  "blocks": 15,
+  "title": "CZTUGC TM2/TE16 DR FCNT TMR"
+ },
+ {
+  "name": "ZTUIA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 29,
+  "title": "CZTUIA0)%MAKE ENTRIES IN OCTAL%#%%TU45 DATA RELIABILITY"
+ },
+ {
+  "name": "ZTUJA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "CZTUJA0)%ENTER CONDITIONS IN OCTAL%#%REGISTER START = #%VECTOR = #%END OF PASS # ? #%#%POSITION ERROR: #%DRIVE NUMBER: #%SLAVE NUMBER: #%WRITE ERROR #%READ REVERSE ERROR #%READ FORWARD ERROR #%WRITE TMN"
+ },
+ {
+  "name": "ZTUKA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 31,
+  "title": "CZTUKA0)#ENTER CONDITIONS IN OCTAL%#%DRIVE NUMBER H"
+ },
+ {
+  "name": "ZTULA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 14,
+  "title": "CZTULA0)"
+ },
+ {
+  "name": "ZTUMA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 4,
+  "title": ""
+ },
+ {
+  "name": "ZTUNA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 4,
+  "title": "%%EXTERNAL DATA TAPE CREATE PROGRAM%MAXIMUM OF 377 OCTAL CHARACTERS%ENTER 3 DIGITS(0-7)FOR EACH CHARACTER%CR WILL ECHO CR-LF%CONTROL C ENDS INPUT AT LESS THAN 377.%A SINGLE CHARACTER CORRECTION MAY BE DONE%BY TYPING A SLASH AND RETYPING THE CHARACTER.%#"
+ },
+ {
+  "name": "ZTUOB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 25,
+  "title": "CZTUOB0)%***ASSURE TAPE IS AT BOT***%TYPE <CR> TO TERMINATE RESPONSE & ^C TO RESTART%#%DRIVE NUMBER OR (CR) WHEN DONE #%%FOR DRIVE ADDRESS TEST;% ENTER EXPT DRIVE NUMBER, ALL OTHERS SHOULD BE NON-EXISTANT.#%NON-EXIST DRIVE #%RH DETECTED #%TM03 DETECTED #EXPT-NOT RECVD#RCVD-NOT EXPT#%SLAVE NUMBER OR (CR) WHEN DONE #%%FOR SLAVE ADDRESS TEST;% ENTER EXPT SLAVE NUMBER, ALL OTHERS SHOULD BE NON-EXISTANT.#%NON-EXIST SLAVE #%READ CONT BUS PAR #%WRITE CONT BUS PAR # EXPT # RCVD"
+ },
+ {
+  "name": "ZTUPB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 16,
+  "title": "CZTUPB0)%***ASSURE TAPE IS AT BOT***%TYPE <CR> TO TERMINATE RESPONSE & ^C TO RESTART%#EXPT-NOT RECVD#RCVD-NOT EXPT#%NON-EXIST SLAVE #%READ CONT BUS PAR #%WRITE CONT BUS PAR # EXPT # RCVD #%MR BITS 4-0#%MR BITS 15-7#%ITER: #%TC BITS 12-0 #%FC BITS 15-0 # ? #%%END OF PASS #%REGISTER START: #%VECTOR ADDRESS: #%TM03 DRIVE: #%TU45 SLAVE: #%#\\#%REMOVE TMDP FRO"
+ },
+ {
+  "name": "ZTUQB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 17,
+  "title": "CZTUQB0)%TYPE <CR> TO TERMINATE RESPONSE & ^C TO RESTART%#%REGISTER START = #%VECTOR = #%END OF PASS # ? #%POSITION ERROR: #%DRIVE NUMBER: #%SLAVE NUMBER: #%WRITE ERROR #%READ REVERSE ERROR #%READ FORWARD ERROR #%WRITE TM ERROR #%REVERSE ERROR #%FORWARD ERROR # NRZ # PE # EXPT: # RCVD: #%BUS TRAP: #%WC: #%BA: #%DB: #%INIT DID NOT CLEAR RH #%SC NOT RESET BY INIT #%TRE N"
+ },
+ {
+  "name": "ZTURB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 23,
+  "title": "CZTURB0)%"
+ },
+ {
+  "name": "ZTUSB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 14,
+  "title": "CZTUSB0)"
+ },
+ {
+  "name": "ZTUTA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 6,
+  "title": "%^G#%SWR= #  NEW= #?%#"
+ },
+ {
+  "name": "ZTUUF0.BIN",
+  "date": "1989-03-01",
+  "blocks": 22,
+  "title": "\"NON-EXISTENT\" DRIVE"
+ },
+ {
+  "name": "ZTUVB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 23,
+  "title": ",DATA RELIABILITY TEST"
+ },
+ {
+  "name": "ZTUWA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 41,
+  "title": "CZTUWA0 TU80 FRONT END PRT A"
+ },
+ {
+  "name": "ZTUXA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 51,
+  "title": "CZTUXA0 TU80 FRONT END PRT B"
+ },
+ {
+  "name": "ZTUYA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 57,
+  "title": "CZTUYA0 TU80 FRONT END PRT C"
+ },
+ {
+  "name": "ZTUZA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 56,
+  "title": "CZTUZA0 TU80 FRONT END PRT D"
+ },
+ {
+  "name": "ZUAAB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 65,
+  "title": "DEUNA REPAIR DIAGNOSTIC"
+ },
+ {
+  "name": "ZUABC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 51,
+  "title": "DEUNA - PDP11 FUNCTIONAL DIAGNOSTIC"
+ },
+ {
+  "name": "ZUACD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 50,
+  "title": "CZUAC DEUNA,DELUA NI EXERCISER"
+ },
+ {
+  "name": "ZUADB1.BIC",
+  "date": "1989-03-01",
+  "blocks": 58,
+  "title": "DELUA - PDP11 FUNCTIONAL DIAGNOSTIC  dtd 28-MAR-86"
+ },
+ {
+  "name": "ZUDAD0.BIN",
+  "date": "1989-03-01",
+  "blocks": 19,
+  "title": "UDC11 SYSTEM FUNCTION EXERCISER (MAINDEC-11-DZUDA-D)"
+ },
+ {
+  "name": "ZUDBB0.BIC",
+  "date": "1989-03-01",
+  "blocks": 11,
+  "title": "UDC-11 CONTROL TEST - MAINDEC-11-DZUDB-A"
+ },
+ {
+  "name": "ZUDHF0.BIN",
+  "date": "1989-03-01",
+  "blocks": 77,
+  "title": "CZUDH UDA50A,KDA50-Q BASIC SUBSY"
+ },
+ {
+  "name": "ZUDIE0.BIN",
+  "date": "1989-03-01",
+  "blocks": 74,
+  "title": "CZUDIE0 UDA50A,KDA50-Q DRIVE EXER"
+ },
+ {
+  "name": "ZUDJD0.BIC",
+  "date": "1989-03-01",
+  "blocks": 50,
+  "title": "CZUDJC0 UDA50-A,KDA50-Q DISK SUBSYSTEM EXERCISER"
+ },
+ {
+  "name": "ZUDKG0.BIC",
+  "date": "1989-03-01",
+  "blocks": 61,
+  "title": "CZUDK UDA50A,KDA50A-Q FORMATTER"
+ },
+ {
+  "name": "ZVSEA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 21,
+  "title": "VSV01-DYNAMIC-CURSOR-ADDRESS-TEST--DIGITAL-EQUIPMENT-CORPORATION"
+ },
+ {
+  "name": "ZVSVA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 11,
+  "title": "**** VS(V)11-LU TESTS ****"
+ },
+ {
+  "name": "ZVSWB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 25,
+  "title": "CONTROLLER READY NOT SET IN CSR"
+ },
+ {
+  "name": "ZVTHC0.BIC",
+  "date": "1989-03-01",
+  "blocks": 25,
+  "title": "! !46 , 7  + 4 (   o7n"
+ },
+ {
+  "name": "ZVTJB0.BIN",
+  "date": "1989-03-01",
+  "blocks": 26,
+  "title": "CZVTJB0 DJ11 VT61 EXER"
+ },
+ {
+  "name": "ZVTLA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 12,
+  "title": "VT61-T AND VT71-T LOOPBACK TEST"
+ },
+ {
+  "name": "ZVTMA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 29,
+  "title": "! !46 , 7  + 4 (   o7n"
+ },
+ {
+  "name": "ZVTNA0.BIC",
+  "date": "1989-03-01",
+  "blocks": 13,
+  "title": "#'+.26;?CHMQV[_dinrw|"
+ },
+ {
+  "name": "ZVTVA0.BIN",
+  "date": "1989-03-01",
+  "blocks": 9,
+  "title": "VTV31-K INTERFACE DIAGNOSTIC"
+ },
+ {
+  "name": "DECX11.BIC",
+  "date": "1984-01-01",
+  "blocks": 99,
+  "title": "%DEC/X-11 EXERCISER MONITOH"
+ },
+ {
+  "name": "DECX11.MAP",
+  "date": "1984-01-01",
+  "blocks": 10
+ },
+ {
+  "name": "DECX11.CNF",
+  "date": "1984-01-01",
+  "blocks": 2
+ }
+]

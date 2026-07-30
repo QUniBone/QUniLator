@@ -7,6 +7,40 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { QBoneClient, QBoneError, LOG_LEVELS } from "./qbone.js";
 import type { ConsoleChannel, LogLevelName } from "./qbone.js";
 import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/* The directory of the XXDP 2.5 RL02 pack, read off the image once by
+   tools/xxdp-dir.py and shipped here. Reading it from the pack itself means
+   booting XXDP and waiting several minutes for a console listing to scroll
+   past, which is not worth doing to find out what a diagnostic is called. */
+type XxdpFile = { name: string; date: string; blocks: number };
+
+let xxdpPack: XxdpFile[] | null = null;
+
+function xxdpPackFiles(): XxdpFile[] {
+  if (xxdpPack === null) {
+    const here = dirname(fileURLToPath(import.meta.url));
+    // src/ when running from source, dist/src/ when built
+    const candidates = [
+      join(here, "..", "data", "xxdp25-rl02.json"),
+      join(here, "..", "..", "data", "xxdp25-rl02.json"),
+    ];
+    let last: unknown;
+    for (const path of candidates) {
+      try {
+        xxdpPack = JSON.parse(readFileSync(path, "utf8")) as XxdpFile[];
+        return xxdpPack;
+      } catch (err) {
+        last = err;
+      }
+    }
+    throw new Error(
+      `xxdp25-rl02.json not found: ${last instanceof Error ? last.message : String(last)}`,
+    );
+  }
+  return xxdpPack;
+}
 
 type ToolResult = {
   content: { type: "text"; text: string }[];
@@ -38,8 +72,11 @@ async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
 }
 
 const channelSchema = z
-  .enum(["0", "1", "ext"])
-  .describe("console channel: 0 = DL11 @777560, 1 = @776500, ext = /dev/ttyS2");
+  .enum(["0", "1", "ext", "vax"])
+  .describe(
+    "console channel: 0 = DL11 @777560, 1 = @776500, ext = /dev/ttyS2, " +
+      "vax = the emulated VAX-11/780's own console",
+  );
 
 export function registerTools(server: McpServer, qbone: QBoneClient): void {
   // ---- Observation ------------------------------------------------------
@@ -244,6 +281,59 @@ export function registerTools(server: McpServer, qbone: QBoneClient): void {
   );
 
   server.registerTool(
+    "list_xxdp_diagnostics",
+    {
+      description:
+        "List what is on the XXDP 2.5 RL02 pack, so a diagnostic's name does " +
+        "not have to be found by booting XXDP and listing the pack over the " +
+        "console. Answers from a directory read off the image, not from the " +
+        "board, so it needs no machine and costs nothing. `match` is a regular " +
+        "expression against the file name, case insensitive: 'ZTK' for the " +
+        "TK50 diagnostics, 'ZRL' for the RL, 'ZUD' for the UDA50, 'ZRQ' for " +
+        "the RQDX, 'ZRX' for the RX. Names here carry the extension and drop " +
+        "the leading class letter that the DEC part number has (CZTKAE0 is " +
+        "ZTKAE0.BIN), which is the name run_xxdp_diagnostic wants.",
+      inputSchema: {
+        match: z
+          .string()
+          .optional()
+          .describe("regular expression on the file name, e.g. '^ZTK'"),
+        runnable_only: z
+          .boolean()
+          .optional()
+          .describe("only .BIC and .BIN, the loadable programs (default true)"),
+        limit: z.number().int().positive().optional().describe("default 200"),
+      },
+    },
+    async ({ match, runnable_only, limit }) =>
+      run(async () => {
+        let re: RegExp | null = null;
+        if (match !== undefined) {
+          try {
+            re = new RegExp(match, "i");
+          } catch (err) {
+            throw new Error(
+              `invalid match: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+        const runnable = runnable_only ?? true;
+        const all = xxdpPackFiles().filter(
+          (f) =>
+            (!runnable || f.name.endsWith(".BIC") || f.name.endsWith(".BIN")) &&
+            (re === null || re.test(f.name)),
+        );
+        const max = limit ?? 200;
+        return {
+          pack: "xxdp25.rl02",
+          matched: all.length,
+          truncated: all.length > max,
+          files: all.slice(0, max),
+        };
+      }),
+  );
+
+  server.registerTool(
     "run_xxdp_diagnostic",
     {
       description:
@@ -262,6 +352,12 @@ export function registerTools(server: McpServer, qbone: QBoneClient): void {
       inputSchema: {
         diagnostic: z.string().describe("XXDP file, e.g. ZTKAE0"),
         config: z.string().optional().describe("config to apply first, e.g. xxdp"),
+        console: channelSchema
+          .optional()
+          .describe(
+            "console the machine talks on: 'ext' (a CPU with its own SLU, the " +
+              "default) or '0' (an emulated CPU's emulated DL11)",
+          ),
         setup: z
           .array(
             z.object({
@@ -281,11 +377,20 @@ export function registerTools(server: McpServer, qbone: QBoneClient): void {
         run_timeout_ms: z.number().int().positive().optional(),
       },
     },
-    async ({ diagnostic, config, setup, answers, pass_pattern, run_timeout_ms }) =>
+    async ({
+      diagnostic,
+      config,
+      console: channel,
+      setup,
+      answers,
+      pass_pattern,
+      run_timeout_ms,
+    }) =>
       run(() =>
         qbone.runXxdpDiagnostic({
           diagnostic,
           config,
+          console: channel as ConsoleChannel | undefined,
           setup,
           answers,
           passPattern: pass_pattern,

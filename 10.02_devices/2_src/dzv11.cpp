@@ -333,6 +333,15 @@ void dzv11_c::eval_csr_dato(void)
 		// clear the TCR line-enables in the read-back; the DTR high byte survives
 		set_register_dati_value(reg_tcr,
 				reg_tcr->pru_iopage_register->value & 0007400, __func__);
+		// Master Clear resets the TCR's line-enable flipflops themselves, so the
+		// write-side latch a DATOB merges against must match: a later high-byte
+		// DTR write leaves the low byte cleared. Without this, the latch still
+		// holds the last written TCR (the autoconfig probe's line enable), and a
+		// getty's DTR byte-write resurrects a transmitter with no output — the
+		// TRDY interrupt then re-enters forever at IPL5 and wedges the machine.
+		reg_tcr->active_dato_flipflops = reg_tcr->active_dati_flipflops;
+		// the CSR write that carried CLR does not survive it either
+		reg_csr->active_dato_flipflops = 0;
 		set_rbuf_dati();
 		return;
 	}
@@ -683,13 +692,21 @@ void dzv11_c::worker_xmt(void)
 			pthread_mutex_lock(&state_mutex);
 			continue;
 		}
-		if (!csr_trdy) {
-			// scanner off, or no enabled line: wait for a CSR/TCR change
-			pthread_cond_wait(&xmt_cond, &state_mutex);
-			continue;
-		}
-		// TRDY presented, waiting for the CPU to write TDR
-		pthread_cond_wait(&xmt_cond, &state_mutex);
+		// The hardware transmit scanner free-runs: it re-evaluates the lines
+		// continuously and presents TRDY within ~1.4 us of one becoming ready
+		// (TM 3.2.1), regardless of whether the ready state was produced by a
+		// register access. So this loop never blocks indefinitely — a register
+		// write (CSR/TCR/TDR) signals xmt_cond for immediate service, and the
+		// timed wait bounds the latency of any transition that produced no
+		// register access, keeping the scan (and the TRDY interrupt it derives)
+		// alive. 2.11BSD's dz start path depends on this: a boot that enables a
+		// line and then waits at spl5 for the transmitter interrupt wedges the
+		// machine if the scan stops with the interrupt not yet delivered.
+		struct timespec ts;
+		clock_gettime(CLOCK_REALTIME, &ts);
+		ts.tv_nsec += 50000000L; // 50 ms scan period when idle
+		if (ts.tv_nsec >= 1000000000L) { ts.tv_sec++; ts.tv_nsec -= 1000000000L; }
+		pthread_cond_timedwait(&xmt_cond, &state_mutex, &ts);
 	}
 	pthread_mutex_unlock(&state_mutex);
 }

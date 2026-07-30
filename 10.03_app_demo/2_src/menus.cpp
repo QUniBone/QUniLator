@@ -125,7 +125,7 @@ bool application_c::emulate_memory(uint32_t endaddr)
     printf("Disable memory emulation, size physical memory ...\n");
     emulated_memory_start_addr = 0xffffffff;
     emulated_memory_end_addr = 0; // start > end: disable
-    ddrmem->set_range(emulated_memory_start_addr, emulated_memory_end_addr);
+    ddrmem->set_range(DDRMEM_RANGE_MEMORY, emulated_memory_start_addr, emulated_memory_end_addr);
     first_invalid_addr = qunibus->test_sizer();
     if (first_invalid_addr >= qunibus->iopage_start_addr)
         printf("Found physical memory in full range 0..%s, no emulation necessary!\n", qunibus->addr2text(qunibus->iopage_start_addr-2));
@@ -135,7 +135,7 @@ bool application_c::emulate_memory(uint32_t endaddr)
         // Emulate all unimplemented memory behind physical
         if (endaddr == 0)
             endaddr = qunibus->iopage_start_addr-2 ;
-        if (ddrmem->set_range(first_invalid_addr,  endaddr)) {
+        if (ddrmem->set_range(DDRMEM_RANGE_MEMORY, first_invalid_addr,  endaddr)) {
             emulated_memory_start_addr = first_invalid_addr;
             emulated_memory_end_addr = endaddr;
             printf("Now emulating " QUNIBONE_NAME " memory in range %s..%s with DDR memory.\n",

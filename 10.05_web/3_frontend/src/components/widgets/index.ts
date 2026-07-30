@@ -6,6 +6,8 @@ import { DeviceWidget } from './base';
 import type { WidgetOption, WidgetOpts } from './base';
 import { DiskWidget, Ra81Widget, RemovableDriveWidget, RlWidget } from './drives';
 import { CpuWidget } from './cpu';
+import { MemoryWidget } from './memory';
+import { VaxCpuWidget } from './cpuvax';
 import { DzWidget, NetworkWidget, Vcb01Widget } from './peripherals';
 
 export type { Cells, WidgetOption, WidgetOpts } from './base';
@@ -30,11 +32,13 @@ const WIDGET_MODELS: Record<string, WidgetClass> = {
   dzv11_c: DzWidget,
   'PDP-11/20': CpuWidget,
   'PDP-11/34': CpuWidget,
+  'VAX-11/780': VaxCpuWidget,
 };
 const WIDGET_CATEGORIES: Record<string, WidgetClass> = {
   disk: DiskWidget,
   network: NetworkWidget,
   tape: RemovableDriveWidget,
+  memory: MemoryWidget,
 };
 
 export function widgetFor(d: LiveDev): WidgetClass | null {

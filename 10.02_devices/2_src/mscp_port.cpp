@@ -492,6 +492,32 @@ mscp_port_c::update_SA(uint16_t value)
 //  operation -- due to non-existent memory or invalid data.
 //  (In this case nullptr will also be returned.)
 //
+//
+// CommandPending():
+//  Whether the descriptor the command ring pointer stands on is owned by the
+//  controller. A controller that owns a command must execute it, so this is
+//  what the polling thread asks before it goes back to sleep: the host may have
+//  passed one over after the ring last read empty, and with a one entry ring
+//  that window is every command it sends.
+//
+bool
+mscp_port_c::CommandPending(void)
+{
+    if (0 == _ringBase)
+    {
+        return false;                   // no communications area yet
+    }
+
+    DMABufferPtr<Descriptor> cmdDescriptor(
+        reinterpret_cast<Descriptor*>(
+            DMARead(
+                GetCommandDescriptorAddress(_commandRingPointer),
+                sizeof(Descriptor),
+                sizeof(Descriptor))));
+
+    return cmdDescriptor && cmdDescriptor->Word1.Fields.Ownership;
+}
+
 Message*
 mscp_port_c::GetNextCommand(bool* error)
 {
@@ -860,13 +886,19 @@ mscp_port_c::controller_microcode_id(void)
 
 //
 // step1_capability_flags():
-//  Extra SA_S1C_* capability bits advertised in the step-1 SA value. None by
-//  default (the UDA50 disk value); a subclass overrides to advertise more.
+//  Extra SA_S1C_* capability bits advertised in the step-1 SA value.
+//
+//  Extended diagnostics (SA_S1C_DI, 0x0100) and host buffer mapping
+//  (SA_S1C_MP, 0x0040), which is what a Unibus MSCP controller declares and
+//  what its hosts look for: VMS reads the step-1 value before it will carry on
+//  with the handshake, and the TKxx diagnostics require both to run their
+//  init and wrap tests. A Qbus controller adds SA_S1C_Q22 when 22-bit DMA is
+//  configured, which the port ORs in separately.
 //
 uint16_t
 mscp_port_c::step1_capability_flags(void)
 {
-    return 0;
+    return 0x0140;   // SA_S1C_DI | SA_S1C_MP
 }
 
 //
@@ -883,19 +915,23 @@ mscp_port_c::PortError(uint16_t error)
 
 //
 // Interrupt():
-//  Invokes a Qbus/Unibus interrupt if interrupts are enabled and the interrupt
-//  vector is non-zero.  Updates SA to the specified value atomically.
+//  Sets SA to the specified value and invokes a Qbus/Unibus interrupt if
+//  interrupts are enabled and the interrupt vector is non-zero.
+//
+//  A controller loads SA and then requests the interrupt, so the host can read
+//  the step it has reached whether or not the request has been granted yet.
+//  Publishing SA with the grant instead leaves the register holding the
+//  previous step for as long as the arbitration takes, and a host that polls
+//  SA rather than waiting for the interrupt sees the initialisation stand still.
 //
 void
 mscp_port_c::Interrupt(uint16_t sa_value)
 {
+    update_SA(sa_value);
+
     if ((_interruptEnable || _initStep == InitializationStep::Complete) && _interruptVector != 0)
     {
-        qunibusadapter->INTR(intr_request, SA_reg, sa_value);
-    }
-    else
-    {
-        update_SA(sa_value);
+        qunibusadapter->INTR(intr_request, NULL, 0);
     }
 }
 

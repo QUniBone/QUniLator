@@ -60,7 +60,8 @@ static std::vector<T *> build_mux_pool(unsigned count, const char *base_name,
 
 device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
 		dl11_rcv_stream(std::ios::app | std::ios::in | std::ios::out),
-		dl11b_rcv_stream(std::ios::app | std::ios::in | std::ios::out) {
+		dl11b_rcv_stream(std::ios::app | std::ios::in | std::ios::out),
+		cpuvax_rcv_stream(std::ios::app | std::ios::in | std::ios::out) {
 	// memory mapped blinkenbone panels
 	blinkenbone = new blinkenbone_c();
 
@@ -129,6 +130,9 @@ device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
 	// KW11-P programmable real-time clock (ships disabled)
 	KW11P = new kw11p_c();
 
+	// the memory card (ships disabled)
+	MEM = new memory_c();
+
 #if defined(UNIBUS)
 	RX11 = new RX11_c();
 	RX211 = new RX211_c();
@@ -137,6 +141,7 @@ device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
 	DEUNA = new deuna_c();
 	CPU20 = NULL;
 	CPU34 = NULL;
+	CPUVAX = NULL;
 	if (with_emulated_CPU) {
 		// Both models exist as devices, so either can be picked from the web
 		// UI or the devices menu. CPU20 comes up enabled, so a machine started
@@ -144,6 +149,12 @@ device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
 		// selecting the 11/34 means disabling it and enabling CPU34.
 		CPU20 = new cpu20_c();
 		CPU34 = new cpu34_c();
+		// The VAX-11/780 is a third choice, and ships disabled: it carries its
+		// own memory and its own console, and a machine is a VAX only when an
+		// operator says so.
+		CPUVAX = new cpuvax_c();
+		CPUVAX->rs232adapter.stream_rcv = &cpuvax_rcv_stream;
+		CPUVAX->rs232adapter.stream_xmt = NULL;   // do not echo to stdout
 		CPU20->enabled.set(true);
 	}
 #elif defined(QBUS)
@@ -165,6 +176,10 @@ device_configuration_c::~device_configuration_c() {
 		CPU34->enabled.set(false);
 		delete CPU34;
 	}
+	if (CPUVAX != NULL) {
+		CPUVAX->enabled.set(false);
+		delete CPUVAX;
+	}
 	m9312->enabled.set(false);
 	delete m9312;
 	KE11A->enabled.set(false);
@@ -185,6 +200,8 @@ device_configuration_c::~device_configuration_c() {
 	delete VCB01;
 #endif
 
+	MEM->enabled.set(false);
+	delete MEM;
 	KW11P->enabled.set(false);
 	delete KW11P;
 	LTC->enabled.set(false);

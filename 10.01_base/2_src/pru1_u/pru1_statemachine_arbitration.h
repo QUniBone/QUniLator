@@ -61,7 +61,12 @@ typedef struct {
 
 	uint8_t arbitrator_grant_mask; // single GRANT line set by master
 
-	uint8_t dummy[2]; // make it dword-sized
+	// BR level 4..7 of the GRANT last given, kept until the INTR that follows
+	// it is reported: SACK clears arbitrator_grant_mask before the vector
+	// arrives, and a CPU that takes interrupts by priority needs the level.
+	uint8_t granted_intr_level;
+
+	uint8_t dummy[1]; // make it dword-sized
 
 } statemachine_arbitration_t;
 

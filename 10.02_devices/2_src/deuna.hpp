@@ -300,12 +300,9 @@ private:
     bool desc_write_words(uint32_t addr, const uint16_t *buffer, size_t wordcount);
     bool dma_read_bytes(uint32_t addr, uint8_t *buffer, size_t len);
     bool dma_write_bytes(uint32_t addr, const uint8_t *buffer, size_t len);
-    bool cpu_read_words(uint32_t addr, uint16_t *buffer, size_t wordcount);
-    bool cpu_read_bytes(uint32_t addr, uint8_t *buffer, size_t len);
     bool process_bootrom(uint32_t dst_addr);
     bool load_system_microcode(uint32_t udbb);
     bool transfer_internal_memory(uint32_t udbb, bool to_internal);
-    void log_pcbb_snapshot(const char *tag, uint32_t addr);
 
     uint32_t make_addr(uint16_t hi, uint16_t lo) const;
 

@@ -116,6 +116,63 @@ PRU1_CODE_LIST= \
 
 
 
+# ---------------------------------------------------------------------------
+# The VAX-11/780 emulation core
+#
+# cpuvax_c carries the vendored simh processor of 91_3rd_party/simh_vax,
+# reached through the shim in 10.02_devices/2_src/cpuvax. Those are C with a
+# configuration of their own and are compiled by the rules further down, not by
+# CCFLAGS: simh is not C++ and does not want this application's defines.
+#
+# 10.07_vax/2_src/makefile builds the same sources on the workstation, where
+# they are tested. Keep the two file lists in step.
+# ---------------------------------------------------------------------------
+
+SIMH_VAX_DIR = $(QUNILATOR_ROOT)/91_3rd_party/simh_vax
+CPUVAX_SRC_DIR = $(DEVICE_SRC_DIR)/cpuvax
+
+VAX_CORE_SRC = \
+	vax_cpu.c vax_cpu1.c vax_fpa.c vax_cis.c vax_octa.c vax_cmode.c \
+	vax_mmu.c vax_sys.c vax_syscm.c \
+	vax780_stddev.c vax780_sbi.c vax780_mem.c vax780_uba.c vax7x0_mba.c \
+	vax780_fload.c vax_uw.c
+
+# The UNIBUS address and vector map the DW780 model builds its I/O page
+# through, and simh's MSCP controller, which is how a machine is booted until
+# the emulated UDA50 on the bus takes over.
+VAX_PDP11_SRC = pdp11_io_lib.c pdp11_rq.c
+
+# simh's file and disk layers, which the controller above needs.
+VAX_SIM_SRC = sim_fio.c sim_disk.c
+
+VAX_SHIM_SRC = \
+	simh_shim.c simh_shim_console.c simh_shim_timer.c simh_shim_tmxr.c \
+	simh_shim_bus.c vax780_shim_syslist.c
+
+VAX_OBJECTS = \
+	$(patsubst %.c,$(OBJDIR)/vax/%.o,$(VAX_CORE_SRC)) \
+	$(patsubst %.c,$(OBJDIR)/vax/%.o,$(VAX_PDP11_SRC)) \
+	$(patsubst %.c,$(OBJDIR)/vax/%.o,$(VAX_SIM_SRC)) \
+	$(patsubst %.c,$(OBJDIR)/vax/%.o,$(VAX_SHIM_SRC))
+
+# VM_VAX and VAX_780 pick the model. SHIM_WITH_DISK puts simh's own MSCP
+# controller in the processor's device list; no asynchronous I/O, no simh
+# networking and no regular expressions, none of which an embedded core wants.
+# The warning suppressions are the ones 10.07_vax/2_src/makefile explains,
+# which is where they are kept in step with a re-harvest.
+VAX_CFLAGS = \
+	-x c -std=c99 -U__STRICT_ANSI__ \
+	-O2 -DNDEBUG=1 -fno-strict-overflow -finline-functions \
+	-DVM_VAX -DVAX_780 -DUSE_INT64 -DUSE_ADDR64 -DSHIM_WITH_DISK \
+	-D_GNU_SOURCE -DHAVE_SYS_IOCTL -DHAVE_UTIME -DHAVE_GLOB -DHAVE_SHM_OPEN \
+	-Wall -Wno-unused-function -Wno-unused-variable \
+	-Wno-unused-but-set-variable -Wno-missing-braces -Wno-uninitialized \
+	-Wno-maybe-uninitialized -Wno-misleading-indentation -Wno-array-bounds \
+	-Wno-format-overflow \
+	-I$(SIMH_VAX_DIR)/sim -I$(SIMH_VAX_DIR)/VAX -I$(SIMH_VAX_DIR)/PDP11 \
+	-I$(CPUVAX_SRC_DIR) \
+	-c
+
 OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/getopt2.o	\
 	$(OBJDIR)/menus.o	\
@@ -137,6 +194,8 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/cpu.o	\
 	$(OBJDIR)/cpu20.o	\
 	$(OBJDIR)/ka11.o	\
+	$(OBJDIR)/cpuvax.o	\
+	$(VAX_OBJECTS)	\
 	$(OBJDIR)/cpu34.o	\
 	$(OBJDIR)/kd11ea.o	\
 	$(OBJDIR)/kt11d.o	\
@@ -162,6 +221,7 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/serial_tcp_line.o \
 	$(OBJDIR)/dl11w.o \
 	$(OBJDIR)/kw11p.o \
+	$(OBJDIR)/memory.o \
 	$(OBJDIR)/dzv11.o \
 	$(OBJDIR)/dhv11.o \
 	$(OBJDIR)/deuna.o \
@@ -349,6 +409,25 @@ $(OBJDIR)/devexer_rl.o :  $(DEVEXER_SRC_DIR)/devexer_rl.cpp $(DEVEXER_SRC_DIR)/d
 $(OBJDIR)/cpu.o :  $(DEVICE_SRC_DIR)/cpu.cpp $(DEVICE_SRC_DIR)/cpu.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
+$(OBJDIR)/cpuvax.o :  $(DEVICE_SRC_DIR)/cpuvax.cpp $(DEVICE_SRC_DIR)/cpuvax.hpp $(CPUVAX_SRC_DIR)/simh_shim.h
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/vax/%.o : $(SIMH_VAX_DIR)/VAX/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(VAX_CFLAGS) $< -o $@
+
+$(OBJDIR)/vax/%.o : $(SIMH_VAX_DIR)/PDP11/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(VAX_CFLAGS) $< -o $@
+
+$(OBJDIR)/vax/%.o : $(SIMH_VAX_DIR)/sim/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(VAX_CFLAGS) $< -o $@
+
+$(OBJDIR)/vax/%.o : $(CPUVAX_SRC_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(VAX_CFLAGS) $< -o $@
+
 $(OBJDIR)/ka11.o :  $(DEVICE_SRC_DIR)/cpu20/ka11.c $(DEVICE_SRC_DIR)/cpu20/ka11.h $(DEVICE_SRC_DIR)/cpu_core.h
 	$(CC) $(CCFLAGS) -x c++ -Wno-parentheses $< -o $@
 
@@ -427,6 +506,9 @@ $(OBJDIR)/serial_tcp_line.o :  $(DEVICE_SRC_DIR)/serial_tcp_line.cpp $(DEVICE_SR
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/kw11p.o :  $(DEVICE_SRC_DIR)/kw11p.cpp $(DEVICE_SRC_DIR)/kw11p.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/memory.o :  $(DEVICE_SRC_DIR)/memory.cpp $(DEVICE_SRC_DIR)/memory.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/dl11w.o :  $(DEVICE_SRC_DIR)/dl11w.cpp $(DEVICE_SRC_DIR)/dl11w.hpp $(DEVICE_SRC_DIR)/serial_tcp_line.hpp

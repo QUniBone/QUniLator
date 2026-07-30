@@ -55,7 +55,7 @@ export interface ApiDevice {
 }
 
 // ---- derived live model ----
-export type LiveParamKind = 'oct' | 'uint' | 'dbl' | 'str' | 'enum' | 'bool';
+export type LiveParamKind = 'oct' | 'hex' | 'uint' | 'dbl' | 'str' | 'enum' | 'bool';
 
 export interface LiveParam {
   n: string; // name
@@ -262,4 +262,4 @@ export interface BusState {
 
 // What carries the machine's console: the ttyS2 bridge to a physical console
 // SLU, a Web Serial port in the browser, or the emulated DL11 at 777560.
-export type ConsoleSource = 'ttys2' | 'webserial' | 'dl11';
+export type ConsoleSource = 'ttys2' | 'webserial' | 'dl11' | 'vax';

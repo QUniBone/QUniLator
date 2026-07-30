@@ -120,9 +120,11 @@ compiler warnings or spurious language-server errors behind.
 - **No spurious editor diagnostics.** The IDE's clangd has none of the makefile's
   `-I` paths or `-D` defines, so without help it reports false "file not found"
   errors (`civetweb.h`, `logger.hpp`, …) that cascade into undeclared-identifier
-  noise. The committed **`.clangd`** at the repo root gives clangd the QBUS
-  build's view so those clear. Keep it in sync when include paths or defines
-  change; add a path there rather than leaving a real header unresolved.
+  noise. **`./tools/gen-compile-commands.sh`** writes `compile_commands.json` by
+  asking the makefiles what they would compile each source with, which is what
+  clears them; run it after adding a directory of sources or changing an include
+  path. The database is generated, not committed. `.clangd` is only the fallback
+  for a file no makefile names yet.
 - **Vendored third-party code** under `91_3rd_party/` is upstream; prefer a
   scoped, documented handling (a per-file suppression or an upstream-safe patch)
   over editing it casually, but the goal is still a clean build.
@@ -131,12 +133,20 @@ compiler warnings or spurious language-server errors behind.
 
 The 11/73 CPU board carries no memory; a Q-bus memory card supplies it, and the
 test rig uses a **2 MB card**. So the low 2 MB of the 22-bit space is backed by
-that card, and the range from 2 MB up to the I/O page is nonexistent memory that
-answers with a bus timeout. QBone does not fill that range under `qbone.service`:
-`emulate_memory()` runs only from the interactive device-exerciser menus, never at
-service startup. An emulated device that needs a window in bus address space is
-therefore clear of memory above 2 MB and collides with the card below it; a
-different-sized card moves that boundary.
+that card, and the range from 2 MB up to the I/O page answers with a bus timeout
+until something claims it. A different-sized card moves that boundary.
+
+The board can supply memory itself: the **`MEM` device** (type `MSV11`) has the
+PRU answer one address range out of the board's DDR, with `startaddr`/`endaddr`
+naming the range. It ships disabled, and enabling it probes the range first and
+refuses when anything already answers there — a range claimed over the card
+would put two slaves on one cycle. `GET /api/memory/map` shows the address space
+and `POST /api/memory/probe` sizes what the machine carries.
+
+The PRU holds two such ranges. `MEM` takes one and a device that needs a window
+in bus address space (the VCB01 framebuffer) takes the other, so a machine can
+carry both — but two ranges may not overlap, and a device window still has to
+clear whatever memory answers below it.
 
 An **external line clock** drives BEVNT on the Q-bus, so the line-clock interrupt
 (vector 100, BR 6) is present without enabling QBone's own emulated `KW11`

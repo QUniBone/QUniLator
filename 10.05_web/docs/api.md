@@ -233,6 +233,44 @@ Writes the words consecutively from `address`, which is a number or an octal
 string and must be even. 1..4096 words. A bus timeout answers `502`.
 Answers `{"ok": true, "address": …, "count": …}`.
 
+### `GET /api/memory/map`
+
+The address space as the board sees it. No bus traffic: the emulated ranges are
+what the board is configured to answer, and `physical_end` is what the last
+probe found.
+
+```json
+{"addr_width": 22, "iopage_start": 4186112, "addr_space_bytes": 4194304,
+ "emulated": [{"slot": "memory", "start": 2097152, "end": 4186110}],
+ "physical_end": 2097150, "probed_at": 1785408000}
+```
+
+`slot` is `memory` for the memory card and `device` for a window a device serves
+out of the board's memory (the VCB01 framebuffer). `physical_end` and
+`probed_at` are `null` until a probe has run, and `physical_end` is `null` on a
+machine whose own memory answers nothing at all.
+
+### `POST /api/memory/probe`
+
+Sizes the memory the machine carries: DATI ascending from 0 until the bus times
+out. Answers `{"ok": true, "first_invalid": …, "physical_end": …}` and updates
+what `/api/memory/map` reports.
+
+This sweeps the whole address space and holds the bus for the length of the
+sweep, so run it with the CPU halted.
+
+### `POST /api/memory/fill`
+
+```json
+{"address": "10000000", "count": 1024, "value": 0}
+```
+
+Sets `count` words from `address`, which is a number or an octal string and must
+be even. `value` defaults to 0. The whole run must lie inside one range the
+board serves out of its own memory, else `409`; the words are written into that
+memory directly rather than over the bus. Answers
+`{"ok": true, "address": …, "count": …}`.
+
 ## Disk images
 
 Image files live in a folder hierarchy under `$QUNILATOR_DIR/images/`. Folders

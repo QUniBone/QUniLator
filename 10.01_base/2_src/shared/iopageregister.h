@@ -154,13 +154,22 @@ typedef struct {
 	// uint8_t dummy[2]; // fill up to 2+2+1+1+2 = 8 byte record size
 } pru_iopage_register_t;
 
+/* The board answers bus cycles out of DDR for DDRMEM_RANGE_COUNT address
+ * ranges: the machine's memory card and a device's own window in bus address
+ * space (the VCB01 framebuffer). Two, because a machine may carry both, and
+ * each range costs the slave path a compare on every bus cycle it sees.
+ */
+#define DDRMEM_RANGE_COUNT	2
+#define DDRMEM_RANGE_MEMORY	0	// the emulated memory card
+#define DDRMEM_RANGE_DEVICE	1	// a device's own window
+
 typedef struct {
-	/* The whole memory range is segmented into 
-	 * a single contniuous range of emulated memory (maybe 0)
+	/* The whole memory range is segmented into
+	 * the emulated memory ranges (maybe none)
 	 * and the IOpage (8K)
 	 */
-	uint32_t	memory_start_addr ; // start of emulateded memory
-	uint32_t	memory_limit_addr ; // first address after emulated memory, 0 = disable emulation
+	uint32_t	memory_start_addr[DDRMEM_RANGE_COUNT] ; // start of emulated memory
+	uint32_t	memory_limit_addr[DDRMEM_RANGE_COUNT] ; // first address after emulated memory, 0 = range unused
 
 	uint32_t	iopage_start_addr ; // 0160000, 0760000, 017760000
 	

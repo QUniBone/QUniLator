@@ -44,10 +44,21 @@ class unibuscpu_c: public qunibusdevice_c {
 	bool power_event_ACLO_inactive ;
 //	enum power_event_enum power_event ;
 		
-	// called by PRU on INTR, returns new priority level
-	virtual void on_interrupt(uint16_t vector) = 0 ;
+	// called by PRU on INTR. level is the BR level 4..7 the request was
+	// granted at, which a processor that ranks its interrupts by priority
+	// needs; a PDP-11 takes the vector alone and ignores it.
+	virtual void on_interrupt(uint16_t vector, uint8_t level) = 0 ;
 
 	
+	// A processor whose memory is not on the bus answers a device's DMA
+	// itself. Returns true when it did, and the transfer does not go to the
+	// bus at all; the default is false, which leaves memory where it was.
+	virtual bool on_dma(uint8_t qunibus_cycle, uint32_t unibus_addr,
+			uint16_t *buffer, uint32_t wordcount) {
+		(void) qunibus_cycle; (void) unibus_addr; (void) buffer; (void) wordcount;
+		return false;
+	}
+
 	virtual void on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge) ;
 	virtual void on_init_changed(void) ;
 };

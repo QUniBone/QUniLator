@@ -162,6 +162,7 @@ const CONSOLE_SOURCE_LABEL: Record<string, string> = {
   ttys2: 'ttyS2',
   webserial: 'Web Serial',
   dl11: 'DL11',
+  vax: 'VAX console',
 };
 function ConsoleCard() {
   useStore();

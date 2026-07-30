@@ -39,6 +39,15 @@
 
 #include "logsource.hpp"
 
+// The station address an emulated Ethernet controller powers on with: DEC's
+// OUI (08:00:2b) with the low three bytes taken from the board's own Ethernet
+// address, so every board gets a distinct one. It is generated once and kept
+// under QUNILATOR_DIR in a file named for the controller, so it stays the same
+// across boots and two controllers on one board do not collide; a saved
+// configuration's "mac" parameter overrides it, and the file can be edited.
+// If the board's own address cannot be read the low bytes are random instead.
+std::string ethernet_default_station_address(const char *controller);
+
 class ether_bridge_c: public logsource_c {
 public:
     // label prefixes this bridge's log messages, so two controllers in one

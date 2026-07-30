@@ -49,6 +49,7 @@
 #include "tqk50.hpp"
 #include "dl11w.hpp"
 #include "kw11p.hpp"
+#include "memory.hpp"
 #include "dzv11.hpp"
 #include "dhv11.hpp"
 #include "rx11211.hpp"
@@ -62,6 +63,7 @@
 #include "deuna.hpp"
 #include "cpu20.hpp"
 #include "cpu34.hpp"
+#include "cpuvax.hpp"
 #endif
 
 class device_configuration_c {
@@ -88,6 +90,7 @@ public:
 	// whichever is running.
 	cpu20_c *CPU20;
 	cpu34_c *CPU34;
+	cpuvax_c *CPUVAX;
 #elif defined(QBUS)
 	RLV12_c *RL11;
 	rkv11_c *RK11;
@@ -108,11 +111,16 @@ public:
 	std::vector<dhv11_c *> DHV11;
 	ltc_c *LTC;
 	kw11p_c *KW11P;
+	// the memory card, ships disabled: a machine with memory of its own needs
+	// none, and a range claimed over that memory would collide with it
+	memory_c *MEM;
 
 	// to inject characters into the SLU receivers (console scripting,
 	// web terminal)
 	std::stringstream dl11_rcv_stream;
 	std::stringstream dl11b_rcv_stream;
+	// the VAX console, which is part of the processor and not a line on the bus
+	std::stringstream cpuvax_rcv_stream;
 
 	device_configuration_c(bool with_emulated_CPU);
 	~device_configuration_c();

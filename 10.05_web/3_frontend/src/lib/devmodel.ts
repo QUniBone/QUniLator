@@ -1,6 +1,6 @@
 // Builds and mutates the live device model from /api/devices and /ws/events.
 import { store } from '../store';
-import { octalStr } from './util';
+import { hexStr, octalStr } from './util';
 import type { ApiDevice, ApiParam, LiveDev, LiveParam } from '../types';
 
 function liveParam(p: ApiParam): LiveParam {
@@ -17,6 +17,10 @@ function liveParam(p: ApiParam): LiveParam {
     if (p.base === 8) {
       out.t = 'oct';
       out.v = octalStr(Number(p.value), p.bitwidth);
+      out.bw = p.bitwidth;
+    } else if (p.base === 16) {
+      out.t = 'hex';
+      out.v = hexStr(Number(p.value), p.bitwidth);
       out.bw = p.bitwidth;
     } else {
       out.t = 'uint';
@@ -134,6 +138,7 @@ export function applyParamValue(dev: string, name: string, value: unknown): void
       const p = d.params.find((q) => q.n === name) || statusParam(d, name);
       if (p) {
         if (p.t === 'oct') p.v = octalStr(Number(value), p.bw);
+        else if (p.t === 'hex') p.v = hexStr(Number(value), p.bw);
         else if (typeof value === 'boolean') p.v = value ? '1' : '0';
         else p.v = value == null ? '' : String(value);
       }
