@@ -1,10 +1,15 @@
 # The VAX host
 
 Where the VAX UNIBUS host of [`vax-unibus-plan.md`](vax-unibus-plan.md) stands.
-Stages 0 and 1 are complete and stage 2 nearly so: the processor runs as a
-device of the application on a backplane-less UniBone, boots VMS over the web
-console, reaches the emulated devices' registers on the bus, and is reached by
-their interrupts.
+Stages 0 to 4 are done: the processor runs as a device of the application on a
+backplane-less UniBone, reaches the emulated devices' registers on the bus and
+is reached by their interrupts, and boots VMS V4.7 from the emulated UDA50 -
+with the disk's transfers going out as bus cycles and translated by the PRU
+through the adapter's map registers, not by this program.
+
+Two of stage 4's checks need hardware this board does not have: the added slave
+latency is derived rather than measured, and a real third-party UNIBUS DMA
+board has not been tried. Both want a UniBone in a backplane.
 
 ## Stage 0
 
