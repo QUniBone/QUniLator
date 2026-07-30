@@ -222,11 +222,18 @@ unambiguous in both directions — nothing runs at all until the memory card is
 claimed, and there is no physical memory anywhere in the space for a claim to
 collide with.
 
-**Console.** The DL11 is enabled with an empty `serialport` and reached over
-`/ws/console/0`, and `external_console` is `off`. This is the opposite of the
-other rig's arrangement, where the CPU carries its own SLU on `/dev/ttyS2` and
-the DL11 must stay disabled; the note in `CLAUDE.md` is about that board, not
-this one.
+**Console.** `external_console` is set to `off`, which closes the bridge's hold
+on `/dev/ttyS2`, and the DL11 is enabled on its construction defaults — that
+port, 9600, 8N1. It is then reached over `/ws/console/0`, which taps the
+emulated line, and on the bone's UART2 pins as well. The DL11 needs a transport
+either way: `slu_c::on_before_install()` opens the named port unless a
+`tcp_role` carries the line, and an empty `serialport` fails the open and the
+enable with it.
+
+This is the opposite of the other rig, where the CPU carries its own SLU on
+`/dev/ttyS2` and the bridge holds the port, so the DL11 must stay disabled. Both
+reasons are gone on this machine, which is what makes the same port the right
+one here; the note in `CLAUDE.md` is about that board, not this one.
 
 **Address width.** The J11 addresses 22 bits through its MMU, so the service
 runs at its default width and the card's range is 0 .. 0o17757776 — the whole
