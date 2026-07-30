@@ -333,6 +333,15 @@ void dzv11_c::eval_csr_dato(void)
 		// clear the TCR line-enables in the read-back; the DTR high byte survives
 		set_register_dati_value(reg_tcr,
 				reg_tcr->pru_iopage_register->value & 0007400, __func__);
+		// Master Clear resets the TCR's line-enable flipflops themselves, so the
+		// write-side latch a DATOB merges against must match: a later high-byte
+		// DTR write leaves the low byte cleared. Without this, the latch still
+		// holds the last written TCR (the autoconfig probe's line enable), and a
+		// getty's DTR byte-write resurrects a transmitter with no output — the
+		// TRDY interrupt then re-enters forever at IPL5 and wedges the machine.
+		reg_tcr->active_dato_flipflops = reg_tcr->active_dati_flipflops;
+		// the CSR write that carried CLR does not survive it either
+		reg_csr->active_dato_flipflops = 0;
 		set_rbuf_dati();
 		return;
 	}
