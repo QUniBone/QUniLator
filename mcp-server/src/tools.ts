@@ -71,6 +71,36 @@ async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
   }
 }
 
+// Decode backslash escapes so console_send can carry control characters,
+// which cannot appear literally in a tool-call string: \xNN, \r, \n, \t,
+// \0, \e and \\. An unrecognized escape passes through unchanged, so
+// existing callers that never used backslashes are unaffected.
+function decodeEscapes(text: string): string {
+  return text.replace(
+    /\\(x[0-9a-fA-F]{2}|[rnt0e\\])/g,
+    (whole: string, esc: string) => {
+      switch (esc[0]) {
+        case "x":
+          return String.fromCharCode(parseInt(esc.slice(1), 16));
+        case "r":
+          return "\r";
+        case "n":
+          return "\n";
+        case "t":
+          return "\t";
+        case "0":
+          return "\0";
+        case "e":
+          return "\x1b";
+        case "\\":
+          return "\\";
+        default:
+          return whole;
+      }
+    },
+  );
+}
+
 const channelSchema = z
   .enum(["0", "1", "ext", "vax"])
   .describe(
@@ -164,16 +194,24 @@ export function registerTools(server: McpServer, qbone: QBoneClient): void {
     {
       description:
         "Send input to a console channel. The text is sent as raw bytes; set " +
-        "append_cr to append a carriage return.",
+        "append_cr to append a carriage return. Backslash escapes carry " +
+        "control characters, which cannot ride in the text directly: \\xNN " +
+        "(two hex digits, e.g. \\x04 for ^D, \\x03 for ^C), \\r, \\n, \\t, " +
+        "\\0, \\e (escape), and \\\\ for a literal backslash.",
       inputSchema: {
         channel: channelSchema,
-        text: z.string().describe("bytes to send (interpreted as latin1)"),
+        text: z
+          .string()
+          .describe(
+            "bytes to send (interpreted as latin1; backslash escapes decoded)",
+          ),
         append_cr: z.boolean().default(false),
       },
     },
     async ({ channel, text, append_cr }) =>
       run(async () => {
-        const payload = append_cr ? text + "\r" : text;
+        const decoded = decodeEscapes(text);
+        const payload = append_cr ? decoded + "\r" : decoded;
         await qbone.consoleSend(
           channel as ConsoleChannel,
           Buffer.from(payload, "latin1"),

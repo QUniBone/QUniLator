@@ -74,6 +74,7 @@ test("tools are all registered", async () => {
     "get_machine_state",
     "halt",
     "images",
+    "list_xxdp_diagnostics",
     "run_xxdp_diagnostic",
     "set_device_enabled",
     "set_log_level",
