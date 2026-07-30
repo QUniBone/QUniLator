@@ -101,16 +101,21 @@ async function expect(re, timeoutMs, from) {
 // Type a line. Each character is confirmed by its echo before the next goes,
 // which is what keeps a line intact on a terminal with no receive buffer. A
 // password is not echoed, so those characters are merely paced.
+//
+// The echo wait is long, because resending is not free: a busy guest echoes
+// late rather than never, and a character resent into a terminal that did get
+// the first one types it twice. A doubled character corrupts the command; a
+// slow one merely takes its time.
 async function sendLine(text, hidden) {
   for (const ch of text) {
     const mark = buf.length;
-    for (let attempt = 0; attempt < 5; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       ws.send(Buffer.from(ch, "latin1"));
       if (hidden) {
         await delay(60);
         break;
       }
-      const end = Date.now() + 800;
+      const end = Date.now() + 5000;
       while (Date.now() < end && buf.length === mark) await delay(15);
       if (buf.length > mark) break;
     }
