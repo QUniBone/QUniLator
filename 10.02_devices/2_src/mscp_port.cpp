@@ -592,51 +592,17 @@ mscp_port_c::GetNextCommand(bool* error)
         }
 
         //
-        // Handle Ring Transitions (from full to not-full) and associated
-        // interrupts.
-        // If the previous entry in the ring is owned by the Port then that indicates
-        // that the ring was previously full (i.e. the descriptor we're now returning
-        // is the first free entry.)
+        // Interrupt whenever the host asked for ring-transition interrupts.
         //
-        if (cmdDescriptor->Word1.Fields.Flag)
-        {
-            //
-            // Flag is set, host is requesting a transition interrupt.
-            // Check the previous entry in the ring.
-            //
-            if (_commandRingLength == 1)
-            {
-                // Degenerate case:  If the ring is of size 1 we always interrupt.
-                doInterrupt = true;
-            }
-            else
-            {
-                uint32_t previousDescriptorAddress =
-                    GetCommandDescriptorAddress(
-                        (_commandRingPointer - 1) % _commandRingLength);
-
-                DMABufferPtr<Descriptor> previousDescriptor(
-                    reinterpret_cast<Descriptor*>(
-                        DMARead(
-                            previousDescriptorAddress,
-                            sizeof(Descriptor),
-                            sizeof(Descriptor))));
-
-                if (!previousDescriptor)
-                {
-                    PortError(PORT_ERROR_RING_READ);
-                    *error = true;
-                    return nullptr;
-                }
-
-                if (previousDescriptor && previousDescriptor->Word1.Fields.Ownership)
-                {
-                    // We own the previous descriptor, so the ring was previously
-                    // full.
-                    doInterrupt = true;
-                }
-            }
-        }
+        // The full-to-not-full rule, detected by probing the previous
+        // descriptor, is unsound against a host filling the ring while the
+        // port drains it - the same race as the response ring's, with the
+        // host blocked on a full command ring as the casualty: suppress the
+        // interrupt once at the wrong moment and the host never submits
+        // again. An extra transition interrupt makes the host re-scan and
+        // dismiss, so interrupt on every command taken instead.
+        //
+        doInterrupt = cmdDescriptor->Word1.Fields.Flag;
 
         //
         // Message retrieved; reset the Owner bit of the command descriptor,
@@ -810,44 +776,23 @@ mscp_port_c::PostResponse(
             reinterpret_cast<uint8_t*>(cmdDescriptor.get()));
 
         //
-        // Check if a transition from empty to non-empty occurred, interrupt if requested.
+        // Interrupt whenever the host asked for ring-transition interrupts.
         //
-        // If the previous entry in the ring is owned by the Port then that indicates
-        // that the ring was previously empty (i.e. the descriptor we're now returning
-        // is the first entry returned to the ring by the Port.)
+        // The transition rule - interrupt only when the ring went from empty
+        // to non-empty, detected by probing the previous descriptor - is an
+        // interrupt-rate optimisation that is unsound against a host draining
+        // the ring concurrently. A host ISR that scans ahead reads the next
+        // descriptor as port-owned, finishes its work, returns its own
+        // descriptors and sleeps; the probe then finds the previous descriptor
+        // still host-owned, concludes the ring was non-empty, and suppresses
+        // the interrupt. The response is stranded and both sides wait forever
+        // (seen as 2.11BSD dump-to-tape stalls and VMS startup hanging with
+        // the machine otherwise alive). A real controller wins this race by
+        // being nanoseconds behind the flip; this one is two DMA round-trips
+        // behind. An extra ring interrupt at worst makes the host scan an
+        // empty ring and dismiss it, so interrupt on every response instead.
         //
-        if (hostWantsTransitionInterrupt)
-        {
-            //
-            // Flag is set, host is requesting a transition interrupt.
-            // Check the previous entry in the ring.
-            //
-            if (_responseRingLength == 1)
-            {
-                // Degenerate case:  If the ring is of size 1 we always interrupt.
-                doInterrupt = true;
-            }
-            else
-            {
-                uint32_t previousDescriptorAddress =
-                    GetResponseDescriptorAddress(
-                    (_responseRingPointer - 1) % _responseRingLength);
-
-                DMABufferPtr<Descriptor> previousDescriptor(
-                    reinterpret_cast<Descriptor*>(
-                        DMARead(
-                            previousDescriptorAddress,
-                            sizeof(Descriptor),
-                            sizeof(Descriptor))));
-
-                if (previousDescriptor && previousDescriptor->Word1.Fields.Ownership)
-                {
-                    // We own the previous descriptor, so the ring was previously
-                    // full.
-                    doInterrupt = true;
-                }
-            }
-        }
+        doInterrupt = hostWantsTransitionInterrupt;
 
         // Post an interrupt as necessary.
         if (doInterrupt)
