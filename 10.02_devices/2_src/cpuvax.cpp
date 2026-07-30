@@ -473,14 +473,17 @@ void cpuvax_c::machine_start(void)
     mailbox_execute(ARM2PRU_CPU_ENABLE);
     qunibus->set_arbitrator_active(true);
     publish_unibus_map();
-#ifdef CPU_CONTROLLED_TIME
-    // Every device model's delays are then measured against the machine rather
-    // than against the board, at the cost of a guest clock that runs at
-    // whatever multiple of real time the board manages.
+    // The machine runs on emulated time: the interval clock and every device
+    // delay advance with the instructions executed, not with the wall. VMS
+    // calibrates its software timing loops (EXE$GL_TENUSEC and friends) once
+    // at boot by counting loop iterations between clock ticks; against a
+    // wall-time clock on a board whose one core is shared with the device
+    // workers, a boot that gets preempted during that window calibrates the
+    // loops a thousandfold too short, every driver's timed wait then expires
+    // in microseconds, and the port initialisation limps through 50-second
+    // timeout retries instead of taking interrupts. Time the guest can trust
+    // costs only a wall clock the guest does not keep.
     the_flexi_timeout_controller->set_mode(flexi_timeout_c::emulated_time);
-#else
-    the_flexi_timeout_controller->set_mode(flexi_timeout_c::world_time);
-#endif
     INFO("VAX running");
 }
 
