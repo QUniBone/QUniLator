@@ -174,12 +174,15 @@ int main(int argc, char *argv[])
 
 	// The emulated CPU has no machine around it, so the board supplies the
 	// memory too: everything below the I/O page that no physical card answers.
+	// Claimed here rather than through the MEM card, so a machine that is
+	// nothing but this board comes up with memory whatever configuration is
+	// applied. The card writes the same range, so enabling it takes this over.
 	if (emulated_cpu) {
 		WEB_INFO("Emulated CPU: KA11 (PDP-11/20).");
 		unsigned first_invalid = qunibus->test_sizer();
 		if (first_invalid >= qunibus->iopage_start_addr)
 			WEB_INFO("Physical memory answers up to the I/O page; none emulated.");
-		else if (ddrmem->set_range(first_invalid, qunibus->iopage_start_addr - 2))
+		else if (ddrmem->set_range(DDRMEM_RANGE_MEMORY, first_invalid, qunibus->iopage_start_addr - 2))
 			WEB_INFO("Emulating memory %s..%s.", qunibus->addr2text(first_invalid),
 					qunibus->addr2text(qunibus->iopage_start_addr - 2));
 		else

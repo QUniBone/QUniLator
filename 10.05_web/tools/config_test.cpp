@@ -669,15 +669,17 @@ int main(void) {
 		check(webconfigs_current() == "dipA", "DIP 3 selects dipA at startup");
 		check(rl->enabled.value && !rl0->enabled.value, "dipA enables rl only");
 
-		// changing the switches and reloading (a power cycle) switches machines
+		// changing the switches and restarting the backend switches machines;
+		// the switches are read at startup and nowhere else, so a power cycle
+		// keeps whatever configuration is loaded
 		g_dip_value = 7;
-		webconfigs_reload_for_dip();
-		check(webconfigs_current() == "dipB", "DIP 7 reload selects dipB");
+		webconfigs_startup("");
+		check(webconfigs_current() == "dipB", "DIP 7 selects dipB at the next startup");
 		check(rl->enabled.value && rl0->enabled.value, "dipB enables rl and rl0");
 
 		// a value no file claims → the empty fallback, passive on the bus
 		g_dip_value = 12;
-		webconfigs_reload_for_dip();
+		webconfigs_startup("");
 		check(webconfigs_current() == "default",
 				"an unclaimed DIP value brings up the empty config");
 		check(file_exists(cfg_path("default")), "fallback default.json written");
@@ -698,11 +700,11 @@ int main(void) {
 				"label: controller shows the bare role");
 		check(device_label("RLV12", "rl", "", 0774400) == "RL disk controller (RLV12)",
 				"label: RL controller bare role");
-		// instanced drive: unit appended before the code
-		check(device_label("RA81", "uda0", "0", 0) == "MSCP disk 0 (RA81)",
-				"label: instanced drive appends its unit");
-		check(device_label("RL02", "rl1", "1", 0) == "RL02 cartridge disk 1 (RL02)",
-				"label: RL02 drive appends its unit");
+		// a drive leads with its DEC code and the medium it holds, then its unit
+		check(device_label("RA81", "uda0", "0", 0) == "RA81 disk 0",
+				"label: instanced drive leads with the code and appends its unit");
+		check(device_label("RL02", "rl1", "1", 0) == "RL02 disk 1",
+				"label: RL02 drive leads with the code and appends its unit");
 		// the two serial lines: disambiguated by CSR address
 		check(device_label("slu_c", "DL11", "", 0777560) == "Serial line unit @777560 (DL11)",
 				"label: DL11 carries its CSR address");

@@ -84,7 +84,7 @@ void application_c::menu_device_exercisers(const char *menu_code)
 	
 	while (!ready) {
         // sync pagetable
-        ddrmem->set_range(emulated_memory_start_addr, emulated_memory_end_addr);
+        ddrmem->set_range(DDRMEM_RANGE_MEMORY, emulated_memory_start_addr, emulated_memory_end_addr);
 
 		// no menu display when reading script
 		if (show_help && !script_active()) {

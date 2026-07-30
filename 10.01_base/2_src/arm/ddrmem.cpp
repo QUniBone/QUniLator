@@ -66,19 +66,55 @@ void ddrmem_c::info()
 	INFO("  %d bytes of " QUNIBONE_NAME" memory allocated", sizeof(qunibus_memory_t));
 }
 
+// An enabled range other than "slot" that shares an address with
+// [startaddr, endaddr], or -1: two slots answering one cycle would have the
+// PRU serve whichever is tested first, so a claim that overlaps is refused.
+int ddrmem_c::overlapping_slot(unsigned slot, uint32_t startaddr, uint32_t endaddr) const
+{
+	for (unsigned i = 0; i < DDRMEM_RANGE_COUNT; i++) {
+		if (i == slot || !ranges[i].enabled)
+			continue;
+		if (startaddr <= ranges[i].endaddr && ranges[i].startaddr <= endaddr)
+			return (int) i;
+	}
+	return -1;
+}
+
+// which emulated range serves addr, -1 if none does
+int ddrmem_c::slot_of(uint32_t addr) const
+{
+	for (unsigned slot = 0; slot < DDRMEM_RANGE_COUNT; slot++) {
+		const range_t &r = ranges[slot];
+		if (r.enabled && addr >= r.startaddr && addr <= r.endaddr)
+			return (int) slot;
+	}
+	return -1;
+}
+
+// A transfer is served from DDR only if one range holds all of it: a block
+// straddling the end of a range is half on the bus and must go over the bus.
+// endaddr is the last word address, so the odd byte above it is in the range
+// too — a DATOB there is served, as the PRU's limit address says.
+bool ddrmem_c::contains(uint32_t addr, unsigned byte_count) const
+{
+	int slot = slot_of(addr);
+	return slot >= 0 && byte_count > 0
+			&& (uint64_t) addr + byte_count - 1 <= (uint64_t) ranges[slot].endaddr + 1;
+}
+
 // read/write ddr memory locally
 // result: true =OK, else illegal address ("timeout")
-bool ddrmem_c::deposit(uint32_t addr, uint16_t w) 
+bool ddrmem_c::deposit(uint32_t addr, uint16_t w)
 {
-	if (!enabled || addr < qunibus_startaddr || addr > qunibus_endaddr)
+	if (slot_of(addr) < 0)
 		return false;
 	base_virtual->memory.words[addr / 2] = w;
 	return true;
 }
 
-bool ddrmem_c::exam(uint32_t addr, uint16_t *w) 
+bool ddrmem_c::exam(uint32_t addr, uint16_t *w)
 {
-	if (!enabled || addr < qunibus_startaddr || addr > qunibus_endaddr)
+	if (slot_of(addr) < 0)
 		return false;
 	*w = base_virtual->memory.words[addr / 2];
 	return true;
@@ -177,6 +213,23 @@ void ddrmem_c::clear(void)
 	memset((void *) base_virtual, 0, sizeof(qunibus_memory_t));
 }
 
+// fill one range with 0, so a machine starts on cleared memory rather than on
+// whatever the last run left in the DDR reservation
+void ddrmem_c::clear_range(uint32_t startaddr, uint32_t endaddr)
+{
+	if (startaddr > endaddr)
+		return;
+	memset((void *) (base_virtual->memory.bytes + startaddr), 0, endaddr - startaddr + 2);
+}
+
+// fill one range with a word value, both bytes of each word written
+void ddrmem_c::fill_range(uint32_t startaddr, uint32_t endaddr, uint16_t fillword)
+{
+	volatile uint16_t *wordaddr = base_virtual->memory.words + startaddr / 2;
+	for (uint32_t addr = startaddr; addr <= endaddr; addr += 2)
+		*wordaddr++ = fillword;
+}
+
 // fill whole memory with pattern, with local code
 void ddrmem_c::fill_pattern(void) 
 {
@@ -195,15 +248,16 @@ void ddrmem_c::fill_pattern_pru(void)
 	mailbox_execute(ARM2PRU_DDR_FILL_PATTERN);
 }
 
-// set corrected values for emulated memory range
-// start = end = 0: disable
-// operates on addressmap.pagetable[]
+// set corrected values for one emulated memory range
+// start > end: disable the slot
 // precondition:  deviceregister_init()
 // result: false = error
-bool ddrmem_c::set_range(uint32_t startaddr, uint32_t endaddr) 
+bool ddrmem_c::set_range(unsigned slot, uint32_t startaddr, uint32_t endaddr)
 {
-	// init empty pagetable, just iopage
 	bool error;
+
+	assert(slot < DDRMEM_RANGE_COUNT);
+	range_t &range = ranges[slot];
 
 	pru_iopage_registers->iopage_start_addr = qunibus->iopage_start_addr ;
 
@@ -212,34 +266,42 @@ bool ddrmem_c::set_range(uint32_t startaddr, uint32_t endaddr)
 		// Error in GUI?
 		FATAL("Address width of QBUS not yet known!") ;
 
-	qunibus_startaddr = startaddr;
-	qunibus_endaddr = endaddr;
-	
-	enabled = (qunibus_startaddr < qunibus->addr_space_byte_count 
-			&& qunibus_endaddr < qunibus->addr_space_byte_count 
-			&& qunibus_startaddr <= qunibus_endaddr);
-	if (!enabled) {
-		pru_iopage_registers->memory_start_addr = 0 ; 
-		pru_iopage_registers->memory_limit_addr = 0 ; // disable in PRU
+	range.startaddr = startaddr;
+	range.endaddr = endaddr;
+
+	range.enabled = (startaddr < qunibus->addr_space_byte_count
+			&& endaddr < qunibus->addr_space_byte_count
+			&& startaddr <= endaddr);
+	if (!range.enabled) {
+		pru_iopage_registers->memory_start_addr[slot] = 0 ;
+		pru_iopage_registers->memory_limit_addr[slot] = 0 ; // disable in PRU
 		return true;
 	}
-	error = true; 
-	if (qunibus_endaddr >= qunibus->addr_space_byte_count)
-		WARNING("End addr %s exceeds %d bit address range", qunibus->addr2text(qunibus_endaddr), qunibus->addr_width);
-	if (qunibus_endaddr >= qunibus->iopage_start_addr)
-		WARNING("End addr %s in IO page", qunibus->addr2text(qunibus_endaddr));
+	error = true;
+	int other = overlapping_slot(slot, startaddr, endaddr);
+	if (endaddr >= qunibus->addr_space_byte_count)
+		WARNING("End addr %s exceeds %d bit address range", qunibus->addr2text(endaddr), qunibus->addr_width);
+	if (endaddr >= qunibus->iopage_start_addr)
+		WARNING("End addr %s in IO page", qunibus->addr2text(endaddr));
 	// addresses must fit page borders
-	else if (qunibus_startaddr % 2)
-		WARNING("Start addr %s is no word address", qunibus->addr2text(qunibus_startaddr));
-	else if (qunibus_endaddr % 2)
-		WARNING("End addr %s is no word address", qunibus->addr2text(qunibus_endaddr));
+	else if (startaddr % 2)
+		WARNING("Start addr %s is no word address", qunibus->addr2text(startaddr));
+	else if (endaddr % 2)
+		WARNING("End addr %s is no word address", qunibus->addr2text(endaddr));
+	else if (other >= 0)
+		WARNING("Range %s..%s overlaps the range %s..%s of slot %d",
+				qunibus->addr2text(startaddr), qunibus->addr2text(endaddr),
+				qunibus->addr2text(ranges[other].startaddr),
+				qunibus->addr2text(ranges[other].endaddr), other);
 	else {
-		// mark pages in address range as "memory emulation"
-		pru_iopage_registers->memory_start_addr = qunibus_startaddr ;
+		// mark address range as "memory emulation"
+		pru_iopage_registers->memory_start_addr[slot] = startaddr ;
 		// endaddr is even, limit_addr is first invalid address -> endaddr+2 included for DATOB
-		pru_iopage_registers->memory_limit_addr = qunibus_endaddr+2 ;
-		error = false ;		
+		pru_iopage_registers->memory_limit_addr[slot] = endaddr+2 ;
+		error = false ;
 	}
+	if (error)
+		range.enabled = false;
 	return !error;
 }
 
@@ -249,7 +311,7 @@ void ddrmem_c::unibus_slave(uint32_t startaddr, uint32_t endaddr)
 {
 	char *s, buf[20]; // dummy
 	// this command starts QBUS/UNIBUS slave logic in PRU
-	set_range(startaddr, endaddr);
+	set_range(DDRMEM_RANGE_MEMORY, startaddr, endaddr);
 	mailbox->arm2pru_req = ARM2PRU_DDR_SLAVE_MEMORY;
 	printf("Hit 'q' ENTER to end.\n");
 	do { // only this code wait for input under Eclipse

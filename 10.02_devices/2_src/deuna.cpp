@@ -937,9 +937,7 @@ bool deuna_c::dma_read_words(uint32_t addr, uint16_t *buffer, size_t wordcount)
     if (max == 0 || addr64 >= max || byte_count > max - addr64)
         return false;
 
-    if (ddrmem && ddrmem->enabled &&
-        addr64 >= ddrmem->qunibus_startaddr &&
-        (addr64 + byte_count - 2) <= ddrmem->qunibus_endaddr) {
+    if (ddrmem && ddrmem->contains(addr, static_cast<unsigned>(byte_count))) {
         for (size_t i = 0; i < wordcount; ++i) {
             if (!ddrmem->exam(addr + static_cast<uint32_t>(i * 2), &buffer[i])) {
                 WARNING("DEUNA: DDR exam failed");
@@ -971,9 +969,7 @@ bool deuna_c::dma_write_words(uint32_t addr, const uint16_t *buffer, size_t word
     if (max == 0 || addr64 >= max || byte_count > max - addr64)
         return false;
 
-    if (ddrmem && ddrmem->enabled &&
-        addr64 >= ddrmem->qunibus_startaddr &&
-        (addr64 + byte_count - 2) <= ddrmem->qunibus_endaddr) {
+    if (ddrmem && ddrmem->contains(addr, static_cast<unsigned>(byte_count))) {
         for (size_t i = 0; i < wordcount; ++i) {
             if (!ddrmem->deposit(addr + static_cast<uint32_t>(i * 2), buffer[i])) {
                 WARNING("DEUNA: DDR deposit failed");
@@ -1006,9 +1002,7 @@ bool deuna_c::desc_read_words(uint32_t addr, uint16_t *buffer, size_t wordcount)
     if (max == 0 || addr64 >= max || byte_count > max - addr64)
         return false;
 
-    if (ddrmem && ddrmem->enabled &&
-        addr64 >= ddrmem->qunibus_startaddr &&
-        (addr64 + byte_count - 2) <= ddrmem->qunibus_endaddr) {
+    if (ddrmem && ddrmem->contains(addr, static_cast<unsigned>(byte_count))) {
         for (size_t i = 0; i < wordcount; ++i) {
             if (!ddrmem->exam(addr + static_cast<uint32_t>(i * 2), &buffer[i]))
                 return false;
@@ -1038,9 +1032,7 @@ bool deuna_c::desc_write_words(uint32_t addr, const uint16_t *buffer, size_t wor
     if (max == 0 || addr64 >= max || byte_count > max - addr64)
         return false;
 
-    if (ddrmem && ddrmem->enabled &&
-        addr64 >= ddrmem->qunibus_startaddr &&
-        (addr64 + byte_count - 2) <= ddrmem->qunibus_endaddr) {
+    if (ddrmem && ddrmem->contains(addr, static_cast<unsigned>(byte_count))) {
         for (size_t i = 0; i < wordcount; ++i) {
             if (!ddrmem->deposit(addr + static_cast<uint32_t>(i * 2), buffer[i]))
                 return false;

@@ -49,6 +49,7 @@
 #include "tqk50.hpp"
 #include "dl11w.hpp"
 #include "kw11p.hpp"
+#include "memory.hpp"
 #include "dzv11.hpp"
 #include "dhv11.hpp"
 #include "rx11211.hpp"
@@ -108,6 +109,9 @@ public:
 	std::vector<dhv11_c *> DHV11;
 	ltc_c *LTC;
 	kw11p_c *KW11P;
+	// the memory card, ships disabled: a machine with memory of its own needs
+	// none, and a range claimed over that memory would collide with it
+	memory_c *MEM;
 
 	// to inject characters into the SLU receivers (console scripting,
 	// web terminal)

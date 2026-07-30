@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <cstdint>
 #include <map>
 #include <set>
@@ -36,6 +37,7 @@
 #include "rl0102.hpp"
 #include "parameter.hpp"
 #include "qunibus.h"
+#include "ddrmem.h"
 #include "qunibusadapter.hpp"
 #include "panel.hpp"
 #include "mscp_server.hpp"
@@ -622,8 +624,170 @@ static std::vector<uint16_t> &memory_buffer() {
 	return buf;
 }
 
+// What the last probe found, so the map can report the machine's own memory
+// without putting a DMA sweep behind every poll of it.
+static std::mutex probe_mutex;
+static bool probe_valid = false;
+static uint32_t probe_first_invalid = 0;
+static time_t probe_when = 0;
+
+// GET /api/memory/map — the address space as the board sees it: where the I/O
+// page starts, what the board answers out of DDR, and where the machine's own
+// memory ends as the last probe found it.
+static void memory_map(struct mg_connection *conn) {
+	picojson::object res;
+	res["addr_width"] = picojson::value((double) qunibus->addr_width);
+	res["iopage_start"] = picojson::value((double) qunibus->iopage_start_addr);
+	res["addr_space_bytes"] = picojson::value((double) qunibus->addr_space_byte_count);
+
+	// the emulated ranges, by slot: "memory" is the memory card, "device" a
+	// window a device serves out of DDR (the VCB01 framebuffer)
+	static const char *slot_names[DDRMEM_RANGE_COUNT] = { "memory", "device" };
+	picojson::array ranges;
+	for (unsigned slot = 0; slot < DDRMEM_RANGE_COUNT; slot++) {
+		if (!ddrmem->range_enabled(slot))
+			continue;
+		picojson::object r;
+		r["slot"] = picojson::value(std::string(slot_names[slot]));
+		r["start"] = picojson::value((double) ddrmem->range_start(slot));
+		r["end"] = picojson::value((double) ddrmem->range_end(slot));
+		ranges.push_back(picojson::value(r));
+	}
+	res["emulated"] = picojson::value(ranges);
+
+	{
+		std::lock_guard<std::mutex> lock(probe_mutex);
+		if (probe_valid) {
+			// the last address the machine's own memory answered; the probe
+			// returns the first that did not, and 0 means none did
+			res["physical_end"] = probe_first_invalid >= 2 ?
+					picojson::value((double) (probe_first_invalid - 2)) :
+					picojson::value();
+			res["probed_at"] = picojson::value((double) probe_when);
+		} else {
+			res["physical_end"] = picojson::value();
+			res["probed_at"] = picojson::value();
+		}
+	}
+	send_json(conn, 200, picojson::value(res));
+}
+
+// POST /api/memory/probe — size the machine's own memory: DATI ascending from 0
+// until the bus times out. A sweep of the whole address space, so it is an
+// operator action and not something a page poll triggers, and it wants the CPU
+// halted: it takes the bus for the length of the sweep.
+static void memory_probe(struct mg_connection *conn) {
+	uint32_t first_invalid;
+	{
+		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
+		std::lock_guard<std::mutex> mlock(memory_mutex);
+		first_invalid = qunibus->test_sizer();
+	}
+	{
+		std::lock_guard<std::mutex> lock(probe_mutex);
+		probe_first_invalid = first_invalid;
+		probe_when = time(nullptr);
+		probe_valid = true;
+	}
+	WEB_INFO("memory: probe found memory up to %06o", first_invalid ? first_invalid - 2 : 0);
+	picojson::object res;
+	res["ok"] = picojson::value(true);
+	res["first_invalid"] = picojson::value((double) first_invalid);
+	res["physical_end"] = first_invalid >= 2 ?
+			picojson::value((double) (first_invalid - 2)) : picojson::value();
+	send_json(conn, 200, picojson::value(res));
+}
+
+// POST /api/memory/fill {"address":…, "count":…, "value":…} — set a run of
+// words in an emulated range. Written into DDR directly: filling megabytes over
+// the bus a DMA block at a time would take the machine's bus for the duration,
+// and only the board's own memory can be filled this way anyway.
+static void memory_fill(struct mg_connection *conn, const picojson::value &req) {
+	unsigned address = 0;
+	const picojson::value &av = req.get("address");
+	if (av.is<double>())
+		address = (unsigned) av.get<double>();
+	else if (!av.is<std::string>() || !parse_octal(av.get<std::string>(), &address)) {
+		send_error(conn, 400, "\"address\" must be a number or octal string");
+		return;
+	}
+	if (address & 1) {
+		send_error(conn, 400, "address must be even");
+		return;
+	}
+	if (!req.get("count").is<double>() || req.get("count").get<double>() < 1) {
+		send_error(conn, 400, "\"count\" must be a word count of 1 or more");
+		return;
+	}
+	uint64_t count = (uint64_t) req.get("count").get<double>();
+	uint16_t value = 0;
+	const picojson::value &vv = req.get("value");
+	if (vv.is<double>())
+		value = (uint16_t) vv.get<double>();
+	else if (vv.is<std::string>()) {
+		unsigned parsed;
+		if (!parse_octal(vv.get<std::string>(), &parsed)) {
+			send_error(conn, 400, "\"value\" must be a number or octal string");
+			return;
+		}
+		value = (uint16_t) parsed;
+	} else if (!vv.is<picojson::null>()) {
+		send_error(conn, 400, "\"value\" must be a number or octal string");
+		return;
+	}
+
+	uint64_t bytes = count * 2;
+	if (address + bytes > 2 * (uint64_t) QUNIBUS_MAX_WORDCOUNT
+			|| !ddrmem->contains(address, (unsigned) bytes)) {
+		send_error(conn, 409, "the range is not served out of the board's memory");
+		return;
+	}
+	{
+		std::lock_guard<std::mutex> mlock(memory_mutex);
+		ddrmem->fill_range(address, address + (uint32_t) bytes - 2, value);
+	}
+	WEB_INFO("memory: filled %u words at %06o with %06o", (unsigned) count, address, value);
+	picojson::object res;
+	res["ok"] = picojson::value(true);
+	res["address"] = picojson::value((double) address);
+	res["count"] = picojson::value((double) count);
+	send_json(conn, 200, picojson::value(res));
+}
+
 static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	const struct mg_request_info *ri = mg_get_request_info(conn);
+	std::string uri = ri->local_uri ? ri->local_uri : "";
+	std::string rest = uri.substr(strlen("/api/memory"));
+
+	if (rest == "/map") {
+		if (strcmp(ri->request_method, "GET") != 0) {
+			send_error(conn, 405, "GET required");
+			return 405;
+		}
+		memory_map(conn);
+		return 200;
+	}
+	if (rest == "/probe" || rest == "/fill") {
+		if (strcmp(ri->request_method, "POST") != 0) {
+			send_error(conn, 405, "POST required");
+			return 405;
+		}
+		if (rest == "/probe") {
+			memory_probe(conn);
+			return 200;
+		}
+		picojson::value req;
+		if (!read_json_body(conn, &req) || !req.is<picojson::object>()) {
+			send_error(conn, 400, "body must be a JSON object");
+			return 400;
+		}
+		memory_fill(conn, req);
+		return 200;
+	}
+	if (!rest.empty() && rest != "/") {
+		send_error(conn, 404, "unknown path");
+		return 404;
+	}
 
 	if (strcmp(ri->request_method, "GET") == 0) {
 		char buf[64];

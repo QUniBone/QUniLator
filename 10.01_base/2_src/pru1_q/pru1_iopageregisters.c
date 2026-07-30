@@ -52,9 +52,9 @@ pru_iopage_registers_t pru_iopage_registers;
  * addr: with encoded BS7 bit
  */
 uint8_t emulated_addr_read(uint32_t addr, uint16_t *val) {
-	if (addr < pru_iopage_registers.memory_limit_addr && addr >= pru_iopage_registers.memory_start_addr) {
+	if (DDRMEM_ADDR_EMULATED(addr)) {
 		// speed priority on memory access: test for end_addr first
-			// addr in allowed memory range, not in I/O page
+			// addr in an emulated memory range, not in I/O page
 			*val = DDRMEM_MEMGET_W(addr);
 			return 1;
 	} else if (addr & QUNIBUS_IOPAGE_ADDR_BITMASK) {
@@ -89,9 +89,9 @@ uint8_t emulated_addr_read(uint32_t addr, uint16_t *val) {
  * addr: with encoded BS7 bit
  */
 uint8_t emulated_addr_write_w(uint32_t addr, uint16_t w) {
-	if (addr < pru_iopage_registers.memory_limit_addr && addr >= pru_iopage_registers.memory_start_addr) {
+	if (DDRMEM_ADDR_EMULATED(addr)) {
 		// speed priority on memory access: test for end_addr first
-		// addr in allowed memory range, not in I/O page
+		// addr in an emulated memory range, not in I/O page
    		// no check wether addr is even (A00=0)
 		// write 16 bits
 		DDRMEM_MEMSET_W(addr, w);
@@ -119,9 +119,9 @@ uint8_t emulated_addr_write_w(uint32_t addr, uint16_t w) {
 
 //  addr: with encoded BS7 bit
 uint8_t emulated_addr_write_b(uint32_t addr, uint8_t b) {
-	if (addr < pru_iopage_registers.memory_limit_addr && addr >= pru_iopage_registers.memory_start_addr) {
+	if (DDRMEM_ADDR_EMULATED(addr)) {
 		// speed priority on memory access: test for end_addr first
-		// addr in allowed memory range, not in I/O page
+		// addr in an emulated memory range, not in I/O page
 		DDRMEM_MEMSET_B(addr, b);
 		return 1;
 	} else if (addr & QUNIBUS_IOPAGE_ADDR_BITMASK) {

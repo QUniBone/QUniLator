@@ -6,6 +6,7 @@ import { DeviceWidget } from './base';
 import type { WidgetOption, WidgetOpts } from './base';
 import { DiskWidget, Ra81Widget, RemovableDriveWidget, RlWidget } from './drives';
 import { CpuWidget } from './cpu';
+import { MemoryWidget } from './memory';
 import { DzWidget, NetworkWidget, Vcb01Widget } from './peripherals';
 
 export type { Cells, WidgetOption, WidgetOpts } from './base';
@@ -35,6 +36,7 @@ const WIDGET_CATEGORIES: Record<string, WidgetClass> = {
   disk: DiskWidget,
   network: NetworkWidget,
   tape: RemovableDriveWidget,
+  memory: MemoryWidget,
 };
 
 export function widgetFor(d: LiveDev): WidgetClass | null {

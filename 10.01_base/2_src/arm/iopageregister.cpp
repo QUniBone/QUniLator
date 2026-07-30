@@ -67,8 +67,10 @@ void iopageregisters_init()
 
 	// clear the pagetable: no address emulated, only IO page marked
 	pru_iopage_registers->iopage_start_addr = qunibus->iopage_start_addr ;
-	pru_iopage_registers->memory_start_addr = 0 ;
-	pru_iopage_registers->memory_limit_addr = 0 ; // no mem emulation
+	for (unsigned slot = 0; slot < DDRMEM_RANGE_COUNT; slot++) {
+		pru_iopage_registers->memory_start_addr[slot] = 0 ;
+		pru_iopage_registers->memory_limit_addr[slot] = 0 ; // no mem emulation
+	}
 
   	// clear the iopage addr map: no register assigned
 	memset((void *) pru_iopage_registers->register_handles, 0,
@@ -82,12 +84,15 @@ void iopageregisters_print_tables(void)
 
 	
 	printf("Start of IO page: %s\n", qunibus->addr2text(pru_iopage_registers->iopage_start_addr));
-	if (pru_iopage_registers->memory_limit_addr == 0)
-		printf("  No memory emulation.\n") ;
-	else 
-		printf("  Memory emulation in range %s..%s (excluding).\n", 
-		qunibus->addr2text(pru_iopage_registers->memory_start_addr),qunibus->addr2text(pru_iopage_registers->memory_limit_addr)) ;
-	
+	for (unsigned slot = 0; slot < DDRMEM_RANGE_COUNT; slot++)
+		if (pru_iopage_registers->memory_limit_addr[slot] == 0)
+			printf("  Slot %u: no memory emulation.\n", slot) ;
+		else
+			printf("  Slot %u: memory emulation in range %s..%s (excluding).\n", slot,
+			qunibus->addr2text(pru_iopage_registers->memory_start_addr[slot]),
+			qunibus->addr2text(pru_iopage_registers->memory_limit_addr[slot])) ;
+
+
 	printf("\n");
 	printf("IO page register table:");
 	n = 0; // counts valid registers
