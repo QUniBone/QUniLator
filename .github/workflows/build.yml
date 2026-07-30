@@ -58,16 +58,21 @@ jobs:
           done
 
       - name: Check the units are well formed
-        # systemd-analyze verify resolves the unit as systemd would; it warns
-        # about the executables and units it cannot find on a runner, which is
-        # not this repository's business, so only the syntax findings count.
+        # systemd-analyze verify resolves each unit as systemd would. It warns
+        # about the executables it cannot find on a runner, which is not this
+        # repository's business, so only the findings about the files count.
+        #
+        # The units are selected by content, not by name: avahi-qunilator.service
+        # is an avahi DNS-SD service file that happens to carry the .service
+        # suffix, and systemd rightly refuses it.
         run: |
-          out=$(systemd-analyze verify packaging/debian/*.service \
-                packaging/debian/*.timer 2>&1 || true)
+          units=$(grep -l '^\[Unit\]' packaging/debian/*.service packaging/debian/*.timer)
+          echo "checking: $units"
+          out=$(systemd-analyze verify $units 2>&1 || true)
           echo "$out"
-          # drop the runner's missing-file and unknown-unit noise
+          # drop the runner's missing-executable noise
           bad=$(printf '%s\n' "$out" | grep -v -e "Command .* is not executable" \
-                -e "not found" -e "does not exist" -e "Unknown key" || true)
+                -e "not found" -e "does not exist" || true)
           [ -z "$bad" ] || { echo "unit problems above" >&2; exit 1; }
 
   package:

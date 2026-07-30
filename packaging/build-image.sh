@@ -279,6 +279,10 @@ echo "-- enabling the services (offline, from the host)"
 # install leaves it disabled
 # <name>-announce prints the board's address on the console once it has one
 systemctl --root=/mnt enable qunilator-network.service ${NAME}.service qunilator-setup.service qunilator-leds.service qunilator-resize.service qunilator-announce.service >/dev/null 2>&1 || true
+# The update check, so a flashed board knows where it stands. The package's
+# postinst enables it too, but its systemd calls are guarded on a running systemd
+# and the install above happens in a chroot, so this is what enables it here.
+systemctl --root=/mnt enable qunilator-update-check.timer >/dev/null 2>&1 || true
 # mDNS: <name>.local, and the DNS-SD advertisement the package drops in
 # /etc/avahi/services. The postinst enables it, this makes sure of it.
 systemctl --root=/mnt enable avahi-daemon.service >/dev/null 2>&1 || true
@@ -300,6 +304,12 @@ if [ -n "$APT_REPO_URL" ] && [ -n "$APT_REPO_KEY_URL" ]; then
     curl -fsSL -o "/mnt/usr/share/keyrings/${NAME}-archive-keyring.gpg" "$APT_REPO_KEY_URL"
     printf 'deb [signed-by=/usr/share/keyrings/%s-archive-keyring.gpg] %s trixie main\n' \
         "$NAME" "$APT_REPO_URL" > "/mnt/etc/apt/sources.list.d/${NAME}.list"
+else
+    # Said out loud: the source entry is what makes self-update work at all, and a
+    # board flashed from an image without one reports "no update source" in the
+    # web interface for the rest of its life.
+    echo "-- WARNING: no APT_REPO_URL/APT_REPO_KEY_URL:"
+    echo "--          this image's board will not be able to update itself"
 fi
 
 echo "-- resetting identity"

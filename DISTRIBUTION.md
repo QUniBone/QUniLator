@@ -321,14 +321,16 @@ workflows drive it:
 - `.github/workflows/build.yml` runs on every push and pull request:
   cross-compile both platforms, rebuild the firmware from clean and require the
   two builds to agree, package, and check the maintainer scripts parse.
-- `.github/workflows/release-deb.yml` runs on a `v*` tag: build the QBUS
-  package, check the tag matches the changelog version, attach the `.deb` to a
-  GitHub Release, and push it to the Forgejo Debian registry (skipped unless a
-  registry token is configured).
-- `.github/workflows/release-image.yml` is dispatched by hand: it builds the
-  package, downloads the base image and the OS-images/configs assets from URLs
-  given at dispatch, runs `build-image.sh`, and attaches the compressed
-  appliance image to a GitHub Release.
+- `.github/workflows/release-deb.yml` runs on a `v*` tag: build both boards'
+  packages, check the tag matches the changelog version, attach both `.deb`s to
+  the tag's GitHub Release, and push them over an ssh forced command to the apt
+  repository host, which drops them into `pool/main` and rebuilds the signed
+  index (skipped unless the deploy key and host are configured).
+- `.github/workflows/release-image.yml` runs on a `v*` tag and can be dispatched
+  by hand: it builds each board's package, downloads the base image and the
+  OS-images/configs assets from repository variables, runs `build-image.sh`, and
+  attaches the compressed appliance images to the same Release. It requires the
+  apt repository variables, so no image ships a board that cannot update itself.
 
 **The firmware this produces is not bit-identical to what the board built.**
 Same compiler version, three extra instructions, all in the C runtime startup
@@ -338,9 +340,46 @@ with each other, so the build is reproducible; what is unverified is the new
 firmware against real hardware. **Run the diagnostics on a live machine before
 any of this is released.**
 
-Both platform builds emit a file called `qbone_<version>_armhf.deb`. Only the
-QBUS one is published, because a UNIBUS package needs a package name of its
-own before the two can share a repository.
+Both boards' packages are published: `qbone` for QBUS, `unibone` for UNIBUS,
+each named for its board and mutually exclusive with the other through a
+`Conflicts`/`Replaces` pair, so they share one repository and a board is only
+ever offered the brand it has.
+
+## Self-update, done
+
+The web interface tells the operator when a newer package is published, shows the
+candidate's own changelog since the installed version, and installs it. The
+mechanism is the apt repository every published image is pointed at:
+`apt-get update` and `apt-cache policy` for the check, `apt-get install` for the
+install, so apt verifies the signed index and the package hash and there is no
+unsigned install path.
+
+`/usr/sbin/qunilator-update` is the whole board side, and the only thing that
+runs apt. It resolves its own brand from the package that owns it, so one script
+serves both boards unrebranded. The interface never runs apt: it writes the
+requested version to a file and starts `qunilator-update.service`, which lives in
+its own systemd cgroup — the install restarts the emulator's unit, and a dpkg
+running as a child of that unit would be killed with it, mid-install.
+
+An install is watched: the new service must go active, answer on the loopback,
+publish the new version in `/run/qunilator/version`, and still be there ten
+seconds later. Failing that, the cached previous package is reinstalled and the
+board comes back on the version it had. `qunilator-update-check.timer` checks
+daily, and an `apt.conf.d` drop-in keeps unattended-upgrades away from the
+emulator package, which would otherwise stop a running machine with no warning.
+
+The operator's page rides the restart out and reloads onto the matching bundle.
+Any page whose bundle version differs from what the server reports reloads, so a
+hand-run `apt upgrade` over ssh carries every open tab across too.
+
+**The repository's availability is now a shipped promise.** Every published image
+points at one host and every board checks it daily, reporting a failure in the
+interface. Whether that host wants a cache in front of it is unsettled.
+
+The board's other packages are reported by the same check and can be upgraded
+from the interface. That path has no rollback — apt cannot undo an upgrade — so it
+holds the emulator package back, uses `upgrade` rather than `full-upgrade`, leaves
+the kernel held, and never reboots the board.
 
 ## Web interface authentication, done
 

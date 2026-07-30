@@ -96,11 +96,19 @@ jobs:
           GROW: ${{ inputs.grow || '4G' }}
           MARGIN_MB: ${{ inputs.margin_mb || '400' }}
           NAME: ${{ matrix.board }}
-          # pre-configure the board's apt source (URL/key from private repo
-          # variables, so the public workflow carries no repository URL)
+          # The board's apt source and keyring, from private repo variables so the
+          # public workflow carries no repository URL. Required, not optional: a
+          # published image with no source entry cannot self-update, and the
+          # interface would have to tell every operator of one so.
           APT_REPO_URL: ${{ vars.APT_REPO_URL }}
           APT_REPO_KEY_URL: ${{ vars.APT_REPO_KEY_URL }}
-        run: DIST=./dist ./packaging/build-image.sh
+        run: |
+          [ -n "$APT_REPO_URL" ] && [ -n "$APT_REPO_KEY_URL" ] || {
+            echo "set the APT_REPO_URL and APT_REPO_KEY_URL repo variables:" >&2
+            echo "an image without them ships a board that cannot update itself" >&2
+            exit 1
+          }
+          DIST=./dist ./packaging/build-image.sh
 
       - name: Compress the image
         # build-image.sh writes the image as root from its privileged container;
