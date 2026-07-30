@@ -75,6 +75,7 @@ cpuvax_c::cpuvax_c() :
     runmode.value = false;
     halt_switch.value = false;
     start_switch.value = false;
+    continue_switch.value = false;
 
     // Running state, not configuration, so a saved machine does not carry a
     // stale program counter or a HALT nobody can see on screen.
@@ -102,6 +103,7 @@ cpuvax_c::cpuvax_c() :
     intr_level_stored.kind = parameter_c::PARAM_STATUS;
     halt_switch.kind = parameter_c::PARAM_STATUS;
     start_switch.kind = parameter_c::PARAM_STATUS;
+    continue_switch.kind = parameter_c::PARAM_STATUS;
 }
 
 cpuvax_c::~cpuvax_c()
@@ -219,6 +221,7 @@ bool cpuvax_c::on_before_install(void)
 
     halt_switch.value = false;
     start_switch.value = false;
+    continue_switch.value = false;
     machine_running = false;
     runmode.value = false;
 
@@ -248,6 +251,7 @@ void cpuvax_c::on_after_uninstall(void)
     machine_stop("processor disabled");
     halt_switch.value = true;
     start_switch.value = false;
+    continue_switch.value = false;
 }
 
 /* Memory, the disk the machine boots from, and the bootstrap itself. Leaves
@@ -605,6 +609,14 @@ void cpuvax_c::worker(unsigned instance)
             start_switch.value = false;         // momentary action
             machine_stop(NULL);
             if (configure_machine() && !halt_switch.value)
+                machine_start();
+        }
+
+        // CONTINUE picks up where the processor halted: the core keeps its
+        // register state across a stop, so resuming is enabling it again.
+        if (continue_switch.value) {
+            continue_switch.value = false;      // momentary action
+            if (!machine_running && !halt_switch.value)
                 machine_start();
         }
 

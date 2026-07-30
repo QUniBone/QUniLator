@@ -127,7 +127,10 @@ public:
 
 #if defined(UNIBUS)
 	// the enabled CPU model, or NULL when the machine runs on a physical CPU
-	cpu_base_c *emulated_cpu() const;
+	unibuscpu_c *emulated_cpu() const;
+	// the enabled PDP-11 model, for the callers that drive its sixteen bit
+	// program counter; NULL when the VAX (or a physical CPU) runs the machine
+	cpu_base_c *emulated_pdp11() const;
 #endif
 };
 

@@ -485,13 +485,13 @@ static bool control_apply_to_emulated_cpu(const std::string &action) {
 		return false;
 	if (device_configuration == nullptr)
 		return false;
-	cpu_base_c *cpu = device_configuration->emulated_cpu();
+	unibuscpu_c *cpu = device_configuration->emulated_cpu();
 	if (cpu == nullptr)
 		return false;
 	std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
 
 	if (action == "halt") {
-		cpu->halt_switch.set(true);
+		cpu->panel_halt_switch()->set(true);
 		webevents_note_halt(true);
 		WEB_INFO("control %s: CPU halted", action.c_str());
 		return true;
@@ -500,24 +500,33 @@ static bool control_apply_to_emulated_cpu(const std::string &action) {
 	// A restart re-enters at the boot address, so a running CPU is stopped
 	// first: the worker acts on the switch within a pass, and the wait is
 	// bounded so a CPU that will not stop cannot hold the request open.
-	if (action == "restart" && cpu->runmode.value) {
-		cpu->halt_switch.set(true);
+	if (action == "restart" && cpu->panel_run_led()->value) {
+		cpu->panel_halt_switch()->set(true);
 		timeout_c timeout;
-		for (unsigned i = 0; i < 50 && cpu->runmode.value; i++)
+		for (unsigned i = 0; i < 50 && cpu->panel_run_led()->value; i++)
 			timeout.wait_ms(2);
 	}
-	cpu->halt_switch.set(false);
+	cpu->panel_halt_switch()->set(false);
 	webevents_note_halt(false);
 
 	if (action == "restart") {
-		m9312_c *m9312 = device_configuration->m9312;
-		if (m9312 != nullptr && m9312->enabled.value
-				&& m9312->bootaddress != MEMORY_ADDRESS_INVALID)
-			cpu->pc.set(m9312->bootaddress & 0177777);
-		cpu->start_switch.set(true);
-		WEB_INFO("control restart: CPU started at %06o", (unsigned) cpu->pc.value);
+		// On a PDP-11, RESTART is LOAD ADDR of the M9312's boot address, then
+		// START; the VAX's START rebuilds the machine and boots it by itself.
+		cpu_base_c *pdp11 = device_configuration->emulated_pdp11();
+		if (pdp11 != nullptr) {
+			m9312_c *m9312 = device_configuration->m9312;
+			if (m9312 != nullptr && m9312->enabled.value
+					&& m9312->bootaddress != MEMORY_ADDRESS_INVALID)
+				pdp11->pc.set(m9312->bootaddress & 0177777);
+			cpu->panel_start_switch()->set(true);
+			WEB_INFO("control restart: CPU started at %06o",
+					(unsigned) pdp11->pc.value);
+		} else {
+			cpu->panel_start_switch()->set(true);
+			WEB_INFO("control restart: CPU started");
+		}
 	} else {
-		cpu->continue_switch.set(true);
+		cpu->panel_continue_switch()->set(true);
 		WEB_INFO("control %s: CPU continued", action.c_str());
 	}
 	return true;

@@ -153,6 +153,14 @@ public:
                                    false, "HALT switch: 1 = processor stopped, 0 = processor may run.");
     parameter_bool_c start_switch = parameter_bool_c(this, "start_switch", "s",/*readonly*/
                                     false, "START action switch: 1 = reset the machine and boot it.");
+    parameter_bool_c continue_switch = parameter_bool_c(this, "continue_switch", "c",/*readonly*/
+                                       false, "CONT action switch: 1 = resume execution after a HALT.");
+
+    // the front panel's view of the console switches
+    parameter_bool_c *panel_run_led(void) override { return &runmode; }
+    parameter_bool_c *panel_halt_switch(void) override { return &halt_switch; }
+    parameter_bool_c *panel_start_switch(void) override { return &start_switch; }
+    parameter_bool_c *panel_continue_switch(void) override { return &continue_switch; }
 
     parameter_unsigned_c pc = parameter_unsigned_c(this, "PC", "pc",/*readonly*/
                               true, "", "%08x", "Program counter.", 32, 16);
