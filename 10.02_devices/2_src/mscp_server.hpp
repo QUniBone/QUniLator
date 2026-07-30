@@ -180,6 +180,15 @@ public:
     void InitPolling(void);
     void Poll(void);
 
+private:
+    //
+    // Watch the command ring for a little while after a pass that did work.
+    // True when the host handed another command over in that time.
+    //
+    bool LingerForNextCommand(void);
+
+public:
+
 public:
     void on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge) override {
         UNUSED(aclo_edge) ;

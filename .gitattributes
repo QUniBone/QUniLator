@@ -3,3 +3,8 @@
 # end-of-line or encoding conversion destroys them.
 *.BIN binary
 *.BIC binary
+
+# The vendored simh sources are byte-identical copies of an upstream revision,
+# and most of them carry CRLF. Storing them as they are keeps a re-harvest a
+# plain copy with nothing but the upstream changes in the diff.
+91_3rd_party/simh_vax/** -text

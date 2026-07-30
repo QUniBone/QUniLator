@@ -1,42 +1,37 @@
-# clangd configuration for editing QBone C++ in an IDE.
+# clangd configuration.
 #
-# The build drives the real compiler through the makefiles (and the Docker
-# crossbuild); a bare clangd has none of their -I paths or -D defines, so it
-# reports spurious "file not found" errors for civetweb.h, logger.hpp and the
-# like, which then cascade into undeclared-identifier noise. These flags give
-# clangd the same view the QBUS build has, so those false diagnostics disappear.
+# What clangd needs to parse this project is the include paths and defines each
+# source is really compiled with, and those live in the makefiles. Run
 #
-# Notes:
-# - Paths are relative to this file (the repo root); clangd resolves them from
-#   the workspace root.
-# - -D__linux__ steers the platform #ifdefs (e.g. rs232.hpp) to the POSIX branch
-#   the Linux/ARM board actually compiles, rather than the Windows fallback a
-#   macOS or other host would otherwise take.
-# - The host toolchain's headers are used for the standard library, which is
-#   enough to parse the project's own sources.
+#	./tools/gen-compile-commands.sh
+#
+# to write compile_commands.json, which asks the makefiles and records their
+# answers; clangd finds it at the repository root and needs nothing else. It is
+# generated rather than committed, and is regenerated after an include path
+# changes or a directory of sources is added.
+#
+# What follows applies only to a file the database does not name - a new source
+# not yet in any makefile, or a header opened on its own. It is a fallback, not
+# a description of the build.
 CompileFlags:
   Add:
-    - -std=c++11
-    # The board's gcc (and CI) do not deprecate sprintf/vsprintf/syscall; only a
-    # host libc (e.g. macOS) does. Drop that host-only noise so the editor's
-    # diagnostics match the actual target build.
+    # The board's gcc does not deprecate sprintf/vsprintf/syscall; only a host
+    # libc does. Drop that host-only noise so a file parsed without the database
+    # reads as it will compile.
     - -Wno-deprecated-declarations
+    # -D__linux__ steers the platform #ifdefs (rs232.hpp and the like) to the
+    # POSIX branch the board compiles, rather than the Windows fallback a macOS
+    # host would otherwise take.
     - -D__linux__
     - -DARM
-    - -DQBUS
-    - -DBLINKENLIGHT_CLIENT
-    - -DDBG
-    - -DWEBUI
-    - -DUSE_WEBSOCKET
-    - -DNO_SSL
-    - -DNO_CGI
-    - -I90_common/src
-    - -I10.01_base/2_src/shared
-    - -I10.01_base/2_src/arm
-    - -I10.02_devices/2_src
-    - -I10.02_devices/2_src/blinkenbone
-    - -I10.04_device_exerciser/2_src
-    - -I10.03_app_demo/2_src
-    - -I10.05_web/2_src
-    - -I91_3rd_party/civetweb
-    - -I91_3rd_party/picojson
+
+---
+# The seam of 10.02_devices/2_src/cpuvax and the vendored simh it wraps are C.
+# A header of theirs opened on its own is parsed with the flags of a neighbouring
+# translation unit, and the C++ standard the rest of the tree compiles with does
+# not go with a C file - so name the language for them here.
+If:
+  PathMatch: [.*/cpuvax/.*\.h, .*/simh_vax/.*\.h]
+CompileFlags:
+  Remove: [-std=c++11]
+  Add: [-xc, -std=c99]

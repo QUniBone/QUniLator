@@ -1,0 +1,238 @@
+/* vax780_shim_syslist.c: the device list of the shim build
+ *
+ * The device list simh's vax780_syslist.c carries names every peripheral the
+ * stock simulator offers, most of them UNIBUS controllers out of the PDP-11
+ * simulator. An embedded core has no use for those: on the board the UNIBUS
+ * peripherals are the emulated devices of 10.02_devices, reached over the real
+ * bus through the adapter, and a second set inside the CPU model would be two
+ * devices at one address.
+ *
+ * So the list here is the machine and nothing else - the processor, its memory
+ * management, the SBI, the memory controllers, the UNIBUS and MASSBUS adapters,
+ * the interval and time-of-year clocks, and the console terminal and floppy.
+ *
+ * SHIM_WITH_DISK adds simh's own MSCP controller to that list, for the test
+ * configuration 10.07_vax/2_src/makefile builds as vax780-shim-disk. It exists
+ * so the shim can be shown carrying an operating system before any bus work
+ * starts, and so a later failure can be told apart: a VMS that boots from this
+ * disk and not from the emulated one puts the fault below the shim. It answers
+ * at the address the emulated UDA50 answers at, so the two are alternatives and
+ * never a configuration.
+ *
+ * The binary loader is simh's, unchanged in effect: it reads a byte stream into
+ * memory or into one of the console ROMs, which is how the 780 console places
+ * VMB before starting a boot.
+ */
+
+#include <stdlib.h>
+#include <string.h>
+
+#include "sim_defs.h"
+#include "vax_defs.h"
+#include "simh_shim.h"
+
+char sim_name[] = "VAX 11/780";
+
+void vax_init (void)
+{
+extern const char *sim_savename;
+
+sim_savename = "VAX780";
+}
+
+extern DEVICE cpu_dev;
+extern DEVICE tlb_dev;
+extern DEVICE sbi_dev;
+extern DEVICE mctl_dev[MCTL_NUM];
+extern DEVICE uba_dev;
+extern DEVICE mba_dev[MBA_NUM];
+extern DEVICE clk_dev;
+extern DEVICE tmr_dev;
+extern DEVICE tti_dev, tto_dev;
+extern DEVICE fl_dev;
+extern DEVICE uw_dev;
+#ifdef SHIM_WITH_DISK
+extern DEVICE rq_dev;
+#endif
+
+DEVICE *sim_devices[] = {
+    &cpu_dev,
+    &tlb_dev,
+    &sbi_dev,
+    &mctl_dev[0],
+    &mctl_dev[1],
+    &uba_dev,
+    &mba_dev[0],
+    &mba_dev[1],
+    &clk_dev,
+    &tmr_dev,
+    &tti_dev,
+    &tto_dev,
+    &fl_dev,
+    &uw_dev,
+#ifdef SHIM_WITH_DISK
+    &rq_dev,
+#endif
+    NULL
+    };
+
+/* Binary loader, as vax780_syslist.c writes it: an absolute system image is a
+   byte stream with neither origin nor relocation, placed at the origin the -O
+   switch gives, or in one of the console ROMs under -R or -S. */
+
+t_stat sim_load (FILE *fileref, CONST char *cptr, CONST char *fnam, int flag)
+{
+t_stat r;
+int32 val;
+uint32 origin, limit;
+
+(void) fnam;
+if (flag)                                               /* dump? */
+    return sim_messagef (SCPE_NOFNC, "Command Not Implemented\n");
+origin = 0;                                             /* memory */
+limit = (uint32) cpu_unit.capac;
+if (sim_switches & SWMASK ('O')) {                      /* origin? */
+    origin = (int32) get_uint (cptr, 16, 0xFFFFFFFF, &r);
+    if (r != SCPE_OK)
+        return SCPE_ARG;
+    }
+
+while ((val = Fgetc (fileref)) != EOF) {                /* read byte stream */
+    if (sim_switches & SWMASK ('R')) {                  /* ROM0? */
+        if (origin >= ROMSIZE)
+            return SCPE_NXM;
+        rom_wr_B (ROM0BASE + origin, val);
+        }
+    else if (sim_switches & SWMASK ('S')) {             /* ROM1? */
+        if (origin >= ROMSIZE)
+            return SCPE_NXM;
+        rom_wr_B (ROM1BASE + origin, val);
+        }
+    else {
+        if (origin >= limit)                            /* NXM? */
+            return SCPE_NXM;
+        WriteB (origin, val);                           /* memory */
+        }
+    origin = origin + 1;
+    }
+return SCPE_OK;
+}
+
+/* What the processor is doing, for an embedding that publishes it. Here rather
+   than in simh_shim.c because a program counter, a status longword and the code
+   for a halt are the processor's own, and the rest of the shim knows nothing
+   about which processor it is carrying. */
+
+void simh_shim_state (simh_shim_state_t *state)
+{
+state->pc = (uint32_t) PC;
+state->psl = (uint32_t) PSL;
+state->ipl = (unsigned) PSL_GETIPL (PSL);
+{
+extern unsigned shim_iopage_claimed;
+extern unsigned shim_iopage_dispatches;
+extern uint32 uba_uiip;
+extern int32 uba_cr;
+extern uint32 uba_dr;
+extern int32 nexus_req[IPL_HLVL];
+extern int32 int_vec[IPL_HLVL][32];
+
+state->iopage_claimed = shim_iopage_claimed;
+state->iopage_dispatches = shim_iopage_dispatches;
+/* While the adapter says a UNIBUS init is in progress it answers every I/O
+   page address with a nonexistent memory error, so a bootstrap that finds
+   nothing where its controller should be wants this looked at first. */
+state->uba_init = (unsigned) uba_uiip;
+state->uba_cr = (unsigned) uba_cr;
+/* The other half of the gate uba_eval_int() applies, and what it produces: a
+   request the adapter is holding for the processor shows here as a bit per
+   bus request level. */
+state->uba_dr = (unsigned) uba_dr;
+/* What the adapter would hand over for a request from the bus. The bus takes
+   the top slot of each level, so this is where the vector last granted sits. */
+{
+extern unsigned shim_last_vector_stored;
+extern unsigned shim_last_level_stored;
+/* The cell as it stands now, and what was actually stored into it when the
+   last interrupt was granted. */
+state->intr_vector_cell = (unsigned) int_vec[1][31];
+state->intr_vector_stored = shim_last_vector_stored;
+state->intr_level_stored = shim_last_level_stored;
+}
+state->nexus_req = ((unsigned) (nexus_req[0] != 0) << 0)
+                 | ((unsigned) (nexus_req[1] != 0) << 1)
+                 | ((unsigned) (nexus_req[2] != 0) << 2)
+                 | ((unsigned) (nexus_req[3] != 0) << 3);
+}
+state->instructions = sim_gtime ();
+}
+
+int simh_shim_halted (simh_shim_status_t status)
+{
+return (status == STOP_HALT);
+}
+
+/* ------------------------------------------------------------------------ */
+/* The processor's memory, and the adapter's map                             */
+/*                                                                           */
+/* A machine whose devices reach memory over a real bus needs that memory     */
+/* where the bus hardware can see it, and the adapter's map registers with    */
+/* it - the hardware has to make the same translation the core makes.         */
+/* ------------------------------------------------------------------------ */
+
+unsigned simh_shim_memory_size (void)
+{
+return (unsigned) MEMSIZE;
+}
+
+/* Where the memory was put, when it is not the core's own allocation. The core
+   frees M whenever it resizes memory, so it must be holding an allocation of
+   its own by then - simh_shim_memory_restore() is what gives it one back. */
+static void *shim_foreign_memory = NULL;
+
+int simh_shim_memory_relocate (void *area, unsigned bytes)
+{
+if ((area == NULL) || (bytes < (unsigned) MEMSIZE))
+    return 0;
+if (M == NULL)
+    return 0;                                           /* not sized yet */
+if (M == (uint32 *) area)
+    return 1;                                           /* already there */
+memcpy (area, M, (size_t) MEMSIZE);                     /* keep what is there */
+free (M);
+M = (uint32 *) area;
+shim_foreign_memory = area;
+return 1;
+}
+
+int simh_shim_memory_restore (void)
+{
+uint32 *heap;
+
+if ((M == NULL) || (M != (uint32 *) shim_foreign_memory))
+    return 1;                                           /* the core owns it */
+heap = (uint32 *) calloc (((uint32) MEMSIZE) >> 2, sizeof (uint32));
+if (heap == NULL)
+    return 0;
+memcpy (heap, M, (size_t) MEMSIZE);
+M = heap;
+shim_foreign_memory = NULL;
+return 1;
+}
+
+unsigned simh_shim_map_export (uint32_t *dest, unsigned count)
+{
+/* The DW780's map register file: one per 512 byte page of the eighteen bit
+   address space, which is 496 of them. */
+#define UBA_NMAPR 496
+extern uint32 uba_map[UBA_NMAPR];
+unsigned i;
+
+if (dest == NULL)
+    return 0;
+if (count > UBA_NMAPR)
+    count = UBA_NMAPR;
+for (i = 0; i < count; i++)
+    dest[i] = (uint32_t) uba_map[i];
+return count;
+}

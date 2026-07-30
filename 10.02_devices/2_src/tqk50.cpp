@@ -129,13 +129,3 @@ uint16_t tqk50_c::controller_microcode_id(void)
     return 0x35;   // (uqpm 3 << 4) | (cver 5)
 }
 
-//
-// step1_capability_flags():
-//  The TQK50 advertises extended-diagnostics (SA_S1C_DI, 0x0100) and mapping
-//  (SA_S1C_MP, 0x0040) support in its step-1 SA value; the TKxx diagnostics
-//  require the controller to declare these to run their init/wrap tests.
-//
-uint16_t tqk50_c::step1_capability_flags(void)
-{
-    return 0x0140;   // SA_S1C_DI | SA_S1C_MP
-}

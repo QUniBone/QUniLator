@@ -535,7 +535,8 @@ void cpu_base_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 // CPU fetches PSW and calls unibone_prioritylevelchange(), which
 // sets mailbox->arbitrator.cpu_priority_level and
 // PRU is allowed now to grant BGs again.
-void cpu_base_c::on_interrupt(uint16_t vector) {
+void cpu_base_c::on_interrupt(uint16_t vector, uint8_t level) {
+    UNUSED(level); // a PDP-11 takes the vector; the level only arbitrated it
 // CPU sequence:
 // push PSW to stack
 // push PC to stack

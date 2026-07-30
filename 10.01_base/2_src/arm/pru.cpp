@@ -40,6 +40,7 @@
 #define _PRU_CPP_
 
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -203,6 +204,14 @@ int pru_c::start(enum prucode_enum _prucode_id)
 		ddrmem->base_virtual = (ddrmem_t *) virt;
 		ddrmem->len = len;
 		ddrmem->base_physical = phys;
+
+		// The range is reserved physical memory and keeps whatever the last
+		// program left in it, so the adapter's map is switched off and emptied
+		// here. A machine without an adapter must find it off, and one with an
+		// adapter fills it in for itself.
+		ddrmem->base_virtual->unibus_map_active = 0;
+		memset((void *) ddrmem->base_virtual->unibus_map, 0,
+				sizeof(ddrmem->base_virtual->unibus_map));
 	}
 	ddrmem->info(); // may abort program
 

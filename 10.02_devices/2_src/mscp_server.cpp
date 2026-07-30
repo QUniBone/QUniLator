@@ -42,6 +42,7 @@
 #include <queue>
 
 #include "logger.hpp"
+#include "timeout.hpp"
 #include "utils.hpp"
 
 #include "mscp_drive.hpp"
@@ -156,6 +157,49 @@ mscp_server_base::AbortPollingThread(void)
     }
 
     DEBUG_FAST("Polling thread aborted.");
+}
+
+//
+// LingerForNextCommand():
+//  Watch the command ring for a little while after a pass that did work, and
+//  say whether the host handed another command over.
+//
+//  The host is only obliged to ring the doorbell when it hands a command to a
+//  controller that has stopped polling, and it takes the controller to be
+//  polling still while it is answering. It writes the next command into the
+//  ring as soon as it has read the response, which is after the controller has
+//  come round again - so a controller that stops at the first empty read of the
+//  ring leaves that command sitting there, and neither side moves.
+//
+//  The window is the time the host needs to see the response and answer it,
+//  measured against the world while the host runs at whatever speed the
+//  emulation manages - which varies by a factor of several when the processor
+//  is being traced. So it is generous: a window too short deadlocks, while one
+//  too long only costs a descriptor read every few milliseconds in an idle
+//  controller.
+//
+#define POLL_LINGER_INTERVAL_US 5000
+#define POLL_LINGER_TOTAL_US    3000000
+
+bool
+mscp_server_base::LingerForNextCommand(void)
+{
+    timeout_c timer;
+
+    for (unsigned waited = 0; waited < POLL_LINGER_TOTAL_US;
+         waited += POLL_LINGER_INTERVAL_US)
+    {
+        if (_abort_polling || _pollState != PollingState::Run)
+        {
+            return false;               // a reset or a doorbell decides instead
+        }
+        if (_port->CommandPending())
+        {
+            return true;
+        }
+        timer.wait_us(POLL_LINGER_INTERVAL_US);
+    }
+    return false;
 }
 
 //
@@ -349,6 +393,16 @@ mscp_server_base::Poll(void)
         }
 
         //
+        // A host that has just been given a response is about to hand over the
+        // next command, and it does not ring the doorbell to do it: as far as
+        // it is concerned the controller is still polling. So a pass that did
+        // work looks again for a while, and the poll ends only when nothing
+        // more arrives. Done before the lock is taken, so a doorbell arriving
+        // meanwhile is not held up behind it.
+        //
+        bool moreWork = (msgCount > 0) && LingerForNextCommand();
+
+        //
         // Go back to sleep.  If a UDA reset is pending, we need to signal
         // the Reset() call so it knows we've completed our poll and are
         // returning to sleep (i.e. the polling thread is now reset.)
@@ -364,6 +418,11 @@ mscp_server_base::Poll(void)
         }
         else if (_pollState == PollingState::InitRun)
         {
+            _pollState = PollingState::Run;
+        }
+        else if (moreWork)
+        {
+            DEBUG_FAST("Command arrived after the pass; polling again.");
             _pollState = PollingState::Run;
         }
         else

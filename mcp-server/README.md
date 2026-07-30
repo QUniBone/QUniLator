@@ -77,6 +77,18 @@ Control:
 | `configs` | `list` `GET /api/configs`; `apply`/`switch` `POST .../apply`; `save` reads `GET /api/configs?current=1` then `PUT /api/configs/<name>?from=live`; `set_default` `PUT .../default` |
 | `images` | `list` `GET /api/images`; `upload` posts a local file to `POST /api/images`; `attach` writes a drive's `image` param (empty detaches) |
 
+Diagnostics:
+
+| tool | how |
+|---|---|
+| `list_xxdp_diagnostics` | what is on the XXDP 2.5 RL02 pack, answered from `data/xxdp25-rl02.json` rather than from the board. `match` is a case-insensitive regular expression on the file name — `^ZTK` the TK50, `^ZRL` the RL, `^ZUD` the UDA50, `^ZRQ` the RQDX, `^ZRX` the RX. Names carry the extension and drop the leading class letter of the DEC part number (CZTKAE0 is `ZTKAE0.BIN`), which is what `run_xxdp_diagnostic` wants |
+| `run_xxdp_diagnostic` | applies a config and device setup, brings the machine up running, loads the diagnostic over the console, drives the DRS dialog from `answers`, and reports `{passed, terminatedBy, transcript}` |
+
+`data/xxdp25-rl02.json` is the pack's directory, 727 files, read off the image
+by `tools/xxdp-dir.py`. Regenerate it after changing the pack:
+
+	./tools/xxdp-dir.py --json xxdp25.rl02 > mcp-server/data/xxdp25-rl02.json
+
 Wait-for (client-side on the existing streams, no board endpoint blocks):
 
 | tool | how |

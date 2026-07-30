@@ -10,7 +10,11 @@
 import WebSocket from "ws";
 import type { BoardConfig } from "./config.js";
 
-export type ConsoleChannel = "0" | "1" | "ext";
+// The console channels the board serves. "0" and "1" are the emulated DL11s,
+// "ext" the real console SLU of a CPU board that has one, and "vax" the
+// console of the emulated VAX-11/780, which is part of that processor rather
+// than a device on the bus.
+export type ConsoleChannel = "0" | "1" | "ext" | "vax";
 
 // Logger severities as they cross /ws/events: lower is more severe.
 export const LOG_LEVELS = {
@@ -496,9 +500,9 @@ export class QBoneClient {
   //
   // runXxdpDiagnostic: end-to-end run of an XXDP diagnostic. Applies a config,
   // applies device setup, brings the machine up running (the boot ROM auto-boots
-  // XXDP), then over the real console SLU loads the diagnostic, drives the DRS
+  // XXDP), then over the console loads the diagnostic, drives the DRS
   // Change-HW dialog from an answer map, and returns pass/fail with a transcript.
-  // Encapsulates the console quirks: /ws/console/ext replays its whole history on
+  // Encapsulates the console quirks: a console channel replays its whole history on
   // connect (so only NEW output since a send is trusted), each '?' prompt is
   // terminated by a non-printable, and the SLU has no RX FIFO (send one paced
   // char at a time).
@@ -528,7 +532,7 @@ export class QBoneClient {
     await this.powerUp("restart", opts.bootTimeoutMs ?? 9000);
 
     // 3. drive the console
-    const ws = this.openWs("/ws/console/ext");
+    const ws = this.openWs(`/ws/console/${opts.console ?? "ext"}`);
     let buf = "";
     ws.on("message", (d: WebSocket.RawData) => {
       buf += Buffer.isBuffer(d) ? d.toString("latin1") : String(d);
@@ -550,6 +554,11 @@ export class QBoneClient {
       const mark = buf.length;
       const echoedCount = () => buf.slice(mark).replace(/[\x00-\x1f]/g, "").length;
       let confirmed = 0; // number of our characters seen echoed back so far
+      // The first character of a command is the one that gets lost: the guest
+      // has just printed its prompt and is not reading yet, and there is no
+      // receive FIFO to hold the character until it is. Let the prompt settle
+      // before typing into it.
+      await delay(400);
       for (const ch of s) {
         for (let attempt = 0; attempt < 5; attempt++) {
           ws.send(Buffer.from(ch, "latin1"));
@@ -711,6 +720,10 @@ export interface XxdpRunOptions {
   config?: string;
   setup?: XxdpSetupStep[];
   diagnostic: string;
+  // Which console the machine under test talks on. A board whose CPU has its
+  // own SLU uses "ext", the real port; an emulated CPU has an emulated DL11
+  // and answers on "0".
+  console?: ConsoleChannel;
   answers?: XxdpAnswer[];
   passPattern?: string;
   failMarkers?: string[];

@@ -54,7 +54,18 @@ uint8_t emulated_addr_read(uint32_t addr, uint16_t *val) {
 	if (DDRMEM_ADDR_EMULATED(addr)) {
 		// speed priority on memory access: test for end_addr first
 		// addr in an emulated memory range, not in I/O page
-		*val = DDRMEM_MEMGET_W(addr);
+		// behind an adapter the map says where the page really is
+		uint32_t phys = addr;
+		if (DDRMEM_MAP_ACTIVE) {
+			uint32_t entry;
+			if (!DDRMEM_MAP_COVERS(addr))
+				return 0; // no register for this page
+			entry = DDRMEM_MAP_ENTRY(addr);
+			if (!(entry & UNIBUS_MAP_VALID))
+				return 0; // page not allocated: the transfer fails
+			phys = DDRMEM_MAP_APPLY(entry, addr);
+		}
+		*val = DDRMEM_MEMGET_W(phys);
 		return 1;
 	} else if (addr >= pru_iopage_registers.iopage_start_addr) {
 		uint8_t reghandle;
@@ -90,8 +101,18 @@ uint8_t emulated_addr_write_w(uint32_t addr, uint16_t w) {
 		// speed priority on memory access: test for end_addr first
 		// addr in an emulated memory range, not in I/O page
    		// no check wether addr is even (A00=0)
-		// write 16 bits
-		DDRMEM_MEMSET_W(addr, w);
+		// write 16 bits, where the map says the page really is
+		uint32_t phys = addr;
+		if (DDRMEM_MAP_ACTIVE) {
+			uint32_t entry;
+			if (!DDRMEM_MAP_COVERS(addr))
+				return 0; // no register for this page
+			entry = DDRMEM_MAP_ENTRY(addr);
+			if (!(entry & UNIBUS_MAP_VALID))
+				return 0; // page not allocated: the transfer fails
+			phys = DDRMEM_MAP_APPLY(entry, addr);
+		}
+		DDRMEM_MEMSET_W(phys, w);
 		return 1;
 	} else if (addr >= pru_iopage_registers.iopage_start_addr) {
 		uint8_t reghandle = IOPAGE_REGISTER_ENTRY(pru_iopage_registers, addr);
@@ -116,7 +137,18 @@ uint8_t emulated_addr_write_b(uint32_t addr, uint8_t b) {
 	if (DDRMEM_ADDR_EMULATED(addr)) {
 		// speed priority on memory access: test for end_addr first
 		// addr in an emulated memory range, not in I/O page
-		DDRMEM_MEMSET_B(addr, b);
+		// behind an adapter the map says where the page really is
+		uint32_t phys = addr;
+		if (DDRMEM_MAP_ACTIVE) {
+			uint32_t entry;
+			if (!DDRMEM_MAP_COVERS(addr))
+				return 0; // no register for this page
+			entry = DDRMEM_MAP_ENTRY(addr);
+			if (!(entry & UNIBUS_MAP_VALID))
+				return 0; // page not allocated: the transfer fails
+			phys = DDRMEM_MAP_APPLY(entry, addr);
+		}
+		DDRMEM_MEMSET_B(phys, b);
 		return 1;
 	} else if (addr >= pru_iopage_registers.iopage_start_addr) {
 		uint8_t reghandle = IOPAGE_REGISTER_ENTRY(pru_iopage_registers, addr);
