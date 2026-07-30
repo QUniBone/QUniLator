@@ -72,8 +72,11 @@ async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
 }
 
 const channelSchema = z
-  .enum(["0", "1", "ext"])
-  .describe("console channel: 0 = DL11 @777560, 1 = @776500, ext = /dev/ttyS2");
+  .enum(["0", "1", "ext", "vax"])
+  .describe(
+    "console channel: 0 = DL11 @777560, 1 = @776500, ext = /dev/ttyS2, " +
+      "vax = the emulated VAX-11/780's own console",
+  );
 
 export function registerTools(server: McpServer, qbone: QBoneClient): void {
   // ---- Observation ------------------------------------------------------

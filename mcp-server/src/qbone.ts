@@ -10,7 +10,11 @@
 import WebSocket from "ws";
 import type { BoardConfig } from "./config.js";
 
-export type ConsoleChannel = "0" | "1" | "ext";
+// The console channels the board serves. "0" and "1" are the emulated DL11s,
+// "ext" the real console SLU of a CPU board that has one, and "vax" the
+// console of the emulated VAX-11/780, which is part of that processor rather
+// than a device on the bus.
+export type ConsoleChannel = "0" | "1" | "ext" | "vax";
 
 // Logger severities as they cross /ws/events: lower is more severe.
 export const LOG_LEVELS = {
