@@ -2331,7 +2331,10 @@ void deuna_c::worker_rx(void)
         }
 
         process_receive();
-        timeout_c::wait_ms(1);
+        // A running controller is paced by the read above, which waits a
+        // millisecond on the bridge; a stopped one has only the once-a-second
+        // statistics timer to service and can sleep properly between passes.
+        timeout_c::wait_ms(is_running ? 1 : 50);
     }
 }
 
@@ -2350,10 +2353,21 @@ void deuna_c::worker_tx(void)
             timeout_c::wait_ms(1);
             continue;
         }
-        // Wait for work with a short timeout (for periodic TX polling)
+        // How long to sleep before looking at the ring again. A stopped
+        // controller has no ring to look at, and the only thing that can happen
+        // to it is a register write, which signals the condition variable - so
+        // it waits the long time. The board has one core and the processor it
+        // serves wants all of it, so a controller no driver has started must
+        // cost nothing.
+        bool running;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_mutex);
+            running = ((pcsr1 & PCSR1_STATE) == STATE_RUNNING);
+        }
         {
             std::unique_lock<std::mutex> lock(pending_cmd_mutex);
-            pending_cmd_cv.wait_for(lock, std::chrono::microseconds(100));
+            pending_cmd_cv.wait_for(lock, running ? std::chrono::milliseconds(1)
+                                                  : std::chrono::milliseconds(50));
         }
 
         if (init_asserted) {

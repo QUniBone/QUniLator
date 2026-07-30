@@ -54,6 +54,22 @@ for (let i = 0; i < args.length; i++) {
     steps.push({ kind: "send", value: take(), hidden: true });
   else if (args[i] === "--wait") steps.push({ kind: "wait", value: take() });
   else if (args[i] === "--timeout") steps.push({ kind: "timeout", value: take() });
+  else if (args[i] === "--restart") steps.push({ kind: "restart" });
+}
+
+// Restarting from here, with the socket already open and the replayed history
+// already behind us, is what makes a run readable: everything that arrives
+// afterwards belongs to this boot and to no earlier one.
+async function restart() {
+  const res = await fetch(
+    `http://${host}/api/devices/cpuvax/params/start_switch`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...auth },
+      body: JSON.stringify({ value: "1" }),
+    },
+  );
+  if (!res.ok) throw new Error(`restart failed: HTTP ${res.status}`);
 }
 
 const ws = new WebSocket(`ws://${host}/ws/console/${channel}`, { headers: auth });
@@ -116,6 +132,10 @@ try {
   for (const step of steps) {
     if (step.kind === "timeout") timeoutMs = Number(step.value);
     else if (step.kind === "wait") await delay(Number(step.value));
+    else if (step.kind === "restart") {
+      await restart();
+      from = buf.length;
+    }
     else if (step.kind === "expect") from = await expect(step.value, timeoutMs, from);
     else if (step.kind === "send") {
       await sendLine(step.value, step.hidden);

@@ -5,8 +5,9 @@
 # picked up once the boot is expected to be over: VMS asks for the date and
 # time and re-asks every thirty seconds until it is answered, so a procedure
 # that sleeps and then connects finds a screen full of repeated prompts and a
-# system that has not started. So this attaches first and waits for the prompt,
-# however long the boot takes.
+# system that has not started. So the console script attaches first, lets the
+# board replay the channel's history, and only then throws the start switch -
+# which also means everything it matches against belongs to this boot.
 #
 #   ./tools/vax-boot.sh                 restart and boot
 #   ./tools/vax-boot.sh --no-restart    just drive a boot already under way
@@ -17,24 +18,19 @@ set -e
 cd "$(dirname "$0")/.."
 
 HOST=${QBONE_HOST:-unibone.huebner.org}
-PW=$(cat ~/.qbone-pw 2>/dev/null || true)
 USERNAME=${VMS_USERNAME:-SYSTEM}
 PASSWORD=${VMS_PASSWORD:-MANAGER}
 # VMS wants DD-MMM-YYYY HH:MM, and its month names are upper case.
 VMSDATE=$(date "+%d-%b-%Y %H:%M" | tr '[:lower:]' '[:upper:]')
 
-if [ "$1" != "--no-restart" ]; then
-    curl -s -m 25 -u ":$PW" -X PUT -H 'Content-Type: application/json' \
-        -d '{"value":"1"}' \
-        "http://$HOST/api/devices/cpuvax/params/start_switch" >/dev/null
-    echo "machine restarted; watching the console"
-fi
+RESTART=--restart
+[ "$1" = "--no-restart" ] && RESTART=
 
 # One connection for the whole boot: the date prompt, the startup, and the
 # login that follows it. A boot takes about a minute, so the waits are minutes
 # and not tens of them - a machine that is not going to come up should say so
 # quickly rather than being waited out.
-exec node tools/vax-console.mjs \
+exec node tools/vax-console.mjs $RESTART \
     --timeout ${VMS_BOOT_TIMEOUT:-180000} \
     --expect 'PLEASE ENTER DATE AND TIME' --send "$VMSDATE" \
     --timeout ${VMS_STARTUP_TIMEOUT:-150000} \
