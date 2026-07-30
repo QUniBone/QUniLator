@@ -37,6 +37,7 @@
 */
 
 #include "vax_defs.h"
+#include "simh_shim.h"          /* QUniLator: the bus outside the core */
 
 #ifdef DONT_USE_INTERNAL_ROM
 #define BOOT_CODE_FILENAME "vmb.exe"
@@ -823,6 +824,13 @@ for (i = 0; (dptr = sim_devices[i]) != NULL; i++) {     /* loop thru dev */
             }                                           /* end else */
         }                                               /* end if enabled */
     }                                                   /* end for */
+/* QUniLator: init_ubus_tab() above cleared the dispatch and vector entries the
+   bus outside the core holds, and no DIB rebuilds them. sim_instr() calls this
+   at entry and then evaluates pending interrupts before it processes a single
+   event, so putting them back any later than here lets an interrupt that was
+   raised between batches be granted with a zero vector - the request is
+   consumed and the driver's ISR never runs. */
+simh_shim_bus_reassert ();
 return SCPE_OK;
 }
 

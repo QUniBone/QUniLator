@@ -197,6 +197,13 @@ int simh_shim_mem_write (unsigned phys_addr, unsigned value);
    Called from the device's thread, not the processor's. */
 int simh_shim_bus_dma (int write, unsigned addr, uint16_t *buffer, unsigned words);
 
+/* Put back what a rebuild of the core's I/O tables took from the bus: the
+   dispatch entries for the addresses it answers and the vector the adapter
+   hands over for each pending request. Idempotent and cheap when nothing was
+   lost. build_dib_tab() calls it, because sim_instr() evaluates pending
+   interrupts right after that rebuild and before any event runs. */
+int simh_shim_bus_reassert (void);
+
 /* One of the adapter's map registers has taken a new value. The bus hardware
    translates a device's address through a copy of the map, and a device can
    start a transfer without the processor executing another bus cycle first, so

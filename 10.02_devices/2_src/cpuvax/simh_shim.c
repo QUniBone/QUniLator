@@ -907,24 +907,6 @@ return SCPE_STOP;
    level counts as an incomplete initialiser. */
 static UNIT shim_batch_unit;
 
-/* Entering sim_instr() rebuilds the machine's I/O tables from the devices the
-   core carries - build_dib_tab() at the top of it calls init_ubus_tab(), which
-   clears the I/O page dispatch and every interrupt vector. simh enters
-   sim_instr() once for a RUN command; a processor driven in batches enters it
-   thousands of times a second, so the tables are cleared that often, and what
-   a device on the bus put there is not rebuilt because it owns no entry to be
-   rebuilt from.
-
-   So a batch schedules this one tick in, and the reassert at the top of
-   sim_process_event() puts back what the rebuild took. */
-static t_stat shim_restore_svc (UNIT *uptr)
-{
-(void) uptr;
-return SCPE_OK;                                         /* the reassert did it */
-}
-
-static UNIT shim_restore_unit;
-
 t_stat sim_activate (UNIT *uptr, int32 event_time)
 {
 UNIT *cptr, *prvptr;
@@ -1372,7 +1354,6 @@ if (sim_eval == NULL)
     sim_eval = (t_value *) calloc (SHIM_EVAL_SIZE, sizeof (*sim_eval));
 
 shim_batch_unit.action = shim_batch_svc;
-shim_restore_unit.action = shim_restore_svc;
 
 /* A unit's back pointer to its device, which scp fills in when it walks
    sim_devices[] at startup. Device code reads it directly - simh's disk layer
@@ -1397,10 +1378,6 @@ t_stat reason;
 sim_cancel (&shim_batch_unit);
 if (max_instructions > 0)
     sim_activate (&shim_batch_unit, max_instructions);
-/* One instruction in, so the tables sim_instr() is about to rebuild are put
-   back before the processor can reach a device or take an interrupt. */
-sim_cancel (&shim_restore_unit);
-sim_activate (&shim_restore_unit, 1);
 reason = sim_instr ();
 sim_cancel (&shim_batch_unit);
 return reason;

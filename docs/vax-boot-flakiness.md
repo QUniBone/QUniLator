@@ -1,9 +1,11 @@
-# The VAX boots about half the time
+# The VAX booted about half the time
 
-Where the investigation stands. The machine described in `vax-host.md` — a
-VAX-11/780 core with a UDA50 answering on the bus — boots VMS 4.7 to a DCL
-prompt on roughly half of its attempts. The other half fail in one of two
-ways, and the two look nothing alike.
+The investigation, kept for the record: the machine described in `vax-host.md`
+— a VAX-11/780 core with a UDA50 answering on the bus — booted VMS 4.7 to a
+DCL prompt on roughly half of its attempts. The cause was an interrupt granted
+with a zero vector at batch entry, found below and fixed; the machine now
+boots **20 of 20** trials, ten of them with the DEUNA enabled. The failures
+came in two shapes that looked nothing alike, and both were this one bug.
 
 Branch `worktree-vax-cpu`, rebased onto `main` at `93a92ab`, board
 `unibone.huebner.org`.
@@ -41,6 +43,8 @@ pristine system disk. `./tools/vax-boot-trials.sh <n>` runs them and scores them
 | no DEUNA, before the map fix | 5 of 6 passed |
 | no DEUNA, with the map fix | 6 of 10 passed — the first six, then four stops |
 | no DEUNA, with the map fix, straight after a service restart | 2 of 4 passed |
+| no DEUNA, with the zero-vector fix | **10 of 10 passed** |
+| with the DEUNA, with the zero-vector fix | **10 of 10 passed** |
 
 ## What has been ruled out
 
@@ -85,28 +89,44 @@ per-cycle copy of 2 KB is gone, which the processor gets back.
 
 This is right on its own terms, and it did not close the gap.
 
-## Where to look next
+## The stop before the date prompt: an interrupt granted with a zero vector
 
-The two failure shapes probably have two causes, and the second one — banner,
-then nothing, no disk I/O, several in a row — is the one with the sharper edges.
-Worth doing:
+The processor of a stopped machine turned out to be running: 1.25 M
+instructions a second with PC pinned in a tight kernel loop at IPL 0, zero bus
+cycles, zero DMA. That is VMS's idle loop — the system is not hung, it is
+waiting for an I/O completion that never arrived. (`PC`, `PSL` and
+`cycle_count` were available all along, in the `statusparams` collection of
+`GET /api/devices` rather than `params`, which is why earlier reads missed
+them.)
 
-- Find out whether a failing machine's processor is still executing. `PC`,
-  `PSL` and `cycle_count` are documented as `cpuvax` parameters but are not in
-  what `GET /api/devices` returns, so there is currently no way to ask. Getting
-  them back is the first step.
-- Compare the board's log for a passing boot against a failing one at
-  `verbosity 4`. A capture loop is in the session history; three failures were
-  caught (6, 6 and 14 board lines) before a passing one was, so the comparison
-  is not yet made. The failing ones end at `VAX running` with nothing after,
-  and the UDA50 logs no controller activity at all.
-- `boot device RQ0: not configured, would answer at 4004772150` appears on the
-  failing boots. Whether it also appears on passing ones is unknown — it is
-  probably just the core's own unused MSCP controller, but it has not been
-  checked.
-- The runs of consecutive failures suggest state that survives a machine
-  teardown. A service restart did not clear it (2 passed, then 2 failed), so it
-  is either in the PRU or it is not state at all.
+The interrupt is lost at batch entry. `sim_instr()` opens with
+`build_dib_tab()`, which zeroes the vector the shim planted in `int_vec` for
+the bus, then `SET_IRQL` finds the request the bus thread raised between
+batches, and the main loop dispatches it before a single event has run:
+`get_vector()` reads the zeroed entry, `uba_get_ubvector()` clears the request
+on the way, and `if (vec)` silently drops the zero. The request is consumed,
+the vector never dispatched, the driver's ISR never runs, and VMS waits
+forever for a completion that was granted into nothing.
+
+The stage-3 restore scheduled one instruction into the batch —
+`sim_activate (&shim_restore_unit, 1)` — which is one instruction too late:
+the dispatch happens before the event queue is looked at. Every interrupt
+raised while the processor was between batches ran this race, and the batch
+gap is a few percent of wall time, which is why the machine booted at all and
+why it failed by the third or fourth attempt rather than the first.
+
+The fix is to reassert where the wipe happens: `build_dib_tab()` itself now
+calls `simh_shim_bus_reassert()` after its `init_ubus_tab()`, so the vectors
+and the dispatch are back before the entry sequence evaluates anything. The
+per-batch restore unit is gone; the reassert at the top of
+`sim_process_event()` stays for a device reconfiguring itself mid-batch.
+
+The corruption shape was the same bug earlier in the boot: a completion lost
+mid-SYSINIT leaves the driver to time out and recover, and what the recovery
+reads is not what the interrupted sequence would have delivered. With the
+reassert in `build_dib_tab()` both shapes are gone — twenty consecutive trials
+pass, ten of them with the DEUNA enabled, where before the fix three or four
+of every ten failed.
 
 ## Fixed along the way
 
