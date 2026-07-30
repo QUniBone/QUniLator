@@ -473,17 +473,20 @@ void cpuvax_c::machine_start(void)
     mailbox_execute(ARM2PRU_CPU_ENABLE);
     qunibus->set_arbitrator_active(true);
     publish_unibus_map();
-    // The machine runs on emulated time: the interval clock and every device
-    // delay advance with the instructions executed, not with the wall. VMS
-    // calibrates its software timing loops (EXE$GL_TENUSEC and friends) once
-    // at boot by counting loop iterations between clock ticks; against a
-    // wall-time clock on a board whose one core is shared with the device
-    // workers, a boot that gets preempted during that window calibrates the
-    // loops a thousandfold too short, every driver's timed wait then expires
-    // in microseconds, and the port initialisation limps through 50-second
-    // timeout retries instead of taking interrupts. Time the guest can trust
-    // costs only a wall clock the guest does not keep.
-    the_flexi_timeout_controller->set_mode(flexi_timeout_c::emulated_time);
+    // On emulated time the interval clock and every device delay advance with
+    // the instructions executed, not with the wall. VMS calibrates its
+    // software timing loops (EXE$GL_TENUSEC and friends) once at boot by
+    // counting loop iterations between clock ticks; against a wall-time clock
+    // on a board whose one core is shared with the device workers, a boot
+    // preempted during that window calibrates the loops a thousandfold too
+    // short and every timed wait then expires early - the boot limps through
+    // 50-second timeout retries instead of taking interrupts. Emulated time
+    // makes the calibration self-consistent, but the interval-timer
+    // scheduling does not follow it yet (the tick event freezes and VMS
+    // spins at IPL 31 waiting for ICR), so the mode is a parameter until
+    // that path is instruction-consistent too.
+    the_flexi_timeout_controller->set_mode(emulated_time.value
+            ? flexi_timeout_c::emulated_time : flexi_timeout_c::world_time);
     INFO("VAX running");
 }
 
@@ -836,8 +839,14 @@ bool cpuvax_c::on_param_changed(parameter_c *param)
         return true;
     }
     if (param == &iotrace_dump_switch) {
-        if (iotrace_dump_switch.new_value)
+        if (iotrace_dump_switch.new_value) {
             iotrace_dump();
+            // with the history armed, write it too: a stall that takes no
+            // interrupts never triggers the automatic dump
+            if (core_history.value
+                    && simh_shim_history_dump("/tmp/vax-history.log", 0))
+                INFO("instruction history written to /tmp/vax-history.log");
+        }
         iotrace_dump_switch.value = false;  // momentary action
         return true;
     }

@@ -147,6 +147,13 @@ public:
     parameter_unsigned_c batch_size = parameter_unsigned_c(this, "batch", "b",/*readonly*/
                                       false, "", "%u", "Instructions executed per worker pass.", 32, 10);
 
+    // Run the machine on emulated (instruction-driven) time rather than the
+    // wall. Cures the guest's once-per-boot timing-loop calibration being
+    // ruined by host preemption, but the interval-timer scheduling is not
+    // instruction-consistent yet; off until it is.
+    parameter_bool_c emulated_time = parameter_bool_c(this, "emulated_time", "et",/*readonly*/
+                                     false, "1 = machine time advances with executed instructions.");
+
     parameter_bool_c runmode = parameter_bool_c(this, "run_led", "r",/*readonly*/
                                true, "RUN LED: 1 = processor running, 0 = halted.");
     parameter_bool_c halt_switch = parameter_bool_c(this, "halt_switch", "h",/*readonly*/
