@@ -108,6 +108,7 @@ void sm_arb_reset() {
     sm_arb.device_request_signalled_mask = 0;
     sm_arb.canceled_request_mask = 0;
     sm_arb.dmr_holdoff_until = PRU_IEP_TMR_CNT;
+    sm_arb.dmr_committed = 0;
 
     sm_arb.intr_level_index = 0 ;
 
@@ -205,27 +206,44 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
 
         // DMA holdoff around interrupt acknowledges. The KDJ11's interrupt
         // entry is a multi-cycle microcode sequence (vector read, vector-table
-        // fetches, stack pushes); a DMA transaction inside it latches the
+        // fetches, stack pushes); a DMA request first APPEARING in that window
+        // gets granted from inside the entry sequence and latches the
         // processor up for good - no more fetches, no more grants (observed
         // on the 11/73, bus trace: SACK+transfer 2.4us after the vector RPLY,
         // then the parked write cycle never resumes). Real MSCP controllers
-        // never request the bus in that window; this emulator's ARM round-trip
-        // makes a DMA request right after each completion interrupt the norm.
-        // So while an IAK runs, and for a cooldown after the vector transfer,
-        // DMR stays off the bus and a DMA grant is not accepted: the CPU
-        // retracts an unanswered DMGO pulse by itself once RDMR is negated
-        // (also observed in the trace), and the queued request proceeds
-        // normally when the window closes.
+        // never raise DMR in that window; this emulator's ARM round-trip makes
+        // a DMA request right after each completion interrupt the norm. So a
+        // new request stays off the bus while an IAK runs and for a cooldown
+        // after the vector transfer. The commitment is one-way: DMR already
+        // standing before the IAK is left alone (the CPU serves such a
+        // request before taking the interrupt), because retracting a driven
+        // DMR makes the CPU retract an in-flight DMGO, and a SACK landing on
+        // that dying pulse runs a DMA without bus mastership.
         {
             bool dma_holdoff;
-            if (buslatches_getbyte(6) & BIT(5)) /* RIAKI: IAK in progress */
+            if (buslatches_getbyte(6) & BIT(5)) { /* RIAKI: IAK in progress */
                 sm_arb.dmr_holdoff_until = PRU_IEP_TMR_CNT + ARB_IAK_DMR_HOLDOFF_TICKS;
+                // While the acknowledge runs the CPU cannot have a DMGO in
+                // flight (its arbiter does one transaction at a time), so
+                // this is the one safe moment to take a standing DMR off the
+                // bus. Left standing, the CPU grants it right after the
+                // vector - from inside its interrupt-entry microcode - and
+                // the resulting transfer runs against the entry sequence's
+                // own cycles (both observed: a wedged processor, and DMAs
+                // timing out on a garbage bus).
+                sm_arb.dmr_committed = 0;
+            }
             dma_holdoff = (int32_t)(PRU_IEP_TMR_CNT - sm_arb.dmr_holdoff_until) < 0;
-            if (dma_holdoff) {
-                bus_lines &= (uint8_t)~PRIORITY_ARBITRATION_BIT_NP;
-                if (granted_requests_mask & PRIORITY_ARBITRATION_BIT_NP)
-                    sm_arb.stat_dma_grant_refused++;
-                granted_requests_mask &= (uint8_t)~PRIORITY_ARBITRATION_BIT_NP;
+            if (sm_arb.device_request_mask & PRIORITY_ARBITRATION_BIT_NP) {
+                if (!sm_arb.dmr_committed && !dma_holdoff)
+                    sm_arb.dmr_committed = 1;
+                if (!sm_arb.dmr_committed) {
+                    bus_lines &= (uint8_t)~PRIORITY_ARBITRATION_BIT_NP;
+                    if (granted_requests_mask & PRIORITY_ARBITRATION_BIT_NP)
+                        sm_arb.stat_dma_grant_refused++;
+                }
+            } else {
+                sm_arb.dmr_committed = 0;
             }
         }
 
@@ -262,6 +280,10 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
         sm_arb.device_grant_mask = granted_requests_mask & sm_arb.device_request_mask
                                    & ~sm_arb.device_forwarded_grant_mask;
 		// GRANT mask: only 1 bit set (single IOAKI, or DMG)
+
+        // A DMG is only valid as the answer to a committed, standing DMR.
+        if (!sm_arb.dmr_committed)
+            sm_arb.device_grant_mask &= (uint8_t)~PRIORITY_ARBITRATION_BIT_NP;
 
         // IRQ: no SACK, but DIN set
         if (sm_arb.device_grant_mask & PRIORITY_ARBITRATION_INTR_MASK) {
@@ -312,6 +334,14 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
         return 0 ; // wait, nothing yet granted
     }
     case state_arbitration_dma_grant_rply_sync_wait:
+        // The grant must still stand when SACK goes up. The CPU negates
+        // TDMGO when RDMR negates, so with the holdoff able to retract DMR
+        // a grant accepted one pass ago can be gone by now; asserting SACK
+        // then would take a bus the CPU no longer offers.
+        if (! (buslatches_getbyte(6) & BIT(6))) { // RDMGI negated
+            sm_arb.state = state_arbitration_grant_check ;
+            return 0 ;
+        }
         // "3. The DMA Bus Master device asserts TSACK 0 ns minimun after the
         // assertion  of  RDMGI; 0 ns minimum after the negation of RSYNC;
         // and  0ns minimum after the  negation of RRPLY."
@@ -324,6 +354,7 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
 
         // clear granted requests internally
         sm_arb.device_request_mask &= ~PRIORITY_ARBITRATION_BIT_NP;
+        sm_arb.dmr_committed = 0;
         // QBUS DATA section is indepedent: MSYN, SSYN, BBSY may still be active.
         // -> DMA and INTR statemachine must wait for BBSY.
 
@@ -366,9 +397,12 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
         // pattern: the level combinations (BIRQ4 rides along with BIRQ5-7)
         // must drop with the request they belong to, or a phantom BIRQ4 with
         // no requester stands on the bus until the next grant_check pass.
+        // A standing DMR comes off with them (safe mid-IAK, see grant_check);
+        // it re-commits after the post-IAK holdoff.
         sm_arb.device_request_mask &= ~sm_arb.device_grant_mask;
-        buslatches_setbits(6, PRIORITY_ARBITRATION_INTR_MASK,
-                           arb_line_pattern(sm_arb.device_request_mask)) ;
+        sm_arb.dmr_committed = 0;
+        buslatches_setbits(6, PRIORITY_ARBITRATION_INTR_MASK | PRIORITY_ARBITRATION_BIT_NP,
+                           arb_line_pattern(sm_arb.device_request_mask) & PRIORITY_ARBITRATION_INTR_MASK) ;
         buslatches_setbits(4, BIT(3),BIT(3)) ; // assert RPLY
 
         // "6. The Bus Slave gates the Interrupt Vector (TVECT) address onto
@@ -425,8 +459,15 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
 
         sm_arb.state = state_arbitration_grant_check ; // restart
 
-		// signal which request where completed
-        return sm_arb.device_request_signalled_mask ;
+        // Signal which interrupt request completed - and nothing else. The
+        // caller ANDs this return with the NP bit to decide whether to start
+        // the DMA state machine; a DMA request that stood signalled before
+        // the acknowledge would leak through here and launch a transfer with
+        // no grant and no SACK, straight into the CPU's interrupt-entry
+        // cycles (both masters driving: wedged processor or a DMA timing out
+        // on a garbage bus - the original random 2.11BSD hangs).
+        return sm_arb.device_request_signalled_mask
+               & PRIORITY_ARBITRATION_INTR_MASK ;
 
     case state_arbitration_orphan_vector:
         // Answer an IAK whose request was withdrawn: same slave protocol as

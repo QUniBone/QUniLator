@@ -83,6 +83,13 @@ typedef struct {
     // DMA grant cannot land inside the CPU's interrupt-entry microcode.
     uint32_t dmr_holdoff_until;
 
+    // DMR has been committed to the bus for the pending DMA request. The
+    // holdoff only delays this commitment; once made, DMR stands until the
+    // grant is accepted. Retracting a driven DMR makes the CPU retract an
+    // in-flight DMGO, and a SACK landing on such a dying pulse runs a DMA
+    // without bus mastership (seen as bursts of ring-DMA bus timeouts).
+    uint8_t dmr_committed;
+
     // diagnosis counters, read via /dev/mem
     uint32_t stat_intr_answered;   // vector transfers completed normally
     uint32_t stat_iak_abandoned;   // intr_vector/orphan left via RIAKI-negate escape
