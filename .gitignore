@@ -26,3 +26,5 @@ diagnostics/reference/*.pdf
 tools/*.lst
 tools/*.obj
 tools/*.rl02
+
+.claude/worktrees/
