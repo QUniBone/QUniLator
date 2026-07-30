@@ -36,13 +36,13 @@ async function initLive(): Promise<void> {
     setStore({ connected: false });
   }
 }
-initLive();
 
 // A page loaded or reloaded while an install was under way picks the overlay back
 // up, rather than showing whatever the half-replaced server happened to answer.
 // Before initLive, and independent of it: the point is that the server may not be
-// there at all.
+// answering at all.
 resumeInstallIfPending();
+initLive();
 
 // Close every WebSocket when the page goes away, so a reload or navigation
 // frees the server's per-socket worker thread at once rather than leaving it to

@@ -260,7 +260,10 @@ static void update_get(struct mg_connection *conn) {
 // to read it, which takes a moment, so this is its own request rather than part
 // of the status.
 static void update_changelog(struct mg_connection *conn) {
-	std::string cmd = std::string(UPDATER) + " --changelog 2>/dev/null";
+	// Bounded: reading the changelog downloads the candidate, and an apt that
+	// hangs would otherwise hold this civetweb worker thread for as long as it
+	// felt like. The command line is fixed - nothing from the request reaches it.
+	std::string cmd = std::string("timeout 90 ") + UPDATER + " --changelog 2>/dev/null";
 	FILE *p = popen(cmd.c_str(), "r");
 	if (p == nullptr) {
 		send_error(conn, 500, "the updater could not be run");
@@ -336,7 +339,13 @@ static void update_install(struct mg_connection *conn) {
 	}
 
 	// Written through a temporary and renamed, so the updater cannot read it half
-	// written even though it is started only afterwards.
+	// written even though it is started only afterwards. The directory is the
+	// package's, 0700 root; made here as well so a service started outside the
+	// package's layout still works.
+	if (mkdir(state_dir().c_str(), 0700) != 0 && errno != EEXIST) {
+		send_error(conn, 500, "the update state directory is not writable");
+		return;
+	}
 	std::string path = request_path();
 	std::string tmp = path + ".new";
 	{
