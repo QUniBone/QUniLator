@@ -31,13 +31,15 @@ if [ "$1" != "--no-restart" ]; then
 fi
 
 # One connection for the whole boot: the date prompt, the startup, and the
-# login that follows it. The prompt can be twenty minutes away on a traced or
-# heavily loaded board, so the wait is generous.
+# login that follows it. A boot takes about a minute, so the waits are minutes
+# and not tens of them - a machine that is not going to come up should say so
+# quickly rather than being waited out.
 exec node tools/vax-console.mjs \
-    --timeout 1200000 \
+    --timeout ${VMS_BOOT_TIMEOUT:-180000} \
     --expect 'PLEASE ENTER DATE AND TIME' --send "$VMSDATE" \
+    --timeout ${VMS_STARTUP_TIMEOUT:-150000} \
     --expect 'SYSTEM       job terminated' \
-    --timeout 120000 \
+    --timeout 60000 \
     --wait 3000 --send '' \
     --expect 'Username:' --send "$USERNAME" \
     --expect 'Password:' --send-hidden "$PASSWORD" \

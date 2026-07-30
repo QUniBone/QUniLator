@@ -359,15 +359,23 @@ deuna_c::deuna_c() : qunibusdevice_c()
     reg_pcsr3->writable_bits = 0x0003;
 
     interface.value = "eth0";
-    mac.value = "";
     rx_slots.value = 0;
     tx_slots.value = 0;
     trace.value = false;
 
-    /* Default MAC in DEC range */
+    // The station address the board powers on with, derived from the board's
+    // own and kept, so it is distinct per board and steady across boots. It is
+    // put in the parameter as well as in the controller, so a saved
+    // configuration records it and an operator can see what the machine will
+    // answer to.
     static_assert(sizeof(mac_addr) == 6, "mac_addr must be 6 bytes");
     static_assert(sizeof(setup.macs[0]) >= sizeof(mac_addr), "setup.macs[0] must fit mac_addr");
-    memcpy(mac_addr, DEUNA_DEFAULT_MAC, std::min(sizeof(mac_addr), sizeof(DEUNA_DEFAULT_MAC)));
+    mac.value = ethernet_default_station_address("deuna");
+    if (!parse_mac(mac.value, mac_addr))
+        memcpy(mac_addr, DEUNA_DEFAULT_MAC, sizeof(mac_addr));
+    memcpy(setup.macs[0], mac_addr, std::min(sizeof(setup.macs[0]), sizeof(mac_addr)));
+    if (setup.mac_count < 2)
+        setup.mac_count = 2;
 
     read_buffer.msg.reserve(UNA_MAX_RCV_PACKET);
     write_buffer.msg.reserve(UNA_MAX_RCV_PACKET);
@@ -436,8 +444,14 @@ bool deuna_c::on_param_changed(parameter_c *param)
         }
     } else if (param == &mac) {
         if (mac.new_value.empty()) {
+            // Empty puts back the address the board derived for itself, which
+            // is what it powered on with. The fixed constant below is only for
+            // a board whose own address cannot be read at all.
             mac_override = false;
-            memcpy(mac_addr, DEUNA_DEFAULT_MAC, std::min(sizeof(mac_addr), sizeof(DEUNA_DEFAULT_MAC)));
+            std::string derived = ethernet_default_station_address("deuna");
+            if (!parse_mac(derived, mac_addr))
+                memcpy(mac_addr, DEUNA_DEFAULT_MAC, sizeof(mac_addr));
+            mac.value = derived;
             memcpy(setup.macs[0], mac_addr, std::min(sizeof(setup.macs[0]), sizeof(mac_addr)));
             setup.valid = true;
             if (setup.mac_count < 2)

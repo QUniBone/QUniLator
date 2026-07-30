@@ -36,64 +36,6 @@
 #include "delqa.hpp"
 #include "delqa_bootrom.h"
 
-// default_station_address(): the DELQA's power-on station address. DEC's OUI
-// (08:00:2b) with the low three bytes taken from the board's own Ethernet MAC,
-// so every QBone gets a distinct address. It is generated once and persisted
-// under QUNILATOR_DIR, so it stays stable across boots; a saved configuration's
-// "mac" parameter overrides it, and the file can be edited to change it. If the
-// board MAC cannot be read the low bytes are random instead.
-static std::string default_station_address()
-{
-    const char *dir = getenv("QUNILATOR_DIR");
-    std::string path = std::string(dir && *dir ? dir : "/var/lib/qunilator") + "/delqa.mac";
-
-    // a value written on a previous run wins, keeping the address stable
-    {
-        std::ifstream in(path);
-        std::string line;
-        if (in && std::getline(in, line) && line.size() >= 17)
-            return line.substr(0, 17);
-    }
-
-    std::string address;
-    // DEC OUI plus the three octets after eth0's MAC's third colon
-    {
-        std::ifstream in("/sys/class/net/eth0/address");
-        std::string hw;
-        if (in && std::getline(in, hw) && hw.size() >= 17) {
-            size_t p = 0;
-            int colons = 0;
-            while (p < hw.size() && colons < 3) {
-                if (hw[p] == ':')
-                    colons++;
-                p++;
-            }
-            if (colons == 3 && hw.size() - p >= 8)
-                address = "08:00:2b:" + hw.substr(p, 8);
-        }
-    }
-    // fallback: random low three bytes
-    if (address.empty()) {
-        uint8_t r[3] = { 0, 0, 0 };
-        FILE *urandom = fopen("/dev/urandom", "rb");
-        if (urandom) {
-            size_t got = fread(r, 1, sizeof r, urandom);
-            (void) got;
-            fclose(urandom);
-        }
-        char buf[24];
-        snprintf(buf, sizeof buf, "08:00:2b:%02x:%02x:%02x", r[0], r[1], r[2]);
-        address = buf;
-    }
-
-    // persist so the next boot reads the same address
-    {
-        std::ofstream out(path);
-        if (out)
-            out << address << "\n";
-    }
-    return address;
-}
 
 delqa_c::delqa_c() :
         qunibusdevice_c(),
@@ -123,7 +65,7 @@ delqa_c::delqa_c() :
     // controller gets an interface of its own: the veth the QBone package
     // creates and joins to the bridge that carries the uplink.
     interface.value = "veth-pdp";
-    mac.value = default_station_address();
+    mac.value = ethernet_default_station_address("delqa");
     deqna_lock.value = false;
     activity_led.value = 3;
 

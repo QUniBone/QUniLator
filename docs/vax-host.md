@@ -916,3 +916,39 @@ and time and re-asks every thirty seconds, so attaching to the console after a
 fixed sleep finds a screenful of prompts and a system that never started.
 `tools/vax-boot.sh` attaches first and answers the prompt when it comes, and the
 two-drive machine then boots exactly as the one-drive machine does.
+
+### `deuna.cpp` under VMS `XEDRIVER` — one fix, one open fault
+
+**The controller had no station address of its own.** The DELQA derives one -
+DEC's OUI with the low three bytes of the board's own Ethernet address, kept in
+a file so it is steady across boots and distinct per board - and puts it in its
+`mac` parameter, which is what the widget shows. The DEUNA had a fixed constant
+`08:00:2b:cc:dd:ee`, the same on every board, copied only into its own state and
+never into the parameter, so nothing displayed it and no saved configuration
+recorded it. Two controllers built to the same purpose should not differ in
+this, so the derivation is now one function in `ether_bridge`, named for the
+controller that asks, and the DEUNA gets `08:00:2b:0b:32:2f` on this board and
+keeps it in `deuna.mac`.
+
+**Enabling it makes VMS bug-check.** With the DEUNA on the bus, VMS dies during
+startup:
+
+	**** FATAL BUG CHECK, VERSION = V4.7 SSRVEXCEPT, Unexpected system service exception
+	    IMAGE NAME = SYSINIT.EXE
+
+not every time - sometimes it crashes, reboots and comes up on the second
+attempt - and the image named has also been `LOGINOUT.EXE`, which is the shape
+of something writing where it should not rather than a clean fault.
+
+What it is not: it happens with the transfers going out on the wire and equally
+with them answered by this program, so it is not stage 4's doing. And VMS never
+touches the controller - not one bus cycle to 774510 in a whole boot, and the
+controller's own trace stays empty. This VMS does not scan the I/O page; it
+works from its saved configuration, and that configuration does not mention a
+DEUNA. So the driver is not driving it, and the fault is in what the model does
+of its own accord while enabled.
+
+That also says what the next step is: `XEDRIVER` will not touch the device until
+the system is told it exists, with `SYSGEN CONNECT`, so the driver has not in
+fact seen this model yet. The crash has to be cleared first, because it happens
+without the driver's help.
