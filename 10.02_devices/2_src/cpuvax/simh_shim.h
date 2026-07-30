@@ -177,6 +177,14 @@ int simh_shim_history_dump (const char *filename, unsigned instructions);
    UNIBUS address. */
 int simh_shim_bus_owns (unsigned unibus_addr);
 
+/* Watch this UNIBUS address - the boot device's - on every reassert pass: a
+   device reset inside the core re-runs the auto-configuration, which takes
+   the address back for the core without touching the rest of the page, and
+   the whole-page witness never notices. The count says how often the claim
+   had to be healed that way. */
+void simh_shim_bus_watch (unsigned unibus_addr);
+unsigned simh_shim_bus_reclaims (void);
+
 /* Where the adapter's map registers send an eighteen bit UNIBUS address. Zero
    when the entry covering it is not valid, leaving *phys alone. Asking leaves
    the adapter's own error state as it was, so a trace may call it freely. */

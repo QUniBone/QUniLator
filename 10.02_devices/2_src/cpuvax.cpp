@@ -170,6 +170,7 @@ bool cpuvax_c::bus_read(unsigned addr, unsigned *data)
     }
     *data = word;
     DEBUG("DATI %06o = %06o", addr, (unsigned) word);
+    iotrace_note(0, addr, word, true);
     return true;
 }
 
@@ -184,10 +185,55 @@ bool cpuvax_c::bus_write(unsigned addr, unsigned data, bool byte)
     if (!data_transfer_request.success) {
         bus_timeouts.value++;
         DEBUG("DATO%s %06o = %06o: no answer", byte ? "B" : "", addr, (unsigned) word);
+        iotrace_note(byte ? 2 : 1, addr, word, false);
         return false;
     }
     DEBUG("DATO%s %06o = %06o", byte ? "B" : "", addr, (unsigned) word);
+    iotrace_note(byte ? 2 : 1, addr, word, true);
     return true;
+}
+
+/* The ring keeps only the watched device's registers, so a stalled dialogue
+   is not scrolled away by the traffic of a healthy one. Two threads write it -
+   the processor's transfers and the adapter's interrupt injections - so the
+   slot is claimed with an atomic counter; a torn entry costs a diagnostic
+   line, not correctness. */
+void cpuvax_c::iotrace_note(uint8_t op, uint32_t addr, uint16_t value, bool ok)
+{
+    struct timespec ts;
+
+    if (op != 3) {
+        if (iotrace_base == 0 || addr < iotrace_base || addr > iotrace_base + 2)
+            return;
+    }
+    uint64_t seq = __sync_fetch_and_add(&iotrace_seq, 1);
+    iotrace_entry *e = &iotrace[seq % IOTRACE_ENTRIES];
+    clock_gettime(CLOCK_REALTIME, &ts);
+    e->ns = (uint64_t) ts.tv_sec * 1000000000ull + ts.tv_nsec;
+    e->addr = addr;
+    e->value = value;
+    e->op = op;
+    e->ok = ok;
+    e->seq = seq + 1;                   // nonzero marks the entry written
+}
+
+void cpuvax_c::iotrace_dump(void)
+{
+    static const char *opname[] = {"DATI", "DATO", "DATOB", "INTR"};
+    uint64_t newest = iotrace_seq;
+    uint64_t oldest = newest > IOTRACE_ENTRIES ? newest - IOTRACE_ENTRIES : 0;
+
+    INFO("register-access trace, oldest first:");
+    for (uint64_t s = oldest; s < newest; s++) {
+        iotrace_entry e = iotrace[s % IOTRACE_ENTRIES];
+        if (e.seq != s + 1)
+            continue;                   // overwritten while dumping
+        unsigned us = (unsigned) ((e.ns / 1000) % 1000000);
+        unsigned sec = (unsigned) ((e.ns / 1000000000ull) % 86400);
+        INFO("  #%llu %02u:%02u:%02u.%06u %-5s %06o = %06o%s",
+             (unsigned long long) e.seq, sec / 3600, (sec / 60) % 60, sec % 60,
+             us, opname[e.op & 3], e.addr, e.value, e.ok ? "" : " (no answer)");
+    }
 }
 
 /* The time the core measures itself against: whichever clock the emulation is
@@ -369,10 +415,18 @@ bool cpuvax_c::configure_machine(void)
         unsigned ba = 0;
         int on = 0;
 
-        if (simh_shim_device_info(bootdevice.value.c_str(), &ba, &on))
+        if (simh_shim_device_info(bootdevice.value.c_str(), &ba, &on)) {
             INFO("boot device %s: %s, would answer at %06o",
                  bootdevice.value.c_str(), on ? "configured" : "not configured", ba);
-        else
+            // A reset of the controller the core carries re-runs the
+            // auto-configuration, which takes these registers back for the
+            // core mid-run; watching them heals the claim within the same
+            // event pass instead of a batch later.
+            simh_shim_bus_watch(ba);
+            // the info's address form carries the core's physical prefix;
+            // transfers name the eighteen bit bus address
+            iotrace_base = ba & 0777777;
+        } else
             ERROR("the processor has no device called %s", bootdevice.value.c_str());
     }
 
@@ -464,6 +518,7 @@ void cpuvax_c::publish_status(void)
         if (simh_shim_device_info(bootdevice.value.c_str(), &ba, &on))
             bootdev_on_bus.value = simh_shim_bus_owns(ba) != 0;
     }
+    iopage_reclaims.value = simh_shim_bus_reclaims();
     uba_cr.value = state.uba_cr;
     intr_pending.value = simh_shim_bus_interrupt_pending();
     uba_dr.value = state.uba_dr;
@@ -734,8 +789,10 @@ void cpuvax_c::on_interrupt(uint16_t vector, uint8_t level)
     if (!simh_shim_bus_interrupt(vector, level)) {
         WARNING("interrupt vector %06o at BR%u not taken", (unsigned) vector,
                 (unsigned) level);
+        iotrace_note(3, vector, level, false);
         return;
     }
+    iotrace_note(3, vector, level, true);
     bus_interrupts.value++;
     if (core_history.value)
         history_countdown = 2;                  // let the dispatch run, then dump
@@ -773,6 +830,12 @@ bool cpuvax_c::on_param_changed(parameter_c *param)
             return false;
         bus_deposit.value = bus_deposit.new_value;
         INFO("%06o := %06o", bus_deposit.value, bus_data.value);
+        return true;
+    }
+    if (param == &iotrace_dump_switch) {
+        if (iotrace_dump_switch.new_value)
+            iotrace_dump();
+        iotrace_dump_switch.value = false;  // momentary action
         return true;
     }
     if (param == &core_debug) {

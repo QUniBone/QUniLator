@@ -101,6 +101,27 @@ static int shim_claim_exclusive = 0;
 static uint32 shim_claim_witness = 0;
 static int shim_claim_active = 0;
 
+/* A second witness on the slots the machine actually depends on. The first
+   witness is the first slot of the page, and a rebuild that re-registers one
+   device - the auto-configuration a controller's reset runs - takes back only
+   that device's slots and leaves the first slot alone, so the claim looks
+   intact while the boot device's registers answer from inside the core. The
+   watched slot is the boot device's, named by the embedding once it knows it. */
+static uint32 shim_watch_slot = 0;
+static int shim_watch_active = 0;
+static unsigned shim_reclaims = 0;
+
+void simh_shim_bus_watch (unsigned unibus_addr)
+{
+shim_watch_slot = (unibus_addr & IOPAGEMASK) >> 1;
+shim_watch_active = (shim_watch_slot < (IOPAGESIZE >> 1));
+}
+
+unsigned simh_shim_bus_reclaims (void)
+{
+return shim_reclaims;
+}
+
 int simh_shim_bus_reassert (void)
 {
 int32 lvl;
@@ -120,10 +141,20 @@ for (lvl = 0; lvl < IPL_HLVL; lvl++)
 
 if (!shim_claim_active)
     return restored;
-if (iodispR[shim_claim_witness] == &shim_bus_read)
-    return restored;                                    /* still ours */
-simh_shim_bus_install (shim_claim_exclusive);
-return 1;
+if (iodispR[shim_claim_witness] != &shim_bus_read) {
+    simh_shim_bus_install (shim_claim_exclusive);
+    return 1;
+    }
+if (shim_watch_active &&
+    ((iodispR[shim_watch_slot] != &shim_bus_read) ||
+     (iodispW[shim_watch_slot] != &shim_bus_write))) {
+    /* the whole-page witness stood while the watched device's slots were
+       taken back: heal them and count it, so the machine shows it happened */
+    shim_reclaims++;
+    simh_shim_bus_install (shim_claim_exclusive);
+    return 1;
+    }
+return restored;
 }
 
 /* Whether the bus still answers a given UNIBUS address. The count taken when

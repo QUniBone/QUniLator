@@ -174,6 +174,11 @@ public:
                                                true, "", "%u", "I/O page accesses the processor made", 63, 10);
     parameter_unsigned_c iopage_claimed = parameter_unsigned_c(this, "iopage_claimed", "ioc",/*readonly*/
                                           true, "", "%u", "I/O page words the bus answers", 16, 10);
+    // A reset of a controller the core carries runs the auto-configuration,
+    // which takes the boot device's registers back for the core; the claim is
+    // healed on the spot, and this counts how often that happened.
+    parameter_unsigned_c iopage_reclaims = parameter_unsigned_c(this, "iopage_reclaims", "ior",/*readonly*/
+                                           true, "", "%u", "boot device registers reclaimed from the core", 32, 10);
     parameter_bool_c bootdev_on_bus = parameter_bool_c(this, "bootdev_on_bus", "bob",/*readonly*/
                                       true, "1 = the boot device's address is answered by the bus, now.");
     parameter_unsigned_c uba_cr = parameter_unsigned_c(this, "uba_cr", "ucr",/*readonly*/
@@ -200,7 +205,32 @@ public:
     bool bus_read(unsigned addr, unsigned *data);
     bool bus_write(unsigned addr, unsigned data, bool byte);
 
+public:
+    // The processor's last accesses to the boot device's registers, and the
+    // interrupts injected between them, kept in a small ring that is always
+    // on: a stalled initialisation dialogue is diagnosed from what the
+    // processor actually read, and logging at that moment changes the timing
+    // enough to hide it. iotrace_dump writes the ring to the log.
+    struct iotrace_entry {
+        uint64_t seq;
+        uint64_t ns;                    // CLOCK_REALTIME, for journal times
+        uint32_t addr;                  // bus address, or vector for an INTR
+        uint16_t value;
+        uint8_t op;                     // 0 DATI, 1 DATO, 2 DATOB, 3 INTR
+        uint8_t ok;
+    };
+    static const unsigned IOTRACE_ENTRIES = 64;
+
+    parameter_bool_c iotrace_dump_switch = parameter_bool_c(this, "iotrace_dump", "iotd",/*readonly*/
+                                           false, "1 = write the register-access trace to the log.");
+
 private:
+    iotrace_entry iotrace[IOTRACE_ENTRIES];
+    uint64_t iotrace_seq = 0;
+    uint32_t iotrace_base = 0;          // the watched registers; 0 = off
+    void iotrace_note(uint8_t op, uint32_t addr, uint16_t value, bool ok);
+    void iotrace_dump(void);
+
     // A console examine or deposit asked for from the web thread. The transfer
     // itself belongs to the processor's own thread, which is the bus master, so
     // the request is left here and worker() performs it.
