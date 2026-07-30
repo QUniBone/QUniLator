@@ -8,6 +8,7 @@ import { checkAuth } from './lib/modals';
 import { refreshDevices, refreshSettings } from './api';
 import { initEvents, eventsWs } from './lib/events';
 import { syncVersion } from './lib/version';
+import { resumeInstallIfPending } from './lib/update';
 import { shutdownTerminals } from './lib/terminals';
 import { vcb01Socket } from './lib/vcb01';
 
@@ -36,6 +37,12 @@ async function initLive(): Promise<void> {
   }
 }
 initLive();
+
+// A page loaded or reloaded while an install was under way picks the overlay back
+// up, rather than showing whatever the half-replaced server happened to answer.
+// Before initLive, and independent of it: the point is that the server may not be
+// there at all.
+resumeInstallIfPending();
 
 // Close every WebSocket when the page goes away, so a reload or navigation
 // frees the server's per-socket worker thread at once rather than leaving it to

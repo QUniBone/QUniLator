@@ -2,7 +2,7 @@ import { html } from '../html';
 import { useEffect } from 'preact/hooks';
 import { Router, useLocation } from 'preact-iso';
 import { useStore } from '../store';
-import type { HwState, Settings } from '../types';
+import type { HwState, Settings, UpdateStatus } from '../types';
 import { Led } from './common';
 import { guardedRoute } from '../lib/navguard';
 import { Dashboard } from './Dashboard';
@@ -10,6 +10,8 @@ import { StoragePage } from './Storage';
 import { ConfigsPage } from './Configs';
 import { MachinePage } from './Machine';
 import { LogPage } from './Log';
+import { SystemPage } from './System';
+import { updateAvailable, updateRunning } from '../lib/update';
 
 // path → sidebar label. The active item is the one whose path is the current
 // path or a prefix of it (so /config/211bsd still lights "Configurations").
@@ -19,6 +21,7 @@ const NAV: [string, string][] = [
   ['/config', 'Configurations'],
   ['/machine', 'Machine'],
   ['/diagnostics', 'Diagnostics'],
+  ['/system', 'System'],
 ];
 
 function activeNav(path: string): string {
@@ -33,12 +36,21 @@ function Sidebar({ active }: { active: string }) {
   const loc = useLocation();
   const s = useStore();
   const bus = BUS_LABEL[s.platform] || s.platform || '';
+  const offered = updateAvailable(s.update);
   return html`<aside class="sidebar">
     <div class="wordmark"><div class="mark">Q</div>
       <div><span class="name">QUniLator</span><span class="sub">${bus}</span></div></div>
+    ${
+      offered
+        ? html`<button class="upd-badge" onClick=${() => guardedRoute(loc, '/system')}
+            title="a newer ${s.update!.package} package is published">Update ${s.update!.candidate}</button>`
+        : null
+    }
     <nav class="nav">${NAV.map(
       ([path, label]) => html`
-      <button class=${active === path ? 'active' : ''} onClick=${() => guardedRoute(loc, path)}><span>${label}</span></button>`
+      <button class=${active === path ? 'active' : ''} onClick=${() => guardedRoute(loc, path)}><span>${label}</span>${
+        label === 'System' && offered ? html`<span class="nav-dot" aria-label="update available"></span>` : null
+      }</button>`
     )}</nav>
   </aside>`;
 }
@@ -48,13 +60,26 @@ function Topbar({
   hw,
   settings,
   connected,
+  update,
+  onUpdateClick,
 }: {
   title: string;
   hw: HwState;
   settings: Settings;
   connected: boolean;
+  update: UpdateStatus | null;
+  onUpdateClick: () => void;
 }) {
   return html`<header class="topbar"><h1>${title}</h1>
+    ${
+      updateRunning(update)
+        ? html`<button class="pill upd-pill busy" onClick=${onUpdateClick}
+            title="an update is running">${update!.state}</button>`
+        : updateAvailable(update)
+          ? html`<button class="pill upd-pill" onClick=${onUpdateClick}
+              title="a newer ${update!.package} package is published">Update ${update!.candidate}</button>`
+          : null
+    }
     <span class="pill">${html`<${Led} on=${hw.dcok} green=${true} title="DCOK" />`}DCOK</span>
     <span class="pill">${html`<${Led} on=${hw.pok} green=${true} title="POK" />`}POK</span>
     <span class="pill mono">addr ${settings.address_width}-bit</span>
@@ -80,7 +105,8 @@ export function App() {
   return html`<div class="app">
     <${Sidebar} active=${active} />
     <div class="main">
-      <${Topbar} title=${title} hw=${s.hw} settings=${s.settings} connected=${s.connected} />
+      <${Topbar} title=${title} hw=${s.hw} settings=${s.settings} connected=${s.connected}
+        update=${s.update} onUpdateClick=${() => guardedRoute(loc, '/system')} />
       <main class="content">
         <${Router}>
           <${Redirect} path="/" to="/dashboard" />
@@ -89,6 +115,7 @@ export function App() {
           <${ConfigsPage} path="/config/:name?/:device?" />
           <${MachinePage} path="/machine" />
           <${LogPage} path="/diagnostics" />
+          <${SystemPage} path="/system" />
           <${Redirect} default to="/dashboard" />
         </${Router}>
       </main>

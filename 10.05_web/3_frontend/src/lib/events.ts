@@ -3,7 +3,7 @@ import { store, setStore, emit, emitSoon } from '../store';
 import { patchParam } from './devmodel';
 import { wsURL } from './util';
 import { syncVersion } from './version';
-import type { LogLevelName, LogLine } from '../types';
+import type { LogLevelName, LogLine, UpdateStatus } from '../types';
 
 const LOG_LEVELS: Record<number, LogLevelName> = {
   1: 'FATAL',
@@ -69,6 +69,13 @@ export function initEvents(): void {
       if ('powered' in ev) hw.powered = ev.powered;
       if (ev.leds) ev.leds.forEach((v: boolean, i: number) => (hw.leds[i] = v));
       if (ev.switches) ev.switches.forEach((v: boolean, i: number) => (hw.dip[i] = v));
+      emit();
+    } else if (ev.t === 'update') {
+      // the whole update status, as GET /api/update answers it; the frame is
+      // broadcast on every change and opens each connection
+      const { t, ...status } = ev;
+      void t;
+      store.update = status as UpdateStatus;
       emit();
     } else if (ev.t === 'config') {
       // keep the configuration master list's current mark and the modified

@@ -198,6 +198,55 @@ export interface LogLine {
   msg: string;
 }
 
+// ---- self-update: GET /api/update, and the "update" event frame ----
+export type UpdateState =
+  | 'idle'
+  | 'checking'
+  | 'ahead' // the repository offers an older version than the board runs
+  | 'downloading'
+  | 'installing'
+  | 'verifying'
+  | 'os-upgrading'
+  | 'done'
+  | 'failed'
+  | 'rolled-back';
+
+export interface OsPackageUpdate {
+  name: string;
+  from: string;
+  to: string;
+}
+
+export interface OsUpdates {
+  count: number;
+  packages: OsPackageUpdate[];
+  held_back: string[];
+  reboot_required: boolean;
+}
+
+export interface UpdateOutcome {
+  state?: UpdateState;
+  from?: string;
+  to?: string;
+  at?: string;
+}
+
+export interface UpdateStatus {
+  state: UpdateState;
+  package: string;
+  source_configured: boolean;
+  checked_at: string;
+  installed: string;
+  candidate: string;
+  rollback: boolean; // a cached package the board could step back to
+  needs_repair: boolean; // a dpkg interrupted by a power loss
+  dismissed: string;
+  os: OsUpdates;
+  last: UpdateOutcome;
+  error: string;
+  journal: string[];
+}
+
 // ---- hardware / bus state ----
 export interface HwState {
   dcok: boolean;

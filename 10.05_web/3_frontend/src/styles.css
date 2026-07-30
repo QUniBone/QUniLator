@@ -1043,3 +1043,84 @@ button.tree-name:hover .mono { color: var(--accent); }
 /* the /console route reuses the dashboard terminal component without the
    dashboard chrome; lay it out like the dashboard's terminal column */
 .console-standalone { display: flex; flex-direction: column; align-items: flex-start; }
+
+/* ============================ self-update ============================ */
+/* The announcement, on two surfaces: a badge under the wordmark and a pill in
+   the topbar, both routing to the System page. Warn-coloured rather than
+   error-coloured: a published update is news, not a fault. */
+.upd-badge {
+  display: block; width: calc(100% - 16px); margin: 0 8px 4px;
+  padding: 7px 10px; border: 1px solid var(--warn); border-radius: var(--r-sm);
+  background: var(--warn-soft); color: var(--warn);
+  font-size: var(--fs-0); font-weight: 650; text-align: left; cursor: pointer;
+}
+.upd-badge:hover { background: var(--warn); color: var(--surface); }
+.upd-pill {
+  border-color: var(--warn); background: var(--warn-soft); color: var(--warn);
+  font-weight: 650; cursor: pointer;
+}
+.upd-pill:hover { background: var(--warn); color: var(--surface); }
+.upd-pill.busy { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+/* the marker beside the System nav entry, for a collapsed sidebar */
+.nav-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: 0 0 auto;
+}
+
+.upd-warn {
+  margin: 12px 0 0; padding: 9px 11px;
+  border: 1px solid var(--warn); border-radius: var(--r-sm);
+  background: var(--warn-soft); color: var(--ink);
+  font-size: var(--fs-1);
+}
+.upd-install { margin-top: 14px; border-top: 1px solid var(--line-soft); padding-top: 14px; }
+.upd-costs {
+  margin: 12px 0; padding-left: 20px;
+  font-size: var(--fs-1); color: var(--ink-muted); line-height: 1.6;
+}
+.upd-costs li { margin-bottom: 7px; }
+.upd-costs .btn.small { margin-left: 6px; vertical-align: baseline; }
+.upd-confirm { display: flex; gap: 6px; margin: 4px 0 12px; font-size: var(--fs-1); }
+.upd-buttons { display: flex; gap: 8px; }
+.upd-last { margin-top: 16px; border-top: 1px solid var(--line-soft); padding-top: 12px; }
+/* the changelog and the journal tail are preformatted text the package shipped,
+   so they scroll rather than reflow */
+.upd-changelog {
+  max-height: 260px; overflow: auto; margin: 8px 0 12px; padding: 10px 12px;
+  border: 1px solid var(--line-soft); border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-family: var(--font-mono); font-size: var(--fs-0); line-height: 1.55;
+  white-space: pre-wrap; word-break: break-word;
+}
+
+/* The install overlay outlives the socket it was raised from, so it carries its
+   own state and never blocks on the server it is waiting for. */
+.update-overlay { width: 520px; }
+.update-overlay .upd-phase { margin: 0 0 12px; font-size: var(--fs-2); font-weight: 600; }
+.update-overlay .upd-phase.err { color: var(--err); }
+.update-overlay .upd-detail { margin: 12px 0 0; font-size: var(--fs-1); }
+.update-overlay .upd-journal {
+  max-height: 200px; overflow: auto; margin: 12px 0 0; padding: 10px 12px;
+  border: 1px solid var(--line-soft); border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-family: var(--font-mono); font-size: var(--fs-0); white-space: pre-wrap;
+}
+.update-overlay .upd-actions { margin-top: 14px; display: flex; justify-content: flex-end; }
+/* the overlay shows and hides its parts with the hidden attribute, and a display
+   rule of our own would otherwise outrank the browser's [hidden] */
+.update-overlay [hidden] { display: none; }
+/* An install has no measurable progress - a download, a dpkg and a service
+   coming up - so this is a motion cue that something is happening, not a gauge. */
+.upd-bar {
+  height: 4px; border-radius: 999px; background: var(--surface-2); overflow: hidden;
+}
+.upd-bar-fill {
+  height: 100%; width: 34%; border-radius: 999px; background: var(--accent);
+  animation: upd-sweep 1.4s ease-in-out infinite;
+}
+@keyframes upd-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .upd-bar-fill { animation: none; width: 100%; opacity: .5; }
+}

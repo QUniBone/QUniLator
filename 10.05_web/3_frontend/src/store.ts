@@ -12,6 +12,7 @@ import type {
   HwState,
   BusState,
   LogLevelName,
+  UpdateStatus,
 } from './types';
 
 export interface Store {
@@ -29,6 +30,9 @@ export interface Store {
   serverPackage: string;
   serverVersion: string;
   serverBuilt: string;
+  // the self-update status, from GET /api/update and the "update" event frame;
+  // null until the first one arrives
+  update: UpdateStatus | null;
   connected: boolean;
   bus: BusState;
   hw: HwState;
@@ -58,6 +62,7 @@ export const store: Store = {
   serverPackage: '',
   serverVersion: '',
   serverBuilt: '',
+  update: null,
   connected: false,
   bus: { halted: false, init: false },
   hw: {
