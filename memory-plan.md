@@ -25,8 +25,12 @@ decode, in `emulated_addr_read()`, `emulated_addr_write_w()` and
 `:92`, `:122`), and returns 1 for "memory", which the slave state machine
 answers with RPLY without waking the ARM
 (`pru1_statemachine_data_slave.c:131`, `:165`, `:170`). The same test sits in
-the DMA path (`pru1_statemachine_dma.c:209`, `:291`, `:294`), so an emulated
-disk transferring into an emulated range never puts a cycle on the wire. Block
+the DMA path (`pru1_statemachine_dma.c:209`, `:291`, `:294`), where the board
+answers its own transfer: address, data and WTBT are gated onto the DAL and
+SYNC/DIN/DOUT asserted before the address is tested, and the board then asserts
+RPLY as its own slave. So a transfer into an emulated range runs the whole
+cycle on the bus and takes only its data from DDR, which is what leaves a
+CPU's cache able to invalidate against it. Block
 mode is served too: the slave asserts REF and stays in
 `state_data_slave_din_block_complete` for further DIN.
 
@@ -206,35 +210,47 @@ nothing. A `MemoryWidget` in a new `widgets/memory.ts`, registered under the
 `qbone.service` and that `emulate_memory()` runs only from the menus. That
 becomes wrong when this lands and wants rewriting to describe the card.
 
-## 10. The test machine: an 11/23 with no memory and no console
+## 10. The test machine: a KDJ11-A with no memory and no console
 
-The rig for this work is a KDF11-A (PDP-11/23) carrying neither a memory card
-nor a console SLU. Everything the machine needs to come alive is supplied by
-the board: the memory by this feature, the console by the emulated DL11 at
-777560. That makes the test unambiguous in both directions — nothing runs at
-all until the memory card is claimed, and there is no physical memory anywhere
-in the space for a claim to collide with.
+The rig for this work is a **KDJ11-A (M8192)**, the DCJ11 board, in a backplane
+carrying neither a memory card nor a console SLU. The module holds the
+processor, its MMU and its cache and nothing else: no memory, no serial line,
+no boot ROM — those belong to the M8190 or to separate cards. Everything the
+machine needs to come alive is therefore supplied by the board: the memory by
+this feature, the console by the emulated DL11 at 777560. That makes the test
+unambiguous in both directions — nothing runs at all until the memory card is
+claimed, and there is no physical memory anywhere in the space for a claim to
+collide with.
 
 **Console.** The DL11 is enabled with an empty `serialport` and reached over
 `/ws/console/0`, and `external_console` is `off`. This is the opposite of the
-11/73's arrangement, where the CPU carries its own SLU on `/dev/ttyS2` and the
-DL11 must stay disabled; the note in `CLAUDE.md` is about that board, not this
-one.
+other rig's arrangement, where the CPU carries its own SLU on `/dev/ttyS2` and
+the DL11 must stay disabled; the note in `CLAUDE.md` is about that board, not
+this one.
 
-**Address width.** The KDF11-A is an 18-bit machine, so the service runs with
-`--addresswidth 18` and the card's range is 0 .. 0o757776 — the whole 248 KB
-below the I/O page, trap vectors included. The width is a command-line option
-only, so the test edits the unit's `ExecStart`; a settings entry for it is
-worth considering but is not part of this plan.
+**Address width.** The J11 addresses 22 bits through its MMU, so the service
+runs at its default width and the card's range is 0 .. 0o17757776 — the whole
+4 MB less the 8 KB the I/O page takes, 4088 KB, trap vectors included. Nothing
+about the unit or the command line changes for this machine.
+
+**Power-up mode.** The J11 takes a power-up mode at DCOK, jumpered on the
+M8192: micro-ODT, or a start at 173000 where a boot ROM would sit. This machine
+has no boot ROM, so ODT is the mode to strap, and it is the entry point for
+everything below.
 
 **Sizing with nothing there.** `test_sizer()` returns 0 on this machine: the
 very first DATI times out. The probe, the map and the widget must read that as
 "the machine carries no memory", the normal case here, and the card must be
 claimable from address 0.
 
-**Clock.** BEVNT on the 11/73 rig comes from an external line clock. If this
-one has none, QBone's own `ltc_c` at 777546 supplies it, which some XXDP tests
-want.
+**Cache.** The KDJ11-A caches memory, so it must see the DMA writes the board
+makes into the range it serves. It does: the board drives the whole bus cycle
+and answers it itself (§1), so the address appears on the DAL as it would for
+any other master. Worth watching for anyway if a booted guest reads back what a
+disk transfer did not write.
+
+**Clock.** BEVNT on the other rig comes from an external line clock. If this one
+has none, QBone's own `ltc_c` at 777546 supplies it, which some XXDP tests want.
 
 The steps, in order, each one resting on the one before:
 
@@ -256,16 +272,20 @@ The steps, in order, each one resting on the one before:
    complete`), but only device registers have ever exercised it. Every `INC
    (R0)` against memory is a DATIO; run a loop that does one and check the
    count.
-5. **A program runs from it.** The KDF11-A has no boot ROM and QBUS has no
+5. **A program runs from it.** The M8192 has no boot ROM and QBUS has no
    emulated M9312, so a bootstrap is loaded with `POST /api/memory` and started
-   from ODT. Then a guest that fits 248 KB — RT-11, or the XXDP memory
-   exercisers, which read and write patterns across the whole range and are the
-   closest thing to a verdict on the card.
+   from ODT. Then the XXDP memory exercisers, which read and write patterns
+   across the whole range and are the closest thing to a verdict on the card.
 6. **DMA into the range.** An RL or MSCP disk transferring into memory the
-   board itself serves, which the PRU short-circuits without a bus cycle
-   (`pru1_statemachine_dma.c:209`). Booting RT-11 from `du0` covers it.
+   board itself serves, which the board answers as its own slave
+   (`pru1_statemachine_dma.c:209`).
+7. **A guest on 4 MB of board memory.** 2.11BSD wants 22-bit addressing and
+   more memory than a small card carries, and here every byte of it comes from
+   the board. Booting it from `du0` exercises the range under an operating
+   system that pages, and its boot message says how much memory it found.
 
-Two things this rig cannot answer, both needing the 11/73 and its 2 MB card:
+Two things this rig cannot answer, both needing the other machine and its 2 MB
+card:
 
 - **Block mode across the boundary.** With the whole space emulated there is no
   boundary. A DATBI block that starts in the physical card and would run past
@@ -283,9 +303,10 @@ Two things this rig cannot answer, both needing the 11/73 and its 2 MB card:
   claimed and its contents, so a program loaded with `POST /api/memory` and
   started from the console still works — the workflow the console notes
   describe. Only claiming or re-ranging the card clears it.
-- **2.11BSD is not a test for this rig.** It wants 22-bit addressing and far
-  more than 248 KB, so it stays a test for the 11/73 with the range above its
-  card.
+- **4 MB is the whole reservation.** A card claiming 0 .. 0o17757776 uses all of
+  the DDR the address space can reach. The device tree reserves 8 MB, so there
+  is room, but nothing else may be laid over that range — a device window has
+  nowhere to go on a machine whose memory covers everything.
 
 ## 12. State of the work
 
@@ -314,7 +335,7 @@ Left:
 
 ## 13. Order of work
 
-1. Measure the slave path with a hand-claimed range against the 11/23
+1. Measure the slave path with a hand-claimed range against the KDJ11-A
    (§10, steps 1–2). Everything else depends on the answer.
 2. `memory_c`, single range, arbitration against the VCB01 by refusal. Device
    list, parameters, configuration snapshots.
