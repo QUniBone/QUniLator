@@ -231,6 +231,12 @@ void qunibusdevice_c::reset_unibus_registers()
 	for (i = 0; i < register_count; i++) {
 		qunibusdevice_register_t *reg = &(registers[i]);
 		set_register_dati_value(reg, reg->reset_value, __func__);
+		// The write-side latch resets with the register. A DATOB writes one
+		// byte and takes the other from this latch (qunibusadapter DATOB
+		// merge); after INIT that byte must reflect the reset register, or a
+		// byte write resurrects pre-INIT bits — a DZV11 TCR high-byte DTR
+		// write, for one, would re-enable a transmitter cleared by INIT.
+		reg->active_dato_flipflops = reg->reset_value;
 		// log_register_event("RESET", reg) ;
 	}
 }
