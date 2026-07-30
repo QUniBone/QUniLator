@@ -54,6 +54,13 @@ if [ "$SCRATCH" = yes ]; then
 fi
 
 if [ "$DEUNA" = yes ]; then
+    # The controller sits on the veth end the board provides for it; the peer
+    # end is enslaved into br0 with eth0, so the LAN and the board itself both
+    # see the emulated machine. A tap directly on eth0 never hears the board's
+    # own traffic. The interface is settable only while the device is off, and
+    # it may still be on from the machine this one replaces.
+    set_param deuna enabled 0
+    set_param deuna interface veth-pdp
     set_param deuna enabled 1
 fi
 
