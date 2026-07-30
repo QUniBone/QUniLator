@@ -145,6 +145,28 @@ int simh_shim_device_info (const char *name, unsigned *base_addr, int *enabled);
    device or the file could not be opened. */
 int simh_shim_debug_device (const char *name, const char *filename);
 
+/* Put the processor's memory where the embedding wants it, rather than where
+   the core allocated it. A machine whose devices reach memory over a real bus
+   needs that memory somewhere the bus hardware can see, which is not the heap.
+   Call once, after the first reset has sized the memory; the core's own
+   allocation is released. Zero when the area offered is too small.
+
+   The core must not be asked to change its memory size afterwards - it would
+   free an allocation it does not own. */
+int simh_shim_memory_relocate (void *area, unsigned bytes);
+
+/* Give the memory back to the core, so it holds an allocation it may free.
+   Required before anything that resizes memory. Harmless when the core already
+   owns it. */
+int simh_shim_memory_restore (void);
+
+/* How much memory the machine has, so the embedding can check its area first. */
+unsigned simh_shim_memory_size (void);
+
+/* Copy the UNIBUS adapter's map registers out, for hardware that has to do the
+   same translation the core does. Returns how many were copied. */
+unsigned simh_shim_map_export (uint32_t *dest, unsigned count);
+
 /* Keep the last N instructions the processor executed, and write them out.
    Zero instructions switches the history off and frees it. The dump is the
    oldest kept first, which is the order they ran in. */

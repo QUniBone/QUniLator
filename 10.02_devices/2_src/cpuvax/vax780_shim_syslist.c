@@ -24,6 +24,9 @@
  * VMB before starting a boot.
  */
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "sim_defs.h"
 #include "vax_defs.h"
 #include "simh_shim.h"
@@ -167,4 +170,69 @@ state->instructions = sim_gtime ();
 int simh_shim_halted (simh_shim_status_t status)
 {
 return (status == STOP_HALT);
+}
+
+/* ------------------------------------------------------------------------ */
+/* The processor's memory, and the adapter's map                             */
+/*                                                                           */
+/* A machine whose devices reach memory over a real bus needs that memory     */
+/* where the bus hardware can see it, and the adapter's map registers with    */
+/* it - the hardware has to make the same translation the core makes.         */
+/* ------------------------------------------------------------------------ */
+
+unsigned simh_shim_memory_size (void)
+{
+return (unsigned) MEMSIZE;
+}
+
+/* Where the memory was put, when it is not the core's own allocation. The core
+   frees M whenever it resizes memory, so it must be holding an allocation of
+   its own by then - simh_shim_memory_restore() is what gives it one back. */
+static void *shim_foreign_memory = NULL;
+
+int simh_shim_memory_relocate (void *area, unsigned bytes)
+{
+if ((area == NULL) || (bytes < (unsigned) MEMSIZE))
+    return 0;
+if (M == NULL)
+    return 0;                                           /* not sized yet */
+if (M == (uint32 *) area)
+    return 1;                                           /* already there */
+memcpy (area, M, (size_t) MEMSIZE);                     /* keep what is there */
+free (M);
+M = (uint32 *) area;
+shim_foreign_memory = area;
+return 1;
+}
+
+int simh_shim_memory_restore (void)
+{
+uint32 *heap;
+
+if ((M == NULL) || (M != (uint32 *) shim_foreign_memory))
+    return 1;                                           /* the core owns it */
+heap = (uint32 *) calloc (((uint32) MEMSIZE) >> 2, sizeof (uint32));
+if (heap == NULL)
+    return 0;
+memcpy (heap, M, (size_t) MEMSIZE);
+M = heap;
+shim_foreign_memory = NULL;
+return 1;
+}
+
+unsigned simh_shim_map_export (uint32_t *dest, unsigned count)
+{
+/* The DW780's map register file: one per 512 byte page of the eighteen bit
+   address space, which is 496 of them. */
+#define UBA_NMAPR 496
+extern uint32 uba_map[UBA_NMAPR];
+unsigned i;
+
+if (dest == NULL)
+    return 0;
+if (count > UBA_NMAPR)
+    count = UBA_NMAPR;
+for (i = 0; i < count; i++)
+    dest[i] = (uint32_t) uba_map[i];
+return count;
 }

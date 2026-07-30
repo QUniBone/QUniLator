@@ -21,6 +21,7 @@
 #include "mailbox.h"
 #include "qunibus.h"
 #include "qunibusadapter.hpp"
+#include "ddrmem.h"
 #include "cpuvax.hpp"
 
 #include "cpu_bus_adapter.h"          // unibone_prioritylevelchange()
@@ -304,11 +305,37 @@ bool cpuvax_c::configure_machine(void)
 
     // Memory goes through the processor's own setting, which sizes the array
     // and tells the memory controllers what they answer for.
+    // Sizing the memory frees the array, so the core has to be holding its own
+    // allocation and not the shared range it was last given.
+    if (!simh_shim_memory_restore()) {
+        ERROR("VAX memory could not be handed back to the processor");
+        return false;
+    }
     snprintf(setting, sizeof setting, "CPU %uM", (unsigned) memory_mb.value);
     if ((r = simh_shim_set(setting)) != 0) {
         ERROR("VAX memory size %u MB refused: %s",
               (unsigned) memory_mb.value, simh_shim_status_text(r));
         return false;
+    }
+
+    // The processor's memory goes into the range the board shares with the PRU,
+    // because that is the memory a device on the bus has to be able to reach.
+    // Until it is there, a transfer can only be answered by this program.
+    {
+        unsigned have = sizeof(ddrmem->base_virtual->memory);
+        unsigned want = simh_shim_memory_size();
+
+        if (want > have) {
+            ERROR("VAX memory is %u MB and the board shares %u MB with the bus;"
+                  " lower the memory parameter", want >> 20, have >> 20);
+            return false;
+        }
+        if (!simh_shim_memory_relocate((void *) &ddrmem->base_virtual->memory, have)) {
+            ERROR("VAX memory could not be moved into the shared range");
+            return false;
+        }
+        INFO("%u MB of memory in the range shared with the bus, at 0x%08x",
+             want >> 20, ddrmem->base_physical);
     }
 
     {
