@@ -93,11 +93,13 @@ int ddrmem_c::slot_of(uint32_t addr) const
 
 // A transfer is served from DDR only if one range holds all of it: a block
 // straddling the end of a range is half on the bus and must go over the bus.
+// endaddr is the last word address, so the odd byte above it is in the range
+// too — a DATOB there is served, as the PRU's limit address says.
 bool ddrmem_c::contains(uint32_t addr, unsigned byte_count) const
 {
 	int slot = slot_of(addr);
 	return slot >= 0 && byte_count > 0
-			&& (uint64_t) addr + byte_count - 1 <= ranges[slot].endaddr;
+			&& (uint64_t) addr + byte_count - 1 <= (uint64_t) ranges[slot].endaddr + 1;
 }
 
 // read/write ddr memory locally

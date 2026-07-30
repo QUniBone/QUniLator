@@ -58,7 +58,7 @@ private:
 	// have the PRU answer the range out of DDR, or refuse and say why
 	bool claim(uint32_t start, uint32_t end);
 	void release(void);
-	void update_size(void);
+	void update_size(bool claimed);
 };
 
 #endif // _MEMORY_HPP_

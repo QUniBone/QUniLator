@@ -33,7 +33,7 @@ memory_c::memory_c() :
 	// carries no memory of its own
 	endaddr.value = qunibus->iopage_start_addr ? qunibus->iopage_start_addr - 2 : 0;
 	probe.value = true;
-	update_size();
+	update_size(/*claimed*/false);
 }
 
 memory_c::~memory_c()
@@ -42,12 +42,15 @@ memory_c::~memory_c()
 		release();
 }
 
-// The claimed size, as a card is described: "2040 KB", "4 MB".
-void memory_c::update_size(void)
+// The claimed size, as a card is described: "2040 KB", "4 MB". Called with the
+// enabled state the change is settling on: a parameter's value is committed
+// after on_param_changed() has accepted it, so enabled.value still holds the
+// state being left.
+void memory_c::update_size(bool claimed)
 {
 	char buf[32];
-	if (!enabled.value || startaddr.value > endaddr.value) {
-		size.value = "none";
+	if (!claimed || startaddr.value > endaddr.value) {
+		size.set("none");
 		return;
 	}
 	uint32_t kb = (endaddr.value - startaddr.value + 2) / 1024;
@@ -55,7 +58,7 @@ void memory_c::update_size(void)
 		snprintf(buf, sizeof buf, "%u MB", kb / 1024);
 	else
 		snprintf(buf, sizeof buf, "%u KB", kb);
-	size.value = buf;
+	size.set(buf);
 }
 
 // claim(): have the PRU answer [start, end] out of DDR.
@@ -116,16 +119,17 @@ bool memory_c::on_param_changed(parameter_c *param)
 				return false;
 		} else
 			release();
-	} else if (param == &startaddr || param == &endaddr) {
-		if (enabled.value) {
-			// a card is re-strapped out of the backplane
-			ERROR("disable the card before moving its range");
+		if (!device_c::on_param_changed(param))
 			return false;
-		}
+		update_size(enabled.new_value);
+		return true;
 	}
-	bool accepted = device_c::on_param_changed(param);
-	update_size();
-	return accepted;
+	if ((param == &startaddr || param == &endaddr) && enabled.value) {
+		// a card is re-strapped out of the backplane
+		ERROR("disable the card before moving its range");
+		return false;
+	}
+	return device_c::on_param_changed(param);
 }
 
 // Memory keeps its contents across INIT, and across the DCLO/ACLO sequence the
