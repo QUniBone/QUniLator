@@ -354,7 +354,7 @@ $(OBJDIR)/main_qbone_web.o : main_qbone_web.cpp application.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 
-$(OBJDIR)/application.o :  application.cpp application.hpp $(PRU_DEPLOY_DIR)/$(PRU0_CODE) $(PRU_DEPLOY_DIR)/$(PRU1_CODE)
+$(OBJDIR)/application.o :  application.cpp application.hpp $(QUNILATOR_ROOT)/packaging/debian/changelog $(PRU_DEPLOY_DIR)/$(PRU0_CODE) $(PRU_DEPLOY_DIR)/$(PRU1_CODE)
 	$(CC) $(CCFLAGS) $< -o $@
 
 
@@ -716,7 +716,7 @@ $(OBJDIR)/weblogging.o :  $(WEB_SRC_DIR)/weblogging.cpp $(WEB_SRC_DIR)/webloggin
 $(OBJDIR)/webauth.o :  $(WEB_SRC_DIR)/webauth.cpp $(WEB_SRC_DIR)/webauth.hpp $(WEB_SRC_DIR)/websettings.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/webversion.o :  $(WEB_SRC_DIR)/webversion.cpp $(WEB_SRC_DIR)/webversion.hpp
+$(OBJDIR)/webversion.o :  $(WEB_SRC_DIR)/webversion.cpp $(WEB_SRC_DIR)/webversion.hpp $(QUNILATOR_ROOT)/packaging/debian/changelog
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webupdate.o :  $(WEB_SRC_DIR)/webupdate.cpp $(WEB_SRC_DIR)/webupdate.hpp $(WEB_SRC_DIR)/websettings.hpp $(WEB_SRC_DIR)/webversion.hpp
