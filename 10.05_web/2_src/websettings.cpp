@@ -55,6 +55,10 @@ static std::mutex settings_mutex; // guards ext_console
 // port is a bare tty name (rs232_c prepends /dev/), matching the SLU convention
 static external_console_c ext_console = { "webserial", "ttyS2", 38400 };
 static std::string settings_path;
+static std::string state_dir;
+// The update version the operator dismissed. On the board rather than in one
+// browser, so every page agrees about what is being announced.
+static std::string dismissed_version;
 // Whether the board runs the emulated KA11. Read once at startup, before the
 // device set is built, and honoured on the UNIBUS build alone.
 static bool emulated_cpu = false;
@@ -114,6 +118,11 @@ static void load_settings(void) {
 		emulated_cpu = v.get("emulated_cpu").get<bool>();
 	if (v.get("internal_bus").is<bool>())
 		internal_bus = v.get("internal_bus").get<bool>();
+	const picojson::value &upd = v.get("update");
+	if (upd.is<picojson::object>() && upd.get("dismissed_version").is<std::string>()) {
+		std::lock_guard<std::mutex> lock(settings_mutex);
+		dismissed_version = upd.get("dismissed_version").get<std::string>();
+	}
 	const picojson::value &ec = v.get("external_console");
 	if (!ec.is<picojson::object>())
 		return;
@@ -133,6 +142,9 @@ static void save_settings(void) {
 		root["external_console"] = external_console_json();
 		root["emulated_cpu"] = picojson::value(emulated_cpu);
 		root["internal_bus"] = picojson::value(internal_bus);
+		picojson::object upd;
+		upd["dismissed_version"] = picojson::value(dismissed_version);
+		root["update"] = picojson::value(upd);
 	}
 	picojson::value admin = webauth_json();
 	if (!admin.is<picojson::null>())
@@ -180,6 +192,23 @@ void websettings_set_internal_bus(bool on) {
 		internal_bus = on;
 	}
 	save_settings();
+}
+
+std::string websettings_dismissed_version(void) {
+	std::lock_guard<std::mutex> lock(settings_mutex);
+	return dismissed_version;
+}
+
+void websettings_set_dismissed_version(const std::string &version) {
+	{
+		std::lock_guard<std::mutex> lock(settings_mutex);
+		dismissed_version = version;
+	}
+	save_settings();
+}
+
+std::string websettings_state_dir(void) {
+	return state_dir;
 }
 
 void websettings_set_emulated_cpu(bool on) {
@@ -323,7 +352,8 @@ void websettings_startup(void) {
 	const char *base = getenv("QUNILATOR_DIR");
 	if (base == nullptr)
 		base = getenv("HOME");
-	settings_path = std::string(base ? base : ".") + "/settings.json";
+	state_dir = std::string(base ? base : ".");
+	settings_path = state_dir + "/settings.json";
 	load_settings();
 }
 

@@ -55,6 +55,7 @@
 #include "websettings.hpp"
 #include "weblogging.hpp"
 #include "webversion.hpp"
+#include "webupdate.hpp"
 
 static void send_json(struct mg_connection *conn, int status, const picojson::value &val) {
 	std::string body = val.serialize();
@@ -763,6 +764,10 @@ void webapi_register(struct mg_context *ctx) {
 	// after websettings_register: the persisted log levels are loaded, so
 	// weblogging_register can apply them to the logger
 	weblogging_register(ctx);
+	// after websettings_register too: the updater's state directory sits inside
+	// the state directory that call resolves, and the dismissed version is read
+	// from the same settings file
+	webupdate_register(ctx);
 	webevents_register(ctx);
 	webconsole_register(ctx);
 	webconsole_ext_register(ctx);

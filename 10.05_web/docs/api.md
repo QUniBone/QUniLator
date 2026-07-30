@@ -545,6 +545,100 @@ the latest); `limit` defaults to 200, max 1000. `more` is true when older
 entries remain to page in. Live lines continue to arrive on `/ws/events` with
 the same `id`/`time`, so a client merges the two by `id`.
 
+## Self-update
+
+The service does not run apt. `/usr/sbin/qunilator-update` does, in its own
+systemd unit, because installing the emulator package restarts this very service:
+a dpkg running as a child of it would be killed with it, mid-install. So the
+updater owns `$QUNILATOR_DIR/updates/status.json` and writes each step to it,
+and these endpoints publish that file and start the updater's units.
+
+### `GET /api/update`
+
+```json
+{"state": "idle", "package": "qbone", "source_configured": true,
+ "checked_at": "2026-07-30T09:12:00Z", "installed": "1.12.0-1",
+ "candidate": "1.13.0-1", "rollback": true, "needs_repair": false,
+ "dismissed": "", "os": {"count": 4, "packages": [], "held_back": [],
+ "reboot_required": false}, "last": {"state": "done", "from": "1.11.0-1",
+ "to": "1.12.0-1", "at": "2026-07-28T06:40:11Z"}, "error": "", "journal": []}
+```
+
+`state` is `idle`, `checking`, `ahead`, `downloading`, `installing`,
+`verifying`, `os-upgrading`, `done`, `failed` or `rolled-back`. `ahead` means the
+repository offers an older version than the board runs, which is what a
+development board carrying a hand-built package sees.
+
+`source_configured` is false on a board installed by hand with `dpkg -i`: it has
+no apt source, so it has no self-update, and `error` says so. `rollback` is true
+when a cached copy of another version is present, which
+`qunilator-update --rollback` reinstalls. `needs_repair` reports a dpkg
+interrupted by a power loss; the next install repairs it first. `journal` carries
+the failed unit's last lines when an install did not work. `last` is the previous
+install's outcome, so a page that reconnects after one is told how it went.
+
+`dismissed` is the version an operator has told the interface to stop announcing.
+It is kept in `settings.json` (`update.dismissed_version`), so it belongs to the
+board rather than to one browser.
+
+`os` is what else the board could upgrade, the emulator package excluded — see
+[`POST /api/update/os`](#post-apiupdateos).
+
+### `POST /api/update/check`
+
+Starts `qunilator-update-check.service` and answers `202`. The result arrives as
+an `update` event; nothing is installed. The same check runs from a timer five
+minutes after boot and daily after that.
+
+### `GET /api/update/changelog`
+
+```json
+{"changelog": "qbone (1.13.0-1) trixie; urgency=low\n\n  * ...\n"}
+```
+
+The candidate package's own changelog stanzas newer than the installed version —
+the text that shipped, byte for byte. The updater downloads the candidate to read
+it, which takes a moment; the download doubles as the staging step an install
+wants anyway. `502` when the candidate could not be fetched.
+
+### `POST /api/update/install`
+
+```json
+{"version": "1.13.0-1"}
+```
+
+Answers `202`; the install runs in `qunilator-update.service`, its own cgroup, and
+reports through `update` events. The version must be the candidate the last check
+recorded — anything else is refused with `422`, and `409` answers a board with no
+candidate or an update already running. The version is written to a request file
+for the updater to read, so no string from a request reaches a command line.
+
+**This stops the emulated machine.** The device set is shut down in order, so the
+images are flushed, but a running Unix or RSX has its buffer cache cut, and the
+board comes back up in its startup configuration rather than the one it was
+running. The install then waits for the new service to come up and stay up, and
+reinstalls the previous version if it does not.
+
+### `POST /api/update/os`
+
+Upgrades the board's other packages, in `qunilator-update-os.service`. Answers
+`202`, or `409` while another update runs.
+
+**This path has no rollback** — apt cannot undo an upgrade. It holds the emulator
+package back, so a running machine keeps running and is not stopped at all; it
+uses `upgrade` rather than `full-upgrade`, so no package is removed to satisfy
+another, and what that holds back is reported; and it never reboots the board.
+`os.reboot_required` afterwards is the operator's own call.
+
+### `POST /api/update/dismiss`
+
+```json
+{"version": "1.13.0-1"}
+```
+
+Stops announcing that version. An empty string clears the dismissal, and a later
+version announces itself again.
+
 ## WebSockets
 
 ### `/ws/events`
@@ -557,6 +651,7 @@ Text frames, one JSON event each, pushed to every connected client:
 | `{"t":"log","id":n,"time":…,"level":n,"label":…,"text":…}` | log message; levels 1 FATAL … 5 DEBUG. `id` and `time` (server clock) match the journal ([`GET /api/log`](#get-apilogbeforeidlimitn)), so a client merges live lines with a fetched page by `id` |
 | `{"t":"state","halt":…,"powered":…,"leds":[…],"switches":[…],"init":…,"dcok":…,"pok":…}` | activity LEDs, DIP switches, HALT, the logical power flag, bus INIT/DCOK/POK — published on change (10 Hz poll); a full snapshot opens every connection. `powered` is the runtime power flag driven by `dc_on`/`dc_off`; the dashboard derives RUN from `!halt && powered` and PWR OK from `powered`. Transitions may arrive as partial `state` frames (e.g. `{"t":"state","powered":false}`), which the client merges onto the last snapshot |
 | `{"t":"config","current":…,"modified":…}` | current configuration and the live modified flag — published on apply, save, rename, and whenever the modified flag flips (10 Hz poll); a snapshot opens every connection |
+| `{"t":"update", …}` | the update status, the same object [`GET /api/update`](#get-apiupdate) answers. Published whenever the updater's status file changes (the service stats it once a second), and as a snapshot on every new connection — so a second tab, and a tab opened during an install, both know what is going on |
 
 ### `/ws/console/0`, `/ws/console/1`
 

@@ -244,6 +244,7 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/weblogging.o	\
 	$(OBJDIR)/webauth.o	\
 	$(OBJDIR)/webversion.o	\
+	$(OBJDIR)/webupdate.o	\
 	$(OBJDIR)/civetweb.o
 endif
 
@@ -609,7 +610,7 @@ $(OBJDIR)/device_status.o :  $(WEB_SRC_DIR)/device_status.cpp $(WEB_SRC_DIR)/dev
 $(OBJDIR)/webcontrol.o :  $(WEB_SRC_DIR)/webcontrol.cpp $(WEB_SRC_DIR)/webcontrol.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/webevents.o :  $(WEB_SRC_DIR)/webevents.cpp $(WEB_SRC_DIR)/webevents.hpp
+$(OBJDIR)/webevents.o :  $(WEB_SRC_DIR)/webevents.cpp $(WEB_SRC_DIR)/webevents.hpp $(WEB_SRC_DIR)/webupdate.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webconsole.o :  $(WEB_SRC_DIR)/webconsole.cpp $(WEB_SRC_DIR)/webconsole.hpp $(WEB_SRC_DIR)/webconsole_channel.hpp device_configuration.hpp
@@ -643,6 +644,9 @@ $(OBJDIR)/webauth.o :  $(WEB_SRC_DIR)/webauth.cpp $(WEB_SRC_DIR)/webauth.hpp $(W
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webversion.o :  $(WEB_SRC_DIR)/webversion.cpp $(WEB_SRC_DIR)/webversion.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/webupdate.o :  $(WEB_SRC_DIR)/webupdate.cpp $(WEB_SRC_DIR)/webupdate.hpp $(WEB_SRC_DIR)/websettings.hpp $(WEB_SRC_DIR)/webversion.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 # civetweb is C, compiled with its own flags

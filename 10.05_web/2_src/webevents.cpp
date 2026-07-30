@@ -47,6 +47,7 @@
 #include "webevents.hpp"
 #include "webconfigs.hpp"
 #include "webstorage.hpp"
+#include "webupdate.hpp"
 
 // clients, guarded by clients_mutex; writes only from the broadcast thread
 static std::mutex clients_mutex;
@@ -470,6 +471,14 @@ static void broadcast_loop(void) {
 		poll_hardware();
 		poll_status_params();
 		publish_config(false); // emit a config event when the modified flag flips
+		// The updater writes its progress to a status file from its own unit, so
+		// the only way the service learns of it is by watching that file. One
+		// stat a second, which webupdate_poll() paces itself to.
+		if (webupdate_poll()) {
+			std::string msg = webupdate_event_json();
+			if (!msg.empty())
+				enqueue_str(msg); // goes out with the next batch, like the others
+		}
 		if (batch.empty())
 			continue;
 		std::lock_guard<std::mutex> lock(clients_mutex);
@@ -508,12 +517,19 @@ static void ws_ready_handler(struct mg_connection *conn, void *) {
 		if (config_known)
 			config = config_json_locked();
 	}
+	// The update status opens the stream too, so a tab opened during an install -
+	// or one reconnecting after the service was replaced by it - knows at once
+	// what is going on and how it went.
+	std::string update = webupdate_event_json();
 	std::lock_guard<std::mutex> lock(clients_mutex);
 	mg_websocket_write(conn, MG_WEBSOCKET_OPCODE_TEXT, snapshot.c_str(),
 			snapshot.size());
 	if (!config.empty())
 		mg_websocket_write(conn, MG_WEBSOCKET_OPCODE_TEXT, config.c_str(),
 				config.size());
+	if (!update.empty())
+		mg_websocket_write(conn, MG_WEBSOCKET_OPCODE_TEXT, update.c_str(),
+				update.size());
 	clients.insert(conn);
 }
 

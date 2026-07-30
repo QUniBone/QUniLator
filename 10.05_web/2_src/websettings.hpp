@@ -33,6 +33,15 @@ void websettings_set_internal_bus(bool on);
 // webauth.cpp calls this when it changes.
 void websettings_save(void);
 
+// The update version an operator has told the interface to stop announcing. It
+// belongs to the board rather than to one browser, so it is persisted here; a
+// later version announces itself again.
+std::string websettings_dismissed_version(void);
+void websettings_set_dismissed_version(const std::string &version);
+
+// $QUNILATOR_DIR, the state directory the service was given.
+std::string websettings_state_dir(void);
+
 // external console selection, consumed by the ttyS2 bridge (/ws/console/ext)
 struct external_console_c {
 	std::string source; // "webserial" | "ttys2" | "off"
