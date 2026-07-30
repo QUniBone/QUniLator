@@ -2,6 +2,7 @@
 import { store, setStore, emit, emitSoon } from '../store';
 import { patchParam } from './devmodel';
 import { wsURL } from './util';
+import { syncVersion } from './version';
 import type { LogLevelName, LogLine } from '../types';
 
 const LOG_LEVELS: Record<number, LogLevelName> = {
@@ -16,7 +17,13 @@ export let eventsWs: WebSocket | null = null;
 
 export function initEvents(): void {
   eventsWs = new WebSocket(wsURL('/ws/events'));
-  eventsWs.onopen = () => setStore({ connected: true });
+  eventsWs.onopen = () => {
+    setStore({ connected: true });
+    // A reconnect is where a replaced service is noticed: the socket dropping
+    // and coming back is exactly what a restart looks like from here, so this
+    // is where the page checks whether it is still talking to its own version.
+    syncVersion().catch(() => {});
+  };
   eventsWs.onmessage = (e) => {
     let ev: any;
     try {

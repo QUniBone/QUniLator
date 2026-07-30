@@ -18,6 +18,30 @@ Identifies the bridge.
 {"platform": "QBUS", "api_version": 0}
 ```
 
+### `GET /api/version`
+
+What this board runs.
+
+```json
+{"package": "qbone", "version": "1.13.0-1", "built": "2026-07-30T09:12:00",
+ "api_version": 0}
+```
+
+`package` is the Debian package that owns the binary — `qbone` on a QBUS cape,
+`unibone` on a UNIBUS one — which is also the unit, the binary under
+`/usr/bin` and the apt source file. `version` is compiled in from
+`packaging/debian/changelog`, the same source the package's version comes from,
+so the two cannot disagree. `built` is the compile timestamp as ISO 8601 in the
+build machine's local time (no zone).
+
+The service also writes the version to `/run/qunilator/version` at startup, which
+is how the updater confirms that the instance answering after an install is the
+new one without authenticating.
+
+A page compares the version it was built from with what this reports and reloads
+when they differ, so an upgrade — through the interface or a hand-run
+`apt upgrade` — carries every open page onto the matching bundle.
+
 ## Admin password
 
 Every request needs HTTP basic auth once a password is set - static files and

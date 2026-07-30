@@ -92,7 +92,7 @@ if [ ! -x $BINARY ] || [ ! -x $BINARY_DEMO ]; then
     exit 1
 fi
 
-VERSION=$(sed -n 's/^[a-z]* (\([^)]*\)).*/\1/p' packaging/debian/changelog | head -1)
+VERSION=$(packaging/version.sh)
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 # mktemp makes it private; the package root has to be world readable

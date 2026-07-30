@@ -24,6 +24,11 @@ export interface Store {
   configCurrent: string; // the running configuration's name
   configModified: boolean | null; // live setup differs from saved current; null when the busy machine blocked the compare
   platform: string;
+  // what the board runs, from GET /api/version: the package that owns the
+  // binary, its version and its build timestamp
+  serverPackage: string;
+  serverVersion: string;
+  serverBuilt: string;
   connected: boolean;
   bus: BusState;
   hw: HwState;
@@ -50,6 +55,9 @@ export const store: Store = {
   configCurrent: '',
   configModified: null,
   platform: '',
+  serverPackage: '',
+  serverVersion: '',
+  serverBuilt: '',
   connected: false,
   bus: { halted: false, init: false },
   hw: {

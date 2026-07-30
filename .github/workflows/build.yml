@@ -75,6 +75,22 @@ jobs:
       - name: Build the package
         run: ./packaging/build-deb.sh ${{ matrix.flag }}
 
+      - name: Check the compiled-in version is the changelog version
+        # The package, the binary and the web bundle all derive their version
+        # from packaging/debian/changelog through packaging/version.sh. A service
+        # that reports a version other than the one the installed package
+        # carries cannot verify its own update, so require all three to agree.
+        run: |
+          ver=$(./packaging/version.sh)
+          echo "changelog version: $ver"
+          strings -a 10.03_app_demo/4_deploy${{ matrix.suffix }}/qbone-web \
+            | grep -qF "$ver, compile " \
+            || { echo "the binary does not carry version $ver" >&2; exit 1; }
+          grep -qF "$ver" 10.05_web/3_frontend/dist/assets/*.js \
+            || { echo "the web bundle does not carry version $ver" >&2; exit 1; }
+          ls *_"$ver"_armhf.deb \
+            || { echo "no package built for version $ver" >&2; exit 1; }
+
       - name: Check the package installs cleanly
         run: |
           deb=$(ls *_armhf.deb)

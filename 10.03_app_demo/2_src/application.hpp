@@ -44,7 +44,15 @@
 #include "qunibusdevice.hpp"
 
 #define PROGNAME	"demo"
-#define VERSION	"v1.5.0"
+
+// The makefiles define this from packaging/debian/changelog, so the binary and
+// the package that ships it always name the same version. A build outside them
+// (an editor's index, a host-side test) says so instead of naming a version it
+// cannot have.
+#ifndef QUNILATOR_VERSION
+#define QUNILATOR_VERSION	"0.0.0-dev"
+#endif
+#define VERSION	QUNILATOR_VERSION
 
 class application_c: public logsource_c {
 public:

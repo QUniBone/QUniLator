@@ -12,6 +12,12 @@ Requires=qunilator-network.service
 Type=simple
 Environment=QUNILATOR_DIR=/var/lib/qunilator
 WorkingDirectory=/var/lib/qunilator
+# /run/qunilator, where the service records the version it is running. systemd
+# removes it when the unit stops, so a stale file cannot make a service that
+# failed to come up look like one that did - which is what the updater's health
+# check reads it for.
+RuntimeDirectory=qunilator
+RuntimeDirectoryMode=0755
 # The PRU cores are driven through remoteproc, and pru_rproc binds them a
 # moment after the modules load: on a cold boot the emulator would otherwise
 # reach for PRUs that are not there yet and exit. Wait for both cores to carry

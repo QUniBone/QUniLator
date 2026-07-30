@@ -9,6 +9,12 @@ PROG_WEB = qbone-web
 # QUNILATOR_DIR from environment
 QUNILATOR_ROOT = $(QUNILATOR_DIR)
 
+# The version the binary reports, taken from packaging/debian/changelog - the
+# same source the package's version comes from. The service publishes it on
+# /api/version and writes it to /run/qunilator/version, which is what proves to
+# the updater that the instance answering is the one the new package installed.
+QUNILATOR_VERSION := $(shell $(QUNILATOR_ROOT)/packaging/version.sh)
+
 PRU_PACKAGE_ROOT = $(QUNILATOR_ROOT)/91_3rd_party/am335x_pru_package
 
 COMMON_SRC_DIR= $(QUNILATOR_ROOT)/90_common/src
@@ -91,6 +97,7 @@ CCFLAGS= \
 	-I$(OBJDIR)	\
 	-I$(PRU_DEPLOY_DIR)	\
 	$(CC_CODE_FLAGS)        \
+	-DQUNILATOR_VERSION=\"$(QUNILATOR_VERSION)\"	\
 	-c	\
 	$(CCDEFS) $(CC_DBG_FLAGS) $(OS_CCDEFS)
 # OBJDIR in includes because of $(PRU_CODE)
@@ -234,6 +241,7 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/websettings.o	\
 	$(OBJDIR)/weblogging.o	\
 	$(OBJDIR)/webauth.o	\
+	$(OBJDIR)/webversion.o	\
 	$(OBJDIR)/civetweb.o
 endif
 
@@ -623,6 +631,9 @@ $(OBJDIR)/weblogging.o :  $(WEB_SRC_DIR)/weblogging.cpp $(WEB_SRC_DIR)/webloggin
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webauth.o :  $(WEB_SRC_DIR)/webauth.cpp $(WEB_SRC_DIR)/webauth.hpp $(WEB_SRC_DIR)/websettings.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/webversion.o :  $(WEB_SRC_DIR)/webversion.cpp $(WEB_SRC_DIR)/webversion.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 # civetweb is C, compiled with its own flags

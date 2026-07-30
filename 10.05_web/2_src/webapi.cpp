@@ -54,6 +54,7 @@
 #include "webconfigs.hpp"
 #include "websettings.hpp"
 #include "weblogging.hpp"
+#include "webversion.hpp"
 
 static void send_json(struct mg_connection *conn, int status, const picojson::value &val) {
 	std::string body = val.serialize();
@@ -749,6 +750,9 @@ static int api_log_handler(struct mg_connection *conn, void * /*cbdata*/) {
 }
 
 void webapi_register(struct mg_context *ctx) {
+	// first, so the version this instance runs is on record and in
+	// /run/qunilator/version before anything else can be asked of it
+	webversion_register(ctx);
 	mg_set_request_handler(ctx, "/api/devices", api_devices_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/control", api_control_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/memory", api_memory_handler, nullptr);
