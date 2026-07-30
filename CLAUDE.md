@@ -131,12 +131,20 @@ compiler warnings or spurious language-server errors behind.
 
 The 11/73 CPU board carries no memory; a Q-bus memory card supplies it, and the
 test rig uses a **2 MB card**. So the low 2 MB of the 22-bit space is backed by
-that card, and the range from 2 MB up to the I/O page is nonexistent memory that
-answers with a bus timeout. QBone does not fill that range under `qbone.service`:
-`emulate_memory()` runs only from the interactive device-exerciser menus, never at
-service startup. An emulated device that needs a window in bus address space is
-therefore clear of memory above 2 MB and collides with the card below it; a
-different-sized card moves that boundary.
+that card, and the range from 2 MB up to the I/O page answers with a bus timeout
+until something claims it. A different-sized card moves that boundary.
+
+The board can supply memory itself: the **`MEM` device** (type `MSV11`) has the
+PRU answer one address range out of the board's DDR, with `startaddr`/`endaddr`
+naming the range. It ships disabled, and enabling it probes the range first and
+refuses when anything already answers there — a range claimed over the card
+would put two slaves on one cycle. `GET /api/memory/map` shows the address space
+and `POST /api/memory/probe` sizes what the machine carries.
+
+The PRU holds two such ranges. `MEM` takes one and a device that needs a window
+in bus address space (the VCB01 framebuffer) takes the other, so a machine can
+carry both — but two ranges may not overlap, and a device window still has to
+clear whatever memory answers below it.
 
 An **external line clock** drives BEVNT on the Q-bus, so the line-clock interrupt
 (vector 100, BR 6) is present without enabling QBone's own emulated `KW11`

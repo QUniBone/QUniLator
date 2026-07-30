@@ -287,7 +287,32 @@ Two things this rig cannot answer, both needing the 11/73 and its 2 MB card:
   more than 248 KB, so it stays a test for the 11/73 with the range above its
   card.
 
-## 12. Order of work
+## 12. State of the work
+
+Built, and building clean for the board and the frontend:
+
+- `memory_c` (`10.02_devices/2_src/memory.{hpp,cpp}`), the `MEM` device, with
+  `startaddr`/`endaddr`/`probe` and a derived `size`. Registered in the device
+  set, so `/api/devices`, the parameter endpoint and configuration snapshots
+  carry it with no work of their own.
+- Two ranges in the PRU, tested in line by `DDRMEM_ADDR_EMULATED`;
+  `ddrmem_c::set_range(slot, …)` with `contains()`, `slot_of()`,
+  `overlapping_slot()`, `clear_range()` and `fill_range()`. The VCB01 bank moved
+  to the device slot; the DEUNA's DMA shortcut moved to `contains()`.
+- `qunibus_c::probe_range()`, and the claim that refuses on what it finds.
+- `GET /api/memory/map`, `POST /api/memory/probe`, `POST /api/memory/fill`,
+  documented in `api.md`.
+- The `MemoryWidget` address-space bar, registered for the `memory` category.
+
+Left:
+
+- Everything in §10 and §11: none of it has met a machine yet.
+- The bundled configurations. The named machines (`211bsd` and the rest) live in
+  `/var/lib/qunilator/configs` on the board rather than in this repository, so a
+  memory card goes into them there — and the 11/73 carries its own 2 MB, so the
+  card belongs in a configuration only where the machine needs it.
+
+## 13. Order of work
 
 1. Measure the slave path with a hand-claimed range against the 11/23
    (§10, steps 1–2). Everything else depends on the answer.
