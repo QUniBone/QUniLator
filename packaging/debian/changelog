@@ -1,3 +1,52 @@
+qbone (1.13.0-1) trixie; urgency=low
+
+  * The web interface announces a newer package when one is published, shows the
+    candidate's own changelog since the version the board runs, and installs it.
+    The install runs in its own systemd unit, so replacing the service cannot
+    kill the install performing it; the new version must come up, answer, and
+    still be running ten seconds later, or the previous package is put back. The
+    page rides the restart out and reloads onto the matching bundle, and any page
+    whose version differs from the server's reloads, so an "apt upgrade" over ssh
+    carries open tabs across too. A System page holds the version, the check, the
+    changelog and the board's other package updates; "qunilator-update" is the
+    same mechanism from the command line. The daily check installs nothing on its
+    own, and unattended upgrades are kept away from the emulator package, which
+    would otherwise stop a running machine with no warning.
+  * A VAX-11/780 runs on the board: the processor is a device of the application,
+    its UNIBUS I/O page is on the bus, a device's interrupt reaches it at the bus
+    request level it was raised with, and a device's DMA goes through the UNIBUS
+    map into the processor's memory. VMS boots from the emulated UDA50 over the
+    bus, and the DEC diagnostics run. The dashboard carries the processor's card
+    and its console.
+  * The board can supply the machine's memory out of its own DDR, one address
+    range answered by the PRU. The range is probed before it is claimed, so it
+    cannot put two slaves on one cycle, and the memory card draws the address
+    space with what answers where.
+  * Disk images take copy-on-write overlays: every write since the overlay was
+    made is captured beside the image and the base file is never touched. An
+    overlay can be discarded, folded into the base, or written out flattened.
+  * A PDP-11/34 with KT11-D memory management runs beside the PDP-11/20, chosen
+    at startup, and the CPU card shows the status word, the MMU and the bus
+    registers. The bus mode is chosen at startup rather than at build time, so
+    one binary serves a board driving a backplane and a board that is a machine
+    by itself.
+  * Disk images live in a folder tree, reachable over SMB, FTP and SFTP, and the
+    interface lists the files inside an RT-11 or Files-11 image without mounting
+    it.
+  * An MSCP disk announces the image's size by default, so a drive type smaller
+    than its image no longer truncates it into hard errors.
+  * The RX211 carries an MXV-22 mode with 22-bit DMA, which is what 2.11BSD needs
+    to read and write an RX02.
+  * The DZV11 presents TRDY without waiting on a bus access and clears its write
+    latches on Master Clear, so 2.11BSD's transmit loop completes; the DELQA's
+    interrupt is modelled level-sensitively, so a completion is not stranded.
+  * The DEUNA moves data over the bus, derives a station address of its own, and
+    lets a stopped controller sleep.
+  * The workstation MCP server runs XXDP diagnostics over the console reliably,
+    and reads a pack's directory without booting XXDP.
+
+ -- Hans Huebner <hans.huebner@gmail.com>  Thu, 30 Jul 2026 16:10:00 +0200
+
 qbone (1.12.0-1) trixie; urgency=low
 
   * The web interface and the service's startup banners show the software's own
