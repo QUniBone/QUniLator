@@ -861,3 +861,58 @@ than in DDR, which would halve the addition.
 board for the same reason. It is the sharpest test stage 4 has - a real
 controller running the same driver as an emulated one - and it needs a UniBone
 in a backplane.
+
+## Stage 5 — the software that has never driven these models
+
+### `uda.cpp` under VMS `DUDRIVER`
+
+VMS's own disk driver, against the emulated UDA50 with the transfers going out
+on the bus. Every item the plan asks for, and what the driver made of it.
+
+**It is an RA81, and the geometry is the drive's own.**
+
+	Disk DUA0:, device type RA81, is online, mounted, file-oriented device,
+	    shareable, available to cluster, error logging is enabled.
+	    Total blocks   891072    Sectors per track    51
+	    Total cylinders  1248    Tracks per cylinder  14
+	    Volume label "VAXVMSRL4"
+
+**Mount.** The system volume mounts and stays mounted across the boot, and a
+second unit takes a file system of its own: `INITIALIZE DUA1: SCRATCH` writes
+the index file, the bitmap and the home block, and `MOUNT` accepts the result -
+`%MOUNT-I-MOUNTED, SCRATCH mounted on _DUA1:`, cluster size 3, 111376 files
+allowed.
+
+**File I/O, verified.** `BACKUP/VERIFY` is the test worth running because it
+reads back everything it wrote and compares it: a saveset of `SYS$SYSTEM:*.EXE`
+onto the second unit, about seven megabytes, written and compared with no
+`%BACKUP-E` of any kind. Afterwards:
+
+	Error count    0    Operations completed    3383
+
+**Multi-unit.** Two drives on one controller. VMS walks them at boot with GET
+UNIT STATUS - opcode 3, modifier 1, "next unit" - and the controller answers
+
+| unit | status | |
+|---|---|---|
+| 1 | 04 | unit available |
+| 2..8 | 03 | unit offline |
+
+which is what the enumeration is for: the one drive that is there is offered,
+and the walk stops at the first that is not. Both units come up as RA81s and
+both carry file systems.
+
+**A unit that is not there.** `MOUNT DUA7: SCRATCH` answers
+`%MOUNT-F-NOSUCHDEV, no such device available` and the controller's error count
+does not move. The failure is reported and the system carries on, which is the
+behaviour asked for.
+
+**Error count zero throughout**, on both units, across a boot, an INITIALIZE, a
+verified seven-megabyte backup and several thousand operations.
+
+One thing that looked like a fault and was not: adding the second drive appeared
+to stop the machine booting. It was the boot procedure - VMS asks for the date
+and time and re-asks every thirty seconds, so attaching to the console after a
+fixed sleep finds a screenful of prompts and a system that never started.
+`tools/vax-boot.sh` attaches first and answers the prompt when it comes, and the
+two-drive machine then boots exactly as the one-drive machine does.
