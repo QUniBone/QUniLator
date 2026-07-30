@@ -90,6 +90,15 @@ public:
     parameter_bool_c bus_iopage = parameter_bool_c(this, "bus_iopage", "bio",/*readonly*/
                                   false, "1 = UNIBUS register accesses go on the bus.");
 
+    // Where a device's transfer is answered. Clear, and this program answers
+    // it: the adapter hands the transfer over before it reaches the bus and
+    // the map translation is done here. Set, and the transfer goes out as bus
+    // cycles like any other master's, and the PRU answers it from the same
+    // memory through the same map registers - which is what a device on a real
+    // UNIBUS does, and what lets a card that is not emulated take part.
+    parameter_bool_c bus_dma = parameter_bool_c(this, "bus_dma", "bdma",/*readonly*/
+                               false, "1 = a device's transfer is answered on the bus, not here.");
+
     // Whether the bus gets the I/O page whole, over the addresses the
     // controller inside the core claims, or only what that controller leaves.
     parameter_bool_c bus_exclusive = parameter_bool_c(this, "bus_exclusive", "bx",/*readonly*/
@@ -196,6 +205,7 @@ private:
     volatile bool console_access_ok = false;
 
     void service_console_access(void);
+    void publish_unibus_map(void);
     bool request_console_access(enum console_access_e what, unsigned addr);
 
     unsigned history_countdown = 0;     // passes left before the history is written

@@ -152,6 +152,12 @@ bool cpuvax_c::bus_read(unsigned addr, unsigned *data)
 {
     uint16_t word;
 
+    // Touching a device's register is what sets a transfer going, and it is
+    // not always a write: a UDA50 is asked to look at its command ring by a
+    // *read* of its IP register. So the map goes out before either.
+    if (bus_dma.value)
+        publish_unibus_map();
+
     bus_cycles.value++;
     qunibusadapter->cpu_DATA_transfer(data_transfer_request, QUNIBUS_CYCLE_DATI,
                                       addr, &word);
@@ -168,6 +174,9 @@ bool cpuvax_c::bus_read(unsigned addr, unsigned *data)
 bool cpuvax_c::bus_write(unsigned addr, unsigned data, bool byte)
 {
     uint16_t word = (uint16_t) data;
+
+    if (bus_dma.value)
+        publish_unibus_map();
 
     bus_cycles.value++;
     qunibusadapter->cpu_DATA_transfer(data_transfer_request,
@@ -336,6 +345,19 @@ bool cpuvax_c::configure_machine(void)
         }
         INFO("%u MB of memory in the range shared with the bus, at 0x%08x",
              want >> 20, ddrmem->base_physical);
+
+        // With the transfers going out as bus cycles, the board has to answer
+        // them: everything below the I/O page is memory, and the map registers
+        // say which part of the processor's memory each page of it reaches.
+        if (bus_dma.value) {
+            if (!ddrmem->set_range(0, qunibus->iopage_start_addr - 2)) {
+                ERROR("the board would not answer memory below the I/O page");
+                return false;
+            }
+            INFO("the bus answers memory %s..%s through the adapter's map",
+                 qunibus->addr2text(0),
+                 qunibus->addr2text(qunibus->iopage_start_addr - 2));
+        }
     }
 
     {
@@ -394,6 +416,7 @@ void cpuvax_c::machine_start(void)
     mailbox->param = 1;
     mailbox_execute(ARM2PRU_CPU_ENABLE);
     qunibus->set_arbitrator_active(true);
+    publish_unibus_map();
 #ifdef CPU_CONTROLLED_TIME
     // Every device model's delays are then measured against the machine rather
     // than against the board, at the cost of a guest clock that runs at
@@ -411,6 +434,7 @@ void cpuvax_c::machine_stop(const char *why)
         return;
     machine_running = false;
     runmode.value = false;
+    ddrmem->base_virtual->unibus_map_active = 0;
     mailbox->param = 0;
     mailbox_execute(ARM2PRU_CPU_ENABLE);
     qunibus->set_arbitrator_active(false);
@@ -494,6 +518,35 @@ bool cpuvax_c::request_console_access(enum console_access_e what, unsigned addr)
         return false;
     }
     return true;
+}
+
+/* Hand the adapter's map registers to the hardware that has to make the same
+   translation. A device asked to do something reaches memory some time later
+   and on another thread, so the copy is taken when the processor writes a
+   device's register - which is what starts a transfer - and the map it
+   programmed beforehand is therefore the one the hardware sees.
+
+   Nothing to publish while the transfer is answered here: the core's own map
+   is read directly then. */
+void cpuvax_c::publish_unibus_map(void)
+{
+    volatile ddrmem_t *shared = ddrmem->base_virtual;
+
+    if (!bus_iopage.value || !bus_dma.value) {
+        shared->unibus_map_active = 0;
+        return;
+    }
+    // The array is volatile because the PRU reads it; the export writes plain
+    // words, so it is filled through a local and copied over.
+    {
+        uint32_t page[UNIBUS_MAP_REGISTERS];
+        unsigned n = simh_shim_map_export(page, UNIBUS_MAP_REGISTERS);
+        unsigned i;
+
+        for (i = 0; i < n; i++)
+            shared->unibus_map[i] = page[i];
+    }
+    shared->unibus_map_active = 1;
 }
 
 void cpuvax_c::service_console_access(void)
@@ -603,6 +656,8 @@ bool cpuvax_c::on_dma(uint8_t qunibus_cycle, uint32_t unibus_addr,
 {
     if (!bus_iopage.value)
         return false;                           // no adapter, no map
+    if (bus_dma.value)
+        return false;                           // the bus answers it, not us
 
     // The device's direction: DATO and DATOB write memory, DATI reads it.
     bool write = (qunibus_cycle != QUNIBUS_CYCLE_DATI);

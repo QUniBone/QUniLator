@@ -26,8 +26,8 @@
 #define UNIBUS_MAP_REGISTERS	496		// pages of the 18 bit space that map
 #define UNIBUS_MAP_PAGE_SHIFT	9		// 512 bytes to a page
 #define UNIBUS_MAP_VALID	0x80000000	// register is allocated
-#define UNIBUS_MAP_BYTE_OFFSET	0x40000000	// transfer moves up one byte
-#define UNIBUS_MAP_DATA_PATH	0x0e000000	// buffered data path number
+#define UNIBUS_MAP_BYTE_OFFSET	0x02000000	// transfer moves up one byte
+#define UNIBUS_MAP_DATA_PATH	0x01e00000	// buffered data path number
 #define UNIBUS_MAP_FRAME	0x001fffff	// page frame of the answer
 
 typedef struct {
