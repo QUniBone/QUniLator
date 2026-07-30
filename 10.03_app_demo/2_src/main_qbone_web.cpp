@@ -179,7 +179,7 @@ int main(int argc, char *argv[])
 		unsigned first_invalid = qunibus->test_sizer();
 		if (first_invalid >= qunibus->iopage_start_addr)
 			WEB_INFO("Physical memory answers up to the I/O page; none emulated.");
-		else if (ddrmem->set_range(first_invalid, qunibus->iopage_start_addr - 2))
+		else if (ddrmem->set_range(DDRMEM_RANGE_MEMORY, first_invalid, qunibus->iopage_start_addr - 2))
 			WEB_INFO("Emulating memory %s..%s.", qunibus->addr2text(first_invalid),
 					qunibus->addr2text(qunibus->iopage_start_addr - 2));
 		else

@@ -76,6 +76,12 @@
 
 #define UNIBUS_TIMEOUTVAL	0xffffffff // EXAM result for bus timeout
 
+// probe_range(): no address in the range answered
+#define QUNIBUS_PROBE_NONE	0xffffffff
+// One word every 8 KB, the granularity a memory card is strapped at, plus both
+// ends of the range. A card answering anywhere is found; silence proves nothing.
+#define QUNIBUS_PROBE_STEP	8192
+
 /*
 UNIBUS: DATIP never used.
 
@@ -185,6 +191,11 @@ public:
 			uint32_t unibus_end_addr, bool *timeout, uint32_t *block_counter);
 
 	uint32_t test_sizer(void);
+
+	// Probing a range: the lowest address in it that a slave answers, or
+	// QUNIBUS_PROBE_NONE when nothing does.
+	uint32_t probe_range(uint32_t startaddr, uint32_t endaddr,
+			uint32_t step = QUNIBUS_PROBE_STEP);
 
 	uint16_t testwords[QUNIBUS_MAX_WORDCOUNT];
 

@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include "qunibus.h"
+#include "iopageregister.h"
 
 /***** start of shared structs *****/
 // on PRU. all struct are byte-packed, no "#pragma pack" there
@@ -42,10 +43,13 @@ public:
 	// physical ddrmem_base address, for access by PRU
 	uint32_t base_physical;
 
-	// emulated address range
-	bool enabled = false; // true if startaddr <= endaddr
-	uint32_t qunibus_startaddr;
-	uint32_t qunibus_endaddr; 
+	// the emulated address ranges, one per DDRMEM_RANGE_* slot
+	struct range_t {
+		bool enabled = false; // true if startaddr <= endaddr
+		uint32_t startaddr = 0;
+		uint32_t endaddr = 0; // last address of the range, included
+	};
+	range_t ranges[DDRMEM_RANGE_COUNT];
 
 	uint32_t pmi_address_overlay ;
 
@@ -54,10 +58,21 @@ public:
 	void save(char *fname);
 	void load(char *fname);
 	void clear(void);
+	void clear_range(uint32_t startaddr, uint32_t endaddr);
+	void fill_range(uint32_t startaddr, uint32_t endaddr, uint16_t fillword);
 	void fill_pattern(void);
 	void fill_pattern_pru(void);
 	void unibus_slave(uint32_t startaddr, uint32_t endaddr);
-	bool set_range(uint32_t startaddr, 	uint32_t endaddr);
+	bool set_range(unsigned slot, uint32_t startaddr, uint32_t endaddr);
+	bool range_enabled(unsigned slot) const { return ranges[slot].enabled ; }
+	uint32_t range_start(unsigned slot) const { return ranges[slot].startaddr ; }
+	uint32_t range_end(unsigned slot) const { return ranges[slot].endaddr ; }
+	// the slot serving addr, or -1: which range a bus address falls into
+	int slot_of(uint32_t addr) const;
+	// an enabled range other than slot sharing an address with [start,end], or -1
+	int overlapping_slot(unsigned slot, uint32_t startaddr, uint32_t endaddr) const;
+	// does one emulated range hold the whole of [addr, addr+byte_count) ?
+	bool contains(uint32_t addr, unsigned byte_count) const;
 	bool deposit(uint32_t addr, uint16_t w);
 	bool exam(uint32_t addr, uint16_t *w);
 
@@ -77,6 +92,20 @@ extern ddrmem_c *ddrmem;
 
 #else
 // included by PRU code
+
+// Is addr served out of DDR? Tested on every bus cycle the board sees, before
+// the I/O page decode, so the slots are compared in line rather than in a loop,
+// and combined with "|" so neither compare needs a branch. An unused slot holds
+// limit 0, which the first compare rejects.
+#if DDRMEM_RANGE_COUNT != 2
+#error "DDRMEM_ADDR_EMULATED is unrolled for two slots"
+#endif
+#define DDRMEM_ADDR_EMULATED(addr) ( \
+	  ((addr) < pru_iopage_registers.memory_limit_addr[0] \
+	    && (addr) >= pru_iopage_registers.memory_start_addr[0]) \
+	| ((addr) < pru_iopage_registers.memory_limit_addr[1] \
+	    && (addr) >= pru_iopage_registers.memory_start_addr[1]) )
+
 // set a word in simulated memory
 #define DDRMEM_MEMSET_W(addr,dataw) \
     	( mailbox.ddrmem_base_physical->memory.words[(addr)/2] = (dataw) )

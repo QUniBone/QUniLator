@@ -220,19 +220,15 @@ void vcb01_c::update_csr(void)
 }
 
 // claim_video_memory(): have the PRU answer bus cycles to the bank out of DDR,
-// so the bitmap runs at bus speed and the host never waits on the ARM.
+// so the bitmap runs at bus speed and the host never waits on the ARM. The bank
+// takes the device slot, so a memory card in the memory slot keeps serving the
+// rest of the machine; a bank that lands inside the card's range is refused.
 bool vcb01_c::claim_video_memory(void)
 {
     uint32_t base = bank_base();
     uint32_t last = base + BANK_BYTES - 2;
 
-    if (ddrmem->enabled && (ddrmem->qunibus_startaddr != base
-            || ddrmem->qunibus_endaddr != last))
-        WARNING("taking the emulated memory range from %s..%s, which only one "
-                "device can hold", qunibus->addr2text(ddrmem->qunibus_startaddr),
-                qunibus->addr2text(ddrmem->qunibus_endaddr));
-
-    if (!ddrmem->set_range(base, last)) {
+    if (!ddrmem->set_range(DDRMEM_RANGE_DEVICE, base, last)) {
         ERROR("cannot serve video memory at %s..%s", qunibus->addr2text(base),
                 qunibus->addr2text(last));
         return false;
@@ -250,7 +246,7 @@ bool vcb01_c::claim_video_memory(void)
 void vcb01_c::release_video_memory(void)
 {
     // start > end disables the range
-    ddrmem->set_range(0xffffffff, 0);
+    ddrmem->set_range(DDRMEM_RANGE_DEVICE, 0xffffffff, 0);
 }
 
 bool vcb01_c::on_param_changed(parameter_c *param)

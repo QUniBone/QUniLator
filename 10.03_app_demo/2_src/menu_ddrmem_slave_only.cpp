@@ -56,7 +56,7 @@ void application_c::menu_ddrmem_slave_only(const char *menu_code)
 	
 	while (!ready) {
 		// sync pagetable
-		ddrmem->set_range(emulated_memory_start_addr, emulated_memory_end_addr);
+		ddrmem->set_range(DDRMEM_RANGE_MEMORY, emulated_memory_start_addr, emulated_memory_end_addr);
 		// no menu display when reading script
 		if (show_help && ! script_active()) {
 			show_help = false; // only once
@@ -101,7 +101,7 @@ void application_c::menu_ddrmem_slave_only(const char *menu_code)
 			uint32_t start_addr, end_addr;
 			qunibus->parse_addr(s_param[0], &start_addr);
 			qunibus->parse_addr(s_param[1], &end_addr);
-			if (ddrmem->set_range(start_addr, end_addr)) {
+			if (ddrmem->set_range(DDRMEM_RANGE_MEMORY, start_addr, end_addr)) {
 				emulated_memory_start_addr = start_addr;
 				emulated_memory_end_addr = end_addr;
 				printf("Implement an " QUNIBUS_NAME " memory card with DDR memory:\n");

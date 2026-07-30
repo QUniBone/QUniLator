@@ -129,6 +129,9 @@ device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
 	// KW11-P programmable real-time clock (ships disabled)
 	KW11P = new kw11p_c();
 
+	// the memory card (ships disabled)
+	MEM = new memory_c();
+
 #if defined(UNIBUS)
 	RX11 = new RX11_c();
 	RX211 = new RX211_c();
@@ -185,6 +188,8 @@ device_configuration_c::~device_configuration_c() {
 	delete VCB01;
 #endif
 
+	MEM->enabled.set(false);
+	delete MEM;
 	KW11P->enabled.set(false);
 	delete KW11P;
 	LTC->enabled.set(false);
