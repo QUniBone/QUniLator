@@ -781,13 +781,42 @@ mscp_port_c::PostResponse(
             reinterpret_cast<uint8_t*>(response));
 
         //
+        // The host requests a transition interrupt with the descriptor's Flag
+        // bit; remember it before the descriptor is rewritten below.
+        //
+        bool hostWantsTransitionInterrupt = cmdDescriptor->Word1.Fields.Flag;
+
+        //
+        // Message posted; reset the Owner bit of the response descriptor,
+        // and set the Flag bit (to indicate that we've processed it).
+        //
+        // Returned to the host BEFORE the transition test below. A host ISR
+        // draining the ring for an earlier response scans forward as it goes;
+        // with the descriptor handed back first, that scan picks this response
+        // up. In the other order there is a window - two DMA round-trips wide
+        // on this emulator, nanoseconds on a real controller - in which the
+        // ISR reads the descriptor as still port-owned and goes to sleep,
+        // while the transition test concludes the ring was non-empty and
+        // raises no interrupt: the response is stranded and host and
+        // controller wait on each other forever (seen as 2.11BSD dump-to-tape
+        // stalling mid-run). This order can at worst produce a spurious
+        // transition interrupt, which hosts dismiss.
+        //
+        cmdDescriptor->Word1.Fields.Ownership = 0;
+        cmdDescriptor->Word1.Fields.Flag = 1;
+        DMAWrite(
+            descriptorAddress,
+            sizeof(Descriptor),
+            reinterpret_cast<uint8_t*>(cmdDescriptor.get()));
+
+        //
         // Check if a transition from empty to non-empty occurred, interrupt if requested.
         //
         // If the previous entry in the ring is owned by the Port then that indicates
         // that the ring was previously empty (i.e. the descriptor we're now returning
         // is the first entry returned to the ring by the Port.)
         //
-        if (cmdDescriptor->Word1.Fields.Flag)
+        if (hostWantsTransitionInterrupt)
         {
             //
             // Flag is set, host is requesting a transition interrupt.
@@ -819,17 +848,6 @@ mscp_port_c::PostResponse(
                 }
             }
         }
-
-        //
-        // Message posted; reset the Owner bit of the response descriptor,
-        // and set the Flag bit (to indicate that we've processed it).
-        //
-        cmdDescriptor->Word1.Fields.Ownership = 0;
-        cmdDescriptor->Word1.Fields.Flag = 1;
-        DMAWrite(
-            descriptorAddress,
-            sizeof(Descriptor),
-            reinterpret_cast<uint8_t*>(cmdDescriptor.get()));
 
         // Post an interrupt as necessary.
         if (doInterrupt)
