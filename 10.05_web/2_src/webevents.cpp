@@ -121,13 +121,30 @@ static std::string config_json_locked(void) {
 	return picojson::value(event).serialize();
 }
 
+// Whether the configuration state is worth recomputing. Answering it costs a
+// snapshot of every enabled device, a read and parse of the saved file, and a
+// canonical comparison of the two — far too much to run on a timer for a flag
+// that moves only when an operator edits something. So it is computed when
+// something that could have moved it has happened: a committed parameter change,
+// or a save/apply/rename announcing itself through webevents_note_config().
+static std::atomic<bool> config_dirty(true);
+
+void webevents_note_config_dirty(void) {
+	config_dirty = true;
+}
+
 // Recompute the configuration state and, when it differs from what was last
 // published (or force), enqueue a config event. A busy machine leaves the
-// modified flag at its last value rather than flapping it.
+// modified flag at its last value rather than flapping it, and stays dirty so
+// the next pass asks again.
 static void publish_config(bool force) {
+	if (!force && !config_dirty.exchange(false))
+		return;
 	std::string current;
 	bool modified = false, busy = false;
 	webconfigs_status(&current, &modified, &busy);
+	if (busy)
+		config_dirty = true;
 	std::string msg;
 	{
 		std::lock_guard<std::mutex> lock(config_mutex);
@@ -181,6 +198,8 @@ static void on_param_changed(parameter_c *param) {
 	device_c *dev = dynamic_cast<device_c *>(param->parameterized);
 	if (dev == nullptr)
 		return;
+	// a committed edit is what makes the live setup differ from the saved one
+	config_dirty = true;
 	picojson::object event;
 	event["t"] = picojson::value("param");
 	event["dev"] = picojson::value(dev->name.value);
@@ -276,6 +295,17 @@ std::string webevents_log_page_json(uint64_t before, unsigned limit) {
 	return picojson::value(o).serialize();
 }
 
+// Push the appended journal lines out to storage. The line itself is written on
+// the thread that logged it, so the file keeps the order the log has; the write
+// to storage is a syscall per line if it is forced there, so it is left to the
+// stream's buffer and pushed from the broadcast thread instead. A log storm from
+// a device thread then costs that thread a memcpy, not a write.
+static void flush_journal(void) {
+	std::lock_guard<std::mutex> lock(journal_mutex);
+	if (journal_file.is_open())
+		journal_file.flush();
+}
+
 static void on_log_message(unsigned msglevel, const char *label, const char *text) {
 	char ts[16] = "";
 	time_t now = time(nullptr);
@@ -294,10 +324,8 @@ static void on_log_message(unsigned msglevel, const char *label, const char *tex
 		journal.push_back(e);
 		if (journal.size() > JOURNAL_MAX)
 			journal.pop_front();
-		if (journal_file.is_open()) {
+		if (journal_file.is_open())
 			journal_file << log_entry_json(e).serialize() << "\n";
-			journal_file.flush();
-		}
 	}
 	picojson::object event;
 	event["t"] = picojson::value("log");
@@ -360,22 +388,54 @@ bool webevents_is_powered(void) {
 // the frontend replays exactly these over a refetched model. A CPU running an
 // operating system moves its PC and opcode count constantly, so this poll's
 // interval is what bounds their event rate.
+//
+// The registry holds every device the machine could carry, enabled or not, and
+// four times as many status parameters as the running set has. A disabled device
+// cannot move anything, so the scan covers the enabled ones and the parameters
+// each of them actually publishes, held per device rather than filtered out of
+// the whole parameter list on every pass. A device that has just been switched
+// off is scanned once more, so the lamps it cleared on the way out are reported
+// before it goes quiet.
+struct status_cache_t {
+	std::vector<parameter_c *> params; // the device's PARAM_STATUS parameters
+	std::vector<std::string> rendered; // what was last published, by index
+	size_t parameter_count = 0;        // the list this was built from
+	bool enabled = false;              // as of the last pass
+	unsigned seen = 0;                 // the pass that last found the device
+};
+static std::map<device_c *, status_cache_t> status_cache;
+
 static void poll_status_params(void) {
-	static std::map<parameter_c *, std::string> last;
+	static unsigned pass = 0;
+	pass++;
 	std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
 	for (device_c *dev : device_c::mydevices) {
+		status_cache_t &c = status_cache[dev];
+		c.seen = pass;
+		// (re)build the parameter list when the device is new or has grown one
+		if (c.parameter_count != dev->parameter.size()) {
+			c.parameter_count = dev->parameter.size();
+			c.params.clear();
+			for (parameter_c *p : dev->parameter)
+				if (p->kind == parameter_c::PARAM_STATUS)
+					c.params.push_back(p);
+			c.rendered.assign(c.params.size(), std::string());
+		}
+		bool enabled = dev->enabled.value;
+		bool just_disabled = c.enabled && !enabled;
+		c.enabled = enabled;
+		if (!enabled && !just_disabled)
+			continue;
 		// activity lamps are lit for a fixed span, expired here
 		dev->refresh_activity();
-		for (parameter_c *p : dev->parameter) {
-			if (p->kind != parameter_c::PARAM_STATUS)
-				continue;
+		for (size_t i = 0; i < c.params.size(); i++) {
+			parameter_c *p = c.params[i];
 			// compare rendered values, so one path serves every parameter type
 			picojson::value v = param_value_json(p);
 			std::string rendered = v.serialize();
-			std::map<parameter_c *, std::string>::iterator it = last.find(p);
-			if (it != last.end() && it->second == rendered)
+			if (c.rendered[i] == rendered)
 				continue;
-			last[p] = rendered;
+			c.rendered[i] = rendered;
 			picojson::object event;
 			event["t"] = picojson::value("param");
 			event["dev"] = picojson::value(dev->name.value);
@@ -383,6 +443,15 @@ static void poll_status_params(void) {
 			event["value"] = v;
 			enqueue(event);
 		}
+	}
+	// forget the devices that have gone; a reused allocation address would
+	// otherwise inherit the entry and swallow the new device's first event
+	for (std::map<device_c *, status_cache_t>::iterator it = status_cache.begin();
+			it != status_cache.end(); ) {
+		if (it->second.seen != pass)
+			status_cache.erase(it++);
+		else
+			++it;
 	}
 }
 
@@ -458,40 +527,70 @@ static void poll_hardware(void) {
 		webstorage_refresh_readonly(machine_running);
 }
 
+// The poll cadence, in ms. It bounds the event rate of everything the machine
+// drives without announcing it, and the cost of the three polls themselves.
+static const unsigned POLL_MS = 100;
+
+// One frame carrying the whole cycle's events, rather than one frame each.
+// Server side that is one send per cycle instead of one per event; client side
+// it is one macrotask, so the store's microtask coalescing merges the whole
+// cycle into a single re-render instead of one per event.
+static std::string batch_frame(const std::deque<std::string> &batch) {
+	std::string out = "{\"t\":\"batch\",\"events\":[";
+	bool first = true;
+	for (const std::string &msg : batch) {
+		if (!first)
+			out += ',';
+		first = false;
+		out += msg;
+	}
+	out += "]}";
+	return out;
+}
+
 static void broadcast_loop(void) {
+	// The queue wakes this thread the moment any producer appends, which is what
+	// keeps a log line or a committed edit from waiting out the cadence. The
+	// polls are not driven by that: they run on their own timer, so a device
+	// thread logging in a loop does not drag the whole poll cycle along at the
+	// log rate — which is exactly when emulation timing is most fragile.
+	std::chrono::steady_clock::time_point next_poll = std::chrono::steady_clock::now();
 	while (running) {
 		std::deque<std::string> batch;
 		{
 			std::unique_lock<std::mutex> lock(queue_mutex);
-			queue_cv.wait_for(lock, std::chrono::milliseconds(100));
+			queue_cv.wait_for(lock, std::chrono::milliseconds(POLL_MS));
 			batch.swap(event_queue);
 		}
 		if (!running)
 			break;
-		poll_hardware();
-		poll_status_params();
-		publish_config(false); // emit a config event when the modified flag flips
-		// The updater writes its progress to a status file from its own unit, so
-		// the only way the service learns of it is by watching that file. One
-		// stat a second, which webupdate_poll() paces itself to.
-		if (webupdate_poll()) {
-			std::string msg = webupdate_event_json();
-			if (!msg.empty())
-				enqueue_str(msg); // goes out with the next batch, like the others
+		std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+		if (now >= next_poll) {
+			next_poll = now + std::chrono::milliseconds(POLL_MS);
+			poll_hardware();
+			poll_status_params();
+			publish_config(false); // emit a config event when the modified flag flips
+			flush_journal();
+			// The updater writes its progress to a status file from its own unit,
+			// so the only way the service learns of it is by watching that file.
+			// One stat a second, which webupdate_poll() paces itself to.
+			if (webupdate_poll()) {
+				std::string msg = webupdate_event_json();
+				if (!msg.empty())
+					enqueue_str(msg); // goes out with the next batch, like the others
+			}
 		}
 		if (batch.empty())
 			continue;
+		std::string frame = batch_frame(batch);
 		std::lock_guard<std::mutex> lock(clients_mutex);
 		std::vector<struct mg_connection *> dead;
-		for (struct mg_connection *conn : clients)
-			for (const std::string &msg : batch) {
-				int r = web_ws_try_send(conn, MG_WEBSOCKET_OPCODE_TEXT,
-						msg.c_str(), msg.size());
-				if (r < 0)
-					dead.push_back(conn);
-				if (r <= 0)
-					break; // dead or behind: nothing more this round
-			}
+		for (struct mg_connection *conn : clients) {
+			int r = web_ws_try_send(conn, MG_WEBSOCKET_OPCODE_TEXT,
+					frame.c_str(), frame.size());
+			if (r < 0)
+				dead.push_back(conn);
+		}
 		for (struct mg_connection *conn : dead)
 			clients.erase(conn);
 	}

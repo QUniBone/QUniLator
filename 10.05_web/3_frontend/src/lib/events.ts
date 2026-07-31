@@ -24,6 +24,10 @@ export function initEvents(): void {
     // is where the page checks whether it is still talking to its own version.
     syncVersion().catch(() => {});
   };
+  // One frame carries a whole poll cycle's events. Each is applied to the
+  // store, and the re-render is asked for once at the end: a running machine
+  // moves a dozen status parameters per cycle, and a repaint per parameter is
+  // a dozen renders where one will do.
   eventsWs.onmessage = (e) => {
     let ev: any;
     try {
@@ -31,10 +35,28 @@ export function initEvents(): void {
     } catch {
       return;
     }
+    if (ev.t === 'batch') {
+      let soon = false,
+        now = false;
+      for (const item of ev.events || []) {
+        if (applyEvent(item) === 'soon') soon = true;
+        else now = true;
+      }
+      if (now) emit();
+      else if (soon) emitSoon();
+      return;
+    }
+    const how = applyEvent(ev);
+    if (how === 'soon') emitSoon();
+    else emit();
+  };
+
+  // Apply one event to the store. Returns how urgently the screen should
+  // follow: a lamp storm is damped, everything else repaints at once.
+  function applyEvent(ev: any): 'soon' | 'now' {
     if (ev.t === 'param') {
       patchParam(ev.dev, ev.param, ev.value);
-      if (/lamp$/.test(ev.param)) emitSoon();
-      else emit();
+      return /lamp$/.test(ev.param) ? 'soon' : 'now';
     } else if (ev.t === 'log') {
       // the journal assigns the id and server timestamp; append only when this
       // line is newer than the last held, so a live frame never duplicates one
@@ -56,7 +78,7 @@ export function initEvents(): void {
           store.logMore = true;
         }
       }
-      emit();
+      return 'now';
     } else if (ev.t === 'state') {
       const hw = store.hw,
         bus = store.bus;
@@ -69,22 +91,22 @@ export function initEvents(): void {
       if ('powered' in ev) hw.powered = ev.powered;
       if (ev.leds) ev.leds.forEach((v: boolean, i: number) => (hw.leds[i] = v));
       if (ev.switches) ev.switches.forEach((v: boolean, i: number) => (hw.dip[i] = v));
-      emit();
+      return 'now';
     } else if (ev.t === 'update') {
       // the whole update status, as GET /api/update answers it; the frame is
       // broadcast on every change and opens each connection
       const { t, ...status } = ev;
       void t;
       store.update = status as UpdateStatus;
-      emit();
+      return 'now';
     } else if (ev.t === 'config') {
       // keep the configuration master list's current mark and the modified
       // badge live between full reloads
       if ('current' in ev) store.configCurrent = ev.current || '';
       if ('modified' in ev) store.configModified = ev.modified;
-      emit();
     }
-  };
+    return 'now';
+  }
   eventsWs.onclose = () => {
     setStore({ connected: false });
     setTimeout(initEvents, 2000);

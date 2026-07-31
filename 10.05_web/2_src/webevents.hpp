@@ -30,10 +30,15 @@ void webevents_note_powered(bool powered);
 bool webevents_is_powered(void);
 
 // Publish a config event now: the current/default configuration changed, or a
-// caller wants the modified flag re-evaluated. The 10 Hz poll also emits one
-// whenever the computed state flips, so this need only be called on the
-// explicit transitions (apply, save, default change, rename).
+// caller wants the modified flag re-evaluated. Call this on the explicit
+// transitions (apply, save, default change, rename).
 void webevents_note_config(void);
+
+// Something that could have moved the "modified" flag has happened, so the poll
+// should recompute it once. Answering that question is expensive - a snapshot of
+// every enabled device compared against the saved file - so it is not asked on a
+// timer. A committed parameter change marks it here on its own.
+void webevents_note_config_dirty(void);
 
 // current (soft) halt state, as last set via the control API
 bool webevents_is_halted(void);
