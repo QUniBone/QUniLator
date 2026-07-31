@@ -1,5 +1,6 @@
 import { html } from '../html';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import type { ComponentChildren } from 'preact';
 import { useLocation } from 'preact-iso';
 import { useStore, store, emit } from '../store';
 import { liveControl, loadConfigs, fetchConfigSnapshot, setConfigLayout } from '../api';
@@ -15,7 +16,7 @@ import type { LiveDev, DashLayout } from '../types';
 
 // The running configuration's name and title, with a cog that jumps straight to
 // its configuration screen.
-function DashHeader() {
+function DashHeader({ tools }: { tools?: ComponentChildren }) {
   const s = useStore();
   const loc = useLocation();
   const name = s.configCurrent;
@@ -26,6 +27,8 @@ function DashHeader() {
       ${title && title !== name ? html`<span class="dash-cfg-name mono">${name}</span>` : null}
       ${s.configModified ? html`<${Chip} cls="warn">modified</${Chip}>` : null}
     </div>
+    <span class="spacer"></span>
+    ${tools}
     <button class="btn small dash-cog" title="Configuration"
       onClick=${() => loc.route('/config' + (name ? '/' + encodeURIComponent(name) : ''))}>⚙</button>
   </div>`;
@@ -515,15 +518,15 @@ function DashGrid() {
     else setLayout({});
   };
 
-  return html`<div class="dash-toolbar">
-      ${
-        edit
-          ? html`<button class="btn small primary" disabled=${!dirty} onClick=${save}>Save layout</button>
-              <button class="btn small" onClick=${revert}>Revert</button>
-              <span class="muted" style="font-size:var(--fs-1)">drag a card to move it; the eye hides it</span>`
-          : html`<button class="btn small" onClick=${() => setEdit(true)}>Edit layout</button>`
-      }
-    </div>
+  // the layout controls sit with the cog, on the right of the heading, since
+  // both are about the screen rather than about the machine on it
+  const tools = edit
+    ? html`<span class="muted dash-edit-hint">drag a card to move it; the eye hides it</span>
+        <button class="btn small primary" disabled=${!dirty} onClick=${save}>Save layout</button>
+        <button class="btn small" onClick=${revert}>Revert</button>`
+    : html`<button class="btn small" onClick=${() => setEdit(true)}>Edit layout</button>`;
+
+  return html`<${DashHeader} tools=${tools} />
     <div class=${'dash-grid' + (edit ? ' editing' : '')} ref=${gridRef}
       style=${'grid-template-columns:repeat(' + extentCols + ',' + CELL + 'px);grid-auto-columns:' +
         CELL + 'px;grid-auto-rows:' + CELL + 'px;gap:' + GAP + 'px;' +
@@ -567,7 +570,6 @@ export function Dashboard() {
     loadConfigs().catch(() => {});
   }, []);
   return html`<section class="page active" data-page="dashboard">
-    ${html`<${DashHeader} />`}
     ${html`<${DashGrid} />`}
   </section>`;
 }
