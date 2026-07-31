@@ -67,6 +67,10 @@ abstract class MuxWidget extends DeviceWidget {
   }
 }
 
+// The signals read in the pairs they work in: the two data directions, then the
+// two handshakes, then the two ready lines, then the two the far end raises. A
+// board that lacks one of a pair simply omits it and the order holds.
+
 // The DZV11's four lines carry RX/TX traffic, DTR (driven by the guest), CD (a
 // connected TCP client) and RI, a modem-status ring bit nothing asserts. The
 // board has no RTS/CTS/DSR silicon, so those signals are absent.
@@ -76,8 +80,8 @@ export class DzWidget extends MuxWidget {
     { key: 'rx', label: 'RX', live: true },
     { key: 'tx', label: 'TX', live: true },
     { key: 'dtr', label: 'DTR', live: true },
-    { key: 'cd', label: 'CD', live: true },
     { key: 'ri', label: 'RI', live: false },
+    { key: 'cd', label: 'CD', live: true },
   ];
 }
 
@@ -89,12 +93,12 @@ export class DhWidget extends MuxWidget {
   protected signals: MuxSignal[] = [
     { key: 'rx', label: 'RX', live: true },
     { key: 'tx', label: 'TX', live: true },
-    { key: 'dtr', label: 'DTR', live: true },
     { key: 'rts', label: 'RTS', live: true },
-    { key: 'cd', label: 'CD', live: true },
-    { key: 'dsr', label: 'DSR', live: true },
     { key: 'cts', label: 'CTS', live: true },
+    { key: 'dsr', label: 'DSR', live: true },
+    { key: 'dtr', label: 'DTR', live: true },
     { key: 'ri', label: 'RI', live: false },
+    { key: 'cd', label: 'CD', live: true },
   ];
 }
 
