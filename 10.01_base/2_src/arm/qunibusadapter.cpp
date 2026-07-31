@@ -639,8 +639,46 @@ void qunibusadapter_c::request_active_complete(unsigned level_index, bool signal
 // Blocking == false: return immediately, the device logic should
 //		 evaluate the request.complete flag or wait for the mutex
 
+static inline uint64_t timespec_delta_ns(const struct timespec &a, const struct timespec &b)
+{
+    return (uint64_t) (b.tv_sec - a.tv_sec) * 1000000000ull
+           + (uint64_t) (b.tv_nsec - a.tv_nsec);
+}
+
+/* A processor's single-word bus accesses, summarised every so many of them.
+   Written and read only by the emulated CPU's own thread. Wall time is what the
+   processor lost; on-CPU time is how much of that it spent running. The buckets
+   are the shape of the distribution, which an average hides: a few long waits
+   among many short ones is a different fault from a uniformly slow bus. */
+void qunibusadapter_c::cpu_access_profile_note(uint64_t wall_ns, uint64_t cpu_ns)
+{
+    static const unsigned REPORT_EVERY = 2000;
+    static unsigned count = 0;
+    static uint64_t wall_sum = 0, cpu_sum = 0, wall_max = 0;
+    static unsigned bucket[5] = { 0, 0, 0, 0, 0 }; // <10us <100us <1ms <10ms rest
+
+    wall_sum += wall_ns;
+    cpu_sum += cpu_ns;
+    if (wall_ns > wall_max)
+        wall_max = wall_ns;
+    bucket[wall_ns < 10000 ? 0 : wall_ns < 100000 ? 1 : wall_ns < 1000000 ? 2
+           : wall_ns < 10000000 ? 3 : 4]++;
+    if (++count < REPORT_EVERY)
+        return;
+    DEBUG("cpu bus access x%u: wall avg %luus max %luus, on-cpu avg %luus; "
+               "<10us %u <100us %u <1ms %u <10ms %u >=10ms %u",
+               count, (unsigned long) (wall_sum / count / 1000),
+               (unsigned long) (wall_max / 1000),
+               (unsigned long) (cpu_sum / count / 1000),
+               bucket[0], bucket[1], bucket[2], bucket[3], bucket[4]);
+    count = 0;
+    wall_sum = cpu_sum = wall_max = 0;
+    for (unsigned i = 0; i < 5; i++)
+        bucket[i] = 0;
+}
+
 void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qunibus_cycle,
-                           uint32_t unibus_addr, uint16_t *buffer, uint32_t wordcount) 
+                           uint32_t unibus_addr, uint16_t *buffer, uint32_t wordcount)
 {
     assert(dma_request.priority_slot < PRIORITY_SLOT_COUNT);
     assert(dma_request.level_index == PRIORITY_LEVEL_INDEX_NPR);
@@ -717,6 +755,21 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
         // NO wait for PRU signal, instead busy waiting. CPU thread blocked.
         // Reason: SPEED. CPU does high frequency single word accesses.
         bool completed = false;
+        // What the spin actually costs an emulated processor, measured two ways:
+        // elapsed time, and the time this thread was on a core for. They agree
+        // when the spin is genuinely waiting for the PRU to finish the cycle,
+        // and diverge when the thread was descheduled inside it - the emulated
+        // CPU runs at the lowest priority against realtime device threads on one
+        // core, so a spin that should take microseconds can span a scheduling
+        // gap. Which of the two it is decides where the cost can be taken out.
+        // A processor drives the whole machine through here, so the two clock
+        // reads are taken only while someone is listening for the summary.
+        bool profile = !logger->ignored(this, LL_DEBUG);
+        struct timespec wall0, cpu0;
+        if (profile) {
+            clock_gettime(CLOCK_MONOTONIC, &wall0);
+            clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu0);
+        }
 // ARM_DEBUG_PIN1(1); // CPU20 performace
         do {
             // CPU thread is now spinning
@@ -740,6 +793,13 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
             pthread_mutex_unlock(&requests_mutex); //&dma_request.complete_mutex);
         } while (!completed);
 //ARM_DEBUG_PIN1(0); // CPU20 performace
+        if (profile) {
+            struct timespec wall1, cpu1;
+            clock_gettime(CLOCK_MONOTONIC, &wall1);
+            clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu1);
+            cpu_access_profile_note(timespec_delta_ns(wall0, wall1),
+                                    timespec_delta_ns(cpu0, cpu1));
+        }
 
     } else if (blocking) {
         pthread_mutex_lock(&dma_request.complete_mutex);
