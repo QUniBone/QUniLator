@@ -53,6 +53,7 @@ CXXFLAGS = \
 	-O2 -Wall -Wextra \
 	-I. \
 	-I$(DEVICE_SRC_DIR) \
+	-MMD -MP \
 	-c
 
 LDFLAGS = -lpthread
@@ -180,3 +181,10 @@ $(OBJDIR)/kd11ea.o: $(DEVICE_SRC_DIR)/cpu34/kd11ea.c $(DEVICE_SRC_DIR)/cpu34/kd1
 $(OBJDIR)/kt11d.o: $(DEVICE_SRC_DIR)/cpu34/kt11d.c $(DEVICE_SRC_DIR)/cpu34/kt11d.h \
 		$(DEVICE_SRC_DIR)/cpu_core.h $(DEVICE_SRC_DIR)/cpu_bus_adapter.h | $(OBJDIR)
 	$(HOST_CXX) $(CORE_CXXFLAGS) -I$(DEVICE_SRC_DIR)/cpu34 -x c++ $< -o $@
+
+# The header dependencies of every object, as the compiler saw them. The rules
+# above name each object's headers by hand, which is how the kt11d.h dependency
+# noted there came to be written down; -MMD keeps the list complete without
+# anyone having to remember, and -MP keeps a deleted header from breaking the
+# build.
+-include $(OBJECTS:.o=.d)

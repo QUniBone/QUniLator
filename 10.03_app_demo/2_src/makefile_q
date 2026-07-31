@@ -97,6 +97,7 @@ CCFLAGS= \
 	-I$(PRU_DEPLOY_DIR)	\
 	$(CC_CODE_FLAGS)        \
 	-DQUNILATOR_VERSION=\"$(QUNILATOR_VERSION)\"	\
+	-MMD -MP	\
 	-c	\
 	$(CCDEFS) $(CC_DBG_FLAGS) $(OS_CCDEFS)
 # OBJDIR in includes because of $(PRU_CODE)
@@ -274,11 +275,6 @@ clean:
 # print compiler version
 version:
 	$(CC) --version
-
-# TODO
-# auto dependencies of header files
-# http://scottmcpeak.com/autodepend/autodepend.html
-#	gcc -MM $(CCFLAGS) $< >$(OBJDIR)*.c > ***.d
 
 # executable depends on its objects AND the PRU objects
 $(OBJDIR)/$(PROG) : pru $(OBJECTS) $(OBJDIR)/main_demo.o
@@ -715,4 +711,18 @@ $(PRU1_CODE_LIST): $(PRU1_BASE_SRC_DIR)/*.h $(PRU1_BASE_SRC_DIR)/*.c $(SHARED_SR
 	echo PRU1 codefile $@ created
 #	cp $(PRU_DEPLOY_DIR)/$(PRU0_CODE).[hc]
 
-
+# The header dependencies of every object, as the compiler saw them.
+#
+# The rules above name each object's source and, at most, the one header of the
+# same name. A header included from anywhere else - parameter.hpp, logger.hpp,
+# qunibusdevice.hpp, device_configuration.hpp, and every register or bit
+# definition a device carries - reaches nearly every object and is named by
+# almost none of them, so editing one used to leave the objects that include it
+# stale and link them into the binary unchanged.
+#
+# -MMD writes each object's real include list to a .d file beside it, which is
+# read back here; -MP adds a phony target per header so deleting one does not
+# break the build with "no rule to make target". The first build of a clean tree
+# has no .d files and the explicit rules cover it; every build after that has
+# the full list.
+-include $(OBJECTS:.o=.d) $(OBJDIR)/main_demo.d $(OBJDIR)/main_qbone_web.d
