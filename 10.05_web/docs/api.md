@@ -144,11 +144,13 @@ construction defaults of every instance of that type. The config editor offers
 these as the address/interrupt menus rather than a free octal field. A type
 with a single instance yields a single-entry list.
 
-`label` is a computed, read-only friendly name in the form `<role> (<code>)`,
-drawn from a static per-type table keyed by `type`. Instanced drives append
-their unit (`MSCP disk 0 (RA81)`); the two serial lines carry their CSR
-address (`Serial line unit @777560 (DL11)`); internal devices with no DEC
-code show the bare role (`Front panel`); an unrecognised type falls back to
+`label` is a computed, read-only friendly name in the form `<code> <role>`,
+drawn from a static per-type table keyed by `type`. The instance is appended
+where a machine can carry more than one: a drive takes its unit number
+(`RA81 disk 0`), several boards of one type take their ordinal in the registry
+(`DZV11 serial mux 0`, `DL11 serial line 1`), and a machine that carries one of
+something takes no number (`UDA50 disk controller`). Internal devices with no
+DEC code show the bare role (`Front panel`); an unrecognised type falls back to
 the raw handle. The field is derived at response time and held nowhere on the
 device — there is no setter and no persistence. `type` keeps carrying the raw
 DEC code.

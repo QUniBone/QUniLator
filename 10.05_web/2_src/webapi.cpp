@@ -210,6 +210,10 @@ static void devices_list(struct mg_connection *conn) {
 			if (qd->default_intr_vector != 0)
 				vec_opts[d->type_name.value].insert(qd->default_intr_vector);
 		}
+		// how many of each type have been labelled so far, which numbers the
+		// boards a machine can carry several of ("DZV11 serial mux 0..3") in
+		// registry order — the order the pool was built in
+		std::map<std::string, unsigned> type_seen;
 		for (device_c *d : device_c::mydevices) {
 			if (device_is_infrastructure(d))
 				continue;
@@ -225,9 +229,7 @@ static void devices_list(struct mg_connection *conn) {
 					unit = buf;
 				}
 			}
-			uint32_t base_addr = 0;
-			if (qunibusdevice_c *qd = dynamic_cast<qunibusdevice_c *>(d)) {
-				base_addr = qd->base_addr.value;
+			if (dynamic_cast<qunibusdevice_c *>(d) != nullptr) {
 				// the standard address/vector menu for this device's type, so the
 				// UI offers a dropdown rather than a free octal field
 				o["address_options"] = picojson::value(
@@ -235,8 +237,9 @@ static void devices_list(struct mg_connection *conn) {
 				o["vector_options"] = picojson::value(
 						sorted_options(vec_opts[d->type_name.value]));
 			}
+			unsigned instance = type_seen[d->type_name.value]++;
 			o["label"] = picojson::value(
-					device_label(d->type_name.value, d->name.value, unit, base_addr));
+					device_label(d->type_name.value, d->name.value, unit, instance));
 			o["category"] = picojson::value(std::string(d->category()));
 			storagedrive_c *drv = dynamic_cast<storagedrive_c *>(d);
 			if (drv != nullptr) {

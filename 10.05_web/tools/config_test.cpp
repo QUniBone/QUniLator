@@ -693,48 +693,61 @@ int main(void) {
 	check(webconfigs_current() == "dipB", "--config overrides the DIP selection");
 
 	/* 8. device_label: the static per-type table renders each shape correctly.
-	      Fed the (type_name, name, unit, base_addr) triple the API extracts. */
+	      Fed the (type_name, name, unit, instance) tuple the API extracts. Every
+	      label leads with the DEC board type and appends the instance only where
+	      a machine can carry more than one. */
 	{
-		// controller / standalone: bare role, no unit, no address
-		check(device_label("UDA50", "uda", "", 0760334) == "MSCP disk controller (UDA50)",
-				"label: controller shows the bare role");
-		check(device_label("RLV12", "rl", "", 0774400) == "RL disk controller (RLV12)",
-				"label: RL controller bare role");
-		// a drive leads with its DEC code and the medium it holds, then its unit
+		// a machine carries one of these, so the label is board type and role
+		check(device_label("UDA50", "uda", "", 0) == "UDA50 disk controller",
+				"label: controller is board type and role");
+		check(device_label("RLV12", "rl", "", 0) == "RLV12 disk controller",
+				"label: RL controller board type and role");
+		// a drive appends its unit number
 		check(device_label("RA81", "uda0", "0", 0) == "RA81 disk 0",
-				"label: instanced drive leads with the code and appends its unit");
+				"label: instanced drive appends its unit");
 		check(device_label("RL02", "rl1", "1", 0) == "RL02 disk 1",
-				"label: RL02 drive leads with the code and appends its unit");
-		// the two serial lines: disambiguated by CSR address
-		check(device_label("slu_c", "DL11", "", 0777560) == "Serial line unit @777560 (DL11)",
-				"label: DL11 carries its CSR address");
-		check(device_label("slu_c", "DL11b", "", 0776500) == "Serial line unit @776500 (DL11)",
-				"label: DL11b carries its CSR address");
-		// internal device with no DEC code: bare role, no parentheses
+				"label: RL02 drive appends its unit");
+		check(device_label("TK50", "tqk501", "1", 0) == "TK50 tape 1",
+				"label: TK50 drive appends its unit");
+		// several boards of one type: numbered by their ordinal, not their address
+		check(device_label("slu_c", "DL11", "", 0) == "DL11 serial line 0",
+				"label: the first DL11 is numbered 0");
+		check(device_label("slu_c", "DL11b", "", 1) == "DL11 serial line 1",
+				"label: the second DL11 is numbered 1");
+		check(device_label("dzv11_c", "dzv11c", "", 2) == "DZV11 serial mux 2",
+				"label: the third DZV11 is numbered 2");
+		check(device_label("dhv11_c", "dhv11", "", 0) == "DHV11 serial mux 0",
+				"label: the first DHV11 is numbered 0");
+		// internal device with no DEC code: the role opens the label
 		check(device_label("blinkenbone_c", "panel", "", 0) == "Front panel",
-				"label: internal device has no code parentheses");
+				"label: internal device leads with its role");
 		check(device_label("RX0102uCPU", "rxcpu", "", 0) == "Floppy microcontroller",
 				"label: floppy microcontroller names an internal device");
-		// DELQA is instanced; a lone interface omits the unit
-		check(device_label("DELQA", "delqa", "", 017774440) == "Ethernet controller (DELQA)",
-				"label: lone DELQA omits its unit");
+		check(device_label("DELQA", "delqa", "", 0) == "DELQA Ethernet controller",
+				"label: DELQA interface");
 		// the UNIBUS controllers, whose types differ from their Q-bus counterparts
-		check(device_label("RL11", "rl", "", 0774400) == "RL disk controller (RL11)",
+		check(device_label("RL11", "rl", "", 0) == "RL11 disk controller",
 				"label: UNIBUS RL controller");
-		check(device_label("RK11", "rk", "", 0777400) == "RK disk controller (RK11)",
+		check(device_label("RK11", "rk", "", 0) == "RK11 disk controller",
 				"label: UNIBUS RK controller");
-		check(device_label("RX11", "rx", "", 0777170) == "RX01 floppy controller (RX11)",
+		check(device_label("RX11", "rx", "", 0) == "RX11 floppy controller",
 				"label: UNIBUS RX01 controller");
-		check(device_label("RY211", "ry", "", 0777170) == "RX02 floppy controller (RX211)",
+		check(device_label("RY211", "ry", "", 0) == "RX211 floppy controller",
 				"label: UNIBUS RX02 controller");
-		check(device_label("DEUNA", "deuna", "", 0774510) == "Ethernet controller (DEUNA)",
+		check(device_label("DEUNA", "deuna", "", 0) == "DEUNA Ethernet controller",
 				"label: DEUNA controller");
-		check(device_label("KE11", "ke", "", 0777300)
-				== "Extended arithmetic element (KE11-A)", "label: KE11-A");
-		check(device_label("m9312_c", "M9312", "", 0773024) == "Bootstrap ROM (M9312)",
+		check(device_label("KE11", "ke", "", 0) == "KE11-A arithmetic element",
+				"label: KE11-A");
+		check(device_label("m9312_c", "M9312", "", 0) == "M9312 bootstrap ROM",
 				"label: M9312 bootstrap");
-		check(device_label("PDP-11/20", "CPU20", "", 0) == "Emulated CPU (KA11)",
+		check(device_label("PDP-11/20", "CPU20", "", 0) == "KA11 processor",
 				"label: the emulated PDP-11/20");
+		check(device_label("VAX-11/780", "cpuvax", "", 0) == "KA780 processor",
+				"label: the emulated VAX-11/780");
+		check(device_label("MS11", "MEM", "", 0) == "MS11 memory",
+				"label: the UNIBUS memory card");
+		check(device_label("MSV11", "MEM", "", 0) == "MSV11 memory",
+				"label: the Q-bus memory card");
 		// unknown type: raw handle fallback
 		check(device_label("mystery_c", "widget0", "", 0) == "widget0",
 				"label: unknown type falls back to the raw handle");

@@ -491,8 +491,9 @@ function Detail({ name }: { name: string }) {
           g.count++;
           return;
         }
-        // drop the "@<addr>" that only disambiguates instances of one type
-        byType.set(r.type, { name: r.name, label: r.label.replace(/\s*@\d+/, ''), type: r.type, count: 1 });
+        // the picker offers the type and adds its next free instance, so drop
+        // the trailing number that only tells one instance from another
+        byType.set(r.type, { name: r.name, label: r.label.replace(/ \d+$/, ''), type: r.type, count: 1 });
       });
     return Array.from(byType.values()).map((g) => ({
       name: g.name,
