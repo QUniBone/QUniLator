@@ -222,6 +222,14 @@ public:
 		parameter_unsigned_c(this, "tcp_port7", "p7", false, "", "%d", "line 7 TCP port", 16, 10),
 	};
 
+	// A line that listens only while the guest holds it open. With this set, a
+	// line's TCP port is bound while the guest asserts Data Terminal Ready on it
+	// (LNCTRL bit 9) and given up when DTR falls, so a caller reaches a line the
+	// guest is actually ready for rather than one that will not answer. Off by
+	// default, which is a line that listens whenever the device is enabled.
+	parameter_bool_c dtr_listen = parameter_bool_c(this, "dtr_listen", "dtrl", false,
+			"listen on a line's TCP port only while the guest asserts DTR");
+
 	// Per-line signal lamps for the dashboard, one set per line. The DHV11
 	// carries full modem control, so its panel shows more than the DZV11's:
 	// rx/tx pulse with traffic (held briefly by refresh_activity), dtr and rts
@@ -386,6 +394,10 @@ private:
 	void complete_selftest(void);   // caller holds state_mutex: finish a master reset
 	void rx_fifo_push(uint16_t entry); // caller holds state_mutex
 	void tx_report(unsigned line);  // caller holds state_mutex: raise TX.ACTION
+
+	// Tell each line's transport whether it may take a caller: with dtr_listen
+	// set that follows the guest's DTR bit, otherwise the line always may.
+	void refresh_listen_gates(void);
 
 	void open_lines(void);
 	void close_lines(void);

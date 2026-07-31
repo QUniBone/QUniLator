@@ -94,6 +94,12 @@ public:
 
 	/*** dashboard / control ***/
 	bool client_connected(void);
+	// ROLE_LISTEN: whether the port accepts callers at all. A mux that listens
+	// only while the guest asserts Data Terminal Ready closes this when DTR
+	// falls; the listening socket goes with it, so a caller is refused rather
+	// than left waiting in a backlog, and any session on the line ends. Open by
+	// default, which is a line that listens whenever it is configured.
+	void set_listen_gate(bool open);
 	// Port actually bound in ROLE_LISTEN (equals `port`, or the kernel-assigned
 	// value when `port` was 0). 0 until the listen socket is bound.
 	uint16_t local_port(void);
@@ -114,8 +120,14 @@ private:
 	volatile bool running_ = false;
 	int wake_pipe_[2] = { -1, -1 }; // self-pipe: [0] read, [1] write
 	int listen_fd_ = -1;
+	volatile bool listen_gate_ = true;
 	int client_fd_ = -1;
 
+	// ROLE_LISTEN: the listening socket exists only while the line can take a
+	// caller - the gate is open and nobody holds the line. So a second caller
+	// meets a closed port instead of being accepted and dropped, and a line
+	// whose guest has hung up is not listening at all.
+	bool want_listen(void);
 	void io_run(void);
 	bool setup_listen(void);
 	int try_connect(void);            // ROLE_CONNECT: returns connected fd or -1

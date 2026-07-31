@@ -103,6 +103,13 @@ bool dhv11_c::on_param_changed(parameter_c *param)
 	} else if (param == &intr_level) {
 		rcvintr_request.set_level(intr_level.new_value);
 		xmtintr_request.set_level(intr_level.new_value);
+	} else if (param == &dtr_listen) {
+		if (enabled.value) {
+			bool on = dtr_listen.new_value;
+			for (unsigned i = 0; i < DHV_LINE_COUNT; i++)
+				tcp_line[i].set_listen_gate(!on
+						|| (chan[i].lnctrl & DHV_LNCTRL_DTR) != 0);
+		}
 	} else {
 		// A live tcp_role/tcp_host/tcp_port edit re-opens just that one line with
 		// the new transport config, leaving the other lines and the bus
@@ -175,6 +182,7 @@ void dhv11_c::open_line(unsigned i, const std::string &role, const std::string &
 
 void dhv11_c::open_lines(void)
 {
+	refresh_listen_gates();
 	for (unsigned i = 0; i < DHV_LINE_COUNT; i++)
 		open_line(i, tcp_role[i].value, tcp_host[i].value, (uint16_t) tcp_port[i].value);
 }
@@ -300,6 +308,13 @@ void dhv11_c::refresh_signal_lamps(void)
 		dtr_lamp[i].value = (chan[i].lnctrl & DHV_LNCTRL_DTR) != 0;
 		rts_lamp[i].value = (chan[i].lnctrl & DHV_LNCTRL_RTS) != 0;
 	}
+}
+
+void dhv11_c::refresh_listen_gates(void)
+{
+	for (unsigned i = 0; i < DHV_LINE_COUNT; i++)
+		tcp_line[i].set_listen_gate(!dtr_listen.value
+				|| (chan[i].lnctrl & DHV_LNCTRL_DTR) != 0);
 }
 
 // -------------------------------------------------------------------------
@@ -531,6 +546,7 @@ void dhv11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 		if (is_dato) {
 			chan[c].lnctrl = get_register_dato_value(reg[dhv_idx_lnctrl]);
 			set_register_dati_value(reg[dhv_idx_lnctrl], chan[c].lnctrl, __func__);
+			refresh_listen_gates(); // DTR moved: the line listens, or stops
 		}
 		break;
 	case dhv_idx_tbuffad1:
@@ -610,6 +626,7 @@ void dhv11_c::reset(void)
 		tx_lamp[i].value = false;
 	}
 	refresh_signal_lamps();
+	refresh_listen_gates();  // BINIT cleared LNCTRL, so a gated line stops listening
 	load_selftest_codes();
 	rcvintr_request.edge_detect_reset();
 	xmtintr_request.edge_detect_reset();

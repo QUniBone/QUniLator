@@ -117,6 +117,12 @@ bool dzv11_c::on_param_changed(parameter_c *param)
 	} else if (param == &intr_level) {
 		rcvintr_request.set_level(intr_level.new_value);
 		xmtintr_request.set_level(intr_level.new_value);
+	} else if (param == &dtr_listen) {
+		if (enabled.value) {
+			bool on = dtr_listen.new_value;
+			for (unsigned i = 0; i < DZ_LINE_COUNT; i++)
+				tcp_line[i].set_listen_gate(!on || line_dtr[i]);
+		}
 	} else {
 		// A live tcp_role/tcp_host/tcp_port edit re-opens just that one line with
 		// the new transport config, leaving the other lines and the bus
@@ -187,8 +193,15 @@ void dzv11_c::open_line(unsigned i, const std::string &role, const std::string &
 	}
 }
 
+void dzv11_c::refresh_listen_gates(void)
+{
+	for (unsigned i = 0; i < DZ_LINE_COUNT; i++)
+		tcp_line[i].set_listen_gate(!dtr_listen.value || line_dtr[i]);
+}
+
 void dzv11_c::open_lines(void)
 {
+	refresh_listen_gates();
 	for (unsigned i = 0; i < DZ_LINE_COUNT; i++)
 		open_line(i, tcp_role[i].value, tcp_host[i].value, (uint16_t) tcp_port[i].value);
 }
@@ -420,6 +433,7 @@ void dzv11_c::eval_tcr_dato(void)
 		line_dtr[i] = dtr;
 		dtr_lamp[i].value = dtr;
 	}
+	refresh_listen_gates();
 	// TCR line-enable (00-03) and DTR (08-11) are read/write (TM Table 3-4), so
 	// the register reads back what was written. val is already masked to those
 	// bits by writable_bits.
@@ -609,6 +623,7 @@ void dzv11_c::reset(void)
 		dtr_lamp[i].value = false;
 		ri_lamp[i].value = false;
 	}
+	refresh_listen_gates();  // BINIT dropped DTR, so a gated line stops listening
 	tx_break = 0;  // TDR/break register cleared by BINIT (TM 3.2.6)
 	silo.clear();
 	silo_alarm_count = 0;

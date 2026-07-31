@@ -202,10 +202,11 @@ int main(void)
 				1000);
 		check(rx == "yo", "client input reaches the device");
 
-		// second connection is refused
+		// A client holding the line means the port is given up for the duration,
+		// so a second caller does not connect at all - it is not accepted and
+		// then dropped, which would look to the caller like a session that died.
 		telnet_client c2;
-		check(c2.connect_to(port), "second TCP connect is accepted at kernel level");
-		check(c2.closed(), "second client is refused (server closes it)");
+		check(!c2.connect_to(port), "a second caller finds the port closed");
 		check(line.client_connected(), "the first client still holds the line");
 
 		// first client still works after the refusal
@@ -214,7 +215,43 @@ int main(void)
 		check(wait_until([&] { more += c.pump(); return more.find('!') != std::string::npos; },
 				1000), "first client keeps working after a refused second");
 
+		// and the port comes back once the line is free again
 		c.close_it();
+		check(wait_until([&] { return !line.client_connected(); }, 2000),
+				"the line notices the client leaving");
+		telnet_client c3;
+		check(wait_until([&] { return c3.connect_to(port); }, 2000),
+				"the port listens again once the line is free");
+		c3.close_it();
+		line.close();
+	}
+
+	/* 1b. the listen gate: a line only listens while it is let to */
+	{
+		serial_tcp_line_c line;
+		line.role = serial_tcp_line_c::ROLE_LISTEN;
+		line.port = 0;
+		check(line.open(), "gated-open line opens");
+		uint16_t port = line.local_port();
+		check(port != 0, "gated-open line is bound");
+
+		line.set_listen_gate(false);
+		telnet_client c;
+		check(wait_until([&] { return !c.connect_to(port); }, 2000),
+				"a gated-shut line stops listening");
+
+		line.set_listen_gate(true);
+		telnet_client c2;
+		check(wait_until([&] { return c2.connect_to(port); }, 2000),
+				"the port comes back when the gate opens");
+		check(wait_until([&] { return line.client_connected(); }, 1000),
+				"the line takes the caller the reopened port let in");
+
+		// closing the gate under a live session ends it
+		line.set_listen_gate(false);
+		check(wait_until([&] { return !line.client_connected(); }, 2000),
+				"a gated-shut line drops the session it was carrying");
+		c2.close_it();
 		line.close();
 	}
 

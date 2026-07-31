@@ -101,7 +101,7 @@ bool serial_tcp_line_c::open(void)
 	int fl = fcntl(wake_pipe_[0], F_GETFL, 0);
 	fcntl(wake_pipe_[0], F_SETFL, fl | O_NONBLOCK);
 
-	if (role == ROLE_LISTEN && !setup_listen()) {
+	if (role == ROLE_LISTEN && listen_gate_ && !setup_listen()) {
 		::close(wake_pipe_[0]);
 		::close(wake_pipe_[1]);
 		wake_pipe_[0] = wake_pipe_[1] = -1;
@@ -126,11 +126,38 @@ void serial_tcp_line_c::close(void)
 		::close(listen_fd_);
 		listen_fd_ = -1;
 	}
+	{
+		// The port a closed line last answered on is not its port any more: a
+		// re-open is a reconfiguration and asks for whatever it is set to now.
+		std::lock_guard<std::mutex> lock(mutex_);
+		bound_port_ = 0;
+	}
 	if (wake_pipe_[0] >= 0)
 		::close(wake_pipe_[0]);
 	if (wake_pipe_[1] >= 0)
 		::close(wake_pipe_[1]);
 	wake_pipe_[0] = wake_pipe_[1] = -1;
+}
+
+// The gate closing takes the line down with it: the socket goes in io_run, and
+// a session in progress ends, since a line the guest is not holding open has no
+// business carrying one.
+void serial_tcp_line_c::set_listen_gate(bool open)
+{
+	if (listen_gate_ == open)
+		return;
+	listen_gate_ = open;
+	if (!open) {
+		std::lock_guard<std::mutex> lock(mutex_);
+		if (connected_)
+			drop_requested_ = true;
+	}
+	wake();
+}
+
+bool serial_tcp_line_c::want_listen(void)
+{
+	return running_ && listen_gate_ && client_fd_ < 0;
 }
 
 void serial_tcp_line_c::wake(void)
@@ -157,13 +184,23 @@ bool serial_tcp_line_c::setup_listen(void)
 	int one = 1;
 	setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
 
+	// The port is given up whenever the line cannot take a caller and taken back
+	// when it can, so this runs more than once. A port the kernel chose has to be
+	// asked for by number the second time, or the line would answer somewhere
+	// else every time it came back.
+	uint16_t want = port;
+	if (want == 0) {
+		std::lock_guard<std::mutex> lock(mutex_);
+		want = bound_port_;
+	}
+
 	struct sockaddr_in addr;
 	memset(&addr, 0, sizeof addr);
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	addr.sin_port = htons(port);
+	addr.sin_port = htons(want);
 	if (bind(listen_fd_, (struct sockaddr *) &addr, sizeof addr) < 0) {
-		LINE_ERROR("cannot bind TCP port %u: %s", port, strerror(errno));
+		LINE_ERROR("cannot bind TCP port %u: %s", want, strerror(errno));
 		::close(listen_fd_);
 		listen_fd_ = -1;
 		return false;
@@ -302,6 +339,21 @@ void serial_tcp_line_c::io_run(void)
 {
 	while (running_) {
 		if (role == ROLE_LISTEN) {
+			if (!want_listen()) {
+				// gated shut: give the port up and wait to be told otherwise
+				if (listen_fd_ >= 0) {
+					::close(listen_fd_);
+					listen_fd_ = -1;
+					LINE_INFO("stopped listening on port %u", (unsigned) port);
+				}
+				fd_set rfds;
+				FD_ZERO(&rfds);
+				FD_SET(wake_pipe_[0], &rfds);
+				struct timeval tv = { 1, 0 };
+				select(wake_pipe_[0] + 1, &rfds, NULL, NULL, &tv);
+				drain_wake();
+				continue;
+			}
 			if (listen_fd_ < 0 && !setup_listen()) {
 				// transient bind failure: pause, then retry
 				fd_set rfds;
@@ -314,6 +366,11 @@ void serial_tcp_line_c::io_run(void)
 			}
 			accept_client();
 			if (client_fd_ >= 0) {
+				// the line is taken: the port is given up until it is free
+				// again, so a second caller is refused rather than accepted
+				// and dropped
+				::close(listen_fd_);
+				listen_fd_ = -1;
 				on_new_connection();
 				service_client();
 				close_client();
@@ -366,13 +423,6 @@ void serial_tcp_line_c::service_client(void)
 		if (have_tx)
 			FD_SET(client_fd_, &wfds);
 		int maxfd = client_fd_ > wake_pipe_[0] ? client_fd_ : wake_pipe_[0];
-		// second connection attempts arrive on the listen socket: watch it too so
-		// we can refuse them promptly instead of leaving them in the backlog.
-		if (role == ROLE_LISTEN && listen_fd_ >= 0) {
-			FD_SET(listen_fd_, &rfds);
-			if (listen_fd_ > maxfd)
-				maxfd = listen_fd_;
-		}
 
 		struct timeval tv = { 1, 0 }; // 1 s tick drives the idle-timeout check
 		int rc = select(maxfd + 1, &rfds, &wfds, NULL, &tv);
@@ -386,15 +436,6 @@ void serial_tcp_line_c::service_client(void)
 
 		if (FD_ISSET(wake_pipe_[0], &rfds))
 			drain_wake();
-
-		// refuse a second client
-		if (role == ROLE_LISTEN && listen_fd_ >= 0 && FD_ISSET(listen_fd_, &rfds)) {
-			int extra = accept(listen_fd_, NULL, NULL);
-			if (extra >= 0) {
-				LINE_INFO("refused a second connection (line in use)");
-				::close(extra);
-			}
-		}
 
 		if (FD_ISSET(client_fd_, &rfds)) {
 			uint8_t buf[1024];

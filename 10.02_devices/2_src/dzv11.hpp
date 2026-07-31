@@ -126,6 +126,14 @@ public:
 	// one TCP transport per line; a connected client is that line's carrier
 	serial_tcp_line_c tcp_line[DZ_LINE_COUNT];
 
+	// A line that listens only while the guest holds it open. With this set, a
+	// line's TCP port is bound while the guest asserts Data Terminal Ready on it
+	// and given up when DTR falls, so a caller reaches a line the guest is
+	// actually ready for rather than one that will not answer. Off by default,
+	// which is a line that listens whenever the device is enabled.
+	parameter_bool_c dtr_listen = parameter_bool_c(this, "dtr_listen", "dtrl", false,
+			"listen on a line's TCP port only while the guest asserts DTR");
+
 	// Per-line TCP configuration and the dashboard's signal lamps. The lines past
 	// the fourth exist only on the eight-line board, so each list runs to four
 	// and the Unibus build adds the rest.
@@ -320,6 +328,10 @@ private:
 	void set_msr_dati(void);          // modem status from TCP carrier
 	bool select_next_tx_line(void);   // scanner: pick a ready enabled line
 	void scan_tx_trdy(void);          // advance TRDY state (present/drop) now
+
+	// Tell each line's transport whether it may take a caller: with dtr_listen
+	// set that follows the guest's DTR bit, otherwise the line always may.
+	void refresh_listen_gates(void);
 
 	void open_lines(void);
 	void close_lines(void);
