@@ -63,11 +63,26 @@ return SCPE_OK;
 
 static t_stat shim_bus_write (int32 data, int32 pa, int32 mode)
 {
+unsigned addr = shim_unibus_addr (pa);
+unsigned word = (unsigned) (data & 0177777);
+
 shim_iopage_dispatches++;
 /* WRITEB is the byte cycle, DATOB on the bus, and the byte the processor means
-   is the one the address selects. */
-if (!simh_shim_bus_write (shim_unibus_addr (pa), (unsigned) (data & 0177777),
-                          (mode == WRITEB))) {
+   is the one the address selects.
+
+   The core hands a byte right justified in the longword whichever half of the
+   word it belongs to (vax780_uba.c WriteIO). The bus carries it on the half the
+   address selects, and that is where the master state machine reads it from, so
+   an odd address has to be given the byte in the high half. Handed over right
+   justified it arrives as a zero, which silently emptied every high-byte control
+   write a driver made - a serial mux's Data Terminal Ready among them, so VMS
+   could raise DTR on a line and the board would never see it. */
+if (mode == WRITEB) {
+    word &= 0377;
+    if (addr & 1)
+        word <<= 8;
+    }
+if (!simh_shim_bus_write (addr, word, (mode == WRITEB))) {
     uba_ub_nxm (pa);
     return SCPE_NXM;
     }
