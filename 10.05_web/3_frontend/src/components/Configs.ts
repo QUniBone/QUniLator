@@ -520,7 +520,8 @@ function Detail({ name }: { name: string }) {
       ))
     )
       return;
-    applyConfig(name);
+    await applyConfig(name);
+    loc.route('/dashboard');
   };
   const doSaveStored = async () => {
     if (staged && (await saveConfigDoc(name, serialize(staged)))) setDirty(false);
@@ -537,7 +538,10 @@ function Detail({ name }: { name: string }) {
       ))
     )
       return;
-    applyConfig(name);
+    // The loaded configuration is the machine now, so the dashboard — the
+    // screen that shows that machine — is where the operator wants to land.
+    await applyConfig(name);
+    loc.route('/dashboard');
   };
   const doRename = async () => {
     const nn = await promptModal('Rename configuration', 'New name', name, 'Rename');
