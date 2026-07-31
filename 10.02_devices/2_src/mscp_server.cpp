@@ -888,20 +888,36 @@ mscp_disk_server::GetUnitStatus(
     ControlMessageHeader* header =
         reinterpret_cast<ControlMessageHeader*>(message->Message);
 
+    mscp_drive_c* drive = nullptr;
+
     if (modifiers & 0x1)
     {
-        // Next Unit modifier: return the next known unit >= unitNumber.
-        // Unless unitNumber is greater than the number of drives we support
-        // we just return the unit specified by unitNumber.
-        if (unitNumber >= _port->GetDriveCount())
+        // Next Unit modifier: report the first unit at or above the number
+        // asked for that the controller has, and name that unit in the
+        // response. This is how a host walks the controller's units without
+        // knowing which numbers are populated - a bootstrap ROM finds its boot
+        // device this way, asking for unit 0 and then for one past whatever
+        // came back. Answering for the number asked for instead stops the walk
+        // at the first empty slot, and a controller whose only drive sits above
+        // one is never found.
+        while (unitNumber < _port->GetDriveCount())
         {
-            // In this case we act as if drive 0 was queried.
-            unitNumber = 0;
-            header->UnitNumber = 0;
+            mscp_drive_c* candidate = GetDiskDrive(unitNumber);
+            if (nullptr != candidate && candidate->IsAvailable())
+            {
+                drive = candidate;
+                break;
+            }
+            unitNumber++;
         }
+        // Past the last unit the controller has: the walk is over, which the
+        // offline answer below tells the host.
+        header->UnitNumber = unitNumber;
     }
-
-    mscp_drive_c* drive = GetDiskDrive(unitNumber);
+    else if (unitNumber < _port->GetDriveCount())
+    {
+        drive = GetDiskDrive(unitNumber);
+    }
 
     GetUnitStatusResponseParameters* params =
         reinterpret_cast<GetUnitStatusResponseParameters*>(
@@ -909,18 +925,21 @@ mscp_disk_server::GetUnitStatus(
 
     if (nullptr == drive || !drive->IsAvailable())
     {
-        // No such drive or drive image not loaded.
-        params->UnitIdDeviceNumber = 0;
-        params->UnitIdClassModel = 0;
-        params->UnitIdUnused = 0;
-        params->ShadowUnit = 0;
+        // No such drive or drive image not loaded. The whole parameter area
+        // is zeroed: a host reads unit flags and geometry out of it even on
+        // this answer, and the buffer holds whatever the previous response
+        // left there.
+        memset(params, 0, sizeof(GetUnitStatusResponseParameters));
         return STATUS(Status::UNIT_OFFLINE, UnitOfflineSubcodes::UNIT_UNKNOWN, 0);
     }
 
     params->Reserved0 = 0;
     params->Reserved1 = 0;
     params->Reserved2 = 0;
-    params->UnitFlags = 0;  // TODO: 0 for now, which is sane.
+    // The removable-media flag steers hosts: the MXV11-B2 bootstrap runs
+    // separate DU boot passes for removable and fixed units and matches each
+    // unit against this bit alone.
+    params->UnitFlags = drive->IsRemovable() ? UnitFlags::REMOVABLE_MEDIA : 0;
     params->MultiUnitCode = 0; // Controller dependent, we don't support multi-unit drives.
     params->UnitIdDeviceNumber = drive->GetDeviceNumber();
     params->UnitIdClassModel = drive->GetClassModel();
@@ -1100,18 +1119,22 @@ mscp_disk_server::SetUnitCharacteristicsInternal(
         HEADER_SIZE;
 
     mscp_drive_c* drive = GetDiskDrive(unitNumber);
-    // Check unit
-    if (nullptr == drive ||
-        !drive->IsAvailable())
-    {
-        return STATUS(Status::UNIT_OFFLINE, UnitOfflineSubcodes::UNIT_UNKNOWN, 0);
-    }
 
     SetUnitCharacteristicsResponseParameters* params =
         reinterpret_cast<SetUnitCharacteristicsResponseParameters*>(
             GetParameterPointer(message));
 
-    params->UnitFlags = 0;  // TODO: 0 for now, which is sane.
+    // Check unit
+    if (nullptr == drive ||
+        !drive->IsAvailable())
+    {
+        // Zeroed so the host reads no leftover flags or identity out of the
+        // response buffer.
+        memset(params, 0, sizeof(SetUnitCharacteristicsResponseParameters));
+        return STATUS(Status::UNIT_OFFLINE, UnitOfflineSubcodes::UNIT_UNKNOWN, 0);
+    }
+
+    params->UnitFlags = drive->IsRemovable() ? UnitFlags::REMOVABLE_MEDIA : 0;
     params->MultiUnitCode = 0; // Controller dependent, we don't support multi-unit drives.
     params->UnitIdDeviceNumber = drive->GetDeviceNumber();
     params->UnitIdClassModel = drive->GetClassModel();

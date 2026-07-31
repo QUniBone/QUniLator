@@ -161,9 +161,18 @@ uint16_t mscp_drive_c::GetClassModel()
 // GetRCTSize():
 //  Returns the size of one copy of the RCT.
 //
-uint16_t mscp_drive_c::GetRCTSize() 
+uint16_t mscp_drive_c::GetRCTSize()
 {
     return _driveInfo.RCTSize;
+}
+
+//
+// IsRemovable():
+//  Whether this drive's type takes removable media.
+//
+bool mscp_drive_c::IsRemovable()
+{
+    return _driveInfo.Removable;
 }
 
 //

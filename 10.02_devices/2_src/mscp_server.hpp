@@ -139,6 +139,15 @@ protected:
         STILL_ONLINE = 0x200,
     };
 
+    // Unit flags, as carried in the second parameter word of GET UNIT STATUS,
+    // ONLINE and SET UNIT CHARACTERISTICS end messages. Hosts steer on these:
+    // the MXV11-B2 bootstrap keys its two DU boot flavors off the
+    // removable-media bit alone.
+    enum UnitFlags
+    {
+        REMOVABLE_MEDIA = 0x80,
+    };
+
     enum UnitOfflineSubcodes
     {
         UNIT_UNKNOWN = 0x0,

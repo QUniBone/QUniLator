@@ -37,6 +37,7 @@ public:
     uint16_t GetGroupsPerCylinder(void);
     uint8_t GetRBNs(void);
     uint8_t GetRCTCopies(void);
+    bool IsRemovable(void);
 
     void SetOnline(void);
     void SetOffline(void);bool IsOnline(void);bool IsAvailable(void);
