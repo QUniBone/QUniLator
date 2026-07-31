@@ -164,6 +164,11 @@ void webconsole_register(struct mg_context *ctx) {
 			console.adapter->stream_xmt_tap = &console.tap_stream;
 }
 
+void webconsole_clear(void) {
+	for (console_c &console : consoles)
+		console.channel.clear_ring();
+}
+
 void webconsole_shutdown(void) {
 	if (!running)
 		return;

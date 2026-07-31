@@ -119,6 +119,11 @@ void console_channel_c::remove_client(void *client) {
 	}
 }
 
+void console_channel_c::clear_ring(void) {
+	std::lock_guard<std::mutex> lock(mutex_);
+	ring_.clear();
+}
+
 void console_channel_c::clear_clients(void) {
 	std::lock_guard<std::mutex> lock(mutex_);
 	clients_.clear();

@@ -567,6 +567,14 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	// An emulated CPU has no HALT line to pull: its switches are the front
 	// panel, and the run controls belong on them. A board serving a physical
 	// PDP-11 keeps driving the bus signals below.
+	// A machine that has just been switched on has printed nothing, so the
+	// consoles forget what the last one printed rather than handing a terminal
+	// that reconnects a screen the machine did not put there.
+	if (action == "dc_on" || action == "powercycle" || action == "restart") {
+		webconsole_clear();
+		webconsole_ext_clear();
+	}
+
 	if (control_apply_to_emulated_cpu(action)) {
 		picojson::object res;
 		res["ok"] = picojson::value(true);

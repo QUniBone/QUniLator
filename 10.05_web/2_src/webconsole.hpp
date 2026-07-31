@@ -15,4 +15,8 @@ void webconsole_register(struct mg_context *ctx);
 // remove the tap and stop the flush thread
 void webconsole_shutdown(void);
 
+// Forget what every emulated console has printed, so a machine powered on does
+// not hand a reconnecting terminal the last machine's screen.
+void webconsole_clear(void);
+
 #endif // _WEBCONSOLE_HPP_

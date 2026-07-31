@@ -1,6 +1,7 @@
 // /ws/events: committed parameter changes, log lines and hardware state.
 import { store, setStore, emit, emitSoon } from '../store';
 import { patchParam } from './devmodel';
+import { clearConsole } from './terminals';
 import { wsURL } from './util';
 import { syncVersion } from './version';
 import type { LogLevelName, LogLine, UpdateStatus } from '../types';
@@ -88,7 +89,11 @@ export function initEvents(): void {
       if ('init' in ev) bus.init = ev.init;
       if ('dcok' in ev) hw.dcok = ev.dcok;
       if ('pok' in ev) hw.pok = ev.pok;
-      if ('powered' in ev) hw.powered = ev.powered;
+      if ('powered' in ev) {
+        // switched on: the machine has printed nothing yet
+        if (ev.powered && hw.powered === false) clearConsole();
+        hw.powered = ev.powered;
+      }
       if (ev.leds) ev.leds.forEach((v: boolean, i: number) => (hw.leds[i] = v));
       if (ev.switches) ev.switches.forEach((v: boolean, i: number) => (hw.dip[i] = v));
       return 'now';

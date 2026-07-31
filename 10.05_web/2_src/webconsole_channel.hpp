@@ -64,6 +64,11 @@ public:
 	// shutdown: forget every client (the ring is left intact).
 	void clear_clients();
 
+	// Forget the retained history. A machine that has just been powered on has
+	// not printed what is on the screen, so a console reconnecting after it must
+	// not be handed the previous machine's output as though it were current.
+	void clear_ring();
+
 	// Introspection for tests.
 	size_t ring_size();
 	size_t client_count();

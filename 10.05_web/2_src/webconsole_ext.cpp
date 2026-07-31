@@ -186,6 +186,10 @@ void webconsole_ext_register(struct mg_context *ctx) {
 	tx_writer = std::thread(tx_writer_loop);
 }
 
+void webconsole_ext_clear(void) {
+	channel.clear_ring();
+}
+
 void webconsole_ext_shutdown(void) {
 	if (!running)
 		return;

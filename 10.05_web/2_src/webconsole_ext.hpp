@@ -15,6 +15,9 @@ struct mg_context;
 void webconsole_ext_register(struct mg_context *ctx);
 void webconsole_ext_shutdown(void);
 
+// Forget what the external console has printed (see webconsole_clear).
+void webconsole_ext_clear(void);
+
 // apply the external-console setting: open/reopen the tty when
 // source == "ttys2", close it otherwise. Returns "" on success, or a
 // human-readable reason on failure (port in use by an enabled DL11,
