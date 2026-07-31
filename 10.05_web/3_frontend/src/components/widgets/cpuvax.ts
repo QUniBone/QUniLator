@@ -5,7 +5,6 @@ import { liveSetParam } from '../../api';
 import { statusParam } from '../../lib/devmodel';
 import type { LiveParam } from '../../types';
 import { Bit, Cap, DeviceWidget } from './base';
-import type { Cells, WidgetOption } from './base';
 
 // The processor status longword, as far as a console shows it. A VAX keeps its
 // condition codes in the low four bits and the level it runs at in <20:16>, and
@@ -28,42 +27,18 @@ function decodePsl(hex: string | undefined) {
 }
 
 // The VAX has its own card rather than the PDP-11's: a thirty-two bit program
-// counter shown in hex, a status longword laid out differently, no switch
-// register, and a UNIBUS adapter between it and the devices whose traffic an
-// operator wants to see.
+// counter shown in hex, a status longword laid out differently, and no switch
+// register.
 //
-// The bus readouts are what says whether the adapter is carrying anything, so
-// they are the card's own option: a machine still being brought up wants them,
-// one that works does not.
+// The card shows what an operator reads a console for — where the processor is,
+// what mode and priority it runs at, and the four console switches. The
+// adapter's running totals of bus cycles, interrupts and mapped words are a
+// bring-up instrument: they carry no rate and no scale, so nothing on a working
+// machine can be told from them. They stay available through the device's
+// status parameters for anyone who wants to read them.
 export class VaxCpuWidget extends DeviceWidget {
-  static options: WidgetOption[] = [
-    {
-      key: 'bus',
-      label: 'adapter traffic',
-      info: 'the register accesses, interrupts and mapped transfers the UNIBUS adapter has carried',
-      def: true,
-    },
-  ];
-
-  private view(): { psl?: LiveParam; cycles?: LiveParam; ints?: LiveParam; dma?: LiveParam } {
-    return {
-      psl: statusParam(this.d, 'PSL'),
-      ...(this.on('bus')
-        ? {
-            cycles: statusParam(this.d, 'bus_cycles'),
-            ints: statusParam(this.d, 'bus_interrupts'),
-            dma: statusParam(this.d, 'dma_words'),
-          }
-        : {}),
-    };
-  }
-
-  cells(): Cells {
-    const v = this.view();
-    let rows = 2; // the PC and PSL readouts, and the console switches
-    if (v.psl) rows++; // the status longword, spelled out as lamps
-    if (v.cycles) rows++; // what the adapter has carried
-    return { w: 7, h: 3 + rows };
+  private view(): { psl?: LiveParam } {
+    return { psl: statusParam(this.d, 'PSL') };
   }
 
   protected statusChip(): ComponentChildren {
@@ -73,7 +48,7 @@ export class VaxCpuWidget extends DeviceWidget {
   }
 
   render(): ComponentChildren {
-    const { psl, cycles, ints, dma } = this.view();
+    const { psl } = this.view();
     const running = this.lit(this.lamp('run_led'));
     const halted = this.lamp('halt_switch');
     const pc = statusParam(this.d, 'PC');
@@ -100,12 +75,6 @@ export class VaxCpuWidget extends DeviceWidget {
           >
           <span class="cpu-pri" title="priority the processor runs at">IPL${s.ipl}</span>
           ${s.flags.map((f) => html`<${Bit} lit=${!!(s.value & f[1])}>${f[0]}</${Bit}>`)}
-        </div>`}
-        ${cycles &&
-        html`<div class="cpu-regs">
-          <label>BUS<span class="cpu-oct">${cycles.v}</span></label>
-          <label>INT<span class="cpu-oct">${ints ? ints.v : '0'}</span></label>
-          <label>DMA<span class="cpu-oct">${dma ? dma.v : '0'}</span></label>
         </div>`}
         <div class="lamps">
           <${Cap} cls="cap-white" lit=${running}>RUN</${Cap}>
