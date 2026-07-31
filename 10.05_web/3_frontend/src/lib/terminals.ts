@@ -165,6 +165,17 @@ function wireTerminal(): void {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(d);
     else if (serialWriter) serialWriter.write(serialEncoder.encode(d));
   });
+  // Selecting console text copies it. A terminal has no other use for a
+  // selection — there is nothing to drag it onto — so the gesture that makes
+  // one is taken to mean "I want this", and the operator is spared a second
+  // one. Writing to the clipboard needs the document focused, which it is,
+  // having just been clicked in; a browser that refuses is ignored, since the
+  // selection is still there to copy by hand.
+  t.onSelectionChange(() => {
+    const text = t.getSelection();
+    if (!text || !navigator.clipboard) return;
+    navigator.clipboard.writeText(text).catch(() => {});
+  });
   // the physical-disconnect hook lives on navigator.serial, which outlives every
   // mount, so register it once rather than on each rebuild
   if (navigator.serial && !serialDisconnectHooked) {

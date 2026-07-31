@@ -129,6 +129,14 @@
 
 /* ============================ base ============================ */
 * { box-sizing: border-box; }
+/* The dashboard imitates a machine's panels, and dragging a selection across
+   sheet metal is not a thing one does: only the console's text is selectable,
+   the way the glass of a terminal is the only thing you can read off. Inputs
+   keep their own selection so a field can still be edited. */
+[data-page="dashboard"] { user-select: none; -webkit-user-select: none; }
+[data-page="dashboard"] .term,
+[data-page="dashboard"] input,
+[data-page="dashboard"] textarea { user-select: text; -webkit-user-select: text; }
 html, body { margin: 0; padding: 0; }
 body {
   background: var(--bg);
