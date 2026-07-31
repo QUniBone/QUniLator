@@ -144,7 +144,7 @@ mscp_server_base::AbortPollingThread(void)
     pthread_mutex_lock(&polling_mutex);
     _abort_polling = true;
     _pollState = PollingState::Wait;
-    pthread_cond_signal(&polling_cond);
+    pthread_cond_broadcast(&polling_cond);
     pthread_mutex_unlock(&polling_mutex);
 
     pthread_cancel(polling_pthread);
@@ -184,8 +184,6 @@ mscp_server_base::AbortPollingThread(void)
 bool
 mscp_server_base::LingerForNextCommand(void)
 {
-    timeout_c timer;
-
     for (unsigned waited = 0; waited < POLL_LINGER_TOTAL_US;
          waited += POLL_LINGER_INTERVAL_US)
     {
@@ -197,9 +195,40 @@ mscp_server_base::LingerForNextCommand(void)
         {
             return true;
         }
-        timer.wait_us(POLL_LINGER_INTERVAL_US);
+        WaitForPollStateChange(POLL_LINGER_INTERVAL_US);
     }
     return false;
+}
+
+//
+// WaitForPollStateChange():
+//  Sleeps for at most the given time, and returns as soon as the polling state
+//  moves on.
+//
+//  A hard initialization has to show the step-1 code in SA within a couple of
+//  milliseconds - the RSX-11M+ MSCP bootstrap polls SA a fixed number of times
+//  and declares the controller dead when the code has not appeared - and
+//  Reset() cannot finish until this thread has parked. So the window between
+//  ring reads is a wait on the polling condition, which Reset() and the
+//  doorbell both signal, and ends the moment either of them speaks.
+//
+void
+mscp_server_base::WaitForPollStateChange(
+    unsigned timeout_us)
+{
+    struct timespec deadline;
+
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_nsec += static_cast<long>(timeout_us) * 1000;
+    deadline.tv_sec += deadline.tv_nsec / 1000000000L;
+    deadline.tv_nsec %= 1000000000L;
+
+    pthread_mutex_lock(&polling_mutex);
+    if (!_abort_polling && _pollState == PollingState::Run)
+    {
+        pthread_cond_timedwait(&polling_cond, &polling_mutex, &deadline);
+    }
+    pthread_mutex_unlock(&polling_mutex);
 }
 
 //
@@ -414,7 +443,7 @@ mscp_server_base::Poll(void)
             // Signal the Reset call that we're done so it can return
             // and release the Host.
             _pollState = PollingState::Wait;
-            pthread_cond_signal(&polling_cond);
+            pthread_cond_broadcast(&polling_cond);
         }
         else if (_pollState == PollingState::InitRun)
         {
@@ -598,6 +627,9 @@ mscp_server_base::Reset(void)
     if (_pollState != PollingState::Wait)
     {
         _pollState = PollingState::InitRestart;
+        // Cut short a poll that is waiting out the window between ring reads,
+        // so the port can post its step-1 code while the host is still looking.
+        pthread_cond_broadcast(&polling_cond);
 
         while (_pollState != PollingState::Wait)
         {
@@ -627,7 +659,7 @@ mscp_server_base::InitPolling(void)
     pthread_mutex_lock(&polling_mutex);
         DEBUG_FAST("Waking polling thread.");
         _pollState = PollingState::InitRun;
-       	pthread_cond_signal(&polling_cond);
+       	pthread_cond_broadcast(&polling_cond);
     pthread_mutex_unlock(&polling_mutex);
 }
 

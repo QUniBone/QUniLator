@@ -186,6 +186,7 @@ private:
     // True when the host handed another command over in that time.
     //
     bool LingerForNextCommand(void);
+    void WaitForPollStateChange(unsigned timeout_us);
 
 public:
 
