@@ -8,7 +8,7 @@ import { DiskWidget, Ra81Widget, RemovableDriveWidget, RlWidget } from './drives
 import { CpuWidget } from './cpu';
 import { MemoryWidget } from './memory';
 import { VaxCpuWidget } from './cpuvax';
-import { DzWidget, NetworkWidget, Vcb01Widget } from './peripherals';
+import { DhWidget, DzWidget, NetworkWidget, Vcb01Widget } from './peripherals';
 
 export type { Cells, WidgetOption, WidgetOpts } from './base';
 export { DeviceWidget } from './base';
@@ -30,6 +30,7 @@ const WIDGET_MODELS: Record<string, WidgetClass> = {
   RX01: RemovableDriveWidget,
   RX02: RemovableDriveWidget,
   dzv11_c: DzWidget,
+  dhv11_c: DhWidget,
   'PDP-11/20': CpuWidget,
   'PDP-11/34': CpuWidget,
   'VAX-11/780': VaxCpuWidget,

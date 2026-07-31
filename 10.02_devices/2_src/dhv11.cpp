@@ -66,6 +66,18 @@ dhv11_c::dhv11_c() : qunibusdevice_c()
 	csr_tx_line = 0;
 	csr_channel = 0;
 
+	memset(rx_lamp_until_ms, 0, sizeof rx_lamp_until_ms);
+	memset(tx_lamp_until_ms, 0, sizeof tx_lamp_until_ms);
+	for (unsigned i = 0; i < DHV_LINE_COUNT; i++) {
+		rx_lamp[i].kind = parameter_c::PARAM_STATUS;
+		tx_lamp[i].kind = parameter_c::PARAM_STATUS;
+		dtr_lamp[i].kind = parameter_c::PARAM_STATUS;
+		rts_lamp[i].kind = parameter_c::PARAM_STATUS;
+		cd_lamp[i].kind = parameter_c::PARAM_STATUS;
+		dsr_lamp[i].kind = parameter_c::PARAM_STATUS;
+		cts_lamp[i].kind = parameter_c::PARAM_STATUS;
+	}
+
 	// Usable defaults: every line listens on a distinct TCP port, so an enabled
 	// device accepts a client without any per-line configuration. tcp_host stays
 	// empty (used only for connect-out).
@@ -275,6 +287,51 @@ void dhv11_c::set_stat_dati(void)
 	set_register_dati_value(reg[dhv_idx_stat], val, __func__);
 }
 
+// caller holds state_mutex: the dashboard's modem-signal lamps. STAT reports
+// only the channel the CSR selects, so the panel reads each line's carrier and
+// LNCTRL directly — the same conditions, for all eight lines at once.
+void dhv11_c::refresh_signal_lamps(void)
+{
+	for (unsigned i = 0; i < DHV_LINE_COUNT; i++) {
+		bool carrier = chan[i].open && tcp_line[i].client_connected();
+		cd_lamp[i].value = carrier;
+		dsr_lamp[i].value = carrier;
+		cts_lamp[i].value = carrier;
+		dtr_lamp[i].value = (chan[i].lnctrl & DHV_LNCTRL_DTR) != 0;
+		rts_lamp[i].value = (chan[i].lnctrl & DHV_LNCTRL_RTS) != 0;
+	}
+}
+
+// -------------------------------------------------------------------------
+// activity lamps
+
+// A byte moves in microseconds; hold the lamp for activity_lamp_on_time_ms so a
+// poll between bursts still catches it. refresh_activity() clears it once the
+// hold elapses. Called from the device threads by direct value assignment, the
+// same path the webevents lamp poll watches.
+void dhv11_c::note_rx_activity(unsigned line)
+{
+	rx_lamp_until_ms[line] = now_ms() + activity_lamp_on_time_ms;
+	rx_lamp[line].value = true;
+}
+
+void dhv11_c::note_tx_activity(unsigned line)
+{
+	tx_lamp_until_ms[line] = now_ms() + activity_lamp_on_time_ms;
+	tx_lamp[line].value = true;
+}
+
+void dhv11_c::refresh_activity(void)
+{
+	uint64_t now = now_ms();
+	for (unsigned i = 0; i < DHV_LINE_COUNT; i++) {
+		if (rx_lamp[i].value && now >= rx_lamp_until_ms[i])
+			rx_lamp[i].value = false;
+		if (tx_lamp[i].value && now >= tx_lamp_until_ms[i])
+			tx_lamp[i].value = false;
+	}
+}
+
 // caller holds state_mutex: load the eight self-test result codes into the FIFO
 // (§3.3.10): six null codes then the two ROM-version codes, each carrying
 // DATA.VALID, the diagnostic marker <14:12>=111 and its sequence number <11:8>.
@@ -441,6 +498,7 @@ void dhv11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 								| ((uint16_t) (c & 7) << DHV_RBUF_LINE_SHIFT) | ch);
 				} else if (chan_tx_ena(c) && chan[c].open) {
 					tcp_line[c].send(ch);
+					note_tx_activity(c);
 				}
 				tx_report(c);
 				update_csr_and_INTR();
@@ -546,7 +604,12 @@ void dhv11_c::reset(void)
 		bool was_open = tcp_line[i].is_open();
 		set_channel_defaults(i);
 		chan[i].open = was_open; // TCP lines survive a bus INIT
+		// BINIT clears LNCTRL, so the modem-control lines it drives fall with it;
+		// the carrier lamps are recomputed from live carrier below.
+		rx_lamp[i].value = false;
+		tx_lamp[i].value = false;
 	}
+	refresh_signal_lamps();
 	load_selftest_codes();
 	rcvintr_request.edge_detect_reset();
 	xmtintr_request.edge_detect_reset();
@@ -601,6 +664,7 @@ void dhv11_c::worker_rcv(void)
 			}
 		}
 		set_stat_dati();
+		refresh_signal_lamps();
 		pthread_mutex_unlock(&state_mutex);
 
 		for (unsigned i = 0; i < DHV_LINE_COUNT; i++) {
@@ -611,6 +675,7 @@ void dhv11_c::worker_rcv(void)
 				continue; // wire data is ignored while looping back
 			uint8_t ch;
 			while (tcp_line[i].poll_rcv(&ch)) {
+				note_rx_activity(i);
 				pthread_mutex_lock(&state_mutex);
 				rx_fifo_push(DHV_RBUF_DATA_VALID
 						| ((uint16_t) (i & 7) << DHV_RBUF_LINE_SHIFT) | ch);
@@ -663,9 +728,12 @@ void dhv11_c::worker_xmt(void)
 		const uint8_t *bytes = (const uint8_t *) dma_buf; // low byte first per word
 		// wire output runs without the state lock (the blocking-I/O rule); the
 		// maintenance loopback wraps the same bytes back to the FIFO under lock.
-		if (ok && !loopback && open)
+		if (ok && !loopback && open) {
 			for (unsigned k = 0; k < n; k++)
 				tcp_line[line].send(bytes[k]);
+			if (n > 0)
+				note_tx_activity(line);
+		}
 
 		pthread_mutex_lock(&state_mutex);
 		if (ok && loopback)

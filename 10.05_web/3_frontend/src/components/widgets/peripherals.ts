@@ -24,33 +24,40 @@ export class NetworkWidget extends PanelWidget {
   }
 }
 
-// The DZV11 4-line mux, laid out like a modem panel: a black lamp window with
-// one row of signal lamps per line and a legend of the signal names beneath, in
-// the control-panel legend font. Only the signals the DZV11 carries appear:
-// RX/TX traffic, DTR (driven by the guest), CD (a connected TCP client), and RI
-// (a modem-status ring bit; unasserted, as the TCP transport has no ring). The
-// DZV11 has no RTS/CTS/DSR silicon, so those signals are absent.
-const DZ_LINES = 4;
-const DZ_SIGNALS: { key: string; label: string; live: boolean }[] = [
-  { key: 'rx', label: 'RX', live: true },
-  { key: 'tx', label: 'TX', live: true },
-  { key: 'dtr', label: 'DTR', live: true },
-  { key: 'cd', label: 'CD', live: true },
-  { key: 'ri', label: 'RI', live: false },
-];
-export class DzWidget extends DeviceWidget {
+// A serial mux, laid out like a modem panel: a black lamp window with one row of
+// signal lamps per line and a legend of the signal names beneath, in the
+// control-panel legend font. A mux shows the signals its silicon actually
+// carries, so each type declares its own set and the panel draws that.
+//
+// A signal marked dead has no lamp parameter behind it: the board brings the
+// line out but nothing in this machine ever asserts it, so it is drawn dark
+// rather than left off the panel, which is what the real one looks like.
+interface MuxSignal {
+  key: string;
+  label: string;
+  live: boolean;
+}
+abstract class MuxWidget extends DeviceWidget {
+  protected abstract lines: number;
+  protected abstract signals: MuxSignal[];
+
   render(): ComponentChildren {
+    const cols = '20px repeat(' + this.signals.length + ', 32px)';
     const rows = [];
-    for (let ln = 0; ln < DZ_LINES; ln++) {
-      const cells = DZ_SIGNALS.map((s) => {
+    for (let ln = 0; ln < this.lines; ln++) {
+      const cells = this.signals.map((s) => {
         const on = this.lit(s.live && this.lamp(s.key + ln + 'lamp'));
         return html`<span class="dz-cell"><${Led} on=${on} title=${s.label + ' line ' + ln} /></span>`;
       });
-      rows.push(html`<div class="dz-row"><span class="dz-port">${ln}</span>${cells}</div>`);
+      rows.push(
+        html`<div class="dz-row" style=${'grid-template-columns:' + cols}>
+          <span class="dz-port">${ln}</span>${cells}</div>`
+      );
     }
-    const legend = html`<div class="dz-legend"><span class="dz-port"></span>${DZ_SIGNALS.map(
-      (s) => html`<span class="dz-cell">${s.label}</span>`
-    )}</div>`;
+    const legend = html`<div class="dz-legend" style=${'grid-template-columns:' + cols}>
+      <span class="dz-port"></span>${this.signals.map(
+        (s) => html`<span class="dz-cell">${s.label}</span>`
+      )}</div>`;
     return html`<div class="card diskcard dzcard">
       ${this.head()}
       <div class="card-body dzbody">
@@ -58,6 +65,37 @@ export class DzWidget extends DeviceWidget {
         ${legend}
       </div></div>`;
   }
+}
+
+// The DZV11's four lines carry RX/TX traffic, DTR (driven by the guest), CD (a
+// connected TCP client) and RI, a modem-status ring bit nothing asserts. The
+// board has no RTS/CTS/DSR silicon, so those signals are absent.
+export class DzWidget extends MuxWidget {
+  protected lines = 4;
+  protected signals: MuxSignal[] = [
+    { key: 'rx', label: 'RX', live: true },
+    { key: 'tx', label: 'TX', live: true },
+    { key: 'dtr', label: 'DTR', live: true },
+    { key: 'cd', label: 'CD', live: true },
+    { key: 'ri', label: 'RI', live: false },
+  ];
+}
+
+// The DHV11 carries full modem control on all eight lines: DTR and RTS out of
+// LNCTRL, and CD/DSR/CTS reported back through STAT, which a connected client
+// asserts together. RI is brought out and never rung.
+export class DhWidget extends MuxWidget {
+  protected lines = 8;
+  protected signals: MuxSignal[] = [
+    { key: 'rx', label: 'RX', live: true },
+    { key: 'tx', label: 'TX', live: true },
+    { key: 'dtr', label: 'DTR', live: true },
+    { key: 'rts', label: 'RTS', live: true },
+    { key: 'cd', label: 'CD', live: true },
+    { key: 'dsr', label: 'DSR', live: true },
+    { key: 'cts', label: 'CTS', live: true },
+    { key: 'ri', label: 'RI', live: false },
+  ];
 }
 
 // The VCB01/QVSS bitmap display, drawn from the frame-buffer stream the board

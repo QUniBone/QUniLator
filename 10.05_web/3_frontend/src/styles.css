@@ -478,18 +478,18 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
 }
 .dip.on::after { top: 3px; }
 
-/* ---- DZV11 serial line panel ---- a black lamp window carrying one row of
+/* ---- serial mux line panel ---- a black lamp window carrying one row of
    modem-signal lamps per line, with a legend of the signal names beneath in the
    control-panel legend font. The port digit sits at the left of each row inside
-   the window; the legend row aligns to the same column grid. */
+   the window; the legend row aligns to the same column grid, which the widget
+   sets from the number of signals the board carries. The window is the terminal
+   black, so a lamp panel and the console read as the same surface. */
 .dzbody { display: flex; flex-direction: column; align-items: center; gap: 9px; padding: 10px 12px 14px; }
 .dz-panel {
   display: flex; flex-direction: column; gap: 6px;
-  padding: 9px 12px; border-radius: 6px; background: var(--bezel);
+  padding: 9px 12px; border-radius: 6px; background: var(--term-bg);
 }
-.dz-row, .dz-legend {
-  display: grid; grid-template-columns: 20px repeat(5, 32px); align-items: center;
-}
+.dz-row, .dz-legend { display: grid; align-items: center; }
 .dz-cell { display: flex; align-items: center; justify-content: center; }
 /* the per-line port number, muted against the black window */
 .dz-row .dz-port {

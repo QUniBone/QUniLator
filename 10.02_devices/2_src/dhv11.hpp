@@ -222,6 +222,84 @@ public:
 		parameter_unsigned_c(this, "tcp_port7", "p7", false, "", "%d", "line 7 TCP port", 16, 10),
 	};
 
+	// Per-line signal lamps for the dashboard, one set per line. The DHV11
+	// carries full modem control, so its panel shows more than the DZV11's:
+	// rx/tx pulse with traffic (held briefly by refresh_activity), dtr and rts
+	// follow the LNCTRL bits the guest drives, and cd/dsr/cts follow carrier —
+	// a connected TCP client, which the STAT register reports on all three.
+	// Nothing rings RI, so it has no lamp. Names end in "lamp" so webevents'
+	// lamp poll picks up the direct value assignments the device threads make.
+	parameter_bool_c rx_lamp[DHV_LINE_COUNT] = {
+		parameter_bool_c(this, "rx0lamp", "rxl0", true, "line 0 receive activity"),
+		parameter_bool_c(this, "rx1lamp", "rxl1", true, "line 1 receive activity"),
+		parameter_bool_c(this, "rx2lamp", "rxl2", true, "line 2 receive activity"),
+		parameter_bool_c(this, "rx3lamp", "rxl3", true, "line 3 receive activity"),
+		parameter_bool_c(this, "rx4lamp", "rxl4", true, "line 4 receive activity"),
+		parameter_bool_c(this, "rx5lamp", "rxl5", true, "line 5 receive activity"),
+		parameter_bool_c(this, "rx6lamp", "rxl6", true, "line 6 receive activity"),
+		parameter_bool_c(this, "rx7lamp", "rxl7", true, "line 7 receive activity"),
+	};
+	parameter_bool_c tx_lamp[DHV_LINE_COUNT] = {
+		parameter_bool_c(this, "tx0lamp", "txl0", true, "line 0 transmit activity"),
+		parameter_bool_c(this, "tx1lamp", "txl1", true, "line 1 transmit activity"),
+		parameter_bool_c(this, "tx2lamp", "txl2", true, "line 2 transmit activity"),
+		parameter_bool_c(this, "tx3lamp", "txl3", true, "line 3 transmit activity"),
+		parameter_bool_c(this, "tx4lamp", "txl4", true, "line 4 transmit activity"),
+		parameter_bool_c(this, "tx5lamp", "txl5", true, "line 5 transmit activity"),
+		parameter_bool_c(this, "tx6lamp", "txl6", true, "line 6 transmit activity"),
+		parameter_bool_c(this, "tx7lamp", "txl7", true, "line 7 transmit activity"),
+	};
+	parameter_bool_c dtr_lamp[DHV_LINE_COUNT] = {
+		parameter_bool_c(this, "dtr0lamp", "dtl0", true, "line 0 data terminal ready"),
+		parameter_bool_c(this, "dtr1lamp", "dtl1", true, "line 1 data terminal ready"),
+		parameter_bool_c(this, "dtr2lamp", "dtl2", true, "line 2 data terminal ready"),
+		parameter_bool_c(this, "dtr3lamp", "dtl3", true, "line 3 data terminal ready"),
+		parameter_bool_c(this, "dtr4lamp", "dtl4", true, "line 4 data terminal ready"),
+		parameter_bool_c(this, "dtr5lamp", "dtl5", true, "line 5 data terminal ready"),
+		parameter_bool_c(this, "dtr6lamp", "dtl6", true, "line 6 data terminal ready"),
+		parameter_bool_c(this, "dtr7lamp", "dtl7", true, "line 7 data terminal ready"),
+	};
+	parameter_bool_c rts_lamp[DHV_LINE_COUNT] = {
+		parameter_bool_c(this, "rts0lamp", "rtl0", true, "line 0 request to send"),
+		parameter_bool_c(this, "rts1lamp", "rtl1", true, "line 1 request to send"),
+		parameter_bool_c(this, "rts2lamp", "rtl2", true, "line 2 request to send"),
+		parameter_bool_c(this, "rts3lamp", "rtl3", true, "line 3 request to send"),
+		parameter_bool_c(this, "rts4lamp", "rtl4", true, "line 4 request to send"),
+		parameter_bool_c(this, "rts5lamp", "rtl5", true, "line 5 request to send"),
+		parameter_bool_c(this, "rts6lamp", "rtl6", true, "line 6 request to send"),
+		parameter_bool_c(this, "rts7lamp", "rtl7", true, "line 7 request to send"),
+	};
+	parameter_bool_c cd_lamp[DHV_LINE_COUNT] = {
+		parameter_bool_c(this, "cd0lamp", "cdl0", true, "line 0 carrier detect"),
+		parameter_bool_c(this, "cd1lamp", "cdl1", true, "line 1 carrier detect"),
+		parameter_bool_c(this, "cd2lamp", "cdl2", true, "line 2 carrier detect"),
+		parameter_bool_c(this, "cd3lamp", "cdl3", true, "line 3 carrier detect"),
+		parameter_bool_c(this, "cd4lamp", "cdl4", true, "line 4 carrier detect"),
+		parameter_bool_c(this, "cd5lamp", "cdl5", true, "line 5 carrier detect"),
+		parameter_bool_c(this, "cd6lamp", "cdl6", true, "line 6 carrier detect"),
+		parameter_bool_c(this, "cd7lamp", "cdl7", true, "line 7 carrier detect"),
+	};
+	parameter_bool_c dsr_lamp[DHV_LINE_COUNT] = {
+		parameter_bool_c(this, "dsr0lamp", "dsl0", true, "line 0 data set ready"),
+		parameter_bool_c(this, "dsr1lamp", "dsl1", true, "line 1 data set ready"),
+		parameter_bool_c(this, "dsr2lamp", "dsl2", true, "line 2 data set ready"),
+		parameter_bool_c(this, "dsr3lamp", "dsl3", true, "line 3 data set ready"),
+		parameter_bool_c(this, "dsr4lamp", "dsl4", true, "line 4 data set ready"),
+		parameter_bool_c(this, "dsr5lamp", "dsl5", true, "line 5 data set ready"),
+		parameter_bool_c(this, "dsr6lamp", "dsl6", true, "line 6 data set ready"),
+		parameter_bool_c(this, "dsr7lamp", "dsl7", true, "line 7 data set ready"),
+	};
+	parameter_bool_c cts_lamp[DHV_LINE_COUNT] = {
+		parameter_bool_c(this, "cts0lamp", "ctl0", true, "line 0 clear to send"),
+		parameter_bool_c(this, "cts1lamp", "ctl1", true, "line 1 clear to send"),
+		parameter_bool_c(this, "cts2lamp", "ctl2", true, "line 2 clear to send"),
+		parameter_bool_c(this, "cts3lamp", "ctl3", true, "line 3 clear to send"),
+		parameter_bool_c(this, "cts4lamp", "ctl4", true, "line 4 clear to send"),
+		parameter_bool_c(this, "cts5lamp", "ctl5", true, "line 5 clear to send"),
+		parameter_bool_c(this, "cts6lamp", "ctl6", true, "line 6 clear to send"),
+		parameter_bool_c(this, "cts7lamp", "ctl7", true, "line 7 clear to send"),
+	};
+
 	void reset(void);
 
 	bool on_before_install(void) override;
@@ -235,6 +313,7 @@ public:
 	bool on_param_changed(parameter_c *param) override;
 	void on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge) override;
 	void on_init_changed(void) override;
+	void refresh_activity(void) override; // expire the rx/tx pulse lamps
 
 private:
 	qunibusdevice_register_t *reg[dhv_idx_count];
@@ -287,6 +366,16 @@ private:
 
 	// receive FIFO of RBUF words
 	std::deque<uint16_t> rx_fifo;
+
+	// rx/tx activity lamps pulse per byte and are held for activity_lamp_on_time_ms
+	// so a poll between bursts still sees them; refresh_activity clears them.
+	uint64_t rx_lamp_until_ms[DHV_LINE_COUNT];
+	uint64_t tx_lamp_until_ms[DHV_LINE_COUNT];
+	void note_rx_activity(unsigned line);
+	void note_tx_activity(unsigned line);
+	// modem-control and carrier lamps, from the LNCTRL bits and each line's
+	// TCP carrier; the receive scan refreshes them alongside the STAT register
+	void refresh_signal_lamps(void); // caller holds state_mutex
 
 	bool get_rcv_intr_level(void);
 	bool get_xmt_intr_level(void);
