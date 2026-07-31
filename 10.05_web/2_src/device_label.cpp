@@ -24,6 +24,15 @@
 
 #include "device_label.hpp"
 
+// The DZ mux is one register model on two boards: the Unibus DZ11 carries eight
+// lines, the Q-bus DZV11/DZQ11 four (see dzv11.hpp), and the name follows the
+// bus the service was built for.
+#if defined(UNIBUS)
+#define DZ_BOARD_CODE "DZ11"
+#else
+#define DZ_BOARD_CODE "DZV11"
+#endif
+
 namespace {
 
 enum instancing_e {
@@ -69,7 +78,7 @@ const label_entry k_table[] = {
 	{ "DELQA",         "DELQA",   "Ethernet controller",     INST_NONE },
 	{ "DEUNA",         "DEUNA",   "Ethernet controller",     INST_NONE },
 	{ "VCB01",         "VCB01",   "graphics display",        INST_NONE },
-	{ "dzv11_c",       "DZV11",   "serial mux",              INST_INDEX },
+	{ "dzv11_c",       DZ_BOARD_CODE, "serial mux",          INST_INDEX },
 	{ "dhv11_c",       "DHV11",   "serial mux",              INST_INDEX },
 	{ "MS11",          "MS11",    "memory",                  INST_NONE },
 	{ "MSV11",         "MSV11",   "memory",                  INST_NONE },

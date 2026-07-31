@@ -38,8 +38,19 @@ interface MuxSignal {
   live: boolean;
 }
 abstract class MuxWidget extends DeviceWidget {
-  protected abstract lines: number;
   protected abstract signals: MuxSignal[];
+
+  // How many lines the board has, counted from the lamps it publishes: the same
+  // register model serves a four-line and an eight-line mux, so the panel takes
+  // the count from the device rather than from the type.
+  protected get lines(): number {
+    let n = 0;
+    for (const p of this.d.statusParams || []) {
+      const m = /^rx(\d+)lamp$/.exec(p.n);
+      if (m) n = Math.max(n, Number(m[1]) + 1);
+    }
+    return n;
+  }
 
   render(): ComponentChildren {
     const cols = '20px repeat(' + this.signals.length + ', 32px)';
@@ -71,16 +82,16 @@ abstract class MuxWidget extends DeviceWidget {
 // two handshakes, then the two ready lines, then the two the far end raises. A
 // board that lacks one of a pair simply omits it and the order holds.
 
-// The DZV11's four lines carry RX/TX traffic, DTR (driven by the guest), CD (a
-// connected TCP client) and RI, a modem-status ring bit nothing asserts. The
-// board has no RTS/CTS/DSR silicon, so those signals are absent.
+// The DZ11 family's lines carry RX/TX traffic, DTR (driven by the guest), and
+// the two the transport's modem raises: RI while a call is ringing and CD while
+// a client holds the line. The board has no RTS/CTS/DSR silicon, so those
+// signals are absent.
 export class DzWidget extends MuxWidget {
-  protected lines = 4;
   protected signals: MuxSignal[] = [
     { key: 'rx', label: 'RX', live: true },
     { key: 'tx', label: 'TX', live: true },
     { key: 'dtr', label: 'DTR', live: true },
-    { key: 'ri', label: 'RI', live: false },
+    { key: 'ri', label: 'RI', live: true },
     { key: 'cd', label: 'CD', live: true },
   ];
 }
@@ -89,7 +100,6 @@ export class DzWidget extends MuxWidget {
 // LNCTRL, and CD/DSR/CTS reported back through STAT, which a connected client
 // asserts together. RI is brought out and never rung.
 export class DhWidget extends MuxWidget {
-  protected lines = 8;
   protected signals: MuxSignal[] = [
     { key: 'rx', label: 'RX', live: true },
     { key: 'tx', label: 'TX', live: true },

@@ -1,19 +1,27 @@
-/* dzv11.hpp: DZV11/DZQ11 4-line asynchronous serial multiplexer
+/* dzv11.hpp: DZ11 family asynchronous serial multiplexer
 
    Copyright (c) 2026, Hans Huebner
    hans@huebner.org
    MIT license, see any device source header for the full text.
 
-   The DZV11 (Q-bus) / DZQ11 is a 4-line character-at-a-time async mux with the
-   classic DZ11 register interface: a control/status register, a receiver silo,
-   a per-line parameter register, a transmit-control register, a modem-status
-   register and a transmit-data register, at four word addresses whose read and
-   write functions differ.
+   One character-at-a-time async mux with the classic DZ11 register interface: a
+   control/status register, a receiver silo, a per-line parameter register, a
+   transmit-control register, a modem-status register and a transmit-data
+   register, at four word addresses whose read and write functions differ.
+
+   The bus decides how many lines the board has. The Unibus DZ11 is an eight-line
+   board and its operating systems expect eight — VMS's autoconfigure creates
+   TTA0 through TTA7 from one CSR at 760100. The Q-bus DZV11/DZQ11 is the
+   four-line board. The register layout is the same either way; the line number
+   fields, the per-line enable/DTR bytes and the modem-status bytes are as wide
+   as the board has lines.
 
    Each line's byte stream is carried by a serial_tcp_line_c (Telnet/RFC2217
-   over TCP); a connected TCP client presents as carrier-detect in the modem
-   status register. The register model is built from EK-DZV11-TM-001 and passes
-   the complete XXDP VDZAD3 (CVDZA) diagnostic with no errors.
+   over TCP). The transport models an auto-answer modem: a connecting client
+   rings the line (ring indicator, briefly) and presents carrier, and the guest
+   dropping Data Terminal Ready hangs the client up. The register model is built
+   from EK-DZV11-TM-001 and passes the complete XXDP VDZAD3 (CVDZA) diagnostic
+   with no errors.
 */
 #ifndef _DZV11_HPP_
 #define _DZV11_HPP_
@@ -27,7 +35,16 @@
 #include "rs232adapter.hpp"
 #include "serial_tcp_line.hpp"
 
-#define DZ_LINE_COUNT 4
+#if defined(UNIBUS)
+#define DZ_LINE_COUNT 8         // DZ11
+#else
+#define DZ_LINE_COUNT 4         // DZV11 / DZQ11
+#endif
+
+// the line number as the CSR's TLINE and the RBUF's RLINE field carry it
+#define DZ_LINE_MASK (DZ_LINE_COUNT - 1)
+// the per-line byte of the TCR, the TDR's break field and the MSR's two halves
+#define DZ_LINE_BITS ((1u << DZ_LINE_COUNT) - 1)
 
 // DEC floating defaults for the first DZV11
 #define DZV11_ADDR   0760100
@@ -58,8 +75,8 @@ enum dz_reg_index {
 #define DZ_CSR_TIE    0040000  // 14 transmitter interrupt enable
 #define DZ_CSR_SA     0020000  // 13 silo alarm
 #define DZ_CSR_SAE    0010000  // 12 silo alarm enable
-#define DZ_CSR_TLINE  0001400  // 10..8 transmitter scan line number
-#define DZ_CSR_TLINE_SHIFT 8
+#define DZ_CSR_TLINE_SHIFT 8   // 10..8 transmitter scan line number
+#define DZ_CSR_TLINE  (DZ_LINE_MASK << DZ_CSR_TLINE_SHIFT)
 #define DZ_CSR_RDONE  0000200  // 7 receiver done (silo not empty)
 #define DZ_CSR_RIE    0000100  // 6 receiver interrupt enable
 #define DZ_CSR_MSE    0000040  // 5 master scan enable
@@ -71,7 +88,7 @@ enum dz_reg_index {
 #define DZ_RBUF_OVR   0040000  // 14 overrun error
 #define DZ_RBUF_FRAME 0020000  // 13 framing error
 #define DZ_RBUF_PAR   0010000  // 12 parity error
-#define DZ_RBUF_RLINE_SHIFT 8  // 9..8 receive line number
+#define DZ_RBUF_RLINE_SHIFT 8  // 10..8 receive line number
 
 // LPR bits (write at base+2)
 #define DZ_LPR_LINE   0000007  // 2..0 line number
@@ -79,18 +96,25 @@ enum dz_reg_index {
 #define DZ_LPR_ODD    0000200  // 7 odd parity (with PENABLE)
 #define DZ_LPR_RXON   0010000  // 12 receiver enable for the line
 
-// TCR bits: 0..3 = transmit enable per line, 8..11 = DTR per line
-#define DZ_TCR_LINE_ENABLE_MASK 0000017
+// TCR bits: one transmit-enable bit per line from 0 up, one DTR bit per line
+// from 8 up
+#define DZ_TCR_LINE_ENABLE_MASK DZ_LINE_BITS
 #define DZ_TCR_DTR_SHIFT 8
 
-// TDR: 7..0 transmit data, 8..11 break control per line
+// TDR: 7..0 transmit data, one break-control bit per line from 8 up
 #define DZ_TDR_DATA   0000377
-#define DZ_TDR_BREAK_SHIFT 8   // 8..11 force line 0..3 output to space
+#define DZ_TDR_BREAK_SHIFT 8   // forces a line's output to space
 
-// MSR bits (read at base+6): 0..3 = ring per line, 8..11 = carrier detect per
-// line. The driver takes carrier from the high byte to gate a line's open().
+// MSR bits (read at base+6): one ring bit per line from 0 up, one carrier-detect
+// bit per line from 8 up. The driver takes carrier from the high byte to gate a
+// line's open().
 #define DZ_MSR_RI_SHIFT 0
 #define DZ_MSR_CD_SHIFT 8
+
+// How long a connecting client rings before the modem stops ringing, in ms. A
+// guest that answers by raising Data Terminal Ready ends the ring at once; one
+// that does no modem control simply sees carrier and the ring lapses.
+#define DZ_RING_MS 4000
 
 class dzv11_c: public qunibusdevice_c {
 public:
@@ -102,55 +126,111 @@ public:
 	// one TCP transport per line; a connected client is that line's carrier
 	serial_tcp_line_c tcp_line[DZ_LINE_COUNT];
 
-	// per-line TCP configuration parameters
+	// Per-line TCP configuration and the dashboard's signal lamps. The lines past
+	// the fourth exist only on the eight-line board, so each list runs to four
+	// and the Unibus build adds the rest.
 	parameter_string_c   tcp_role[DZ_LINE_COUNT] = {
 		parameter_string_c(this, "tcp_role0", "r0", false, "line 0 TCP role: \"\"/listen/connect"),
 		parameter_string_c(this, "tcp_role1", "r1", false, "line 1 TCP role: \"\"/listen/connect"),
 		parameter_string_c(this, "tcp_role2", "r2", false, "line 2 TCP role: \"\"/listen/connect"),
 		parameter_string_c(this, "tcp_role3", "r3", false, "line 3 TCP role: \"\"/listen/connect"),
+#if DZ_LINE_COUNT > 4
+		parameter_string_c(this, "tcp_role4", "r4", false, "line 4 TCP role: \"\"/listen/connect"),
+		parameter_string_c(this, "tcp_role5", "r5", false, "line 5 TCP role: \"\"/listen/connect"),
+		parameter_string_c(this, "tcp_role6", "r6", false, "line 6 TCP role: \"\"/listen/connect"),
+		parameter_string_c(this, "tcp_role7", "r7", false, "line 7 TCP role: \"\"/listen/connect"),
+#endif
 	};
 	parameter_string_c   tcp_host[DZ_LINE_COUNT] = {
 		parameter_string_c(this, "tcp_host0", "h0", false, "line 0 connect-out host"),
 		parameter_string_c(this, "tcp_host1", "h1", false, "line 1 connect-out host"),
 		parameter_string_c(this, "tcp_host2", "h2", false, "line 2 connect-out host"),
 		parameter_string_c(this, "tcp_host3", "h3", false, "line 3 connect-out host"),
+#if DZ_LINE_COUNT > 4
+		parameter_string_c(this, "tcp_host4", "h4", false, "line 4 connect-out host"),
+		parameter_string_c(this, "tcp_host5", "h5", false, "line 5 connect-out host"),
+		parameter_string_c(this, "tcp_host6", "h6", false, "line 6 connect-out host"),
+		parameter_string_c(this, "tcp_host7", "h7", false, "line 7 connect-out host"),
+#endif
 	};
 	parameter_unsigned_c tcp_port[DZ_LINE_COUNT] = {
 		parameter_unsigned_c(this, "tcp_port0", "p0", false, "", "%d", "line 0 TCP port", 16, 10),
 		parameter_unsigned_c(this, "tcp_port1", "p1", false, "", "%d", "line 1 TCP port", 16, 10),
 		parameter_unsigned_c(this, "tcp_port2", "p2", false, "", "%d", "line 2 TCP port", 16, 10),
 		parameter_unsigned_c(this, "tcp_port3", "p3", false, "", "%d", "line 3 TCP port", 16, 10),
+#if DZ_LINE_COUNT > 4
+		parameter_unsigned_c(this, "tcp_port4", "p4", false, "", "%d", "line 4 TCP port", 16, 10),
+		parameter_unsigned_c(this, "tcp_port5", "p5", false, "", "%d", "line 5 TCP port", 16, 10),
+		parameter_unsigned_c(this, "tcp_port6", "p6", false, "", "%d", "line 6 TCP port", 16, 10),
+		parameter_unsigned_c(this, "tcp_port7", "p7", false, "", "%d", "line 7 TCP port", 16, 10),
+#endif
 	};
 
 	// Per-line signal lamps for the dashboard, one set per line. rx/tx pulse with
 	// traffic (held briefly by refresh_activity); dtr follows the TCR DTR bit the
-	// guest drives; cd follows carrier (a connected TCP client). Names end in
-	// "lamp" so webevents' lamp poll picks up the direct value assignments the
-	// device threads make. The DZV11 carries no RTS/CTS/DSR, and nothing rings
-	// RI, so those signals have no lamp here.
+	// guest drives; cd follows carrier (a connected TCP client) and ri the ring
+	// a connecting client raises. Names end in "lamp" so webevents' lamp poll
+	// picks up the direct value assignments the device threads make. The board
+	// carries no RTS/CTS/DSR, so those signals have no lamp here.
 	parameter_bool_c rx_lamp[DZ_LINE_COUNT] = {
 		parameter_bool_c(this, "rx0lamp", "rxl0", true, "line 0 receive activity"),
 		parameter_bool_c(this, "rx1lamp", "rxl1", true, "line 1 receive activity"),
 		parameter_bool_c(this, "rx2lamp", "rxl2", true, "line 2 receive activity"),
 		parameter_bool_c(this, "rx3lamp", "rxl3", true, "line 3 receive activity"),
+#if DZ_LINE_COUNT > 4
+		parameter_bool_c(this, "rx4lamp", "rxl4", true, "line 4 receive activity"),
+		parameter_bool_c(this, "rx5lamp", "rxl5", true, "line 5 receive activity"),
+		parameter_bool_c(this, "rx6lamp", "rxl6", true, "line 6 receive activity"),
+		parameter_bool_c(this, "rx7lamp", "rxl7", true, "line 7 receive activity"),
+#endif
 	};
 	parameter_bool_c tx_lamp[DZ_LINE_COUNT] = {
 		parameter_bool_c(this, "tx0lamp", "txl0", true, "line 0 transmit activity"),
 		parameter_bool_c(this, "tx1lamp", "txl1", true, "line 1 transmit activity"),
 		parameter_bool_c(this, "tx2lamp", "txl2", true, "line 2 transmit activity"),
 		parameter_bool_c(this, "tx3lamp", "txl3", true, "line 3 transmit activity"),
+#if DZ_LINE_COUNT > 4
+		parameter_bool_c(this, "tx4lamp", "txl4", true, "line 4 transmit activity"),
+		parameter_bool_c(this, "tx5lamp", "txl5", true, "line 5 transmit activity"),
+		parameter_bool_c(this, "tx6lamp", "txl6", true, "line 6 transmit activity"),
+		parameter_bool_c(this, "tx7lamp", "txl7", true, "line 7 transmit activity"),
+#endif
 	};
 	parameter_bool_c dtr_lamp[DZ_LINE_COUNT] = {
 		parameter_bool_c(this, "dtr0lamp", "dtl0", true, "line 0 data terminal ready"),
 		parameter_bool_c(this, "dtr1lamp", "dtl1", true, "line 1 data terminal ready"),
 		parameter_bool_c(this, "dtr2lamp", "dtl2", true, "line 2 data terminal ready"),
 		parameter_bool_c(this, "dtr3lamp", "dtl3", true, "line 3 data terminal ready"),
+#if DZ_LINE_COUNT > 4
+		parameter_bool_c(this, "dtr4lamp", "dtl4", true, "line 4 data terminal ready"),
+		parameter_bool_c(this, "dtr5lamp", "dtl5", true, "line 5 data terminal ready"),
+		parameter_bool_c(this, "dtr6lamp", "dtl6", true, "line 6 data terminal ready"),
+		parameter_bool_c(this, "dtr7lamp", "dtl7", true, "line 7 data terminal ready"),
+#endif
 	};
 	parameter_bool_c cd_lamp[DZ_LINE_COUNT] = {
 		parameter_bool_c(this, "cd0lamp", "cdl0", true, "line 0 carrier detect"),
 		parameter_bool_c(this, "cd1lamp", "cdl1", true, "line 1 carrier detect"),
 		parameter_bool_c(this, "cd2lamp", "cdl2", true, "line 2 carrier detect"),
 		parameter_bool_c(this, "cd3lamp", "cdl3", true, "line 3 carrier detect"),
+#if DZ_LINE_COUNT > 4
+		parameter_bool_c(this, "cd4lamp", "cdl4", true, "line 4 carrier detect"),
+		parameter_bool_c(this, "cd5lamp", "cdl5", true, "line 5 carrier detect"),
+		parameter_bool_c(this, "cd6lamp", "cdl6", true, "line 6 carrier detect"),
+		parameter_bool_c(this, "cd7lamp", "cdl7", true, "line 7 carrier detect"),
+#endif
+	};
+	parameter_bool_c ri_lamp[DZ_LINE_COUNT] = {
+		parameter_bool_c(this, "ri0lamp", "ril0", true, "line 0 ring indicator"),
+		parameter_bool_c(this, "ri1lamp", "ril1", true, "line 1 ring indicator"),
+		parameter_bool_c(this, "ri2lamp", "ril2", true, "line 2 ring indicator"),
+		parameter_bool_c(this, "ri3lamp", "ril3", true, "line 3 ring indicator"),
+#if DZ_LINE_COUNT > 4
+		parameter_bool_c(this, "ri4lamp", "ril4", true, "line 4 ring indicator"),
+		parameter_bool_c(this, "ri5lamp", "ril5", true, "line 5 ring indicator"),
+		parameter_bool_c(this, "ri6lamp", "ril6", true, "line 6 ring indicator"),
+		parameter_bool_c(this, "ri7lamp", "ril7", true, "line 7 ring indicator"),
+#endif
 	};
 
 	void reset(void);
@@ -196,6 +276,15 @@ private:
 	bool tx_enabled[DZ_LINE_COUNT];   // TCR line enable
 	bool line_open[DZ_LINE_COUNT];    // this line's TCP transport is running
 	bool line_dtr[DZ_LINE_COUNT];     // TCR DTR bit last written by the guest
+
+	// The auto-answer modem in front of each line. A client arriving on an
+	// unanswered line rings it: the ring indicator stands until the guest raises
+	// Data Terminal Ready (it has answered) or the ring lapses. VMS's dialup
+	// terminal driver waits for that ring before it raises DTR, and hangs up by
+	// dropping it again; a guest that does no modem control ignores the ring and
+	// works off carrier alone, as before.
+	bool line_carrier[DZ_LINE_COUNT]; // carrier as of the last modem-status scan
+	uint64_t ring_until_ms[DZ_LINE_COUNT]; // 0 = not ringing
 
 	// rx/tx activity lamps pulse per byte and are held for activity_lamp_on_time_ms
 	// so a poll between bursts still sees them; refresh_activity clears them.

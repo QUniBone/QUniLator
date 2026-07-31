@@ -1,4 +1,4 @@
-/* dzv11.cpp: DZV11/DZQ11 4-line asynchronous serial multiplexer
+/* dzv11.cpp: DZ11 family asynchronous serial multiplexer
 
    Copyright (c) 2026, Hans Huebner
    hans@huebner.org
@@ -8,6 +8,8 @@
    char-at-a-time receive through a silo, a transmit scanner that presents TRDY
    for one enabled line at a time, and modem status driven by each line's TCP
    carrier. It passes the complete XXDP VDZAD3 (CVDZA) diagnostic with no errors.
+   The Unibus build carries the DZ11's eight lines, the Q-bus build the
+   DZV11/DZQ11's four; every line-numbered field is as wide as that.
 */
 
 #include <cstring>
@@ -37,8 +39,8 @@ dzv11_c::dzv11_c() : qunibusdevice_c()
 	reg_csr->active_on_dato = true;
 	reg_csr->reset_value = 0;
 	// TM Table 3-2: read/write bits are MAINT(3), CLR(4), MSE(5), RIE(6),
-	// SAE(12) and TIE(14). RDONE(7), TLINE(8-9), SA(13), TRDY(15) are read-only
-	// (recomputed in update_csr_and_INTR); 00-02 and 10-11 read as 0.
+	// SAE(12) and TIE(14). RDONE(7), TLINE, SA(13) and TRDY(15) are read-only
+	// (recomputed in update_csr_and_INTR); 00-02 and the bits above TLINE read 0.
 	reg_csr->writable_bits = 0050170;
 
 	reg_rbuf_lpr = &(this->registers[dz_idx_rbuf_lpr]);
@@ -55,23 +57,25 @@ dzv11_c::dzv11_c() : qunibusdevice_c()
 	reg_tcr->active_on_dati = false;
 	reg_tcr->active_on_dato = true;
 	reg_tcr->reset_value = 0;
-	// TM 3.2.4: line-enable(0-3) and DTR(8-11) are read/write; 04-07 and 12-15
-	// are unused and read as 0.
-	reg_tcr->writable_bits = 0007417;
+	// TM 3.2.4: the line-enable byte and the DTR byte are read/write, one bit per
+	// line in each; the bits above the board's line count are unused and read 0.
+	reg_tcr->writable_bits = DZ_LINE_BITS | (DZ_LINE_BITS << DZ_TCR_DTR_SHIFT);
 
 	reg_msr_tdr = &(this->registers[dz_idx_msr_tdr]);
 	strcpy(reg_msr_tdr->name, "MSR"); // read MSR, write TDR
 	reg_msr_tdr->active_on_dati = false; // modem status polled
 	reg_msr_tdr->active_on_dato = true;  // write is TDR
 	reg_msr_tdr->reset_value = 0;
-	// TDR (write) is transmit data(0-7) and break(8-11); the read side returns
-	// the modem status register (ring 0-3, carrier 8-11).
-	reg_msr_tdr->writable_bits = 0007777;
+	// TDR (write) is transmit data(0-7) and one break bit per line from 8 up; the
+	// read side returns the modem status register (ring low byte, carrier high).
+	reg_msr_tdr->writable_bits = DZ_TDR_DATA | (DZ_LINE_BITS << DZ_TDR_BREAK_SHIFT);
 
 	memset(rx_enabled, 0, sizeof rx_enabled);
 	memset(tx_enabled, 0, sizeof tx_enabled);
 	memset(line_open, 0, sizeof line_open);
 	memset(line_dtr, 0, sizeof line_dtr);
+	memset(line_carrier, 0, sizeof line_carrier);
+	memset(ring_until_ms, 0, sizeof ring_until_ms);
 	memset(rx_lamp_until_ms, 0, sizeof rx_lamp_until_ms);
 	memset(tx_lamp_until_ms, 0, sizeof tx_lamp_until_ms);
 	for (unsigned i = 0; i < DZ_LINE_COUNT; i++) {
@@ -79,6 +83,7 @@ dzv11_c::dzv11_c() : qunibusdevice_c()
 		tx_lamp[i].kind = parameter_c::PARAM_STATUS;
 		dtr_lamp[i].kind = parameter_c::PARAM_STATUS;
 		cd_lamp[i].kind = parameter_c::PARAM_STATUS;
+		ri_lamp[i].kind = parameter_c::PARAM_STATUS;
 	}
 	silo_alarm_count = 0;
 	tdr_pending = false;
@@ -231,7 +236,7 @@ void dzv11_c::update_csr_and_INTR(void)
 	bool rdone = !silo.empty();
 	uint16_t val = (csr_trdy ? DZ_CSR_TRDY : 0) | (csr_tie ? DZ_CSR_TIE : 0)
 			| (csr_sa ? DZ_CSR_SA : 0) | (csr_sae ? DZ_CSR_SAE : 0)
-			| ((uint16_t) (csr_tline & 7) << DZ_CSR_TLINE_SHIFT)
+			| ((uint16_t) (csr_tline & DZ_LINE_MASK) << DZ_CSR_TLINE_SHIFT)
 			| (rdone ? DZ_CSR_RDONE : 0) | (csr_rie ? DZ_CSR_RIE : 0)
 			| (csr_mse ? DZ_CSR_MSE : 0) | (csr_maint ? DZ_CSR_MAINT : 0);
 	set_register_dati_value(reg_csr, val, __func__);
@@ -277,7 +282,7 @@ void dzv11_c::set_rbuf_dati(void)
 void dzv11_c::silo_push(uint8_t line, uint8_t ch, uint16_t err_bits)
 {
 	uint16_t entry = DZ_RBUF_VALID
-			| ((uint16_t) (line & 3) << DZ_RBUF_RLINE_SHIFT) | err_bits | ch;
+			| ((uint16_t) (line & DZ_LINE_MASK) << DZ_RBUF_RLINE_SHIFT) | err_bits | ch;
 	if (silo.size() >= 64) {
 		entry |= DZ_RBUF_OVR; // silo full: mark overrun on the newest kept entry
 		silo.pop_back();
@@ -294,18 +299,36 @@ void dzv11_c::silo_push(uint8_t line, uint8_t ch, uint16_t err_bits)
 // caller holds state_mutex
 void dzv11_c::set_msr_dati(void)
 {
-	// carrier-detect per line = that line has a connected TCP client. The
-	// driver reads carrier from the MSR high byte to release a line's open(),
-	// so a connected client asserts CD there; without it getty blocks forever.
+	// Carrier-detect per line = that line has a connected TCP client. The driver
+	// reads carrier from the MSR high byte to release a line's open(), so a
+	// connected client asserts CD there; without it getty blocks forever.
+	//
+	// The low byte is the ring indicator: a client arriving on a line the guest
+	// has not answered rings it for DZ_RING_MS, and the ring stops as soon as the
+	// guest raises DTR — it has answered. The line carries from the moment the
+	// client is there, so a guest that does no modem control sees exactly what it
+	// saw before and the ring is information it may ignore.
+	uint64_t now = now_ms();
 	uint16_t val = 0;
 	for (unsigned i = 0; i < DZ_LINE_COUNT; i++) {
 		bool carrier = line_open[i] && tcp_line[i].client_connected();
+		if (carrier && !line_carrier[i] && !line_dtr[i])
+			ring_until_ms[i] = now + DZ_RING_MS; // a call has come in
+		line_carrier[i] = carrier;
+		bool ringing = ring_until_ms[i] != 0;
+		if (ringing && (!carrier || line_dtr[i] || now >= ring_until_ms[i])) {
+			ring_until_ms[i] = 0;
+			ringing = false;
+		}
 		if (carrier)
 			val |= (1u << (DZ_MSR_CD_SHIFT + i));
-		cd_lamp[i].value = carrier; // dashboard carrier lamp tracks the MSR bit
+		if (ringing)
+			val |= (1u << (DZ_MSR_RI_SHIFT + i));
+		cd_lamp[i].value = carrier; // dashboard lamps track the MSR bits
+		ri_lamp[i].value = ringing;
 	}
 	if (val == msr_dati_value)
-		return;  // carrier unchanged: skip the register write and its log line
+		return;  // modem status unchanged: skip the register write and its log line
 	msr_dati_value = val;
 	set_register_dati_value(reg_msr_tdr, val, __func__);
 }
@@ -332,7 +355,8 @@ void dzv11_c::eval_csr_dato(void)
 		tx_break = 0;  // TDR/break register cleared by Master Clear (TM 3.2.6)
 		// clear the TCR line-enables in the read-back; the DTR high byte survives
 		set_register_dati_value(reg_tcr,
-				reg_tcr->pru_iopage_register->value & 0007400, __func__);
+				reg_tcr->pru_iopage_register->value
+						& (DZ_LINE_BITS << DZ_TCR_DTR_SHIFT), __func__);
 		// Master Clear resets the TCR's line-enable flipflops themselves, so the
 		// write-side latch a DATOB merges against must match: a later high-byte
 		// DTR write leaves the low byte cleared. Without this, the latch still
@@ -378,15 +402,17 @@ void dzv11_c::eval_tcr_dato(void)
 	uint16_t val = get_register_dato_value(reg_tcr);
 	for (unsigned i = 0; i < DZ_LINE_COUNT; i++)
 		tx_enabled[i] = (val & (1u << i)) != 0;
-	// DTR (08-11) models the modem control line each line raises to keep its
-	// connection up. A guest that opens a line asserts DTR; when it closes the
-	// line (the terminal driver hangs up), DTR falls, and dropping DTR drops the
-	// TCP client — the connection ends so the far end sees the session close.
-	// The listen socket stays up for the next caller.
+	// The DTR byte models the modem control line each line raises to keep its
+	// connection up. A guest that opens a line asserts DTR — answering the ring
+	// the modem raised — and when it closes the line (the terminal driver hangs
+	// up) DTR falls, which drops the TCP client so the far end sees the session
+	// end. The listen socket stays up for the next caller.
 	for (unsigned i = 0; i < DZ_LINE_COUNT; i++) {
 		bool dtr = (val & (1u << (DZ_TCR_DTR_SHIFT + i))) != 0;
 		if (line_dtr[i] && !dtr && line_open[i])
 			tcp_line[i].disconnect(); // DTR fell: hang up this line's client
+		if (dtr)
+			ring_until_ms[i] = 0;     // the guest answered: stop ringing
 		line_dtr[i] = dtr;
 		dtr_lamp[i].value = dtr;
 	}
@@ -400,11 +426,11 @@ void dzv11_c::eval_tdr_dato(void)
 {
 	uint16_t val = get_register_dato_value(reg_msr_tdr);
 	uint8_t ch = val & DZ_TDR_DATA;
-	uint8_t line = csr_tline & 3;
+	uint8_t line = csr_tline & DZ_LINE_MASK;
 
-	// TDR high byte (08-11) is the break control register (TM 3.2.6): a set bit
+	// The TDR high byte is the break control register (TM 3.2.6): a set bit
 	// forces that line's output to space until cleared.
-	uint8_t new_break = (uint8_t) ((val >> DZ_TDR_BREAK_SHIFT) & 0017);
+	uint8_t new_break = (uint8_t) ((val >> DZ_TDR_BREAK_SHIFT) & DZ_LINE_BITS);
 	uint8_t rising_break = new_break & ~tx_break;
 	tx_break = new_break;
 
@@ -571,10 +597,13 @@ void dzv11_c::reset(void)
 	// BINIT clears the TCR, so DTR falls; scrub the tracked state and the rx/tx/
 	// dtr lamps. cd_lamp is recomputed from live carrier by set_msr_dati below.
 	memset(line_dtr, 0, sizeof line_dtr);
+	memset(ring_until_ms, 0, sizeof ring_until_ms);
+	memset(line_carrier, 0, sizeof line_carrier);
 	for (unsigned i = 0; i < DZ_LINE_COUNT; i++) {
 		rx_lamp[i].value = false;
 		tx_lamp[i].value = false;
 		dtr_lamp[i].value = false;
+		ri_lamp[i].value = false;
 	}
 	tx_break = 0;  // TDR/break register cleared by BINIT (TM 3.2.6)
 	silo.clear();
