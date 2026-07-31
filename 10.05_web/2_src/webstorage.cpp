@@ -23,6 +23,7 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <pwd.h>
 #include <stdlib.h>
 #include <string.h>
@@ -468,6 +469,88 @@ static void images_upload(struct mg_connection *conn) {
 // -------------------------------------------------------------------------
 // per-file GET/DELETE and move
 
+// POST /api/images with a JSON body — a blank medium to write on, rather than a
+// file to upload: {name, dir, kind, size}.
+//
+// kind "disk" (the default) makes a file of `size` bytes. A drive that takes a
+// fixed medium publishes exactly how big it is as its read-only "capacity"
+// parameter, so a caller reads the size off the drive it means rather than from
+// a table kept here; a controller that takes the size from the image instead
+// (MSCP with useimagesize) accepts any size, which is why this is a byte count
+// and not a menu. The file is sparse, so a scratch pack costs the blocks written
+// to it rather than its capacity.
+//
+// kind "tape" makes a blank reel, which is not an empty file: a tape at the load
+// point with nothing on it still carries a file mark, so the drive reads a mark
+// and then end of medium rather than end of medium straight away. That is one
+// SIMH marker of 0x00000000 and nothing else (see simh_tape.hpp).
+static const uint64_t IMAGE_CREATE_MAX = 4ull * 1024 * 1024 * 1024;
+
+static void image_create(struct mg_connection *conn) {
+	picojson::value req;
+	if (!read_json_body(conn, &req) || !req.get("name").is<std::string>()) {
+		send_error(conn, 400, "body must be {\"name\":.., \"dir\":.., \"kind\":.., \"size\":..}");
+		return;
+	}
+	std::string name = req.get("name").get<std::string>();
+	std::string dir = req.get("dir").is<std::string>()
+			? webstorage_image_subpath(req.get("dir").get<std::string>()) : "";
+	std::string kind = req.get("kind").is<std::string>()
+			? req.get("kind").get<std::string>() : "disk";
+	double raw = req.get("size").is<double>() ? req.get("size").get<double>() : 0;
+	if (kind != "disk" && kind != "tape") {
+		send_error(conn, 400, "kind must be \"disk\" or \"tape\"");
+		return;
+	}
+	if (name.empty() || name.find('/') != std::string::npos
+			|| name == "." || name == "..") {
+		send_error(conn, 400, "\"" + name + "\" is not a file name");
+		return;
+	}
+	if (kind == "disk" && (raw < 512 || raw > (double) IMAGE_CREATE_MAX)) {
+		send_error(conn, 400, "a disk image is between 512 bytes and 4 GiB");
+		return;
+	}
+	uint64_t size = (uint64_t) raw;
+	std::string sub = dir.empty() ? name : dir + "/" + name;
+	if (!valid_subpath(sub)) {
+		send_error(conn, 400, "\"" + sub + "\" is not a valid image path");
+		return;
+	}
+	std::string abs = image_abs(sub);
+	int fd = open(abs.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0664);
+	if (fd < 0) {
+		if (errno == EEXIST)
+			send_error(conn, 409, "\"" + sub + "\" already exists");
+		else
+			send_error(conn, 500, "cannot create \"" + sub + "\": " + strerror(errno));
+		return;
+	}
+	bool written;
+	if (kind == "tape") {
+		const uint8_t tape_mark[4] = { 0, 0, 0, 0 }; // SIMH MTR_TMK
+		written = write(fd, tape_mark, sizeof tape_mark) == (ssize_t) sizeof tape_mark;
+		size = sizeof tape_mark;
+	} else
+		written = ftruncate(fd, (off_t) size) == 0;
+	if (!written) {
+		std::string reason = strerror(errno);
+		close(fd);
+		unlink(abs.c_str());
+		send_error(conn, 500, "cannot write \"" + sub + "\": " + reason);
+		return;
+	}
+	close(fd);
+	own_by_qunilator(abs);
+	WEB_INFO("blank %s %s created, %llu bytes", kind.c_str(), sub.c_str(),
+			(unsigned long long) size);
+	picojson::object res;
+	res["ok"] = picojson::value(true);
+	res["name"] = picojson::value(sub);
+	res["size"] = picojson::value((double) size);
+	send_json(conn, 200, picojson::value(res));
+}
+
 static void image_delete(struct mg_connection *conn, const std::string &sub) {
 	picojson::array attached = attached_drives(sub);
 	if (!attached.empty()) {
@@ -700,9 +783,16 @@ static int api_images_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	if (rest.empty() || rest == "/") {
 		if (strcmp(ri->request_method, "GET") == 0)
 			images_list(conn);
-		else if (strcmp(ri->request_method, "POST") == 0)
-			images_upload(conn);
-		else {
+		else if (strcmp(ri->request_method, "POST") == 0) {
+			// Both add an image to the library, so both are a POST to it; what
+			// the body carries says which. A multipart body is a file arriving
+			// from the operator's machine, a JSON one is a blank medium to make.
+			const char *ctype = mg_get_header(conn, "Content-Type");
+			if (ctype != nullptr && strstr(ctype, "json") != nullptr)
+				image_create(conn);
+			else
+				images_upload(conn);
+		} else {
 			send_error(conn, 405, "GET or POST required");
 			return 405;
 		}

@@ -16,12 +16,29 @@ import {
   discardOverlay,
   commitOverlay,
   exportOverlay,
+  createImage,
   type OverlayResult,
 } from '../api';
-import { promptModal, confirmModal } from '../lib/modals';
+import { promptModal, confirmModal, pickDevice } from '../lib/modals';
+import { flatDevices } from '../lib/devmodel';
 import { useStore } from '../store';
 import { DelButton } from './common';
+import { toast } from '../lib/toast';
 import type { ImageInfo, ImageContents } from '../types';
+
+// A size the operator typed: a bare number is 512-byte blocks, the way a drive's
+// capacity is quoted; K/M/G are binary multiples of bytes. 0 means it made no
+// sense, which the caller reports rather than guessing.
+export function parseSize(text: string): number {
+  const m = /^\s*([0-9]*\.?[0-9]+)\s*([kKmMgG])?[bB]?\s*$/.exec(text);
+  if (!m) return 0;
+  const n = parseFloat(m[1]);
+  if (!isFinite(n) || n <= 0) return 0;
+  const unit = (m[2] || '').toLowerCase();
+  const scale = unit === 'k' ? 1024 : unit === 'm' ? 1024 * 1024
+    : unit === 'g' ? 1024 * 1024 * 1024 : 512; // no unit: blocks
+  return Math.round(n * scale);
+}
 
 const storageRoute = (cwd: string): string =>
   cwd ? subURL('/storage/', cwd) : '/storage';
@@ -236,6 +253,68 @@ export function StoragePage() {
     await createFolder(path);
   };
 
+  // A blank medium to write on. What is on offer comes from the drives the
+  // machine can carry: each publishes the capacity of the medium it takes, so
+  // the list is what this board knows about rather than a table kept in step by
+  // hand. A tape carries no size — a blank reel is a file mark and nothing else.
+  // A controller that reads the size off the image instead of fixing it (MSCP
+  // with useimagesize) will take any disk, which is what the custom entry is for.
+  // the sentinel rides through an HTML data attribute, so it has to be plain
+  // text that no drive type can be
+  const CUSTOM = '*custom';
+  const newImage = async () => {
+    const media = new Map<string, { name: string; label: string; type: string; size: number }>();
+    flatDevices().forEach((d) => {
+      if (!d.params.some((p) => p.n === 'image') || media.has(d.type)) return;
+      const tape = d.category === 'tape';
+      const cap = d.params.find((p) => p.n === 'capacity');
+      const size = tape ? 0 : Number(cap ? cap.v : 0);
+      if (!tape && !size) return; // a drive that does not say how big its medium is
+      media.set(d.type, {
+        name: d.type,
+        label: d.type + (tape ? ' tape — a blank reel' : ' disk — ' + humanSize(size)),
+        type: tape ? 'tape' : 'disk',
+        size,
+      });
+    });
+    const list = Array.from(media.values()).sort((a, b) => a.name.localeCompare(b.name));
+    list.push({ name: CUSTOM, label: 'Disk of a size you name…', type: 'disk', size: 0 });
+    const pick = await pickDevice('Blank medium', list);
+    if (!pick) return;
+
+    let kind: 'disk' | 'tape' = 'disk';
+    let size = 0;
+    let suffix = '.dsk';
+    if (pick === CUSTOM) {
+      const answer = await promptModal(
+        'Disk of a size you name',
+        'Size — a number of blocks, or a size like 40M or 1.5G',
+        '20M',
+        'Next'
+      );
+      if (!answer) return;
+      size = parseSize(answer);
+      if (!size) {
+        toast('new image', '"' + answer + '" is not a size');
+        return;
+      }
+    } else {
+      const medium = media.get(pick);
+      if (!medium) return;
+      kind = medium.type === 'tape' ? 'tape' : 'disk';
+      size = medium.size;
+      suffix = kind === 'tape' ? '.tap' : '.' + pick.toLowerCase();
+    }
+    const name = await promptModal(
+      pick === CUSTOM ? 'New ' + humanSize(size) + ' disk image' : 'New ' + pick + ' image',
+      'File name',
+      'scratch' + suffix,
+      'Create'
+    );
+    if (!name) return;
+    await createImage(name, cwd, kind, size);
+  };
+
   const renameEntry = async (from: string, isFolder: boolean) => {
     const to = await promptModal(
       isFolder ? 'Rename or move folder' : 'Rename or move image',
@@ -258,6 +337,7 @@ export function StoragePage() {
       <${Breadcrumbs} cwd=${cwd} go=${go} />
       <span class="spacer"></span>
       <button class="btn small" onClick=${newFolder}>New folder</button>
+      <button class="btn small primary" onClick=${newImage}>New image…</button>
     </div>
 
     <div class=${'dropzone' + (busy ? ' busy' : '')} onClick=${() => fileRef.current?.click()}

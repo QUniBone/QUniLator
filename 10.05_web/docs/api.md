@@ -312,6 +312,26 @@ known before the body is parsed so it is independent of field order. Each file's
 name is validated as a single path segment and written under `dir`, which is
 created if missing. Answers `{"ok": true, "names": ["du/foo.dsk", …]}`.
 
+### `POST /api/images` (JSON body)
+
+A blank medium to write on, rather than a file to upload — the same resource, and
+the `Content-Type` says which. Body
+`{"name": <file name>, "dir": <subpath>, "kind": "disk"|"tape", "size": <bytes>}`;
+`dir` defaults to the root and `kind` to `disk`. Answers
+`{"ok": true, "name": <subpath>, "size": <bytes>}`, `409` if the file exists.
+
+A **disk** is a sparse file of `size` bytes, so a scratch pack costs the blocks
+written to it rather than its capacity (512 bytes to 4 GiB). How big a medium a
+drive takes is the drive's own read-only `capacity` parameter, so a caller reads
+the size off the drive it means; a controller that takes the size from the image
+instead (MSCP with `useimagesize`) will accept any, which is why this is a byte
+count and not a menu.
+
+A **tape** ignores `size`: a reel at the load point with nothing on it still
+carries a file mark, so the file is one SIMH marker of `0x00000000` and nothing
+else — the drive reads a mark and then end of medium, rather than end of medium
+straight away.
+
 ### `GET /api/images/<subpath>` · `DELETE /api/images/<subpath>`
 
 Download, or remove the file. Delete is refused with `409` while the image is

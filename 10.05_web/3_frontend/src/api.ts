@@ -176,6 +176,25 @@ export function uploadImages(
   });
 }
 
+// Create a blank medium in the image library. A disk is a sparse file of `size`
+// bytes, so a scratch pack costs the blocks written to it rather than its
+// capacity; a tape is a blank reel, which carries a file mark and nothing else.
+export async function createImage(
+  name: string,
+  dir: string,
+  kind: 'disk' | 'tape',
+  size: number
+): Promise<boolean> {
+  const res = await apiJSON<{ error?: string }>('/api/images', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, dir, kind, size }),
+  });
+  toast('POST /api/images ' + name, res.ok ? 'blank image created' : res.data.error || 'create failed');
+  await refreshImages().catch(() => {});
+  return res.ok;
+}
+
 // Read the file listing inside a disk/tape image (read-only). Returns the
 // parsed JSON on success, or an {filesystem:'unknown', error} object the caller
 // renders as the friendly note. The subpath is encoded per-segment (keeping the
