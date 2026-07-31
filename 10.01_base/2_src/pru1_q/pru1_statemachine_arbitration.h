@@ -32,6 +32,12 @@
 // SACK within this period.
 #define ARB_MASTER_SACK_TIMOUT_MS	10
 
+// DMR stays off the bus while an interrupt acknowledge runs and for this long
+// after it, so a DMA grant cannot land inside the CPU's interrupt-entry
+// microcode (which wedges the KDJ11's arbiter). 50us in 5ns IEP ticks; the
+// 11/73 finishes vector-table fetches and stack pushes in well under that.
+#define ARB_IAK_DMR_HOLDOFF_TICKS	10000
+
 
 // states (switch() test order)
 enum sm_arbitration_states_enum {
@@ -40,6 +46,9 @@ enum sm_arbitration_states_enum {
     state_arbitration_dma_grant_rply_sync_wait,
     state_arbitration_intr_vector,
     state_arbitration_intr_complete,
+    // answer an IAK whose request was withdrawn (no ARM event on completion)
+    state_arbitration_orphan_vector,
+    state_arbitration_orphan_complete,
     // no arbitration, steady state
     state_arbitration_noop
 } ;
@@ -64,6 +73,23 @@ typedef struct {
     // device_request_mask when actually on BR/NR lines
     uint8_t device_request_signalled_mask;
 
+    // INTR levels withdrawn by ARM2PRU_INTR_CANCEL while their BIRQ was on the
+    // bus. The CPU may have committed to one of them; the orphan-IAK rescue
+    // answers such an acknowledge with the level's last vector.
+    uint8_t canceled_request_mask;
+
+    // IEP time until which DMR is withheld from the bus. Refreshed while an
+    // interrupt acknowledge runs and when a vector transfer completes, so a
+    // DMA grant cannot land inside the CPU's interrupt-entry microcode.
+    uint32_t dmr_holdoff_until;
+
+    // DMR has been committed to the bus for the pending DMA request. The
+    // holdoff only delays this commitment; once made, DMR stands until the
+    // grant is accepted. Retracting a driven DMR makes the CPU retract an
+    // in-flight DMGO, and a SACK landing on such a dying pulse runs a DMA
+    // without bus mastership (seen as bursts of ring-DMA bus timeouts).
+    uint8_t dmr_committed;
+
     // forwarded to GRANT OUT, not accepted as response to device_request_signalled_mask
     uint8_t device_forwarded_grant_mask;
 
@@ -84,14 +110,16 @@ typedef struct {
 
 	uint8_t cpu_bus_inhibit_dmr_mask ; // OR of ARB_CPU_BUS_INHIBIT_DMR_*
 
-	// Deferred interrupt-register update. On INTR the device's iopage register
-	// (e.g. RXCS with DONE) is written when BIRQ is first driven onto the bus,
-	// not when the request is queued, so DONE and BIRQ reach the CPU together
-	// (as on real hardware): a CPU polling the register cannot observe the new
-	// state before the interrupt request line does.
-	uint8_t pending_intr_register_handle ; // 0 = none pending
-	uint8_t pending_intr_arbitration_bit ; // the request level bit it waits on
-	uint16_t pending_intr_register_value ;
+	// Deferred interrupt-register update, one slot per BR level. On INTR the
+	// device's iopage register (e.g. RXCS with DONE) is written when BIRQ is
+	// first driven onto the bus, not when the request is queued, so DONE and
+	// BIRQ reach the CPU together (as on real hardware): a CPU polling the
+	// register cannot observe the new state before the interrupt request line
+	// does. One request per level is in flight at a time (the ARM gates on
+	// prl->active), but all four levels can be in flight concurrently, so each
+	// level keeps its own pending write.
+	uint8_t pending_intr_register_handle[4] ; // 0 = none pending
+	uint16_t pending_intr_register_value[4] ;
 
 } statemachine_arbitration_t;
 

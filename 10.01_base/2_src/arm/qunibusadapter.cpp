@@ -1101,7 +1101,16 @@ void qunibusadapter_c::worker_device_dma_chunk_complete_event()
                2 * mailbox->dma.wordcount);
     }
     if (mailbox->dma.cur_status != DMA_STATE_READY) {
-        // failure: abort remaining chunks
+        // failure: abort remaining chunks. Rare and consequential (an MSCP
+        // port that cannot read its rings resets itself and strands the
+        // guest's I/O), so name the transfer and the PRU's end state here,
+        // while the mailbox still holds this transfer.
+        WARNING("device DMA failed: dev %s, %s @ %s, %u words, stopped at %s, PRU status %u",
+                dmareq->device ? dmareq->device->name.value.c_str() : "none",
+                qunibus->control2text(dmareq->qunibus_control),
+                qunibus->addr2text(dmareq->qunibus_start_addr), dmareq->wordcount,
+                qunibus->addr2text(mailbox->dma.cur_addr),
+                (unsigned) mailbox->dma.cur_status);
         dmareq->success = false;
         more_chunks = false;
     } else if (wordcount_transferred == dmareq->wordcount) {
@@ -1136,6 +1145,7 @@ void qunibusadapter_c::worker_device_dma_chunk_complete_event()
                qunibus->addr2text(dmareq->qunibus_start_addr),
                qunibus->addr2text(dmareq->qunibus_end_addr), dmareq->wordcount, dmareq->buffer[0],
                dmareq->buffer[1], dmareq->success ? "OK" : "TIMEOUT");
+
 
         // clear from schedule table of this level
         // CPu memory accesses are not signaled, but polled in DMA()
