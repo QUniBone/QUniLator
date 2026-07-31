@@ -14,6 +14,7 @@
 #include <string.h>
 #include <strings.h>
 #include <assert.h>
+#include <vector>
 
 #include "logger.hpp"
 #include "gpios.hpp"	// debug pin
@@ -37,7 +38,8 @@ mscp_port_c::mscp_port_c() :
         _purgeInterruptEnable(false),
         _step1Value(0),
         _initStep(InitializationStep::Uninitialized),
-        _next_step(false)
+        _next_step(false),
+        _stepGeneration(0)
 {
 }
 
@@ -125,8 +127,63 @@ void mscp_port_c::StateTransition(
 {
     pthread_mutex_lock(&on_after_register_access_mutex);
         _initStep = nextStep;
+        _stepGeneration++;
         _next_step = true;
     pthread_cond_signal(&on_after_register_access_cond);
+    pthread_mutex_unlock(&on_after_register_access_mutex);
+}
+
+//
+// TakeStep():
+//  The step the worker is to run, with the generation it belongs to. Both are
+//  read together so the worker acts on one consistent state rather than on a
+//  step that has already been superseded.
+//
+mscp_port_c::InitializationStep
+mscp_port_c::TakeStep(uint32_t *generation)
+{
+    pthread_mutex_lock(&on_after_register_access_mutex);
+        InitializationStep step = _initStep;
+        *generation = _stepGeneration;
+    pthread_mutex_unlock(&on_after_register_access_mutex);
+    return step;
+}
+
+//
+// StepCurrent():
+//  Whether the port is still on the step that began at 'generation'. A step
+//  waits before it publishes SA, and a host that resets the port during that
+//  wait must not then be told the port reached the step it was leaving.
+//
+bool
+mscp_port_c::StepCurrent(uint32_t generation)
+{
+    pthread_mutex_lock(&on_after_register_access_mutex);
+        bool current = (_stepGeneration == generation);
+    pthread_mutex_unlock(&on_after_register_access_mutex);
+    return current;
+}
+
+//
+// ChainTransition():
+//  A step's own follow-on transition. It applies only while the port is still
+//  on the step that asked for it: a reset or a host write that arrived while
+//  the step was running has already named the state the port is to be in, and
+//  that request wins.
+//
+void
+mscp_port_c::ChainTransition(
+    uint32_t generation,
+    InitializationStep nextStep)
+{
+    pthread_mutex_lock(&on_after_register_access_mutex);
+        if (_stepGeneration == generation)
+        {
+            _initStep = nextStep;
+            _stepGeneration++;
+            _next_step = true;
+            pthread_cond_signal(&on_after_register_access_cond);
+        }
     pthread_mutex_unlock(&on_after_register_access_mutex);
 }
 
@@ -177,7 +234,14 @@ void mscp_port_c::worker(unsigned instance)
         _next_step = false;
         pthread_mutex_unlock(&on_after_register_access_mutex);
 
-        switch (_initStep)
+        // The step to run and the generation it belongs to. A step that waits
+        // before publishing SA checks the generation again first: the host may
+        // have reset the port in the meantime, and it must not then be told the
+        // port reached a step it has already left.
+        uint32_t generation;
+        InitializationStep step = TakeStep(&generation);
+
+        switch (step)
         {
             case InitializationStep::Uninitialized:
                  DEBUG_FAST("Transition to Init state Uninitialized.");
@@ -189,11 +253,13 @@ void mscp_port_c::worker(unsigned instance)
                  // Reset the controller: This may take some time as we must
                  // wait for the MSCP server to wrap up its current workitem.
                  Reset();
-                 StateTransition(InitializationStep::Step1);
+                 ChainTransition(generation, InitializationStep::Step1);
                  break;
 
             case InitializationStep::Step1:
                  timeout.wait_us(500);
+                 if (!StepCurrent(generation))
+                     break;
 
                  DEBUG_FAST("Transition to Init state S1.");
                  //
@@ -209,6 +275,8 @@ void mscp_port_c::worker(unsigned instance)
 
             case InitializationStep::Step2:
                  timeout.wait_us(500);
+                 if (!StepCurrent(generation))
+                     break;
                  DEBUG_FAST("Transition to Init state S2.");
 
                  // Update the SA read value for step 2:
@@ -219,6 +287,8 @@ void mscp_port_c::worker(unsigned instance)
 
             case InitializationStep::Step3:
                  timeout.wait_us(500);
+                 if (!StepCurrent(generation))
+                     break;
 
                  DEBUG_FAST("Transition to Init state S3.");
                  // Update the SA read value for step 3:
@@ -228,36 +298,38 @@ void mscp_port_c::worker(unsigned instance)
 
             case InitializationStep::Step4:
                  timeout.wait_us(100);
+                 if (!StepCurrent(generation))
+                     break;
 
                  // Clear communications area, set SA
                  DEBUG_FAST("Clearing comm area at 0x%x. Purge header: %d", _ringBase, _purgeInterruptEnable);
                  DEBUG_FAST("resp 0x%x comm 0x%x", _responseRingLength, _commandRingLength);
 
+                 // The whole communications area goes out in one transfer: the
+                 // header cleared, the response descriptors marked as the
+                 // port's, the command descriptors cleared. Each DMA costs an
+                 // arbitration the host's processor has to grant, and a host
+                 // that spins on a register while it waits - a bootstrap ROM
+                 // polling SA - leaves those grants scarce enough that a
+                 // descriptor at a time takes seconds and the host gives up on
+                 // the controller.
                  {
-                     int headerSize = _purgeInterruptEnable ? 8 : 4;
-                     for(uint32_t i = 0;
-                         i < (_responseRingLength + _commandRingLength) * sizeof(Descriptor) + headerSize;
-                         i += 2)
-                     {
-                         DMAWriteWord(_ringBase + i - headerSize, 0x0);
-                     }
-                 }
+                     unsigned headerSize = _purgeInterruptEnable ? 8 : 4;
+                     unsigned rings = (_responseRingLength + _commandRingLength)
+                             * sizeof(Descriptor);
+                     std::vector<uint8_t> commArea(headerSize + rings, 0);
 
-                 //
-                 // Set the ownership bit on all descriptors in the response ring
-                 // to indicate that the port owns them.
-                 //
-                 Descriptor blankDescriptor;
-                 blankDescriptor.Word0.Word0 = 0;
-                 blankDescriptor.Word1.Word1 = 0;
-                 blankDescriptor.Word1.Fields.Ownership = 1;
+                     // The port owns every response descriptor until it fills
+                     // one in and hands it back.
+                     Descriptor blankDescriptor;
+                     blankDescriptor.Word0.Word0 = 0;
+                     blankDescriptor.Word1.Word1 = 0;
+                     blankDescriptor.Word1.Fields.Ownership = 1;
+                     for (uint32_t i = 0; i < _responseRingLength; i++)
+                         memcpy(&commArea[headerSize + i * sizeof(Descriptor)], &blankDescriptor,
+                                 sizeof(Descriptor));
 
-                 for(uint32_t i = 0; i < _responseRingLength; i++)
-                 {
-                     DMAWrite(
-                         GetResponseDescriptorAddress(i),
-                         sizeof(Descriptor),
-                         reinterpret_cast<uint8_t*>(&blankDescriptor));
+                     DMAWrite(_ringBase - headerSize, commArea.size(), commArea.data());
                  }
 
                  DEBUG_FAST("Transition to Init state S4, comm area initialized.");
@@ -313,7 +385,13 @@ mscp_port_c::on_after_register_access(
         case 1:  // SA - write only
             uint16_t value = SA_reg->active_dato_flipflops;
 
-            switch (_initStep)
+            // The step the write belongs to, read once: the worker may move the
+            // port on while this runs, and the value means different things in
+            // different steps.
+            uint32_t saGeneration;
+            InitializationStep saStep = TakeStep(&saGeneration);
+
+            switch (saStep)
             {
                 case InitializationStep::Uninitialized:
                     // Should not occur, we treat it like step1 here.

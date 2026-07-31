@@ -215,8 +215,21 @@ protected:
 
     volatile InitializationStep _initStep;
     volatile bool _next_step;
+    // Counts state changes, so a step the worker began can tell whether it is
+    // still the step the port is on. The host drives initialization far faster
+    // than the worker takes to walk one step - a bootstrap ROM resets the port
+    // and re-inits it once per unit it probes - and without this a request that
+    // arrives mid-step is overwritten by the step's own follow-on transition.
+    volatile uint32_t _stepGeneration;
 
     void StateTransition(InitializationStep nextStep);
+    // The step to run and the generation it belongs to, taken together.
+    InitializationStep TakeStep(uint32_t *generation);
+    // Is the step that began at 'generation' still the one the port is on?
+    bool StepCurrent(uint32_t generation);
+    // Move on from the step that began at 'generation', unless something has
+    // asked for a different state in the meantime.
+    void ChainTransition(uint32_t generation, InitializationStep nextStep);
 
     // TODO: this currently assumes a little-endian machine!
     #pragma pack(push,1)
