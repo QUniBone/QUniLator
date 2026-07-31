@@ -1,3 +1,39 @@
+qbone (1.14.0-1) trixie; urgency=low
+
+  * An MRV11-D universal PROM module sits on the bus with the MXV11-B2 bootstrap
+    set DEC supplied for it in its sockets, so a machine whose backplane carries
+    no bootstrap boots one. The sockets take a ROM image or a MACRO-11 listing
+    from the media tree instead, the array answers through the module's two
+    bootstrap windows or as a range in memory space, and the dashboard carries
+    the module's card beside the memory map.
+  * An interrupt acknowledge is answered whatever the bus is doing, and a queued
+    DMA waits for the processor to finish entering its interrupt before it takes
+    the bus. 2.11BSD runs steadily on that, and a dump of /usr to tape completes.
+  * MSCP initialization converges under a host that re-initializes the port back
+    to back, the step-1 code is posted while the host is still looking for it, an
+    interrupt follows every ring transition the host armed, and GET UNIT STATUS
+    answers with the unit's real flags and walks on to the next unit. The
+    MXV11-B2 bootstrap boots an MSCP disk on this.
+  * The emulated VAX-11/780 runs on emulated time with its clock's instruction
+    rate pinned to it, so VMS calibrates its delay loops and boots reliably; a
+    byte write reaches the half of the bus its address selects, and the run
+    controls and the front-panel state reach the processor.
+  * The DZ carries eight lines on the UNIBUS and rings an arriving call, and the
+    guest answers the ring before the line carries. A mux line listens on DTR
+    while it can take a caller, several lines share one listen port, and the
+    dashboard orders each line's lamps by the pairs the signals work in. The
+    DHV11 has a panel of its own.
+  * A machine switched on from the web interface starts its processor with a
+    clear console, a freshly loaded configuration comes up switched off, and
+    loading one lands on the dashboard. The console keeps the keyboard, its text
+    can be selected, it follows a change of the emulated machine and it answers a
+    guest's terminal-identification query.
+  * The image library makes a blank medium to write on, disk or tape.
+  * A processor's bus access is timed and a stalled cycle is named, so what a
+    machine spends on the bus can be read off the board.
+
+ -- Hans Huebner <hans.huebner@gmail.com>  Fri, 31 Jul 2026 19:00:00 +0200
+
 qbone (1.13.0-1) trixie; urgency=low
 
   * The web interface announces a newer package when one is published, shows the
