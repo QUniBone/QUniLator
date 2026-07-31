@@ -33,6 +33,10 @@ let termEl: HTMLDivElement | null = null;
 let hostEl: HTMLElement | null = null;
 // the channel socket backing the console, when a channel carries it
 let ws: WebSocket | null = null;
+// the channel path connectConsole last wired up (null: the browser's serial
+// port carries the console), so a refresh can tell a moved console from an
+// unchanged one
+let wiredPath: string | null = null;
 let serialPort: WebSerialPort | null = null;
 let serialWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
 let serialReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -127,6 +131,7 @@ export function teardownTerminals(): void {
   if (!term) return;
   closeWs(ws);
   ws = null;
+  wiredPath = null;
   try {
     term.dispose();
   } catch {
@@ -173,6 +178,7 @@ function connectConsole(): void {
   closeWs(ws);
   ws = null;
   const path = consolePath();
+  wiredPath = path;
   if (path == null) {
     // the browser's serial port carries it; the read loop reports the state
     setConnected(serialPort != null);
@@ -236,8 +242,14 @@ function connectConsole(): void {
 }
 
 // The console moved to another port: rebuild the connection for the new one.
+// Both halves of what names the console can move — the external-console setting
+// and the device set that says whether a VAX is running — so this is called
+// after either is reloaded. A call that finds the console still on the same
+// channel leaves the live socket alone, so a routine device refresh does not
+// tear down a working terminal and replay its history.
 export function updateConsoleSource(): void {
   if (!term) return;
+  if (consolePath() === wiredPath) return;
   if (consolePath() != null && serialPort) serialDisconnect();
   connectConsole();
   emit();

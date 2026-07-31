@@ -41,11 +41,15 @@ export function apiSetParam(dev: string, param: string, value: string) {
   );
 }
 
+// The device set says which machine is running, and a VAX carries its console
+// inside the processor — so a reload that swaps the emulated CPU moves the
+// console too, and the terminal is re-pointed at whatever now carries it.
 export async function refreshDevices(): Promise<void> {
   const r = await fetch('/api/devices');
   if (!r.ok) throw new Error('devices fetch failed');
   setStore({ devmodel: liveModel((await r.json()) as ApiDevice[]) });
   replayEventValues();
+  updateConsoleSource();
   emit();
 }
 
