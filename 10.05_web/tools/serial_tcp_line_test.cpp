@@ -255,6 +255,63 @@ int main(void)
 		line.close();
 	}
 
+	/* 1c. several lines on one port: the caller reaches whichever is free, and
+	   once they are all busy the port is closed rather than queueing. */
+	{
+		// a spare line picks a free port number for the group to share
+		uint16_t shared;
+		{
+			serial_tcp_line_c probe;
+			probe.role = serial_tcp_line_c::ROLE_LISTEN;
+			probe.port = 0;
+			probe.open();
+			shared = probe.local_port();
+			probe.close();
+		}
+		check(shared != 0, "shared: found a port for the group");
+
+		serial_tcp_line_c a, b;
+		for (serial_tcp_line_c *ln : { &a, &b }) {
+			ln->role = serial_tcp_line_c::ROLE_LISTEN;
+			ln->port = shared;
+			check(ln->open(), "shared: a line joins the port");
+		}
+		check(a.local_port() == shared && b.local_port() == shared,
+				"shared: both lines answer on the one port");
+
+		telnet_client c1;
+		check(wait_until([&] { return c1.connect_to(shared); }, 2000),
+				"shared: the first caller gets in");
+		check(wait_until([&] { return a.client_connected() || b.client_connected(); }, 2000),
+				"shared: a free line took the first caller");
+
+		telnet_client c2;
+		check(wait_until([&] { return c2.connect_to(shared); }, 2000),
+				"shared: the second caller gets in too");
+		check(wait_until([&] { return a.client_connected() && b.client_connected(); }, 2000),
+				"shared: the other free line took the second caller");
+
+		// both lines busy: the port is closed, so a third caller is refused
+		telnet_client c3;
+		check(wait_until([&] { return !c3.connect_to(shared); }, 2000),
+				"shared: with every line busy the port is closed");
+
+		// free one line and the port comes back for one more caller
+		c1.close_it();
+		check(wait_until([&] { return !(a.client_connected() && b.client_connected()); }, 3000),
+				"shared: a line notices its caller leaving");
+		telnet_client c4;
+		check(wait_until([&] { return c4.connect_to(shared); }, 3000),
+				"shared: the port reopens when a line frees up");
+		check(wait_until([&] { return a.client_connected() && b.client_connected(); }, 3000),
+				"shared: the freed line took the new caller");
+
+		c2.close_it();
+		c4.close_it();
+		a.close();
+		b.close();
+	}
+
 	/* 2. RFC2217 SET-BAUDRATE is answered and reported */
 	{
 		serial_tcp_line_c line;

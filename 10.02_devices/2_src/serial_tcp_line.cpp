@@ -24,7 +24,221 @@
 #include <sys/select.h>
 #include <unistd.h>
 
+#include <map>
+
 #include "serial_tcp_line.hpp"
+
+/* ------------------------------------------------------------------------
+   The listening socket, which several lines may share.
+
+   A mux line named a port and owned the socket for it. Naming one port on
+   several lines then meant several lines fighting to bind it, and only one
+   winning. A caller who dials a mux does not care which line answers, so the
+   socket belongs to the port rather than to a line: the lines that can take a
+   caller wait on it together, and the one that wins the accept is by
+   construction a free line.
+
+   The socket exists only while at least one member can take a caller. A line
+   that takes a client, or whose gate shuts, says so; the last one to become
+   unavailable closes the socket, so once every line is busy the port is closed
+   and a further caller is refused rather than queued. It is reopened by the
+   first line that becomes free again.
+
+   Lifetime: a thread inside select() has counted itself in waiting_, and the
+   socket is only closed with waiting_ at zero, so no thread ever selects on a
+   descriptor another thread has closed. A port the kernel chose is remembered
+   and asked for again, so a shared port does not move when it is reopened.
+   A line with no fixed port (port 0) cannot be shared - the kernel picks the
+   number - so it gets a listener of its own, keyed by the line itself. */
+class port_listener_c {
+public:
+	static port_listener_c *acquire(uint16_t port, const void *line);
+	static void release(port_listener_c *self);
+
+	// A member's availability changed. The last member to become unavailable
+	// closes the socket; the first to become available lets it be reopened.
+	void set_available(bool available);
+
+	// Bind the port now, so a line knows what it answers on before anyone has
+	// called. False means the port cannot be had, which is a hard error for the
+	// line that asked.
+	bool reserve();
+	// Give the socket up if nothing needs it any more.
+	void close_if_idle();
+
+	// Wait for a caller on behalf of an available member. Returns the accepted
+	// descriptor, or -1 on timeout, shutdown or a bind that will not take.
+	int accept_for(int wake_fd, struct sockaddr_in *peer);
+
+	uint16_t bound_port();
+
+private:
+	std::mutex m_;
+	uint16_t cfg_port_ = 0;
+	uint16_t bound_ = 0;
+	int fd_ = -1;
+	unsigned members_ = 0;    // lines configured on this port
+	unsigned available_ = 0;  // members that can take a caller
+	unsigned waiting_ = 0;    // threads inside select() on fd_
+	std::string key_;
+
+	bool ensure_open_locked();
+	void close_locked();
+
+	static std::mutex registry_m_;
+	static std::map<std::string, port_listener_c *> registry_;
+};
+
+std::mutex port_listener_c::registry_m_;
+std::map<std::string, port_listener_c *> port_listener_c::registry_;
+
+port_listener_c *port_listener_c::acquire(uint16_t port, const void *line)
+{
+	char key[48];
+	if (port != 0)
+		snprintf(key, sizeof key, "p%u", (unsigned) port);
+	else
+		snprintf(key, sizeof key, "l%p", line); // unshareable: its own listener
+	std::lock_guard<std::mutex> lock(registry_m_);
+	port_listener_c *&slot = registry_[key];
+	if (slot == nullptr) {
+		slot = new port_listener_c();
+		slot->cfg_port_ = port;
+		slot->key_ = key;
+	}
+	slot->members_++;
+	return slot;
+}
+
+void port_listener_c::release(port_listener_c *self)
+{
+	if (self == nullptr)
+		return;
+	std::lock_guard<std::mutex> reg(registry_m_);
+	bool gone;
+	{
+		std::lock_guard<std::mutex> lock(self->m_);
+		if (self->members_ > 0)
+			self->members_--;
+		gone = self->members_ == 0;
+		if (gone) {
+			self->close_locked();
+			self->bound_ = 0; // a listener nobody holds keeps no port
+		}
+	}
+	if (gone) {
+		registry_.erase(self->key_);
+		delete self;
+	}
+}
+
+void port_listener_c::set_available(bool available)
+{
+	std::lock_guard<std::mutex> lock(m_);
+	if (available)
+		available_++;
+	else if (available_ > 0)
+		available_--;
+	if (available_ == 0 && waiting_ == 0)
+		close_locked();
+}
+
+bool port_listener_c::reserve(void)
+{
+	std::lock_guard<std::mutex> lock(m_);
+	return ensure_open_locked();
+}
+
+void port_listener_c::close_if_idle(void)
+{
+	std::lock_guard<std::mutex> lock(m_);
+	if (available_ == 0 && waiting_ == 0)
+		close_locked();
+}
+
+uint16_t port_listener_c::bound_port(void)
+{
+	std::lock_guard<std::mutex> lock(m_);
+	return bound_;
+}
+
+// caller holds m_
+void port_listener_c::close_locked(void)
+{
+	if (fd_ >= 0) {
+		::close(fd_);
+		fd_ = -1;
+	}
+}
+
+// caller holds m_
+bool port_listener_c::ensure_open_locked(void)
+{
+	if (fd_ >= 0)
+		return true;
+	int fd = socket(AF_INET, SOCK_STREAM, 0);
+	if (fd < 0)
+		return false;
+	int one = 1;
+	setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+	// non-blocking: several member threads wake on one caller and all but one
+	// find nothing left to accept
+	int fl = fcntl(fd, F_GETFL, 0);
+	fcntl(fd, F_SETFL, fl | O_NONBLOCK);
+
+	// A port the kernel chose has to be asked for by number the second time, or
+	// the lines would answer somewhere else every time the socket came back.
+	uint16_t want = cfg_port_ ? cfg_port_ : bound_;
+	struct sockaddr_in addr;
+	memset(&addr, 0, sizeof addr);
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	addr.sin_port = htons(want);
+	if (bind(fd, (struct sockaddr *) &addr, sizeof addr) < 0 || listen(fd, 4) < 0) {
+		::close(fd);
+		return false;
+	}
+	struct sockaddr_in bound;
+	socklen_t blen = sizeof bound;
+	if (getsockname(fd, (struct sockaddr *) &bound, &blen) == 0)
+		bound_ = ntohs(bound.sin_port);
+	fd_ = fd;
+	return true;
+}
+
+int port_listener_c::accept_for(int wake_fd, struct sockaddr_in *peer)
+{
+	int fd;
+	{
+		std::lock_guard<std::mutex> lock(m_);
+		if (!ensure_open_locked())
+			return -1;
+		fd = fd_;
+		waiting_++;
+	}
+
+	fd_set rfds;
+	FD_ZERO(&rfds);
+	FD_SET(fd, &rfds);
+	FD_SET(wake_fd, &rfds);
+	int maxfd = fd > wake_fd ? fd : wake_fd;
+	struct timeval tv = { 1, 0 };
+	int rc = select(maxfd + 1, &rfds, NULL, NULL, &tv);
+
+	std::lock_guard<std::mutex> lock(m_);
+	waiting_--;
+	int client = -1;
+	if (rc > 0 && fd == fd_ && FD_ISSET(fd, &rfds)) {
+		socklen_t plen = sizeof *peer;
+		client = accept(fd_, (struct sockaddr *) peer, &plen);
+	}
+	// the last thread out of a listener nobody needs any more closes it
+	if (available_ == 0 && waiting_ == 0)
+		close_locked();
+	return client;
+}
+
+
 
 // Lifecycle events go to stderr (captured in the service journal) rather than
 // through the device logger, so this unit stays free of the PRU/logger stack
@@ -101,11 +315,20 @@ bool serial_tcp_line_c::open(void)
 	int fl = fcntl(wake_pipe_[0], F_GETFL, 0);
 	fcntl(wake_pipe_[0], F_SETFL, fl | O_NONBLOCK);
 
-	if (role == ROLE_LISTEN && listen_gate_ && !setup_listen()) {
-		::close(wake_pipe_[0]);
-		::close(wake_pipe_[1]);
-		wake_pipe_[0] = wake_pipe_[1] = -1;
-		return false; // a listen port that cannot be bound is a hard error
+	if (role == ROLE_LISTEN) {
+		listener_ = port_listener_c::acquire(port, this);
+		listener_available_ = false;
+		// A port that cannot be had is a hard error for the line, as it always
+		// was; a line whose gate is shut binds nothing yet and will find out
+		// when the guest opens it.
+		if (listen_gate_ && !listener_->reserve()) {
+			port_listener_c::release(listener_);
+			listener_ = nullptr;
+			::close(wake_pipe_[0]);
+			::close(wake_pipe_[1]);
+			wake_pipe_[0] = wake_pipe_[1] = -1;
+			return false;
+		}
 	}
 
 	running_ = true;
@@ -122,9 +345,10 @@ void serial_tcp_line_c::close(void)
 	if (io_thread_.joinable())
 		io_thread_.join();
 	close_client();
-	if (listen_fd_ >= 0) {
-		::close(listen_fd_);
-		listen_fd_ = -1;
+	if (listener_ != nullptr) {
+		set_listener_available(false);
+		port_listener_c::release(listener_);
+		listener_ = nullptr;
 	}
 	{
 		// The port a closed line last answered on is not its port any more: a
@@ -176,49 +400,12 @@ void serial_tcp_line_c::drain_wake(void)
 		;
 }
 
-bool serial_tcp_line_c::setup_listen(void)
+void serial_tcp_line_c::set_listener_available(bool available)
 {
-	listen_fd_ = socket(AF_INET, SOCK_STREAM, 0);
-	if (listen_fd_ < 0)
-		return false;
-	int one = 1;
-	setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
-
-	// The port is given up whenever the line cannot take a caller and taken back
-	// when it can, so this runs more than once. A port the kernel chose has to be
-	// asked for by number the second time, or the line would answer somewhere
-	// else every time it came back.
-	uint16_t want = port;
-	if (want == 0) {
-		std::lock_guard<std::mutex> lock(mutex_);
-		want = bound_port_;
-	}
-
-	struct sockaddr_in addr;
-	memset(&addr, 0, sizeof addr);
-	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	addr.sin_port = htons(want);
-	if (bind(listen_fd_, (struct sockaddr *) &addr, sizeof addr) < 0) {
-		LINE_ERROR("cannot bind TCP port %u: %s", want, strerror(errno));
-		::close(listen_fd_);
-		listen_fd_ = -1;
-		return false;
-	}
-	if (listen(listen_fd_, 1) < 0) {
-		::close(listen_fd_);
-		listen_fd_ = -1;
-		return false;
-	}
-	// record the actual port (may have been kernel-assigned for port 0)
-	struct sockaddr_in bound;
-	socklen_t blen = sizeof bound;
-	if (getsockname(listen_fd_, (struct sockaddr *) &bound, &blen) == 0) {
-		std::lock_guard<std::mutex> lock(mutex_);
-		bound_port_ = ntohs(bound.sin_port);
-	}
-	LINE_INFO("listening on TCP port %u", ntohs(bound.sin_port));
-	return true;
+	if (listener_ == nullptr || listener_available_ == available)
+		return;
+	listener_available_ = available;
+	listener_->set_available(available);
 }
 
 // non-blocking connect with a bounded wait, so shutdown stays responsive
@@ -278,24 +465,13 @@ int serial_tcp_line_c::try_connect(void)
 	return fd;
 }
 
-// listen role: wait for a client, accept it exactly once
+// listen role: wait for a caller on the port this line shares
 void serial_tcp_line_c::accept_client(void)
 {
-	fd_set rfds;
-	FD_ZERO(&rfds);
-	FD_SET(listen_fd_, &rfds);
-	FD_SET(wake_pipe_[0], &rfds);
-	int maxfd = listen_fd_ > wake_pipe_[0] ? listen_fd_ : wake_pipe_[0];
-	if (select(maxfd + 1, &rfds, NULL, NULL, NULL) <= 0)
-		return;
-	if (FD_ISSET(wake_pipe_[0], &rfds))
-		drain_wake();
-	if (!FD_ISSET(listen_fd_, &rfds))
-		return;
-
 	struct sockaddr_in peer;
-	socklen_t plen = sizeof peer;
-	int fd = accept(listen_fd_, (struct sockaddr *) &peer, &plen);
+	memset(&peer, 0, sizeof peer);
+	int fd = listener_->accept_for(wake_pipe_[0], &peer);
+	drain_wake();
 	if (fd < 0)
 		return;
 
@@ -315,6 +491,7 @@ void serial_tcp_line_c::accept_client(void)
 		connected_ = true;
 		peer_addr_ = addrbuf;
 		last_rx_ms_ = now_ms();
+		bound_port_ = listener_->bound_port();
 	}
 	LINE_INFO("client %s connected", addrbuf);
 }
@@ -340,12 +517,10 @@ void serial_tcp_line_c::io_run(void)
 	while (running_) {
 		if (role == ROLE_LISTEN) {
 			if (!want_listen()) {
-				// gated shut: give the port up and wait to be told otherwise
-				if (listen_fd_ >= 0) {
-					::close(listen_fd_);
-					listen_fd_ = -1;
-					LINE_INFO("stopped listening on port %u", (unsigned) port);
-				}
+				// this line cannot take a caller: stand down, and let the port
+				// close if no other line on it can take one either
+				set_listener_available(false);
+				listener_->close_if_idle();
 				fd_set rfds;
 				FD_ZERO(&rfds);
 				FD_SET(wake_pipe_[0], &rfds);
@@ -354,23 +529,13 @@ void serial_tcp_line_c::io_run(void)
 				drain_wake();
 				continue;
 			}
-			if (listen_fd_ < 0 && !setup_listen()) {
-				// transient bind failure: pause, then retry
-				fd_set rfds;
-				FD_ZERO(&rfds);
-				FD_SET(wake_pipe_[0], &rfds);
-				struct timeval tv = { 1, 0 };
-				select(wake_pipe_[0] + 1, &rfds, NULL, NULL, &tv);
-				drain_wake();
-				continue;
-			}
+			set_listener_available(true);
 			accept_client();
 			if (client_fd_ >= 0) {
-				// the line is taken: the port is given up until it is free
-				// again, so a second caller is refused rather than accepted
-				// and dropped
-				::close(listen_fd_);
-				listen_fd_ = -1;
+				// the line is taken, so it is no longer one of the free lines
+				// waiting on the port; with every line busy the port closes and
+				// a further caller is refused rather than queued
+				set_listener_available(false);
 				on_new_connection();
 				service_client();
 				close_client();
@@ -794,6 +959,8 @@ bool serial_tcp_line_c::client_connected(void)
 
 uint16_t serial_tcp_line_c::local_port(void)
 {
+	if (listener_ != nullptr)
+		return listener_->bound_port();
 	std::lock_guard<std::mutex> lock(mutex_);
 	return bound_port_;
 }

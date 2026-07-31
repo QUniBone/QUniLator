@@ -119,7 +119,10 @@ private:
 	std::thread io_thread_;
 	volatile bool running_ = false;
 	int wake_pipe_[2] = { -1, -1 }; // self-pipe: [0] read, [1] write
-	int listen_fd_ = -1;
+	// the listening socket, which lines naming the same port share; null until
+	// the line is opened in ROLE_LISTEN
+	class port_listener_c *listener_ = nullptr;
+	bool listener_available_ = false; // what the listener was last told
 	volatile bool listen_gate_ = true;
 	int client_fd_ = -1;
 
@@ -129,7 +132,8 @@ private:
 	// whose guest has hung up is not listening at all.
 	bool want_listen(void);
 	void io_run(void);
-	bool setup_listen(void);
+	// tell the shared listener whether this line can take a caller
+	void set_listener_available(bool available);
 	int try_connect(void);            // ROLE_CONNECT: returns connected fd or -1
 	void accept_client(void);         // ROLE_LISTEN: accept or refuse
 	void service_client(void);        // read/write loop for the live client
