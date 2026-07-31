@@ -78,6 +78,8 @@ dhv11_c::dhv11_c() : qunibusdevice_c()
 		cts_lamp[i].kind = parameter_c::PARAM_STATUS;
 	}
 
+	dtr_listen.value = true;
+
 	// Usable defaults: every line listens on a distinct TCP port, so an enabled
 	// device accepts a client without any per-line configuration. tcp_host stays
 	// empty (used only for connect-out).

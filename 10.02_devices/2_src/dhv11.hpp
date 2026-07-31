@@ -225,8 +225,10 @@ public:
 	// A line that listens only while the guest holds it open. With this set, a
 	// line's TCP port is bound while the guest asserts Data Terminal Ready on it
 	// (LNCTRL bit 9) and given up when DTR falls, so a caller reaches a line the
-	// guest is actually ready for rather than one that will not answer. Off by
-	// default, which is a line that listens whenever the device is enabled.
+	// guest is actually ready for rather than one that will not answer. This is
+	// how a real line behaves, so it is on; clearing it makes every configured
+	// line listen from the moment the device is enabled, whatever the guest is
+	// doing with it.
 	parameter_bool_c dtr_listen = parameter_bool_c(this, "dtr_listen", "dtrl", false,
 			"listen on a line's TCP port only while the guest asserts DTR");
 
