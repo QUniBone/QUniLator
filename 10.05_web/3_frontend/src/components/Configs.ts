@@ -25,6 +25,7 @@ import {
   saveConfigFromLive,
   saveConfigDoc,
   applyConfig,
+  liveControl,
   renameConfig,
   setConfigTitle,
   setConfigDip,
@@ -522,19 +523,25 @@ function Detail({ name }: { name: string }) {
     )
       return;
     await applyConfig(name);
+    await powerDownAfterLoad();
     loc.route('/dashboard');
   };
   const doSaveStored = async () => {
     if (staged && (await saveConfigDoc(name, serialize(staged)))) setDirty(false);
   };
+  // A configuration is a machine that has been built and not yet switched on:
+  // loading one leaves it powered down, so the operator decides when it starts
+  // rather than finding it already running something.
+  const powerDownAfterLoad = () => liveControl('dc_off', 'machine off — switch it on when ready');
+
   const doLoad = async () => {
     if (
-      !s.bus.halted &&
+      s.hw.powered !== false &&
       !(await confirmModal(
-        'Load while the PDP-11 is running?',
-        'The CPU is running. Loading <b>' +
+        'Load while the machine is on?',
+        'The machine is powered up. Loading <b>' +
           esc(name) +
-          '</b> reconfigures every device — the running system will not survive it.',
+          '</b> reconfigures every device and switches it off — the running system will not survive it.',
         'Load anyway'
       ))
     )
@@ -542,6 +549,7 @@ function Detail({ name }: { name: string }) {
     // The loaded configuration is the machine now, so the dashboard — the
     // screen that shows that machine — is where the operator wants to land.
     await applyConfig(name);
+    await powerDownAfterLoad();
     loc.route('/dashboard');
   };
   const doRename = async () => {
