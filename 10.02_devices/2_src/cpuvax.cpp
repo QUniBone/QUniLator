@@ -72,6 +72,8 @@ cpuvax_c::cpuvax_c() :
     bus_iopage.value = true;
     bus_dma.value = true;
 
+    emulated_time.value = true;
+
     runmode.value = false;
     halt_switch.value = false;
     start_switch.value = false;
@@ -480,13 +482,17 @@ void cpuvax_c::machine_start(void)
     // on a board whose one core is shared with the device workers, a boot
     // preempted during that window calibrates the loops a thousandfold too
     // short and every timed wait then expires early - the boot limps through
-    // 50-second timeout retries instead of taking interrupts. Emulated time
-    // makes the calibration self-consistent, but the interval-timer
-    // scheduling does not follow it yet (the tick event freezes and VMS
-    // spins at IPL 31 waiting for ICR), so the mode is a parameter until
-    // that path is instruction-consistent too.
-    the_flexi_timeout_controller->set_mode(emulated_time.value
-            ? flexi_timeout_c::emulated_time : flexi_timeout_c::world_time);
+    // 50-second timeout retries instead of taking interrupts. The clock side
+    // is pinned to the defined instruction rate for the same reason: a
+    // measured rate jitters, and the interval count VMS's timer self-test
+    // interpolates from it then reads as a broken clock.
+    if (emulated_time.value) {
+        the_flexi_timeout_controller->set_mode(flexi_timeout_c::emulated_time);
+        simh_shim_set_fixed_ips(1e9 / VAX_INSTRUCTION_NS);
+    } else {
+        the_flexi_timeout_controller->set_mode(flexi_timeout_c::world_time);
+        simh_shim_set_fixed_ips(0.0);
+    }
     INFO("VAX running");
 }
 
@@ -501,6 +507,7 @@ void cpuvax_c::machine_stop(const char *why)
     mailbox_execute(ARM2PRU_CPU_ENABLE);
     qunibus->set_arbitrator_active(false);
     the_flexi_timeout_controller->set_mode(flexi_timeout_c::world_time);
+    simh_shim_set_fixed_ips(0.0);
     publish_status();
     if (why != NULL)
         INFO("VAX halted at PC %08x: %s", (unsigned) pc.value, why);

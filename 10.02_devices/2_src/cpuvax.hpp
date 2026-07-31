@@ -148,9 +148,10 @@ public:
                                       false, "", "%u", "Instructions executed per worker pass.", 32, 10);
 
     // Run the machine on emulated (instruction-driven) time rather than the
-    // wall. Cures the guest's once-per-boot timing-loop calibration being
-    // ruined by host preemption, but the interval-timer scheduling is not
-    // instruction-consistent yet; off until it is.
+    // wall. The guest calibrates its software timing loops once at boot; on
+    // wall time a boot preempted during that window mis-times every driver
+    // wait afterwards, so instruction-driven time is the default. Wall time
+    // remains selectable for comparing against real-time behaviour.
     parameter_bool_c emulated_time = parameter_bool_c(this, "emulated_time", "et",/*readonly*/
                                      false, "1 = machine time advances with executed instructions.");
 

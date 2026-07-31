@@ -71,8 +71,22 @@ now->tv_nsec = (long) ((usec - (double) now->tv_sec * 1000000.0) * 1000.0);
 static double shim_ips = 0.0;
 static int32 shim_currd[SIM_NTIMERS + 1];               /* instructions per tick */
 
+/* On emulated time the rate is not a measurement: a microsecond of machine
+   time is defined as a fixed number of instructions, and the embedding says
+   which. Measuring it anyway makes the interval clock's interpolated count
+   jitter with every calibration window - the guest's own timer self-test
+   then sees an erratic counter and concludes the clock is broken. */
+static double shim_fixed_ips = 0.0;
+
+void simh_shim_set_fixed_ips (double ips)
+{
+shim_fixed_ips = ips;
+}
+
 double simh_shim_ips (void)
 {
+if (shim_fixed_ips > 0.0)
+    return shim_fixed_ips;
 return (shim_ips > 0.0) ? shim_ips : (double) sim_vm_initial_ips;
 }
 
@@ -112,8 +126,6 @@ else {
     executed = sim_gtime () - base_gtime[tmr];
     if ((elapsed >= SHIM_CALIBRATE_USEC) && (executed > 0.0)) {
         shim_ips = (executed * 1000000.0) / elapsed;
-        fprintf (stderr, "shim_calb: tmr=%d elapsed=%.0fus executed=%.0f ips=%.0f\n",
-                 tmr, elapsed, executed, shim_ips);
         base_usec[tmr] = now;
         base_gtime[tmr] = sim_gtime ();
         }
@@ -126,9 +138,6 @@ if (per_tick < 1.0)
     per_tick = 1.0;
 if (per_tick > (double) 0x3FFFFFFF)
     per_tick = (double) 0x3FFFFFFF;
-if (shim_currd[tmr] != (int32) per_tick)
-    fprintf (stderr, "shim_calb: tmr=%d ticksper=%u currd %d -> %d\n",
-             tmr, ticksper, shim_currd[tmr], (int32) per_tick);
 shim_currd[tmr] = (int32) per_tick;
 return shim_currd[tmr];
 }

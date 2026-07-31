@@ -68,9 +68,7 @@ return sim_activate_abs (uptr, interval);
    that time. */
 t_stat tmxr_clock_coschedule_tmr (UNIT *uptr, int32 tmr, int32 ticks)
 {
-int32 size = simh_shim_tick_size (tmr);
-fprintf (stderr, "coschedule_tmr: tmr=%d ticks=%d size=%d\n", tmr, ticks, size);
-return sim_activate (uptr, ticks * size);
+return sim_activate (uptr, ticks * simh_shim_tick_size (tmr));
 }
 
 t_stat tmxr_clock_coschedule_tmr_abs (UNIT *uptr, int32 tmr, int32 ticks)
