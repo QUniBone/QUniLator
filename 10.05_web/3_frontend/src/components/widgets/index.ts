@@ -7,6 +7,7 @@ import type { WidgetOption, WidgetOpts } from './base';
 import { DiskWidget, Ra81Widget, RemovableDriveWidget, RlWidget } from './drives';
 import { CpuWidget } from './cpu';
 import { MemoryWidget } from './memory';
+import { RomWidget } from './rom';
 import { VaxCpuWidget } from './cpuvax';
 import { DhWidget, DzWidget, NetworkWidget, Vcb01Widget } from './peripherals';
 
@@ -31,6 +32,7 @@ const WIDGET_MODELS: Record<string, WidgetClass> = {
   RX02: RemovableDriveWidget,
   dzv11_c: DzWidget,
   dhv11_c: DhWidget,
+  'MRV11-D': RomWidget,
   'PDP-11/20': CpuWidget,
   'PDP-11/34': CpuWidget,
   'VAX-11/780': VaxCpuWidget,

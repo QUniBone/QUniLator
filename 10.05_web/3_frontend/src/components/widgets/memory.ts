@@ -5,7 +5,6 @@ import { html } from '../../html';
 import { useEffect, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { octalStr } from '../../lib/util';
-import { toast } from '../../lib/toast';
 import { apiJSON } from '../../api';
 import { DeviceWidget } from './base';
 
@@ -37,7 +36,9 @@ function sizeStr(bytes: number): string {
 }
 
 // The bands the map implies, in address order: what the machine's own memory
-// answers, what the board serves out of its DDR, and the I/O page on top.
+// answers and what the board serves out of its DDR. The I/O page sits at the
+// top of every machine and never moves, so the bar draws it as the end of the
+// space rather than as a band to be read.
 function bands(m: MemoryMap): Band[] {
   const out: Band[] = [];
   if (m.physical_end !== null && m.physical_end > 0)
@@ -49,19 +50,12 @@ function bands(m: MemoryMap): Band[] {
       cls: r.slot === 'memory' ? 'emul' : 'devwin',
       label: r.slot === 'memory' ? 'board' : 'device window',
     });
-  out.push({
-    from: m.iopage_start,
-    to: m.addr_space_bytes - 2,
-    cls: 'iopage',
-    label: 'I/O page',
-  });
   return out.sort((a, b) => a.from - b.from);
 }
 
 export class MemoryWidget extends DeviceWidget {
   render(): ComponentChildren {
     const [map, setMap] = useState<MemoryMap | null>(null);
-    const [probing, setProbing] = useState(false);
 
     // The map follows the device: enabling the card or moving its range
     // changes what the board answers, and both arrive as a parameter change.
@@ -78,59 +72,19 @@ export class MemoryWidget extends DeviceWidget {
       };
     }, [range]);
 
-    // Sizing takes the bus for the length of the sweep, so it is a button and
-    // not something this card does on its own.
-    const probe = async () => {
-      setProbing(true);
-      const r = await apiJSON<{ physical_end: number | null; error?: string }>(
-        '/api/memory/probe',
-        { method: 'POST' }
-      );
-      setProbing(false);
-      if (!r.ok) {
-        toast('memory probe', r.data.error || 'refused');
-        return;
-      }
-      const end = r.data.physical_end;
-      toast(
-        'memory probe',
-        end === null || end === undefined
-          ? 'the machine answers no memory of its own'
-          : 'the machine answers up to ' + octalStr(end, map ? map.addr_width : 22)
-      );
-      const m = await apiJSON<MemoryMap>('/api/memory/map');
-      if (m.ok) setMap(m.data);
-    };
-
     return html`<div class="card diskcard memcard">
       ${this.head()}
       <div class="card-body membody">
-        ${map ? this.bar(map) : html`<div class="mem-empty">reading the map…</div>`}
-        <button type="button" class="mem-probe" disabled=${probing} onClick=${probe}>
-          ${probing ? 'sizing…' : 'size the machine'}
-        </button>
+        ${map ? this.ranges(map) : html`<div class="mem-empty">reading the map…</div>`}
       </div></div>`;
   }
 
-  // The bar: the whole address space left to right, each band drawn to scale
-  // and named beneath. Space no band covers reads as nothing answering there.
-  private bar(m: MemoryMap): ComponentChildren {
-    const total = m.addr_space_bytes;
-    const segs = bands(m).map((b) => {
-      const w = ((b.to - b.from + 2) / total) * 100;
-      return html`<span
-        class=${'mem-seg mem-' + b.cls}
-        style=${'width:' + w.toFixed(3) + '%'}
-        title=${octalStr(b.from, m.addr_width) +
-        '..' +
-        octalStr(b.to, m.addr_width) +
-        ' — ' +
-        sizeStr(b.to - b.from + 2)}
-      ></span>`;
-    });
-    const legend = bands(m).map(
+  // What answers, one row per band: where it starts and ends, and how much of
+  // the space it covers. Addresses the machine leaves bare are the ones no row
+  // names.
+  private ranges(m: MemoryMap): ComponentChildren {
+    const rows = bands(m).map(
       (b) => html`<div class="mem-legend-row">
-        <span class=${'mem-swatch mem-' + b.cls}></span>
         <span class="mem-name">${b.label}</span>
         <span class="mem-addr"
           >${octalStr(b.from, m.addr_width)}..${octalStr(b.to, m.addr_width)}</span
@@ -139,11 +93,9 @@ export class MemoryWidget extends DeviceWidget {
       </div>`
     );
     return html`<div class="mem-map">
-      <div class="mem-bar">${segs}</div>
-      <div class="mem-legend">${legend}</div>
-      ${m.probed_at === null
-        ? html`<div class="mem-note">the machine's own memory has not been sized</div>`
-        : null}
+      ${rows.length
+        ? html`<div class="mem-legend">${rows}</div>`
+        : html`<div class="mem-empty">nothing answers</div>`}
     </div>`;
   }
 }

@@ -510,31 +510,53 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
   letter-spacing: .04em; color: var(--sw-legend);
 }
 
-/* ---- memory card ---- the whole address space as one bar, drawn to scale:
-   what the machine carries, what the board answers out of its own memory, and
-   the I/O page on top. Space no band covers is left bare, which is what a bus
-   timeout looks like. */
+/* ---- memory card ---- what answers, one row per range: what the machine
+   carries and what the board answers out of its own memory. Addresses no row
+   names are the ones nothing answers at, the I/O page on top among them. */
 .membody { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px; }
 .mem-map { display: flex; flex-direction: column; gap: 9px; }
-.mem-bar {
-  display: flex; height: 18px; border-radius: 4px; overflow: hidden;
-  background: var(--bezel); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .4);
-}
-.mem-seg { display: block; height: 100%; }
-.mem-phys   { background: var(--ok); }
-.mem-emul   { background: var(--accent); }
-.mem-devwin { background: var(--warn); }
-.mem-iopage { background: var(--lamp-off); }
-.mem-swatch { width: 11px; height: 11px; border-radius: 2px; }
 .mem-legend { display: flex; flex-direction: column; gap: 3px; }
 .mem-legend-row {
-  display: grid; grid-template-columns: 11px 1fr auto auto; gap: 8px; align-items: center;
+  display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center;
   font-size: var(--fs-0); color: var(--ink-muted);
 }
 .mem-legend-row .mem-addr { font-family: var(--font-mono); color: var(--ink); }
 .mem-legend-row .mem-size { font-variant-numeric: tabular-nums; }
 .mem-note, .mem-empty { font-size: var(--fs-0); color: var(--ink-faint); }
-.mem-probe { align-self: flex-start; }
+
+/* ---- bootstrap PROM card ---- the sockets and what reaches the machine from
+   them. A ROM chip beside the name of what it was programmed with, then the
+   two ways the array is read: the bootstrap windows, named by the page each
+   currently shows, and the array's own range in memory space. */
+.rombody { display: flex; flex-direction: column; gap: 11px; padding: 12px 14px 14px; }
+.rom-sockets {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 9px; align-items: center;
+  padding: 6px 9px; border-radius: var(--r-sm);
+  background: var(--surface-2); border: 1px solid var(--line);
+}
+/* a ceramic PROM with its window, small enough to read as the part it names */
+.rom-chip {
+  width: 24px; height: 12px; border-radius: 2px; background: var(--bezel);
+  border: 1px solid var(--bezel-2); position: relative;
+}
+.rom-chip::after {
+  content: ''; position: absolute; inset: 3px 8px; border-radius: 1px;
+  background: var(--ink-faint);
+}
+.rom-label {
+  font-family: var(--font-mono); color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rom-size { font-size: var(--fs-0); color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.rom-rows { display: flex; flex-direction: column; gap: 5px; }
+.rom-row {
+  display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline;
+  font-size: var(--fs-0); color: var(--ink-muted);
+}
+.rom-row .rom-name { min-width: 68px; }
+.rom-row .rom-val { color: var(--ink); }
+.rom-row .rom-addr { font-family: var(--font-mono); color: var(--ink); }
+.rom-row .rom-off { color: var(--ink-faint); }
 
 /* the emulated CPU's console: the registers it displays sit above the switch
    caps, each value in the engraved octal style the front panel uses. The switch
