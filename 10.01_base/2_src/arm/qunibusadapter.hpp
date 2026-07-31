@@ -125,7 +125,8 @@ public:
 	void request_execute_active_on_PRU(unsigned level_index);
 
 	// one emulated-processor bus access, folded into the running summary
-	void cpu_access_profile_note(uint64_t wall_ns, uint64_t cpu_ns);
+	void cpu_access_profile_note(uint64_t wall_ns, uint64_t cpu_ns,
+			uint8_t qunibus_cycle, uint32_t unibus_addr);
 
 	void DMA(dma_request_c& dma_request, bool blocking, uint8_t qunibus_cycle,
 			uint32_t unibus_addr, uint16_t *buffer, uint32_t wordcount);

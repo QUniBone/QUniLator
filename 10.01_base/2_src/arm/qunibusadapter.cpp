@@ -650,13 +650,22 @@ static inline uint64_t timespec_delta_ns(const struct timespec &a, const struct 
    processor lost; on-CPU time is how much of that it spent running. The buckets
    are the shape of the distribution, which an average hides: a few long waits
    among many short ones is a different fault from a uniformly slow bus. */
-void qunibusadapter_c::cpu_access_profile_note(uint64_t wall_ns, uint64_t cpu_ns)
+void qunibusadapter_c::cpu_access_profile_note(uint64_t wall_ns, uint64_t cpu_ns,
+        uint8_t qunibus_cycle, uint32_t unibus_addr)
 {
     static const unsigned REPORT_EVERY = 2000;
+    // An access that takes this long has not been preempted a few times, it has
+    // been stuck; it is reported where it happened rather than folded into an
+    // average, since which address and which cycle stalled is the whole clue.
+    static const uint64_t OUTLIER_NS = 100000000ull; // 100 ms
     static unsigned count = 0;
     static uint64_t wall_sum = 0, cpu_sum = 0, wall_max = 0;
     static unsigned bucket[5] = { 0, 0, 0, 0, 0 }; // <10us <100us <1ms <10ms rest
 
+    if (wall_ns >= OUTLIER_NS)
+        DEBUG("cpu bus access STALLED %lums (on-cpu %luus): %s @ %s",
+              (unsigned long) (wall_ns / 1000000), (unsigned long) (cpu_ns / 1000),
+              qunibus_c::control2text(qunibus_cycle), qunibus->addr2text(unibus_addr));
     wall_sum += wall_ns;
     cpu_sum += cpu_ns;
     if (wall_ns > wall_max)
@@ -798,7 +807,8 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
             clock_gettime(CLOCK_MONOTONIC, &wall1);
             clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu1);
             cpu_access_profile_note(timespec_delta_ns(wall0, wall1),
-                                    timespec_delta_ns(cpu0, cpu1));
+                                    timespec_delta_ns(cpu0, cpu1),
+                                    qunibus_cycle, unibus_addr);
         }
 
     } else if (blocking) {
