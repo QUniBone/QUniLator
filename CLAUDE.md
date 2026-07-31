@@ -108,6 +108,29 @@ what each tape covers and how a run is judged.
 The bus the emulator drives on the board is the real thing; this suite says
 nothing about it. It validates instruction and MMU behaviour only.
 
+## Testing the web interface
+
+**Every change to the web interface is verified in a real browser before it is
+called done.** `tsc --noEmit` and `vite build` catch type and syntax errors;
+they say nothing about layout, colour, focus, drag behaviour, the WebSocket
+streams, or whether a widget draws at all. Only the live page does.
+
+Drive it with the `claude-in-chrome` tools against a board serving the built
+bundle — `unibone` is free for this, `qbone` needs asking first. The loop is:
+
+1. `cd 10.05_web/3_frontend && npm run build`
+2. deploy the `dist/` tree to `/usr/share/qunilator/frontend` on the board (see
+   the deploy notes; a frontend-only swap needs no service restart)
+3. navigate to the screen the change touches, exercise it, and screenshot it
+
+A change that alters what an operator sees carries a screenshot of the new
+behaviour in its report. A backend change that feeds the UI — a new status
+parameter, a changed API field — counts as a web-interface change: the point is
+that the pixels were seen, not that the JSON was.
+
+If the Chrome tools are unavailable, say so and stop rather than shipping a UI
+change on a type check alone.
+
 ## Warnings and diagnostics
 
 Keep both the build and the editor clean. A change is not done while it leaves
