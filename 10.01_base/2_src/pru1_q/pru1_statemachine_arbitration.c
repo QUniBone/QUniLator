@@ -93,6 +93,7 @@
 #include "pru1_timeouts.h"
 #include "iopageregister.h"
 #include "pru1_statemachine_arbitration.h"
+#include "pru1_diag.h"
 
 statemachine_arbitration_t sm_arb;
 
@@ -240,7 +241,7 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
                 if (!sm_arb.dmr_committed) {
                     bus_lines &= (uint8_t)~PRIORITY_ARBITRATION_BIT_NP;
                     if (granted_requests_mask & PRIORITY_ARBITRATION_BIT_NP)
-                        sm_arb.stat_dma_grant_refused++;
+                        qbus_diag.dma_grant_refused++;
                 }
             } else {
                 sm_arb.dmr_committed = 0;
@@ -326,7 +327,7 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
                     uint8_t idx = PRIORITY_ARBITRATION_INTR_BIT2IDX(rescue_mask);
                     sm_arb.intr_level_index = idx;
                     sm_arb.canceled_request_mask &= ~BIT(idx);
-                    sm_arb.stat_orphan_rescued++;
+                    qbus_diag.orphan_rescued++;
                     sm_arb.state = state_arbitration_orphan_vector ;
                 }
             }
@@ -380,7 +381,7 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
         if (! (buslatches_getbyte(6) & BIT(5))) {
             // CPU abandoned the IAK before DIN: request still pending,
             // resume arbitration instead of waiting here forever
-            sm_arb.stat_iak_abandoned++;
+            qbus_diag.iak_abandoned++;
             sm_arb.state = state_arbitration_grant_check ;
             return 0 ;
         }
@@ -446,7 +447,7 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
         // the CPU's interrupt-entry microcode runs from here: keep DMR off
         // the bus until it is done (see grant_check)
         sm_arb.dmr_holdoff_until = PRU_IEP_TMR_CNT + ARB_IAK_DMR_HOLDOFF_TICKS;
-        sm_arb.stat_intr_answered++;
+        qbus_diag.intr_answered++;
 
         // signal to ARM which INTR was completed
         // change mailbox only after ARM has ack'ed mailbox.events.event_intr
@@ -476,7 +477,7 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
         // canceled it, so no request bookkeeping and no completion event.
         if (! (buslatches_getbyte(6) & BIT(5))) {
             // CPU abandoned the IAK before DIN
-            sm_arb.stat_iak_abandoned++;
+            qbus_diag.iak_abandoned++;
             sm_arb.state = state_arbitration_grant_check ;
             return 0 ;
         }

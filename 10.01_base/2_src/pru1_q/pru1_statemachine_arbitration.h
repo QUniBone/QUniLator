@@ -90,12 +90,6 @@ typedef struct {
     // without bus mastership (seen as bursts of ring-DMA bus timeouts).
     uint8_t dmr_committed;
 
-    // diagnosis counters, read via /dev/mem
-    uint32_t stat_intr_answered;   // vector transfers completed normally
-    uint32_t stat_iak_abandoned;   // intr_vector/orphan left via RIAKI-negate escape
-    uint32_t stat_orphan_rescued;  // orphan-IAK rescue transfers started
-    uint32_t stat_dma_grant_refused; // DMGI pulses ignored during holdoff
-
     // forwarded to GRANT OUT, not accepted as response to device_request_signalled_mask
     uint8_t device_forwarded_grant_mask;
 

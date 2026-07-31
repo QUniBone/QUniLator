@@ -55,6 +55,7 @@
 
 #include "pru1_statemachine_arbitration.h"
 #include "pru1_statemachine_dma.h"
+#include "pru1_diag.h"
 
 /* sometimes short timeout of 75 and 150ns are required
  * 75ns between state changes is not necessary, code runs longer
@@ -63,17 +64,6 @@
  */
 
 statemachine_dma_t sm_dma;
-
-// Freezes the bus trace ring in pru1_main_qbus.c when a DMA ends in
-// timeout, so the ring still holds the failing transfer's bus history when
-// read later via /dev/mem. Cleared externally to re-arm. Lives here so every
-// PRU1 image links, whichever main it carries.
-uint32_t bus_trace_frozen;
-
-// Latch snapshot taken inside the timeout branch, while the failing cycle's
-// signals are still driven: DAL7:0, DAL15:8, DAL21:16/BS7, data-control,
-// request/SACK, and the transfer's current address. Read via /dev/mem.
-uint32_t dbg_timeout_snap[6];
 
 /********** Master DATA cycles **************/
 // forwards ;
@@ -122,7 +112,7 @@ static statemachine_state_func sm_dma_state_addr() {
         // standing on an idle bus). Release the bus and complete the
         // transfer as aborted, so the requesting device gets an error
         // instead of waiting forever.
-        sm_dma.stat_abandoned++;
+        qbus_diag.dma_abandoned++;
         buslatches_setbits(6, BIT(7), 0); // negate SACK
         buslatches_setbits(4, BIT(0)+BIT(5), 0); // negate SYNC, BS7
         mailbox.dma.cur_status = DMA_STATE_TIMEOUTSTOP;
@@ -369,12 +359,12 @@ static statemachine_state_func sm_dma_state_din_complete() {
             return (statemachine_state_func) &sm_dma_state_din_complete; // no RPLY yet: wait
         // on timeout: proceed to end cycle. Snapshot what the bus carries
         // while the failing cycle still drives it.
-        dbg_timeout_snap[0] = buslatches_getbyte(0);
-        dbg_timeout_snap[1] = buslatches_getbyte(1);
-        dbg_timeout_snap[2] = buslatches_getbyte(2);
-        dbg_timeout_snap[3] = buslatches_getbyte(4);
-        dbg_timeout_snap[4] = buslatches_getbyte(6);
-        dbg_timeout_snap[5] = addr;
+        qbus_diag.timeout_dal_lo = buslatches_getbyte(0);
+        qbus_diag.timeout_dal_hi = buslatches_getbyte(1);
+        qbus_diag.timeout_dal_ext = buslatches_getbyte(2);
+        qbus_diag.timeout_l4 = buslatches_getbyte(4);
+        qbus_diag.timeout_l6 = buslatches_getbyte(6);
+        qbus_diag.timeout_addr = addr;
     }
 
     // RPLY set by slave (or timeout).
@@ -430,12 +420,12 @@ static statemachine_state_func sm_dma_state_dout_complete() {
         if (!sm_dma.state_timeout)
             return (statemachine_state_func) &sm_dma_state_dout_complete; // no RPLY yet: wait
         // on timeout: proceed to end cycle. Snapshot as in din_complete.
-        dbg_timeout_snap[0] = buslatches_getbyte(0);
-        dbg_timeout_snap[1] = buslatches_getbyte(1);
-        dbg_timeout_snap[2] = buslatches_getbyte(2);
-        dbg_timeout_snap[3] = buslatches_getbyte(4);
-        dbg_timeout_snap[4] = buslatches_getbyte(6);
-        dbg_timeout_snap[5] = addr;
+        qbus_diag.timeout_dal_lo = buslatches_getbyte(0);
+        qbus_diag.timeout_dal_hi = buslatches_getbyte(1);
+        qbus_diag.timeout_dal_ext = buslatches_getbyte(2);
+        qbus_diag.timeout_l4 = buslatches_getbyte(4);
+        qbus_diag.timeout_l6 = buslatches_getbyte(6);
+        qbus_diag.timeout_addr = addr;
     }
     // RPLY set by slave (or timeout): negate DOUT, remove DATA from bus
     // "The Bus Master negates TDOUT 150 ns minimum after the
@@ -483,7 +473,7 @@ static statemachine_state_func sm_dma_state_99() {
         final_dma_state = DMA_STATE_TIMEOUTSTOP;
         // negate SACK after timeout, independent of remaining word count
         // hold the failing transfer's bus history for post-mortem reading
-        bus_trace_frozen = 1;
+        qbus_diag.trace_frozen = 1;
     } else {
         sm_dma.dataptr++;  // point to next word in buffer
         sm_dma.words_left--;

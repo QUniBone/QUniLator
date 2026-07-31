@@ -77,6 +77,7 @@ OBJECTS_COMMON= \
     $(OBJ_DIR)/pru1_statemachine_arbitration.object  \
     $(OBJ_DIR)/pru1_statemachine_dma.object  \
     $(OBJ_DIR)/pru1_statemachine_data_slave.object  \
+    $(OBJ_DIR)/pru1_diag.object  \
     $(OBJ_DIR)/pru1_timeouts.object	\
     $(OBJ_DIR)/pru1_utils.object
 

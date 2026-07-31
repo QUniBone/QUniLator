@@ -39,10 +39,6 @@ typedef struct {
 //	uint16_t block_words_left ; // # of words left to transfer in DATBI/BO block
 	statemachine_state_func block_data_state_func ;
 	bool 	first_data_portion ; // signal to DIN/DOUT: remove ADDR,BS7, from DAL
-
-	// diagnosis counter, read via /dev/mem: transfers ended through the
-	// address-state guard while the bus was held
-	uint32_t stat_abandoned ;
 } statemachine_dma_t;
 
 extern statemachine_dma_t sm_dma;

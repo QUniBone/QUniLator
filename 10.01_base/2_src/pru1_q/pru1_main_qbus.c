@@ -60,6 +60,7 @@
 #include "pru1_statemachine_arbitration.h"
 #include "pru1_statemachine_dma.h"
 #include "pru1_statemachine_data_slave.h"
+#include "pru1_diag.h"
 //#include "pru1_statemachine_intr_master.h"
 //#include "pru1_statemachine_intr_slave.h"
 
@@ -69,29 +70,11 @@
 #pragma diag_push
 #pragma diag_remark=515
 
-// CPU-liveness heartbeat and bus trace, read post-mortem via /dev/mem at the
-// addresses the linker map gives. SRUN pulses on every instruction fetch of
-// the physical CPU, so a frozen srun_heartbeat with the machine powered is a
-// definitive "CPU microcode wedged" signal within a second. The trace ring
-// records every change of the DATA-control, REQUEST and GRANT latches with an
-// IEP timestamp (5ns a tick), so the final bus handshake before a freeze can
-// be read back exactly.
-typedef struct {
-	uint32_t ts; // IEP counter at the transition
-	uint8_t l4;  // SYNC/DIN/DOUT/RPLY/WTBT/BS7/REF/INIT
-	uint8_t l6;  // IRQ4-7/DMR/RIAKI/RDMGI/SACK
-	uint8_t l7;  // decoded IAKI4-7/DMG
-	uint8_t arb_state; // sm_arb.state at the transition
-} bus_trace_entry_t;
-#define BUS_TRACE_ENTRIES 64
-bus_trace_entry_t bus_trace[BUS_TRACE_ENTRIES];
-uint32_t bus_trace_count; // total transitions; write slot = count % entries
-uint32_t srun_heartbeat;  // counts SRUN edges
-// A DMA that ends in timeout freezes the ring, so it still holds the failing
-// transfer's bus history when read later. Cleared via /dev/mem to re-arm.
-// Defined in pru1_statemachine_dma.c.
-extern uint32_t bus_trace_frozen;
-static uint8_t trace_last_l4, trace_last_l6, trace_last_l7, trace_last_l5;
+// last sampled latch values, so only changes are recorded
+static uint8_t trace_last_l4;
+#ifdef QBUS_BUS_TRACE
+static uint8_t trace_last_l6, trace_last_l7;
+#endif
 
 /***
  3 major states executed in circular 1- 2- 3 order.
@@ -151,15 +134,7 @@ void main(void) {
 	 */
 	sm_arb_reset();
 
-	// the PRU loader does not zero .common, so start the diagnostics clean
-	bus_trace_count = 0;
-	bus_trace_frozen = 0;
-	srun_heartbeat = 0;
-	sm_arb.stat_intr_answered = 0;
-	sm_arb.stat_iak_abandoned = 0;
-	sm_arb.stat_orphan_rescued = 0;
-	sm_arb.stat_dma_grant_refused = 0;
-	sm_dma.stat_abandoned = 0;
+	qbus_diag_init();
 
 	while (true) {
 		uint8_t arm2pru_req_cached;
@@ -183,6 +158,17 @@ void main(void) {
 			// signal INT or PWR FAIL to ARM
 			// before sm_arb_worker(), so INTR/DMR requests are canceled on INIT
 			sm_initialization_func();
+
+			// Liveness: a physical PDP-11 drives SYNC for every fetch, and
+			// an idle one still takes the line clock, so a counter that
+			// stops on a powered machine means the processor is wedged.
+			// Slave passes only - the DMA path stays untouched.
+			{
+				uint8_t l4 = buslatches_getbyte(4);
+				if (l4 != trace_last_l4)
+					qbus_diag.bus_activity++;
+				trace_last_l4 = l4;
+			}
 
 			if (!emulate_cpu) {
 				// Fast forward device requests GRANTed by physical CPU.
@@ -238,34 +224,33 @@ void main(void) {
 			// throws signals to ARM, causes may issue mailbox.arm2pru_req
 		}
 
-		// CPU liveness + bus trace sampling, in slave and master passes both,
-		// so a failing DMA's own cycles land in the ring before the timeout
-		// freezes it.
-		{
-			uint8_t l5 = buslatches_getbyte(5);
-			uint8_t l4, l6, l7;
-			if ((l5 ^ trace_last_l5) & BIT(5))
-				srun_heartbeat++;
-			trace_last_l5 = l5;
-			l4 = buslatches_getbyte(4);
-			l6 = buslatches_getbyte(6);
-			l7 = buslatches_getbyte(7);
-			if (!bus_trace_frozen
-					&& (l4 != trace_last_l4 || l6 != trace_last_l6
-							|| l7 != trace_last_l7)) {
-				bus_trace_entry_t *e =
-						&bus_trace[bus_trace_count % BUS_TRACE_ENTRIES];
+#ifdef QBUS_BUS_TRACE
+		// Record every change of the data-control, request and grant
+		// latches, in slave and master passes both, so a failing transfer's
+		// own cycles are in the ring when a timeout freezes it. Four latch
+		// reads a pass, on the DMA path too: a debug-firmware cost, see
+		// pru1_diag.h.
+		if (!qbus_diag.trace_frozen) {
+			uint8_t l4 = buslatches_getbyte(4);
+			uint8_t l6 = buslatches_getbyte(6);
+			uint8_t l7 = buslatches_getbyte(7);
+			if (l4 != trace_last_l4 || l6 != trace_last_l6
+					|| l7 != trace_last_l7) {
+				qbus_diag_trace_entry_t *e =
+						&qbus_diag.trace[qbus_diag.trace_count
+								% QBUS_DIAG_TRACE_ENTRIES];
 				e->ts = PRU_IEP_TMR_CNT;
 				e->l4 = l4;
 				e->l6 = l6;
 				e->l7 = l7;
 				e->arb_state = (uint8_t) sm_arb.state;
-				bus_trace_count++;
+				qbus_diag.trace_count++;
 				trace_last_l4 = l4;
 				trace_last_l6 = l6;
 				trace_last_l7 = l7;
 			}
 		}
+#endif
 #ifdef TODO
 		if (emulate_cpu) {
 			// Receive INTR from physical or emulated devices, and signal ARM.
