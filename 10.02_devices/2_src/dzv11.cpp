@@ -303,23 +303,27 @@ void dzv11_c::set_msr_dati(void)
 	// reads carrier from the MSR high byte to release a line's open(), so a
 	// connected client asserts CD there; without it getty blocks forever.
 	//
-	// The low byte is the ring indicator: a client arriving on a line the guest
-	// has not answered rings it for DZ_RING_MS, and the ring stops as soon as the
-	// guest raises DTR — it has answered. The line carries from the moment the
-	// client is there, so a guest that does no modem control sees exactly what it
-	// saw before and the ring is information it may ignore.
+	// The low byte is the ring indicator, and the transport in front of each line
+	// behaves as an auto-answer modem, signalling in the order a real one does: a
+	// client arriving on a line the guest has not answered rings it, and carrier
+	// follows once the call is answered. A dialup terminal driver answers by
+	// raising DTR, which is what VMS does, and hangs up by dropping it again,
+	// which ends the client's session in eval_tcr_dato. A guest that does no
+	// modem control never answers, so the modem answers for it when the ring
+	// lapses and the line comes up on carrier alone.
 	uint64_t now = now_ms();
 	uint16_t val = 0;
 	for (unsigned i = 0; i < DZ_LINE_COUNT; i++) {
-		bool carrier = line_open[i] && tcp_line[i].client_connected();
-		if (carrier && !line_carrier[i] && !line_dtr[i])
+		bool client = line_open[i] && tcp_line[i].client_connected();
+		if (client && !line_carrier[i] && !line_dtr[i])
 			ring_until_ms[i] = now + DZ_RING_MS; // a call has come in
-		line_carrier[i] = carrier;
+		line_carrier[i] = client;
 		bool ringing = ring_until_ms[i] != 0;
-		if (ringing && (!carrier || line_dtr[i] || now >= ring_until_ms[i])) {
+		if (ringing && (!client || line_dtr[i] || now >= ring_until_ms[i])) {
 			ring_until_ms[i] = 0;
 			ringing = false;
 		}
+		bool carrier = client && !ringing;
 		if (carrier)
 			val |= (1u << (DZ_MSR_CD_SHIFT + i));
 		if (ringing)
