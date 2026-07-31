@@ -337,3 +337,23 @@ export async function serialDisconnect(): Promise<void> {
 export function shutdownTerminals(): void {
   closeWs(ws);
 }
+
+// Put the keyboard back in the console. The dashboard is a machine's front
+// panel: its switches are operated with the mouse, and anything typed is meant
+// for the machine, so the caret belongs in the terminal whenever nothing on the
+// page is asking for text itself.
+// The machine was switched on: it has printed nothing yet, so the screen is
+// cleared rather than left showing what the last one printed. The server has
+// already forgotten its retained history, so a reload agrees with what is here.
+export function clearConsole(): void {
+  term?.reset();
+}
+
+export function focusConsole(): void {
+  if (!term) return;
+  const active = document.activeElement as HTMLElement | null;
+  if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA'
+      || active.tagName === 'SELECT' || active.isContentEditable))
+    return;
+  term.focus();
+}

@@ -4,7 +4,7 @@ import type { ComponentChildren } from 'preact';
 import { useLocation } from 'preact-iso';
 import { useStore, store, emit } from '../store';
 import { liveControl, loadConfigs, fetchConfigSnapshot, setConfigLayout } from '../api';
-import { initLiveTerminal, teardownTerminals, consoleSource } from '../lib/terminals';
+import { initLiveTerminal, teardownTerminals, consoleSource, focusConsole } from '../lib/terminals';
 import { enabledDevices } from '../lib/devmodel';
 import { placeItems, gridRows, fits, occupancyExcept } from '../lib/dashlayout';
 import type { GridItem } from '../lib/dashlayout';
@@ -568,6 +568,19 @@ export function Dashboard() {
   useStore();
   useEffect(() => {
     loadConfigs().catch(() => {});
+  }, []);
+  // Typing on this screen is typing at the machine. Operating a panel switch
+  // leaves the focus on the button that was pressed, and the next keystroke
+  // would go there instead of to the console, so the caret is put back after
+  // anything that moves it — unless a field on the page wants it.
+  useEffect(() => {
+    const back = () => setTimeout(focusConsole, 0);
+    document.addEventListener('mouseup', back);
+    document.addEventListener('focusin', back);
+    return () => {
+      document.removeEventListener('mouseup', back);
+      document.removeEventListener('focusin', back);
+    };
   }, []);
   return html`<section class="page active" data-page="dashboard">
     ${html`<${DashGrid} />`}
