@@ -47,6 +47,14 @@ boot ROM's ODT (`@`) prompt; power cycle and drive the boot from the top instead
 
 ## The console
 
+**Send console input one character at a time, waiting for its echo before the
+next.** The DL11/SLU has no receive FIFO: a burst of bytes overruns the one
+RBUF register and the program sees only a few of them — "ra(0,0,0)unix" arrives
+as "r,)x". This holds for every console path (emulated DL11 channels and the
+external bridge alike) and for every program driving it (ODT, boot blocks, the
+OS). Pace each character on the echo; where nothing echoes (a password prompt),
+fall back to a delay per character.
+
 **The 11/73 has an on-board console SLU, wired to the bone's `/dev/ttyS2`.**
 The console is therefore real hardware, and the WebSocket that carries it is
 `/ws/console/ext` — the raw tty bridge, with no emulated device behind it. Read
