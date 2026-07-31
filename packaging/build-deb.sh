@@ -112,6 +112,17 @@ install -d -m 755 $STAGE/DEBIAN \
     $STAGE/usr/share/qunilator/network \
     $STAGE/var/lib/qunilator/images \
     $STAGE/var/lib/qunilator/configs
+# The media tree's seeded folders, one per medium by DEC device mnemonic, plus
+# roms/ for the images a PROM card is programmed from. Shipped empty so an
+# operator uploading a file over the web interface or one of the file shares
+# finds the place it belongs, and so the layout the API documents is the layout
+# a fresh board has. Nested folders below these are the operator's own.
+install -d -m 755 $STAGE/var/lib/qunilator/images/dk \
+    $STAGE/var/lib/qunilator/images/dl \
+    $STAGE/var/lib/qunilator/images/du \
+    $STAGE/var/lib/qunilator/images/mu \
+    $STAGE/var/lib/qunilator/images/rx \
+    $STAGE/var/lib/qunilator/images/roms
 # The updater's state: staged packages, the cached previous package and the
 # version the interface requested. It sits inside the state directory the file
 # shares are chrooted to, so the private mode is what keeps a share login away
@@ -318,6 +329,11 @@ if [ "$1" = configure ]; then
             --no-create-home --shell /usr/sbin/nologin qunilator || true
     fi
     install -d -m 755 /var/lib/qunilator/images
+    # the seeded media folders, re-asserted on an upgrade so a board that
+    # predates one of them gets it
+    for d in dk dl du mu rx roms; do
+        install -d -m 755 /var/lib/qunilator/images/$d || true
+    done
     chown -R qunilator:qunilator /var/lib/qunilator/images || true
     # The updater's state stays root-only: it sits inside the tree the SMB/FTP/
     # SFTP shares are chrooted to, and holds staged packages and the requested

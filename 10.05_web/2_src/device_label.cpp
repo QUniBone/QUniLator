@@ -87,6 +87,7 @@ const label_entry k_table[] = {
 	{ "VAX-11/780",    "KA780",   "processor",               INST_NONE },
 	{ "KE11",          "KE11-A",  "arithmetic element",      INST_NONE },
 	{ "m9312_c",       "M9312",   "bootstrap ROM",           INST_NONE },
+	{ "MRV11-D",       "MRV11-D", "bootstrap ROM",           INST_NONE },
 };
 
 } // namespace

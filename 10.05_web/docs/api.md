@@ -275,17 +275,19 @@ memory directly rather than over the bus. Answers
 
 ## Disk images
 
-Image files live in a folder hierarchy under `$QUNILATOR_DIR/images/`. Folders
-are seeded per media type by DEC device mnemonic — `dl/` (RL), `du/` (MSCP),
-`rx/` (RX floppy), `mu/` (TMSCP tape), `dk/` (RK05) — and the operator may nest
+Image files live in a folder hierarchy under `$QUNILATOR_DIR/images/`. The
+package seeds one folder per media type, named by DEC device mnemonic — `dl/`
+(RL), `du/` (MSCP), `rx/` (RX floppy), `mu/` (TMSCP tape), `dk/` (RK05) — plus
+`roms/` for the ROM images a PROM card is programmed from. The operator may nest
 their own folders freely below.
 
 Everything the API takes or returns for a specific image is its **subpath** — a
 path relative to the images root, e.g. `du/2.11BSD.dsk`. A drive stores its
 image as `images/<subpath>` (relative to `$QUNILATOR_DIR`), which it opens
 through the working directory; the `image` parameter accepts a subpath and the
-service prepends `images/`. A subpath may not contain `..`, a leading `/`, or a
-dot-leading segment.
+service prepends `images/`. The MRV11-D's `romfile` is resolved the same way, so
+a PROM card is programmed from `roms/<name>`. A subpath may not contain `..`, a
+leading `/`, or a dot-leading segment.
 
 ### `GET /api/images`
 

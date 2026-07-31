@@ -170,6 +170,7 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/dl11w.o \
 	$(OBJDIR)/kw11p.o \
 	$(OBJDIR)/memory.o \
+	$(OBJDIR)/mrv11d.o \
 	$(OBJDIR)/dzv11.o \
 	$(OBJDIR)/dhv11.o \
 	$(OBJDIR)/storageimage.o	\
@@ -448,6 +449,9 @@ $(OBJDIR)/kw11p.o :  $(DEVICE_SRC_DIR)/kw11p.cpp $(DEVICE_SRC_DIR)/kw11p.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/memory.o :  $(DEVICE_SRC_DIR)/memory.cpp $(DEVICE_SRC_DIR)/memory.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/mrv11d.o :  $(DEVICE_SRC_DIR)/mrv11d.cpp $(DEVICE_SRC_DIR)/mrv11d.hpp $(DEVICE_SRC_DIR)/mxv11b2_bootrom.h
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/dl11w.o :  $(DEVICE_SRC_DIR)/dl11w.cpp $(DEVICE_SRC_DIR)/dl11w.hpp $(DEVICE_SRC_DIR)/serial_tcp_line.hpp

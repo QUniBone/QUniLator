@@ -64,7 +64,11 @@ uint8_t emulated_addr_read(uint32_t addr, uint16_t *val) {
 		if (reghandle == 0) {
 			return 0; // register not implemented as "active"
 		} else if (reghandle == IOPAGE_REGISTER_HANDLE_ROM) {
-			*val = DDRMEM_MEMGET_W(addr);
+			// A ROM cell is read from the DDR word the ARM deposited it at,
+			// which is indexed by the address the machine drives. BS7 arrives
+			// as an address bit above the twenty-two the DAL carries, so the
+			// I/O page offset and the start of the page give that address back.
+			*val = DDRMEM_MEMGET_W(pru_iopage_registers.iopage_start_addr + (addr & 017777));
 			return 1;
 		} else {
 			// return register value. remove "volatile" attribute

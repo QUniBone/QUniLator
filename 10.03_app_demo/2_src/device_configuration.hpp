@@ -56,6 +56,7 @@
 #if defined(QBUS)
 #include "delqa.hpp"
 #include "vcb01.hpp"
+#include "mrv11d.hpp"
 #endif
 #if defined(UNIBUS)
 #include "m9312.hpp"
@@ -98,6 +99,9 @@ public:
 	RXV21_c *RX211;
 	delqa_c *DELQA;
 	vcb01_c *VCB01;
+	// the bootstrap PROM card, ships disabled: a processor that carries its own
+	// boot ROM answers the bootstrap window itself
+	mrv11d_c *MRV11D;
 #endif
 	uda_c *UDA50;
 	tqk50_c *TQK50;

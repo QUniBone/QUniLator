@@ -410,6 +410,11 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 						send_error(conn, 409, "that image is mounted on " + other);
 						return;
 					}
+				} else if (param->name == "romfile") {
+					// a ROM image is a file of the same tree, named by its
+					// subpath. Several boards may be programmed from one file,
+					// so nothing holds it.
+					value = webstorage_image_path(value);
 				}
 				param->parse(value);
 			}

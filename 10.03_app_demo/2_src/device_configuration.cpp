@@ -162,6 +162,7 @@ device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
 	RX211 = new RXV21_c();
 	DELQA = new delqa_c();
 	VCB01 = new vcb01_c();
+	MRV11D = new mrv11d_c();
 	(void) with_emulated_CPU; // no emulated CPU on QBUS
 #endif
 }
@@ -198,6 +199,8 @@ device_configuration_c::~device_configuration_c() {
 	delete DELQA;
 	VCB01->enabled.set(false);
 	delete VCB01;
+	MRV11D->enabled.set(false);
+	delete MRV11D;
 #endif
 
 	MEM->enabled.set(false);
