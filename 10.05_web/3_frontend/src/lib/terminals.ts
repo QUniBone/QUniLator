@@ -152,12 +152,15 @@ function wireTerminal(): void {
   // that built-in reply on every console, and only the server-designated
   // answerer actually emits a response — so N mirrored consoles yield one
   // answer, not N — and never for a query replayed from the retained history.
-  t.parser.registerCsiHandler({ final: 'c' }, () => {
-    if (answerer && !replaying && ws && ws.readyState === WebSocket.OPEN)
-      ws.send('\x1b[?1;2c'); // primary Device Attributes: VT100 with AVO
+  // primary Device Attributes: VT100 with AVO. A VT100 answers DECID (ESC Z)
+  // with the same report, and guests reach for either — VMS's SET
+  // TERMINAL/INQUIRE sends both in turn — so both handlers reply with it.
+  const identify = () => {
+    if (answerer && !replaying && ws && ws.readyState === WebSocket.OPEN) ws.send('\x1b[?1;2c');
     return true;
-  });
-  t.parser.registerEscHandler({ final: 'Z' }, () => true); // suppress DECID auto-reply
+  };
+  t.parser.registerCsiHandler({ final: 'c' }, identify);
+  t.parser.registerEscHandler({ final: 'Z' }, identify);
   t.onData((d) => {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(d);
     else if (serialWriter) serialWriter.write(serialEncoder.encode(d));

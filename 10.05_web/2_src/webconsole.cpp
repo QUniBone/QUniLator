@@ -56,8 +56,11 @@ struct console_c {
 		}
 	};
 
-	// retained history + live clients for this line's /ws/console/<n>
-	console_channel_c channel{web_ws_console_send};
+	// retained history + live clients for this line's /ws/console/<n>. The text
+	// callback lets the channel name one client the terminal answerer, so the
+	// guest's identification queries — RSX's SET /INQUIRE, VMS's SET
+	// TERMINAL/INQUIRE — are answered exactly once however many consoles watch.
+	console_channel_c channel{web_ws_console_send, web_ws_console_send_text};
 
 	// xmt bytes from the PDP-11, buffered so the DL11 thread never blocks
 	std::mutex xmt_mutex;
