@@ -594,6 +594,19 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 			webevents_note_halt(false);
 		}
 #endif
+#if defined(UNIBUS)
+		// An emulated processor has no HALT line on the bus to release: it is
+		// stopped and started through its own console switches. Power carries the
+		// run state with it, so switching the machine on starts the processor and
+		// switching it off stops it — otherwise AUX ON leaves a machine powered
+		// and standing still, with nothing on the panel to say why.
+		unibuscpu_c *ecpu = (device_configuration == nullptr)
+				? nullptr : device_configuration->emulated_cpu();
+		if (ecpu != nullptr && dec.set_powered == 0) {
+			ecpu->panel_halt_switch()->set(true);
+			webevents_note_halt(true);
+		}
+#endif
 		if (dec.do_init)
 			qunibus->init();
 		if (dec.do_powercycle)
@@ -602,6 +615,16 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		if (dec.do_halt) {
 			qunibus->set_halt(1);
 			webevents_note_halt(true);
+		}
+#endif
+#if defined(UNIBUS)
+		if (ecpu != nullptr && dec.set_powered == 1) {
+			// the START switch rebuilds the machine and runs it, which is what
+			// the power switch means on a processor that is emulated
+			ecpu->panel_halt_switch()->set(false);
+			ecpu->panel_start_switch()->set(true);
+			webevents_note_halt(false);
+			WEB_INFO("control %s: emulated CPU started", action.c_str());
 		}
 #endif
 		if (dec.set_powered >= 0)
