@@ -238,7 +238,16 @@ device_configuration_c::~device_configuration_c() {
 }
 
 #if defined(UNIBUS)
-cpu_base_c *device_configuration_c::emulated_cpu() const {
+unibuscpu_c *device_configuration_c::emulated_cpu() const {
+	cpu_base_c *pdp11 = emulated_pdp11();
+	if (pdp11 != NULL)
+		return pdp11;
+	if (CPUVAX != NULL && CPUVAX->enabled.value)
+		return CPUVAX;
+	return NULL;
+}
+
+cpu_base_c *device_configuration_c::emulated_pdp11() const {
 	if (CPU20 != NULL && CPU20->enabled.value)
 		return CPU20;
 	if (CPU34 != NULL && CPU34->enabled.value)

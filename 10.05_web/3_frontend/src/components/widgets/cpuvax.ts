@@ -119,6 +119,8 @@ export class VaxCpuWidget extends DeviceWidget {
               )}>HALT</${Cap}>
           <${Cap} cls="cap-white" lit=${false}
             onClick=${() => pulse('start_switch', 'START')}>START</${Cap}>
+          <${Cap} cls="cap-white" lit=${false}
+            onClick=${() => pulse('continue_switch', 'CONT')}>CONT</${Cap}>
         </div>
       </div></div>`;
   }

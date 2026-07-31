@@ -426,6 +426,14 @@ bool deuna_c::parse_mac(const std::string &text, uint8_t out[6])
  */
 bool deuna_c::on_param_changed(parameter_c *param)
 {
+    // The enable path installs or uninstalls the device, and an uninstall
+    // waits for the workers to run to completion. The workers take state_mutex
+    // on every pass, so it must be free while they are being stopped: holding
+    // it here would leave a worker blocked on the lock, blind to the terminate
+    // flag, and the uninstall waiting forever on the worker.
+    if (param == &enabled)
+        return qunibusdevice_c::on_param_changed(param);
+
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
 
     if (param == &priority_slot) {

@@ -61,6 +61,17 @@ class unibuscpu_c: public qunibusdevice_c {
 
 	virtual void on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge) ;
 	virtual void on_init_changed(void) ;
+
+	// The console view a front panel drives, common to every emulated
+	// processor: the RUN lamp, the HALT toggle, and the momentary START and
+	// CONTINUE switches. Each processor carries these as its own parameters
+	// with its own wording; the accessors let the run controls of the web API
+	// and the panel state derivation work on any of them. A processor without
+	// one of the switches answers NULL for it.
+	virtual parameter_bool_c *panel_run_led(void) { return nullptr; }
+	virtual parameter_bool_c *panel_halt_switch(void) { return nullptr; }
+	virtual parameter_bool_c *panel_start_switch(void) { return nullptr; }
+	virtual parameter_bool_c *panel_continue_switch(void) { return nullptr; }
 };
 
 #endif

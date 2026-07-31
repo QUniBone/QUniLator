@@ -173,9 +173,24 @@ unsigned simh_shim_map_export (uint32_t *dest, unsigned count);
 int simh_shim_history (unsigned instructions);
 int simh_shim_history_dump (const char *filename, unsigned instructions);
 
+/* Fix the instructions-per-second the clock side works with, instead of
+   measuring it. On emulated time the rate is defined - a microsecond of
+   machine time is a fixed number of instructions - and a measured rate
+   jitters with every calibration window, which the guest's timer self-test
+   reads as a broken interval clock. Zero returns to measuring. */
+void simh_shim_set_fixed_ips (double ips);
+
 /* Whether the bus, rather than a device the core carries, still answers this
    UNIBUS address. */
 int simh_shim_bus_owns (unsigned unibus_addr);
+
+/* Watch this UNIBUS address - the boot device's - on every reassert pass: a
+   device reset inside the core re-runs the auto-configuration, which takes
+   the address back for the core without touching the rest of the page, and
+   the whole-page witness never notices. The count says how often the claim
+   had to be healed that way. */
+void simh_shim_bus_watch (unsigned unibus_addr);
+unsigned simh_shim_bus_reclaims (void);
 
 /* Where the adapter's map registers send an eighteen bit UNIBUS address. Zero
    when the entry covering it is not valid, leaving *phys alone. Asking leaves

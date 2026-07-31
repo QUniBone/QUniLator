@@ -411,11 +411,11 @@ static void poll_hardware(void) {
 	// HALT line, which is what webevents_note_halt() tracks.
 	bool cpu_halt = false, have_cpu = false;
 #if defined(UNIBUS)
-	cpu_base_c *cpu = (device_configuration == nullptr)
+	unibuscpu_c *cpu = (device_configuration == nullptr)
 			? nullptr : device_configuration->emulated_cpu();
 	if (cpu != nullptr) {
 		have_cpu = true;
-		cpu_halt = !cpu->runmode.value;
+		cpu_halt = !cpu->panel_run_led()->value;
 	}
 #endif
 

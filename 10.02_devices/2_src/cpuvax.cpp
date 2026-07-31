@@ -72,9 +72,12 @@ cpuvax_c::cpuvax_c() :
     bus_iopage.value = true;
     bus_dma.value = true;
 
+    emulated_time.value = true;
+
     runmode.value = false;
     halt_switch.value = false;
     start_switch.value = false;
+    continue_switch.value = false;
 
     // Running state, not configuration, so a saved machine does not carry a
     // stale program counter or a HALT nobody can see on screen.
@@ -102,6 +105,7 @@ cpuvax_c::cpuvax_c() :
     intr_level_stored.kind = parameter_c::PARAM_STATUS;
     halt_switch.kind = parameter_c::PARAM_STATUS;
     start_switch.kind = parameter_c::PARAM_STATUS;
+    continue_switch.kind = parameter_c::PARAM_STATUS;
 }
 
 cpuvax_c::~cpuvax_c()
@@ -168,6 +172,7 @@ bool cpuvax_c::bus_read(unsigned addr, unsigned *data)
     }
     *data = word;
     DEBUG("DATI %06o = %06o", addr, (unsigned) word);
+    iotrace_note(0, addr, word, true);
     return true;
 }
 
@@ -182,10 +187,55 @@ bool cpuvax_c::bus_write(unsigned addr, unsigned data, bool byte)
     if (!data_transfer_request.success) {
         bus_timeouts.value++;
         DEBUG("DATO%s %06o = %06o: no answer", byte ? "B" : "", addr, (unsigned) word);
+        iotrace_note(byte ? 2 : 1, addr, word, false);
         return false;
     }
     DEBUG("DATO%s %06o = %06o", byte ? "B" : "", addr, (unsigned) word);
+    iotrace_note(byte ? 2 : 1, addr, word, true);
     return true;
+}
+
+/* The ring keeps only the watched device's registers, so a stalled dialogue
+   is not scrolled away by the traffic of a healthy one. Two threads write it -
+   the processor's transfers and the adapter's interrupt injections - so the
+   slot is claimed with an atomic counter; a torn entry costs a diagnostic
+   line, not correctness. */
+void cpuvax_c::iotrace_note(uint8_t op, uint32_t addr, uint16_t value, bool ok)
+{
+    struct timespec ts;
+
+    if (op != 3) {
+        if (iotrace_base == 0 || addr < iotrace_base || addr > iotrace_base + 2)
+            return;
+    }
+    uint64_t seq = __sync_fetch_and_add(&iotrace_seq, 1);
+    iotrace_entry *e = &iotrace[seq % IOTRACE_ENTRIES];
+    clock_gettime(CLOCK_REALTIME, &ts);
+    e->ns = (uint64_t) ts.tv_sec * 1000000000ull + ts.tv_nsec;
+    e->addr = addr;
+    e->value = value;
+    e->op = op;
+    e->ok = ok;
+    e->seq = seq + 1;                   // nonzero marks the entry written
+}
+
+void cpuvax_c::iotrace_dump(void)
+{
+    static const char *opname[] = {"DATI", "DATO", "DATOB", "INTR"};
+    uint64_t newest = iotrace_seq;
+    uint64_t oldest = newest > IOTRACE_ENTRIES ? newest - IOTRACE_ENTRIES : 0;
+
+    INFO("register-access trace, oldest first:");
+    for (uint64_t s = oldest; s < newest; s++) {
+        iotrace_entry e = iotrace[s % IOTRACE_ENTRIES];
+        if (e.seq != s + 1)
+            continue;                   // overwritten while dumping
+        unsigned us = (unsigned) ((e.ns / 1000) % 1000000);
+        unsigned sec = (unsigned) ((e.ns / 1000000000ull) % 86400);
+        INFO("  #%llu %02u:%02u:%02u.%06u %-5s %06o = %06o%s",
+             (unsigned long long) e.seq, sec / 3600, (sec / 60) % 60, sec % 60,
+             us, opname[e.op & 3], e.addr, e.value, e.ok ? "" : " (no answer)");
+    }
 }
 
 /* The time the core measures itself against: whichever clock the emulation is
@@ -219,6 +269,7 @@ bool cpuvax_c::on_before_install(void)
 
     halt_switch.value = false;
     start_switch.value = false;
+    continue_switch.value = false;
     machine_running = false;
     runmode.value = false;
 
@@ -248,6 +299,7 @@ void cpuvax_c::on_after_uninstall(void)
     machine_stop("processor disabled");
     halt_switch.value = true;
     start_switch.value = false;
+    continue_switch.value = false;
 }
 
 /* Memory, the disk the machine boots from, and the bootstrap itself. Leaves
@@ -365,10 +417,18 @@ bool cpuvax_c::configure_machine(void)
         unsigned ba = 0;
         int on = 0;
 
-        if (simh_shim_device_info(bootdevice.value.c_str(), &ba, &on))
+        if (simh_shim_device_info(bootdevice.value.c_str(), &ba, &on)) {
             INFO("boot device %s: %s, would answer at %06o",
                  bootdevice.value.c_str(), on ? "configured" : "not configured", ba);
-        else
+            // A reset of the controller the core carries re-runs the
+            // auto-configuration, which takes these registers back for the
+            // core mid-run; watching them heals the claim within the same
+            // event pass instead of a batch later.
+            simh_shim_bus_watch(ba);
+            // the info's address form carries the core's physical prefix;
+            // transfers name the eighteen bit bus address
+            iotrace_base = ba & 0777777;
+        } else
             ERROR("the processor has no device called %s", bootdevice.value.c_str());
     }
 
@@ -415,14 +475,24 @@ void cpuvax_c::machine_start(void)
     mailbox_execute(ARM2PRU_CPU_ENABLE);
     qunibus->set_arbitrator_active(true);
     publish_unibus_map();
-#ifdef CPU_CONTROLLED_TIME
-    // Every device model's delays are then measured against the machine rather
-    // than against the board, at the cost of a guest clock that runs at
-    // whatever multiple of real time the board manages.
-    the_flexi_timeout_controller->set_mode(flexi_timeout_c::emulated_time);
-#else
-    the_flexi_timeout_controller->set_mode(flexi_timeout_c::world_time);
-#endif
+    // On emulated time the interval clock and every device delay advance with
+    // the instructions executed, not with the wall. VMS calibrates its
+    // software timing loops (EXE$GL_TENUSEC and friends) once at boot by
+    // counting loop iterations between clock ticks; against a wall-time clock
+    // on a board whose one core is shared with the device workers, a boot
+    // preempted during that window calibrates the loops a thousandfold too
+    // short and every timed wait then expires early - the boot limps through
+    // 50-second timeout retries instead of taking interrupts. The clock side
+    // is pinned to the defined instruction rate for the same reason: a
+    // measured rate jitters, and the interval count VMS's timer self-test
+    // interpolates from it then reads as a broken clock.
+    if (emulated_time.value) {
+        the_flexi_timeout_controller->set_mode(flexi_timeout_c::emulated_time);
+        simh_shim_set_fixed_ips(1e9 / VAX_INSTRUCTION_NS);
+    } else {
+        the_flexi_timeout_controller->set_mode(flexi_timeout_c::world_time);
+        simh_shim_set_fixed_ips(0.0);
+    }
     INFO("VAX running");
 }
 
@@ -437,6 +507,7 @@ void cpuvax_c::machine_stop(const char *why)
     mailbox_execute(ARM2PRU_CPU_ENABLE);
     qunibus->set_arbitrator_active(false);
     the_flexi_timeout_controller->set_mode(flexi_timeout_c::world_time);
+    simh_shim_set_fixed_ips(0.0);
     publish_status();
     if (why != NULL)
         INFO("VAX halted at PC %08x: %s", (unsigned) pc.value, why);
@@ -460,6 +531,7 @@ void cpuvax_c::publish_status(void)
         if (simh_shim_device_info(bootdevice.value.c_str(), &ba, &on))
             bootdev_on_bus.value = simh_shim_bus_owns(ba) != 0;
     }
+    iopage_reclaims.value = simh_shim_bus_reclaims();
     uba_cr.value = state.uba_cr;
     intr_pending.value = simh_shim_bus_interrupt_pending();
     uba_dr.value = state.uba_dr;
@@ -608,6 +680,14 @@ void cpuvax_c::worker(unsigned instance)
                 machine_start();
         }
 
+        // CONTINUE picks up where the processor halted: the core keeps its
+        // register state across a stop, so resuming is enabling it again.
+        if (continue_switch.value) {
+            continue_switch.value = false;      // momentary action
+            if (!machine_running && !halt_switch.value)
+                machine_start();
+        }
+
         if (halt_switch.value && machine_running)
             machine_stop("HALT switch");
 
@@ -722,8 +802,10 @@ void cpuvax_c::on_interrupt(uint16_t vector, uint8_t level)
     if (!simh_shim_bus_interrupt(vector, level)) {
         WARNING("interrupt vector %06o at BR%u not taken", (unsigned) vector,
                 (unsigned) level);
+        iotrace_note(3, vector, level, false);
         return;
     }
+    iotrace_note(3, vector, level, true);
     bus_interrupts.value++;
     if (core_history.value)
         history_countdown = 2;                  // let the dispatch run, then dump
@@ -761,6 +843,18 @@ bool cpuvax_c::on_param_changed(parameter_c *param)
             return false;
         bus_deposit.value = bus_deposit.new_value;
         INFO("%06o := %06o", bus_deposit.value, bus_data.value);
+        return true;
+    }
+    if (param == &iotrace_dump_switch) {
+        if (iotrace_dump_switch.new_value) {
+            iotrace_dump();
+            // with the history armed, write it too: a stall that takes no
+            // interrupts never triggers the automatic dump
+            if (core_history.value
+                    && simh_shim_history_dump("/tmp/vax-history.log", 0))
+                INFO("instruction history written to /tmp/vax-history.log");
+        }
+        iotrace_dump_switch.value = false;  // momentary action
         return true;
     }
     if (param == &core_debug) {

@@ -200,6 +200,12 @@ public:
     void start(void);
     void stop(const char * info, int show_options=show_none);
 
+    // the front panel's view of the console switches
+    parameter_bool_c *panel_run_led(void) override { return &runmode; }
+    parameter_bool_c *panel_halt_switch(void) override { return &halt_switch; }
+    parameter_bool_c *panel_start_switch(void) override { return &start_switch; }
+    parameter_bool_c *panel_continue_switch(void) override { return &continue_switch; }
+
     // background worker function
     void worker(unsigned instance) override;
 
