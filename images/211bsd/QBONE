@@ -192,7 +192,7 @@ CS02		NO		# DH units above are really Emulex CS02
 				# boards on a 22bit Qbus.
 NDM		0		# DM11; NDM is in units of boards (16 each)
 NDHU		0		# DHU11
-NDHV		0		# DHV11
+NDHV		1		# DHV11
 NDZ		1		# DZ11; NDZ is in units of boards (8 each)
 
 #########################################
@@ -228,8 +228,8 @@ NEC		0		# 3Com Ethernet
 NDE		0		# DEUNA/DELUA
 NIL		0		# Interlan Ethernet
 NSL		0		# Serial Line IP
-NQE		1		# DEQNA
-NQT		0		# DEQTA (DELQA-YM, DELQA-PLUS)
+NQE		0		# DEQNA
+NQT		1		# DEQTA (DELQA-YM, DELQA-PLUS)
 NVV		0		# V2LNI (Pronet)
 NACC		0		# ACC LH/DH ARPAnet IMP interface
 PLI		NO		# LH/DH is connected to a PLI
