@@ -326,6 +326,10 @@ clean:
 
 .PHONY: all pru clean
 
+# empty target a rule names to be out of date on every run
+FORCE:
+.PHONY: FORCE
+
 
 
 # print compiler version
@@ -339,8 +343,6 @@ $(OBJDIR)/$(PROG) : pru $(OBJECTS) $(OBJDIR)/main_demo.o
 
 $(OBJDIR)/$(PROG_WEB) : pru $(OBJECTS) $(OBJDIR)/main_qbone_web.o
 	$(CC) -o $@ $(OBJECTS) $(OBJDIR)/main_qbone_web.o $(LDFLAGS)
-	# force recompile on next build
-	rm -f $(OBJDIR)/compile_timestamp.o
 	file $@
 
 $(OBJDIR)/main_demo.o : main_demo.cpp application.hpp
@@ -658,7 +660,8 @@ $(OBJDIR)/logger.o :  $(COMMON_SRC_DIR)/logger.cpp $(COMMON_SRC_DIR)/logger.hpp
 $(OBJDIR)/utils.o :  $(BASE_SRC_DIR)/utils.cpp $(BASE_SRC_DIR)/utils.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/compile_timestamp.o :  $(COMMON_SRC_DIR)/compile_timestamp.cpp
+# stamps the time of the build it is part of, so it recompiles on every run
+$(OBJDIR)/compile_timestamp.o :  $(COMMON_SRC_DIR)/compile_timestamp.cpp FORCE
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webserver.o :  $(WEB_SRC_DIR)/webserver.cpp $(WEB_SRC_DIR)/webserver.hpp
