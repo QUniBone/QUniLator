@@ -523,6 +523,18 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
 .mem-legend-row .mem-addr { font-family: var(--font-mono); color: var(--ink); }
 .mem-legend-row .mem-size { font-variant-numeric: tabular-nums; }
 .mem-note, .mem-empty { font-size: var(--fs-0); color: var(--ink-faint); }
+/* where the card is placed: the start address and the size the operator gives,
+   and the last address they reach */
+.mem-place {
+  display: flex; flex-direction: column; gap: 5px;
+  padding-top: 9px; border-top: 1px solid var(--line);
+}
+.mem-field {
+  display: grid; grid-template-columns: 3.4em 1fr; gap: 8px; align-items: center;
+  font-size: var(--fs-0); color: var(--ink-muted);
+}
+.mem-field input { width: 100%; min-width: 0; padding: 2px 6px; }
+.mem-place .mem-addr { color: var(--ink); }
 
 /* ---- bootstrap PROM card ---- the sockets and what reaches the machine from
    them. A ROM chip beside the name of what it was programmed with, then the

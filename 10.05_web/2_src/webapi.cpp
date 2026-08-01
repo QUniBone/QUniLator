@@ -482,7 +482,20 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 					// so nothing holds it.
 					value = webstorage_image_path(value);
 				}
+				// A device may refuse a value — a memory card whose new range
+				// the machine already answers keeps the range it had. The set
+				// leaves the old value in place, so the answer is the reason
+				// the device logged rather than a 200 quoting a value that
+				// never took. A device that normalizes what it stores writes
+				// the value it settled on and logs nothing, and that stands.
+				dev->last_error.clear();
 				param->parse(value);
+				if (*param->render() != value && !dev->last_error.empty()) {
+					send_error(conn, 409, dev->name.value + "." + param->name
+							+ " could not be set to \"" + value + "\": "
+							+ dev->last_error);
+					return;
+				}
 			}
 			// keep the terminal user informed, like an echoed command
 			WEB_INFO("%s.%s = %s", dev->name.value.c_str(),

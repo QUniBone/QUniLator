@@ -6,6 +6,9 @@
 */
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <cctype>
+#include <cstring>
 
 #include "logger.hpp"
 #include "qunibus.h"
@@ -26,14 +29,18 @@ memory_c::memory_c() :
 #endif
 	log_label = "mem";
 
-	size.kind = parameter_c::PARAM_STATUS;
+	// the placement reports where it reaches; the operator gives the start
+	// address and the size
+	endaddr.kind = parameter_c::PARAM_STATUS;
 
+	placing = false;
 	startaddr.value = 0;
 	// everything below the I/O page: the whole machine, on a backplane that
 	// carries no memory of its own
-	endaddr.value = qunibus->iopage_start_addr ? qunibus->iopage_start_addr - 2 : 0;
+	range_bytes = qunibus->iopage_start_addr;
+	endaddr.value = range_bytes ? range_bytes - 2 : 0;
+	size.value = size_text(range_bytes);
 	probe.value = true;
-	update_size(/*claimed*/false);
 }
 
 memory_c::~memory_c()
@@ -42,23 +49,83 @@ memory_c::~memory_c()
 		release();
 }
 
-// The claimed size, as a card is described: "2040 KB", "4 MB". Called with the
-// enabled state the change is settling on: a parameter's value is committed
-// after on_param_changed() has accepted it, so enabled.value still holds the
-// state being left.
-void memory_c::update_size(bool claimed)
+// A byte count as a card is described: "2 MB", "2040 KB". A span of odd
+// kilobytes is spelled out in bytes, since no round unit names it.
+std::string memory_c::size_text(uint32_t bytes)
 {
 	char buf[32];
-	if (!claimed || startaddr.value > endaddr.value) {
-		size.set("none");
-		return;
-	}
-	uint32_t kb = (endaddr.value - startaddr.value + 2) / 1024;
-	if (kb >= 1024 && kb % 1024 == 0)
-		snprintf(buf, sizeof buf, "%u MB", kb / 1024);
+	if (bytes >= 1024 * 1024 && bytes % (1024 * 1024) == 0)
+		snprintf(buf, sizeof buf, "%u MB", bytes / (1024 * 1024));
+	else if (bytes >= 1024 && bytes % 1024 == 0)
+		snprintf(buf, sizeof buf, "%u KB", bytes / 1024);
 	else
-		snprintf(buf, sizeof buf, "%u KB", kb);
-	size.set(buf);
+		snprintf(buf, sizeof buf, "%u bytes", bytes);
+	return std::string(buf);
+}
+
+// A size as the operator writes it: a decimal count followed by KB, MB or
+// nothing, in either case, with or without a space. A bare count is bytes.
+bool memory_c::parse_size(const std::string &text, uint32_t *bytes)
+{
+	const char *s = text.c_str();
+	char *endptr;
+	while (isspace((unsigned char) *s))
+		s++;
+	unsigned long long n = strtoull(s, &endptr, 10);
+	if (endptr == s) {
+		ERROR("\"%s\" does not name a size", text.c_str());
+		return false;
+	}
+	while (isspace((unsigned char) *endptr))
+		endptr++;
+	unsigned long long unit = 1;
+	if (!strcasecmp(endptr, "k") || !strcasecmp(endptr, "kb"))
+		unit = 1024;
+	else if (!strcasecmp(endptr, "m") || !strcasecmp(endptr, "mb"))
+		unit = 1024 * 1024;
+	else if (*endptr && strcasecmp(endptr, "b") && strcasecmp(endptr, "byte")
+			&& strcasecmp(endptr, "bytes")) {
+		ERROR("\"%s\" is not a unit of memory; write KB, MB or a count of bytes",
+				endptr);
+		return false;
+	}
+	unsigned long long total = n * unit;
+	if (n != 0 && (total / unit != n || total > qunibus->addr_space_byte_count)) {
+		ERROR("%s is more memory than the %u-bit address space holds", text.c_str(),
+				qunibus->addr_width);
+		return false;
+	}
+	*bytes = (uint32_t) total;
+	return true;
+}
+
+// The last address a card of "bytes" placed at "start" answers. Refuses a span
+// a card cannot answer, and says which part of it is impossible.
+bool memory_c::range_of(uint32_t start, uint32_t bytes, uint32_t *end)
+{
+	if (bytes == 0) {
+		ERROR("a card of no size answers nothing");
+		return false;
+	}
+	if (start % 2 || bytes % 2) {
+		ERROR("%s at %s is not a whole number of words", size_text(bytes).c_str(),
+				qunibus->addr2text(start));
+		return false;
+	}
+	if (start >= qunibus->iopage_start_addr) {
+		ERROR("start address %s is inside the I/O page at %s",
+				qunibus->addr2text(start),
+				qunibus->addr2text(qunibus->iopage_start_addr));
+		return false;
+	}
+	if (bytes > qunibus->iopage_start_addr - start) {
+		ERROR("%s at %s reaches the I/O page at %s", size_text(bytes).c_str(),
+				qunibus->addr2text(start),
+				qunibus->addr2text(qunibus->iopage_start_addr));
+		return false;
+	}
+	*end = start + bytes - 2;
+	return true;
 }
 
 // claim(): have the PRU answer [start, end] out of DDR.
@@ -66,22 +133,6 @@ void memory_c::update_size(bool claimed)
 // installed against memory the machine already answers.
 bool memory_c::claim(uint32_t start, uint32_t end)
 {
-	if (start > end) {
-		ERROR("start address %s is above end address %s", qunibus->addr2text(start),
-				qunibus->addr2text(end));
-		return false;
-	}
-	if (start % 2 || end % 2) {
-		ERROR("range %s..%s is not word aligned", qunibus->addr2text(start),
-				qunibus->addr2text(end));
-		return false;
-	}
-	if (end >= qunibus->iopage_start_addr) {
-		ERROR("range %s..%s reaches the I/O page at %s", qunibus->addr2text(start),
-				qunibus->addr2text(end), qunibus->addr2text(qunibus->iopage_start_addr));
-		return false;
-	}
-
 	if (probe.value) {
 		uint32_t answered = qunibus->probe_range(start, end);
 		if (answered != QUNIBUS_PROBE_NONE) {
@@ -111,6 +162,51 @@ void memory_c::release(void)
 	ddrmem->set_range(DDRMEM_RANGE_MEMORY, 0xffffffff, 0);
 }
 
+// Move the card to "bytes" of memory at "start". A card in the machine gives up
+// the range it answers and takes the new one, so the operator re-straps it
+// where it stands; a range the machine refuses leaves the card answering what
+// it answered before.
+bool memory_c::place(uint32_t start, uint32_t bytes)
+{
+	uint32_t end;
+	if (!range_of(start, bytes, &end))
+		return false;
+	if (enabled.value && (start != startaddr.value || end != endaddr.value)) {
+		uint32_t was_start = startaddr.value, was_end = endaddr.value;
+		release();
+		if (!claim(start, end)) {
+			ddrmem->set_range(DDRMEM_RANGE_MEMORY, was_start, was_end);
+			return false;
+		}
+	}
+	range_bytes = bytes;
+	// the reported placement follows the card, and the change reaches the
+	// interfaces watching it
+	placing = true;
+	endaddr.set(end);
+	placing = false;
+	return true;
+}
+
+bool memory_c::place_at(uint32_t start, uint32_t bytes)
+{
+	if (!place(start, bytes))
+		return false;
+	placing = true;
+	startaddr.set(start);
+	size.set(size_text(bytes));
+	placing = false;
+	return true;
+}
+
+bool memory_c::place_at(uint32_t start, const std::string &sizespec)
+{
+	uint32_t bytes;
+	if (!parse_size(sizespec, &bytes))
+		return false;
+	return place_at(start, bytes);
+}
+
 bool memory_c::on_param_changed(parameter_c *param)
 {
 	if (param == &enabled) {
@@ -119,14 +215,23 @@ bool memory_c::on_param_changed(parameter_c *param)
 				return false;
 		} else
 			release();
-		if (!device_c::on_param_changed(param))
+		return device_c::on_param_changed(param);
+	}
+	if (placing)
+		return device_c::on_param_changed(param);
+	if (param == &startaddr)
+		return place(startaddr.new_value, range_bytes);
+	if (param == &size) {
+		uint32_t bytes;
+		if (!parse_size(size.new_value, &bytes))
 			return false;
-		update_size(enabled.new_value);
+		if (!place(startaddr.value, bytes))
+			return false;
+		size.new_value = size_text(bytes); // as a card is described
 		return true;
 	}
-	if ((param == &startaddr || param == &endaddr) && enabled.value) {
-		// a card is re-strapped out of the backplane
-		ERROR("disable the card before moving its range");
+	if (param == &endaddr) {
+		ERROR("the end address follows from the start address and the size");
 		return false;
 	}
 	return device_c::on_param_changed(param);

@@ -4,9 +4,12 @@
 import { html } from '../../html';
 import { useEffect, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
+import type { LiveDev } from '../../types';
 import { octalStr } from '../../lib/util';
-import { apiJSON } from '../../api';
-import { DeviceWidget } from './base';
+import { apiJSON, liveSetParam } from '../../api';
+import { alertModal } from '../../lib/modals';
+import { statusParam } from '../../lib/devmodel';
+import { DeviceWidget, paramVal } from './base';
 
 interface MemoryRange {
   slot: string;
@@ -53,13 +56,63 @@ function bands(m: MemoryMap): Band[] {
   return out.sort((a, b) => a.from - b.from);
 }
 
+// The card is placed the way a card is described: a start address and a size.
+// The last address it answers follows from the two and is read here rather than
+// set. The machine can refuse a placement — a range it already answers would
+// put two cards on one cycle — and then the card stays where it was, so the
+// fields go back to what they held and the reason is put in front of the
+// operator.
+function Placement({ d }: { d: LiveDev }) {
+  const start = paramVal(d, 'startaddr');
+  const size = paramVal(d, 'size');
+  const endp = statusParam(d, 'endaddr');
+  const end = endp ? endp.v : '';
+  const [startDraft, setStartDraft] = useState(start);
+  const [sizeDraft, setSizeDraft] = useState(size);
+  useEffect(() => setStartDraft(start), [start]);
+  useEffect(() => setSizeDraft(size), [size]);
+
+  const place = async (param: string, value: string) => {
+    if (value === paramVal(d, param)) return;
+    const res = await liveSetParam(d.name, param, value, 'card placed');
+    if (!res.ok) {
+      setStartDraft(start);
+      setSizeDraft(size);
+      await alertModal(
+        'Card not placed',
+        res.data.error || 'The machine refused the placement.'
+      );
+    }
+  };
+  const commitStart = () => place('startaddr', startDraft);
+  const commitSize = () => place('size', sizeDraft);
+
+  return html`<div class="mem-place">
+    <label class="mem-field"
+      ><span>start</span>
+      <input class="mono" type="text" value=${startDraft} spellcheck=${false}
+        onInput=${(e: Event) => setStartDraft((e.target as HTMLInputElement).value)}
+        onChange=${commitStart} onBlur=${commitStart} />
+    </label>
+    <label class="mem-field"
+      ><span>size</span>
+      <input type="text" value=${sizeDraft} placeholder="256 KB" spellcheck=${false}
+        onInput=${(e: Event) => setSizeDraft((e.target as HTMLInputElement).value)}
+        onChange=${commitSize} onBlur=${commitSize} />
+    </label>
+    <span class="mem-note">ends at <span class="mem-addr mono">${end}</span></span>
+  </div>`;
+}
+
 export class MemoryWidget extends DeviceWidget {
   render(): ComponentChildren {
     const [map, setMap] = useState<MemoryMap | null>(null);
 
     // The map follows the device: enabling the card or moving its range
     // changes what the board answers, and both arrive as a parameter change.
-    const range = this.param('startaddr') + '/' + this.param('endaddr') + '/' + this.d.enabled;
+    const endp = statusParam(this.d, 'endaddr');
+    const range =
+      this.param('startaddr') + '/' + (endp ? endp.v : '') + '/' + this.d.enabled;
     useEffect(() => {
       let live = true;
       apiJSON<MemoryMap>('/api/memory/map')
@@ -76,6 +129,7 @@ export class MemoryWidget extends DeviceWidget {
       ${this.head()}
       <div class="card-body membody">
         ${map ? this.ranges(map) : html`<div class="mem-empty">reading the map…</div>`}
+        ${html`<${Placement} d=${this.d} />`}
       </div></div>`;
   }
 

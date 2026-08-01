@@ -269,6 +269,49 @@ static void reset_to_defaults(device_c *dev, const std::set<std::string> *keep,
 	}
 }
 
+// A parameter a configuration names, as text.
+static bool config_param_text(const picojson::object &po, const char *key,
+		std::string *out) {
+	picojson::object::const_iterator it = po.find(key);
+	if (it == po.end() || !it->second.is<std::string>())
+		return false;
+	*out = it->second.get<std::string>();
+	return true;
+}
+
+// Place the memory card as a configuration names it. Its start address and its
+// size describe one range, so they are applied together: taken one at a time
+// they can pass through a placement that runs into the I/O page, which the card
+// refuses. What the file does not name is the value the card was constructed
+// with.
+//
+// The size may be given as an end address: a configuration written when the
+// card was placed by its last address names an endaddr, and that address at the
+// start address it names gives the size the card carries.
+static void apply_memory_placement(memory_c *mem, const picojson::object &po,
+		picojson::array *errors) {
+	std::string text;
+	uint32_t start = 0;
+	if (config_param_text(po, "startaddr", &text)
+			|| param_default_value(mem->name.value, "startaddr", &text))
+		start = (uint32_t) strtoul(text.c_str(), nullptr, 8);
+
+	mem->last_error.clear();
+	bool placed;
+	if (config_param_text(po, "size", &text))
+		placed = mem->place_at(start, text);
+	else {
+		uint32_t end = 0;
+		if (config_param_text(po, "endaddr", &text)
+				|| param_default_value(mem->name.value, "endaddr", &text))
+			end = (uint32_t) strtoul(text.c_str(), nullptr, 8);
+		placed = end >= start && mem->place_at(start, end - start + 2);
+	}
+	if (!placed && errors != nullptr)
+		errors->push_back(picojson::value(mem->name.value + ": the card is not placed"
+				+ (mem->last_error.empty() ? "" : ": " + mem->last_error)));
+}
+
 // A configuration describes the whole machine: it carries the devices that are
 // switched on and, of those, only the parameters that differ from the
 // construction defaults. Everything it does not mention is off and default.
@@ -1268,6 +1311,15 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 				}
 			}
 
+			// The memory card is placed in one step, from parameters that
+			// describe one range together; reset_to_defaults() would apply
+			// them one at a time.
+			memory_c *mem = dynamic_cast<memory_c *>(dev);
+			if (mem != nullptr) {
+				listed.insert("startaddr");
+				listed.insert("size");
+			}
+
 			reset_to_defaults(dev, &listed, errors);
 
 			if (d.get("params").is<picojson::object>())
@@ -1275,6 +1327,9 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 						d.get("params").get<picojson::object>()) {
 					if (!kv.second.is<std::string>())
 						continue;
+					if (mem != nullptr
+							&& (kv.first == "startaddr" || kv.first == "size"))
+						continue; // placed below, as one range
 					parameter_c *param = dev->param_by_name(kv.first);
 					if (param == nullptr || param->readonly)
 						continue;
@@ -1287,6 +1342,15 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 								devname + "." + kv.first + ": " + e.what()));
 					}
 				}
+
+			// The card takes its range once the parameters that qualify the
+			// claim are in place: the probe reads the file's setting, not the
+			// default it was reset to.
+			if (mem != nullptr)
+				apply_memory_placement(mem, d.get("params").is<picojson::object>()
+						? d.get("params").get<picojson::object>() : picojson::object(),
+						errors);
+
 			if (d.get("enabled").is<bool>())
 				dev->enabled.set(d.get("enabled").get<bool>());
 		}
