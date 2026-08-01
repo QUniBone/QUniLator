@@ -21,6 +21,8 @@ import {
   resolveConsoleChannel,
   consoleWsUrl,
   eventsWsUrl,
+  applyConfig,
+  control,
 } from "./board.js";
 import { WsTransport, TcpTransport, type Transport } from "./transport.js";
 import { Session } from "./session.js";
@@ -116,6 +118,25 @@ async function cmdRun(scriptPath: string, opts: CommonOpts, args: {
   try {
     if (events) await events.open();
     await session.open();
+    // The machine is started only now, with the console connected and the
+    // matching anchor set, so the boot it prints is live output the first
+    // step sees rather than a replay the script has to reason about.
+    if (script.machine && !isTcp) {
+      const m = script.machine;
+      if (m.config !== undefined) {
+        process.stderr.write(`applying configuration ${m.config}\n`);
+        recorder.marker(`config ${m.config}`);
+        await applyConfig(target, m.config);
+      }
+      const start = m.start ?? "restart";
+      if (start !== "none") {
+        process.stderr.write(`starting the machine (${start})\n`);
+        recorder.marker(start);
+        await control(target, start);
+      }
+      if (m.settle !== undefined)
+        await new Promise((r) => setTimeout(r, parseDuration(m.settle!)));
+    }
     const result = await runScript(session, script, vars, recorder);
     await session.close(0);
     process.stdout.write(

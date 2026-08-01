@@ -45,6 +45,65 @@ async function apiGet(target: BoardTarget, path: string): Promise<unknown> {
   return res.json();
 }
 
+async function apiPost(
+  target: BoardTarget,
+  path: string,
+  body?: unknown,
+): Promise<unknown> {
+  const headers: Record<string, string> = {};
+  if (target.authHeader) headers["Authorization"] = target.authHeader;
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const res = await fetch(`http://${target.host}${path}`, {
+    method: "POST",
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`POST ${path}: HTTP ${res.status} ${text}`);
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+/** Make <name> the current configuration. */
+export async function applyConfig(
+  target: BoardTarget,
+  name: string,
+): Promise<void> {
+  const res = (await apiPost(
+    target,
+    `/api/configs/${encodeURIComponent(name)}/apply`,
+  )) as { ok?: boolean; errors?: unknown[] };
+  if (res && res.ok === false)
+    throw new Error(
+      `applying configuration ${name}: ${JSON.stringify(res.errors ?? res)}`,
+    );
+}
+
+export type ControlAction =
+  | "restart"
+  | "dc_on"
+  | "dc_off"
+  | "powercycle"
+  | "init"
+  | "halt"
+  | "continue";
+
+/**
+ * Bus/power control. `restart` releases HALT and restarts the CPU from the
+ * power-up vector keeping the applied configuration, which is what a script
+ * wants: `powercycle` leaves a halted CPU in micro-ODT and re-runs the DIP
+ * configuration selection, discarding what the script just applied.
+ */
+export async function control(
+  target: BoardTarget,
+  action: ControlAction,
+): Promise<void> {
+  await apiPost(target, "/api/control", { action });
+}
+
 export async function resolveConsoleChannel(
   target: BoardTarget,
 ): Promise<string> {

@@ -1,15 +1,21 @@
 # Boot XXDP on qbone and run the TK50 diagnostic ZTKAE0 through the DRS
-# Change-HW dialog to END PASS.
+# Change-HW dialog.
 #
-# Run with the xxdp configuration applied (rl0 carries the XXDP 2.5 pack,
-# tqk50/tqk500 enabled with a scratch tape) and restart the machine as the
-# script starts:
+# The script applies the xxdp configuration (rl0 carries the XXDP 2.5 pack,
+# tqk50/tqk500 a scratch tape) and restarts the machine itself, once the
+# console is connected:
 #
-#   node dist/src/cli.js run scripts/qbone-xxdp-ztkae0.yaml --host qbone
+#   node dist/src/cli.js run scripts/qbone-xxdp-ztkae0.yaml
+#
+# On this board the diagnostic currently reports a real device fault at init
+# step 1 (SA register mismatch), which the run reports as a failure.
 console: auto
 host: qbone
 title: XXDP ZTKAE0 on the TK50
 timeout: 60s
+machine:
+  config: xxdp
+  start: restart
 deviations:
   - event: halt
     fail: the CPU halted during the run

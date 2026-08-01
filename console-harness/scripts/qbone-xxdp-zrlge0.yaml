@@ -1,20 +1,22 @@
 # Boot XXDP on qbone and run the RLV12 controller diagnostic ZRLGE0 through
 # the DRS dialog to end of pass.
 #
-# Run with the xxdp configuration applied (rl0 carries the XXDP 2.5 pack,
-# the KW11-P supplies the programmable clock the diagnostic probes for) and
-# restart the machine as the script starts:
+# The script applies the xxdp configuration (rl0 carries the XXDP 2.5 pack)
+# and restarts the machine itself, once the console is connected:
 #
-#   node dist/src/cli.js run scripts/qbone-xxdp-zrlge0.yaml --host qbone
+#   node dist/src/cli.js run scripts/qbone-xxdp-zrlge0.yaml
 #
-# Dialog prompts answered by name where the value matters (one unit); any
-# other "... ? ^D" prompt takes its default with a bare CR — the catch-all
-# case matches later in the line than a named prompt, so a named case always
-# wins where both apply.
+# Dialog prompts are answered by name where the value matters; any other
+# prompt takes its default with a bare CR. A named case starts earlier in
+# the line than the catch-all, so it always wins where both apply — except
+# for a logical "(L)" prompt, which has no default and must be answered.
 console: auto
 host: qbone
 title: XXDP ZRLGE0 on the RLV12
 timeout: 60s
+machine:
+  config: xxdp
+  start: restart
 deviations:
   - event: halt
     fail: the CPU halted during the run

@@ -1,9 +1,9 @@
 # Boot 2.11BSD on qbone to the single-user shell and prove it answers.
 #
-# Run with the 211bsd configuration applied and restart the machine as the
-# script starts (the script waits for the boot ROM from the top):
+# The script applies the 211bsd configuration and restarts the machine
+# itself, once the console is connected and the matching anchor is set:
 #
-#   node dist/src/cli.js run scripts/qbone-211bsd-singleuser.yaml --host qbone
+#   node dist/src/cli.js run scripts/qbone-211bsd-singleuser.yaml
 #
 # The boot block's ": " prompt takes the kernel path typed one echo-confirmed
 # character at a time — the exact line ("ra(0,0,0)unix") that arrives as
@@ -12,6 +12,9 @@ console: auto
 host: qbone
 title: 2.11BSD boot to single user
 timeout: 60s
+machine:
+  config: 211bsd
+  start: restart
 deviations:
   - event: halt
     fail: the CPU halted during the boot

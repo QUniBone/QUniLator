@@ -56,10 +56,31 @@ export interface StepSpec {
   stall?: string | number;
 }
 
+/**
+ * What to do to the machine once the session is connected and anchored, so
+ * the boot the script drives is produced with the console already listening.
+ * Doing it the other way round — start the machine, then connect — races the
+ * boot against the connect and leaves the script matching a replayed ring.
+ */
+export interface MachineSpec {
+  /** Configuration to apply before starting. */
+  config?: string;
+  /**
+   * How to bring the machine up: `restart` (release HALT and restart from
+   * the power-up vector, keeping the applied configuration), `dc_on`
+   * (logical power-on, which re-runs the DIP configuration selection), or
+   * `none` to leave the machine alone.
+   */
+  start?: "restart" | "dc_on" | "none";
+  /** Pause after starting before the first step. */
+  settle?: string | number;
+}
+
 export interface ScriptSpec {
   console?: string;
   host?: string;
   title?: string;
+  machine?: MachineSpec;
   timeout?: string | number;
   settle?: string | number;
   /** Default unmatched-prompt stall window for every step. */
@@ -132,6 +153,15 @@ export function validateScript(doc: unknown): ScriptSpec {
   if (!Array.isArray(s["steps"]) || s["steps"].length === 0)
     bad("top level", "needs a non-empty steps list");
   const script = s as unknown as ScriptSpec;
+  if (script.machine !== undefined) {
+    const m = script.machine;
+    if (typeof m !== "object" || m === null) bad("machine", "must be a mapping");
+    if (
+      m.start !== undefined &&
+      !["restart", "dc_on", "none"].includes(m.start)
+    )
+      bad("machine", `start must be restart, dc_on or none (got ${m.start})`);
+  }
   const names = new Set<string>();
   script.steps.forEach((step, i) => {
     const where = `step ${i + 1}`;
