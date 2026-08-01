@@ -454,6 +454,10 @@ void logger_c::vlog(logsource_c *logsource, unsigned msglevel, bool late_evaluat
         auto r = std::vsnprintf(msg.printf_format, sizeof(msg.printf_format), fmt, args);
 //printf("vlog(): %s\n", msg.printf_format) ;
         assert(r >= 0 &&  r < (int)sizeof(msg.printf_format)) ; // no error, no overflow
+        // keep what went wrong with the source that said it, so a caller who
+        // sees only a refusal can tell the operator why
+        if (msglevel <= LL_ERROR)
+            logsource->last_error = msg.printf_format;
     }
 	msg.valid = true;
     fifo_push(&msg); // always into ring buffer

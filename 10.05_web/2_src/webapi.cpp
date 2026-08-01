@@ -383,7 +383,20 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 							if (drv != nullptr)
 								released |= release_medium(drv);
 				}
+				// A device that cannot take the switch leaves it where it was:
+				// a card whose range the machine already answers is not
+				// installed. Report that with the reason it logged, so the
+				// operator is not told the device is in the machine when the
+				// machine refused it.
+				dev->last_error.clear();
 				dev->enabled.set(on);
+				if (dev->enabled.value != on) {
+					std::string why = dev->last_error;
+					send_error(conn, 409, "device \"" + devname + "\" could not be "
+							+ (on ? "installed" : "removed")
+							+ (why.empty() ? std::string() : ": " + why));
+					return;
+				}
 				if (!on && ctrl != nullptr)
 					for (storagedrive_c *drv : ctrl->storagedrives)
 						if (drv != nullptr && drv->enabled.value) {

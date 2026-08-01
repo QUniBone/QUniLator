@@ -62,6 +62,12 @@ public:
 	unsigned *log_level_ptr ; // ref to "level" variable of surrounding object instance
 	// level determines which log() message are to be output
 	//  fatal, error, warning, info, debug
+
+	// The last error this source reported, as it was logged. A refused
+	// operation says only that it was refused; the reason it gave the log is
+	// the answer the operator needs, so a caller can clear this, attempt the
+	// operation and quote back what the source said about it.
+	std::string last_error ;
 } ;
 
 // macros to be used in surrounding class code
