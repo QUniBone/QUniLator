@@ -6,6 +6,7 @@ import type { LiveDev } from '../../types';
 import { liveSetParam } from '../../api';
 import { alertModal } from '../../lib/modals';
 import { ImageField } from '../common';
+import { statusParam } from '../../lib/devmodel';
 import { Cap, PanelWidget, ReadyCap, paramVal } from './base';
 
 // The drive foot: the shared image picker, which is the drive's image-swap
@@ -131,5 +132,35 @@ export class RemovableDriveWidget extends DriveWidget {
     return html`${html`<${ReadyCap} unit=${this.unit()} lit=${this.lit(this.loaded() && !active)} />`}
       ${html`<${Cap} cls="cap-yellow" lit=${this.lit(active)}>USE</${Cap}>`}
       ${html`<${Cap} cls="cap-orange" lit=${this.lit(this.lamp('writeprotectlamp'))}>WRITE<br />PROT</${Cap}>`}`;
+  }
+}
+
+// The RX01/RX02 floppy: the removable bezel over a foot that also carries the
+// sector order of the medium. A floppy image comes either as the surface was
+// written or as the volume's blocks in order, and the drive reads which when the
+// medium goes in. The control names what it settled on and lets the operator
+// call the medium physical or logical outright.
+export class FloppyDriveWidget extends RemovableDriveWidget {
+  protected foot(): ComponentChildren {
+    const chosen = this.param('layout') || 'auto';
+    const inUse = statusParam(this.d, 'layoutinuse')?.v || 'physical';
+    const pick = async (v: string) => {
+      const res = await liveSetParam(this.d.name, 'layout', v, 'sector order ' + v);
+      if (!res.ok)
+        await alertModal(
+          'Sector order not set',
+          res.data.error || 'The drive refused the change.'
+        );
+    };
+    return html`${super.foot()}
+      <div class="layoutrow">
+        <span class="layoutlegend">SECTOR ORDER</span>
+        <select class="layoutsel mono" value=${chosen}
+          onChange=${(e: Event) => pick((e.target as HTMLSelectElement).value)}>
+          <option value="auto">auto — ${inUse}</option>
+          <option value="physical">physical</option>
+          <option value="logical">logical</option>
+        </select>
+      </div>`;
   }
 }

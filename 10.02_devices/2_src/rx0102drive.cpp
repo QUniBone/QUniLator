@@ -65,6 +65,11 @@ RX0102drive_c::RX0102drive_c(RX0102uCPU_c *_uCPU, bool _is_RX02) :
     // some rxdp floppy images start at track #1 instead of #0
     imagetrack0.value = true ;
 
+    // the layout is read off the medium as it is attached
+    layout.value = "auto" ;
+    layout_in_use.value = "physical" ;
+    layout_in_use.kind = parameter_c::PARAM_STATUS ;
+
     // "enable" and power switch are controlled by uCPU in case box
     enabled.readonly = true ;
 
@@ -100,6 +105,16 @@ bool RX0102drive_c::on_param_changed(parameter_c *param)
             ERROR("drive double_density SD or DD");
             return false;
         }
+        resolve_layout(layout.value) ; // the sector size moved: the probe reads elsewhere
+    } else if (param == &layout) {
+        std::string wanted = layout.new_value ;
+        std::transform(wanted.begin(), wanted.end(), wanted.begin(), ::tolower);
+        if (wanted != "physical" && wanted != "logical" && wanted != "auto") {
+            ERROR("drive layout must be physical, logical or auto");
+            return false;
+        }
+        layout.new_value = wanted ;
+        resolve_layout(wanted) ;
     } else if (image_is_param(param)
                && image_recreate_on_param_change(param) ) {
         // change of file image changes state, results also in close()
@@ -122,6 +137,7 @@ bool RX0102drive_c::on_param_changed(parameter_c *param)
                 set_density(true) ;
             else set_density(false) ;
         }
+        resolve_layout(layout.value) ;
     }
     return storagedrive_c::on_param_changed(param); // more actions (for enable)
 }
@@ -190,9 +206,119 @@ bool RX0102drive_c::check_disk_address(unsigned track, unsigned sector)
 }
 
 // sector offset in image file in bytes
-int RX0102drive_c::get_sector_image_offset(unsigned track, unsigned sector) 
+int RX0102drive_c::get_sector_image_offset(unsigned track, unsigned sector)
 {
     return ((track * geometry.sector_count) + (sector-1)) * geometry.sector_size_bytes ;
+}
+
+// A handler reaches a volume's blocks through a 2:1 sector interleave with six
+// sectors of skew per track, so a block is two (RX02) or four (RX01) sectors
+// spread across a track. These two functions are that mapping and its inverse.
+// Tracks are numbered from 1, as the skew counts from the first data track;
+// sectors are numbered from 1 and the index runs 0..25 over a track's blocks.
+
+// The sector of `track` carrying the track's `index`-th logical sector.
+static unsigned interleaved_sector(unsigned track, unsigned index)
+{
+    const unsigned n = RX0102drive_c::sector_count_const ;
+    unsigned sector = (2 * index) % n + (index >= 13 ? 1 : 0) ;
+    return (sector + 6 * (track - 1)) % n + 1 ;
+}
+
+// The place in `track`'s logical order that `sector` holds.
+static unsigned interleave_index(unsigned track, unsigned sector)
+{
+    const unsigned n = RX0102drive_c::sector_count_const ;
+    unsigned skewed = (sector - 1 + n - (6 * (track - 1)) % n) % n ;
+    return (skewed & 1) ? (skewed - 1) / 2 + 13 : skewed / 2 ;
+}
+
+// Where the sector the controller names lands in the image file, and -1 for a
+// sector the file does not carry.
+//
+// A logical image holds the volume's blocks in order from block 0, so it starts
+// at track 1 and the sector is found by undoing the interleave; track 0 lies
+// outside the block space. A physical image holds the surface as written, and
+// `imagetrack0` says whether it opens at track 0 or at track 1.
+int RX0102drive_c::sector_file_offset(unsigned track, unsigned sector, bool logical)
+{
+    if (logical) {
+        if (track == 0)
+            return -1 ;
+        return get_sector_image_offset(track - 1, interleave_index(track, sector) + 1) ;
+    }
+    if (!imagetrack0.value) {
+        if (track == 0)
+            return -1 ;
+        track-- ;
+    }
+    return get_sector_image_offset(track, sector) ;
+}
+
+// Block 1 of the volume, gathered out of the sectors the given layout puts it
+// in. Reads past the end of a short image come back as 00s.
+void RX0102drive_c::read_home_block(uint8_t *block, bool logical)
+{
+    unsigned sector_size = geometry.sector_size_bytes ;
+    unsigned sectors_per_block = 512 / sector_size ;
+    memset(block, 0, 512) ;
+    for (unsigned i = 0 ; i < sectors_per_block ; i++) {
+        unsigned logical_sector = sectors_per_block + i ; // block 1 follows block 0
+        unsigned track = logical_sector / geometry.sector_count + 1 ;
+        unsigned index = logical_sector % geometry.sector_count ;
+        int offset = sector_file_offset(track, interleaved_sector(track, index), logical) ;
+        if (offset < 0)
+            return ;
+        image_read(block + i * sector_size, (unsigned) offset, sector_size) ;
+    }
+}
+
+// The RT-11 home block, which an RT-11 volume carries as block 1: the system
+// identification "DECRT11A" at offset 0760, a printable volume identification at
+// 0730 and the block number of the first directory segment at 0724. The checksum
+// word is stale on the RT-11 V5.1 distribution media, so the structure
+// identifies the block.
+bool RX0102drive_c::is_rt11_home_block(const uint8_t *block)
+{
+    if (memcmp(block + 0760, "DECRT11A", 8) != 0)
+        return false ;
+    unsigned first_directory_block = block[0724] | (block[0725] << 8) ;
+    if (first_directory_block < 1
+            || first_directory_block > geometry.get_raw_capacity() / 512)
+        return false ;
+    for (unsigned i = 0 ; i < 12 ; i++) {
+        uint8_t c = block[0730 + i] ;
+        if (c < 0x20 || c > 0x7e)
+            return false ;
+    }
+    return true ;
+}
+
+// Settle the layout the drive serves the mounted medium in. An operator's choice
+// of "physical" or "logical" stands; "auto" reads the image and takes the layout
+// the RT-11 home block turns up in. Media the probe cannot place - a volume in
+// another file system, a blank scratch image - is physical, which is the form a
+// newly created image takes.
+void RX0102drive_c::resolve_layout(const std::string &choice)
+{
+    bool logical = (choice == "logical") ;
+    if (choice == "auto") {
+        uint8_t block[512] ;
+        if (image_is_open()) {
+            read_home_block(block, /*logical*/true) ;
+            logical = is_rt11_home_block(block) ;
+            if (!logical) {
+                read_home_block(block, /*logical*/false) ;
+                if (is_rt11_home_block(block))
+                    INFO("RT-11 home block found in physical sector order") ;
+                else
+                    INFO("no RT-11 home block: the image is taken as physical") ;
+            } else
+                INFO("RT-11 home block found in logical block order") ;
+        }
+    }
+    logical_layout = logical ;
+    layout_in_use.value = logical ? "logical" : "physical" ;
 }
 
 // false: error
@@ -211,17 +337,12 @@ bool RX0102drive_c::sector_read(uint8_t *sector_buffer, bool *deleted_data_mark,
     *deleted_data_mark = deleted_data_marks[track][sector] ;
     DEBUG_FAST("sector_read(): delmark=%d, track=%d, sector=%d", (unsigned)*deleted_data_mark, (unsigned)track, (unsigned)sector) ;
 
-    if (! imagetrack0.value) {
-        // file image does not contain track 0: skip it
-        if (track == 0) {
-            memset(sector_buffer, 0, geometry.sector_size_bytes);
-            return true ;
-        } else {
-            track-- ;
-        }
+    int offset = sector_file_offset(track, sector, logical_layout) ;
+    if (offset < 0) {
+        // a sector the image does not carry reads back blank
+        memset(sector_buffer, 0, geometry.sector_size_bytes);
+        return true ;
     }
-
-    int offset = get_sector_image_offset(track, sector) ;
     DEBUG_FAST("sector_read(): reading 0x%03x bytes from file offset 0x%06x", (unsigned) geometry.sector_size_bytes, (unsigned) offset);
     image_read(sector_buffer, (unsigned) offset, geometry.sector_size_bytes) ;
     // logger->debug_hexdump(this, "image_read():", (uint8_t *) sector_buffer, sector_size_bytes, NULL);
@@ -252,17 +373,9 @@ bool RX0102drive_c::sector_write(uint8_t *sector_buffer, bool deleted_data_mark,
 
     DEBUG_FAST("sector_write(): delmark=%d, track=%d, sector=%d", (unsigned)deleted_data_mark, (unsigned)track, (unsigned)sector) ;
 
-    if (!imagetrack0.value) {
-        // file image does not contain track 0: skip it
-
-        if (track == 0) {
-            // do not write to ignored track
-            return true ;
-        } else {
-            track-- ;
-        }
-    }
-    int offset = get_sector_image_offset(track, sector) ;
+    int offset = sector_file_offset(track, sector, logical_layout) ;
+    if (offset < 0)
+        return true ; // a sector the image does not carry takes no data
     DEBUG_FAST("sector_write(): writing 0x%03x bytes to file offset 0x%06x", (unsigned) geometry.sector_size_bytes, (unsigned) offset);
     image_write(sector_buffer, (unsigned) offset, geometry.sector_size_bytes) ;
     // logger->debug_hexdump(this, "image_write():", (uint8_t *) sector_buffer, sector_size_bytes, NULL);

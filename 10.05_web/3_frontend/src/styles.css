@@ -1037,6 +1037,21 @@ button.tree-name:hover .mono { color: var(--accent); }
 .disk-status.idle { opacity: .7; }
 .diskface .rl-foot .imgfield { flex: 1 1 auto; min-width: 0; }
 
+/* the floppy's sector-order control: a silkscreened legend and a selector,
+   on their own line under the medium */
+.diskface .rl-foot .layoutrow {
+  flex: 1 1 100%; display: flex; align-items: center; gap: 8px;
+}
+.layoutlegend {
+  flex: 0 0 auto; font-size: var(--fs-0); font-weight: 600; letter-spacing: .06em;
+  color: var(--rl-ink); opacity: .75;
+}
+.layoutsel {
+  flex: 1 1 auto; min-width: 0; padding: 4px 6px; border-radius: var(--r-sm);
+  font-size: var(--fs-0); color: var(--rl-ink);
+  background: var(--rl-inset); border: 1px solid var(--rl-panel-edge);
+}
+
 /* image-picker modal */
 .modal-overlay { position: fixed; inset: 0; background: rgba(10,14,18,.5); display: flex; align-items: center; justify-content: center; z-index: 60; }
 /* carries .card as well, for the shared surface/head/h3 styling */
