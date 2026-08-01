@@ -39,15 +39,15 @@ public:
 	parameter_unsigned_c startaddr = parameter_unsigned_c(this, "startaddr", "sa",
 			/*readonly*/false, "", "%08o", "first address the card answers", 22, 8);
 	parameter_unsigned_c endaddr = parameter_unsigned_c(this, "endaddr", "ea",
-			/*readonly*/false, "", "%08o", "last address the card answers", 22, 8);
+			/*readonly*/true, "", "%08o", "last address the card answers", 22, 8);
 	// A range claimed over memory the machine already carries has two slaves
 	// answering one cycle. Clear this only where the probe cannot work: a bus
 	// with no arbitrator to grant the DMA it needs.
 	parameter_bool_c probe = parameter_bool_c(this, "probe", "pr", /*readonly*/false,
 			"check the range answers to nothing before claiming it");
 
-	// the size of the claimed range, for display
-	parameter_string_c size = parameter_string_c(this, "size", "sz", /*readonly*/true,
+	// card size in KB or MB ("256 KB", "2 MB"), from which endaddr is derived
+	parameter_string_c size = parameter_string_c(this, "size", "sz", /*readonly*/false,
 			"size of the range the card answers");
 
 	bool on_param_changed(parameter_c *param) override;
@@ -56,9 +56,12 @@ public:
 
 private:
 	// have the PRU answer the range out of DDR, or refuse and say why
-	bool claim(uint32_t start, uint32_t end);
+	bool claim(uint32_t start, uint32_t end, std::string *reason = nullptr);
 	void release(void);
-	void update_size(bool claimed);
+	void update_size(void);
+	bool parse_size_text(const std::string &text, uint32_t *size_bytes,
+			std::string *normalized);
+	uint32_t end_from_start_size(uint32_t start, uint32_t size_bytes);
 };
 
 #endif // _MEMORY_HPP_
