@@ -14,6 +14,12 @@
 # packages built by packaging/build-deb.sh
 *.deb
 
+# staging directory and output of packaging/build-release.sh: the downloaded
+# Debian base image, the package, the sample OS images and the built card image
+dist/
+*-dist.img
+*-dist.img.xz
+
 # reMarkable pull-annotations local watermark (per-checkout)
 .claude/.rm-*.json
 .venv/

@@ -290,6 +290,18 @@ In order, in the chroot:
     build-deb.sh       →  qbone_*_armhf.deb
     build-image.sh     →  qbone-dist.img (a card-ready appliance image)
 
+`packaging/build-release.sh` drives all three on an x86_64 Linux workstation, so
+a release image is one command from a clean checkout. It stages what
+`build-image.sh` wants under `dist/`: it downloads the pinned rcn-ee base image
+and checks it against the published `.sha256sum` when `dist/base.img.xz` is not
+already there, builds and copies the package, and fetches the disk images and
+boot configurations from `ASSETS_URL` when `dist/images` and `dist/configs` are
+missing. `-u` builds the UNIBUS board's image, `-p` reuses the package already
+staged, `-x` compresses the result. Set `APT_REPO_URL`/`APT_REPO_KEY_URL` for an
+image whose board can update itself; without them the script warns and builds
+one that cannot. Nothing already staged is fetched twice - delete the file or
+the directory to refresh it.
+
 `build-image.sh` turns the rcn-ee base image into the appliance. It takes a
 staging directory holding the base `base.img.xz`, the `qbone_*_armhf.deb`, an
 `images/` directory of disk images to ship, and a `configs/` directory of boot

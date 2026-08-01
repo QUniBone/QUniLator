@@ -87,6 +87,12 @@ The builder image is Debian trixie, the same distribution the appliance image
 carries, and its tag is a hash of the recipe in the script, so editing the
 recipe builds a new image rather than reusing the old one.
 
+`packaging/build-release.sh` builds a whole card-ready release image on an
+x86_64 Linux workstation: it stages the pinned Debian base image (downloading
+and checksum-checking it into `dist/` when it is not there), the package, and
+the sample disk images, then runs `packaging/build-image.sh`. See
+`DISTRIBUTION.md` for the options and the environment it reads.
+
 Two linker settings that have to stay:
 
 - **Dynamic, never `-static`.** glibc loads its name service backends with
