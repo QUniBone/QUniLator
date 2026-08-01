@@ -62,9 +62,25 @@ moves into that one place.
 
 ## Scripts
 
+Each carries a `machine:` block, so one command applies the configuration,
+starts the machine and drives the dialog:
+
 - `qbone-211bsd-singleuser.yaml` — boot 2.11BSD to the single-user shell and
-  prove it answers. Apply the `211bsd` configuration, start the script, then
-  restart the machine.
+  prove it answers.
 - `qbone-xxdp-zrlge0.yaml` — XXDP ZRLGE0 (RLV12 controller test) through the
-  DRS dialog to a zero-error pass. Apply `xxdp`, start the script, restart.
-- `qbone-xxdp-ztkae0.yaml` — XXDP ZTKAE0 (TK50 functional). Same procedure.
+  DRS dialog.
+- `qbone-xxdp-ztkae0.yaml` — XXDP ZTKAE0 (TK50 functional). On this board the
+  diagnostic reports a real device fault at init step 1.
+
+The MCP server's `run_xxdp_diagnostic` drives the same dialog from the same
+harness, so the DRS knowledge above lives in one place rather than in each
+script — see `mcp-server/src/xxdp.ts`.
+
+## What these replaced
+
+`tools/console_send.py`, `tools/vax-console.mjs` and `tools/odt.py` each solved
+part of this and were removed when the harness took it over: echo-driven send
+and expect/send step files (console_send.py), a password mode for a prompt that
+does not echo (vax-console.mjs), and paced ODT command lines (odt.py). The
+equivalents are `qcon run` with a step file, `mode: no-echo`, and a step file
+against the `ext` console.

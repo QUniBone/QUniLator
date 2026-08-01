@@ -15,7 +15,8 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.12.1",
     "ws": "8.18.0",
-    "zod": "3.25.76"
+    "zod": "3.25.76",
+    "qcon": "file:../console-harness"
   },
   "devDependencies": {
     "@types/node": "22.9.0",
