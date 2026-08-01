@@ -271,8 +271,9 @@ A client sends `{"break":true}` as a TEXT frame on a console channel:
 
 ## 6. Phases
 
-Each phase lands green (build, tests, board validation where hardware is
-touched) before the next begins.
+All six are implemented and on `main`; what each one turned out to need is
+noted where it differed from the plan. Each landed green (build, tests, board
+validation where hardware is touched) before the next began.
 
 1. **Session core + CLI** — package skeleton, transports (WS with settle
    anchor, TCP), input modes, stream matching, deadlines, deviations,

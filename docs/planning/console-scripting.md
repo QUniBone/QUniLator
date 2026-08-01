@@ -1,8 +1,10 @@
 # Console scripting and session capture
 
-**Status:** Ready — implementation plan drafted in
-[`console-scripting-plan.md`](../../console-scripting-plan.md)
-([issue #38](https://github.com/QUniBone/QUniLator/issues/38)).
+**Status:** Implemented — all six phases of
+[`console-scripting-plan.md`](../../console-scripting-plan.md) are on `main`
+([issue #38](https://github.com/QUniBone/QUniLator/issues/38)). The harness is
+`console-harness/` (`qcon`); the backend carries the end-of-replay frame, BREAK
+and the session recorder; the MCP server drives consoles through the same core.
 
 Driving a guest over the console is the only way to automate a boot, an install
 or a diagnostic run. Every attempt so far was written from scratch and failed in
