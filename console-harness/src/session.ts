@@ -68,6 +68,12 @@ export interface SessionOptions {
   anchorTimeoutMs?: number;
   /** Default expect timeout. */
   defaultTimeoutMs?: number;
+  /**
+   * How long the console may sit quiet at an unmatched prompt before the
+   * step is called stuck. 0 disables it (a step that legitimately waits at
+   * a prompt for something else to happen). Default 15 s.
+   */
+  stallMs?: number;
   deviations?: Deviation[];
   input?: Partial<InputTuning>;
   recorder?: CastRecorder;
@@ -93,6 +99,35 @@ export interface FailureDiagnostics {
   contextTail: string;
 }
 
+/**
+ * Characters a guest leaves the cursor on when it is waiting to be typed at:
+ * a DRS question, a shell, a monitor, ODT, a boot block. Used to tell a
+ * script that is stuck from a diagnostic that is simply busy.
+ */
+const PROMPT_TAIL = /[?>:$#@%.]$/;
+
+/** The tail of a window, stripped of the trailing control bytes and spaces
+ *  that terminate a prompt (DRSXM ends a question with ^D, a tty with a
+ *  space), so the prompt character itself is at the end. */
+export function promptTail(text: string): string {
+  return text.replace(/[\x00-\x20\x7f]+$/, "");
+}
+
+export function looksLikePrompt(text: string): boolean {
+  const t = promptTail(text);
+  return t.length > 0 && PROMPT_TAIL.test(t);
+}
+
+/** The last non-empty line of a window — the prompt itself, for reporting. */
+export function lastLine(text: string): string {
+  const lines = promptTail(text).replace(/\r/g, "\n").split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const l = lines[i].replace(/[\x00-\x1f\x7f]/g, "").trim();
+    if (l.length > 0) return l;
+  }
+  return "";
+}
+
 export class SessionError extends Error {
   constructor(
     message: string,
@@ -111,6 +146,15 @@ export class SessionError extends Error {
 export class ExpectTimeoutError extends SessionError {}
 export class DeviationError extends SessionError {}
 export class EchoStallError extends SessionError {}
+/**
+ * The guest is sitting at a prompt none of the step's patterns match, and
+ * has been quiet long enough that it is plainly waiting for input rather
+ * than working. The step's deadline is for a guest that is busy; this is a
+ * script that did not anticipate what the guest asked, and reporting it at
+ * once — naming the prompt — is the difference between a five-second fix and
+ * a five-minute wait that says nothing.
+ */
+export class StalledAtPromptError extends SessionError {}
 
 function indent(text: string): string {
   const shown = text.length > 2000 ? "…" + text.slice(-2000) : text;
@@ -140,6 +184,7 @@ export class Session {
   readonly settleMs: number;
   readonly anchorTimeoutMs: number;
   readonly defaultTimeoutMs: number;
+  readonly stallMs: number;
 
   constructor(
     private transport: Transport,
@@ -149,6 +194,7 @@ export class Session {
     this.settleMs = opts.settleMs ?? 300;
     this.anchorTimeoutMs = opts.anchorTimeoutMs ?? 2000;
     this.defaultTimeoutMs = opts.defaultTimeoutMs ?? 30000;
+    this.stallMs = opts.stallMs ?? 15000;
     this.deviations = (opts.deviations ?? []).map((spec) => ({
       spec,
       pattern: spec.match !== undefined ? compilePattern(spec.match) : undefined,
@@ -280,7 +326,12 @@ export class Session {
    */
   async expect(
     patternSpecs: string | string[],
-    opts: { timeoutMs?: number; deviations?: Deviation[] } = {},
+    opts: {
+      timeoutMs?: number;
+      deviations?: Deviation[];
+      /** Override the session's unmatched-prompt stall window; 0 disables. */
+      stallMs?: number;
+    } = {},
   ): Promise<ExpectOutcome> {
     const specs = Array.isArray(patternSpecs) ? patternSpecs : [patternSpecs];
     const patterns = specs.map(compilePattern);
@@ -290,6 +341,7 @@ export class Session {
     }));
     const devs = [...this.deviations, ...extraDevs];
     const timeoutMs = opts.timeoutMs ?? this.defaultTimeoutMs;
+    const stallMs = opts.stallMs ?? this.stallMs;
     const stepMark = this.cursor;
     const started = Date.now();
     const deadline = started + timeoutMs;
@@ -316,6 +368,23 @@ export class Session {
       if (this.closed)
         throw new SessionError(
           `console connection closed${this.closeError ? `: ${this.closeError.message}` : ""}`,
+          this.diagnostics(specs, stepMark, started),
+        );
+      // Stuck, as distinct from busy: the guest has stopped printing and
+      // what it last printed is a prompt, so it is waiting for input the
+      // step has no answer for. Name that prompt now rather than at the
+      // deadline.
+      const quietMs = Date.now() - this.lastDataMs;
+      if (
+        stallMs > 0 &&
+        quietMs >= stallMs &&
+        Date.now() - started >= stallMs &&
+        looksLikePrompt(text)
+      )
+        throw new StalledAtPromptError(
+          `the guest is waiting at a prompt no pattern matches: ` +
+            JSON.stringify(lastLine(text)) +
+            ` (quiet for ${Math.round(quietMs / 1000)} s)`,
           this.diagnostics(specs, stepMark, started),
         );
       const left = deadline - Date.now();

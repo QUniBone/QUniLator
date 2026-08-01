@@ -159,6 +159,22 @@ for echoes that are not byte-identical mirrors:
   the start of the step to the point it gave up — plus a bounded tail of
   context from before the step. A bare timeout with no output is not an
   acceptable failure report.
+- **Stuck is not busy.** The commonest failure writing a script is a prompt
+  the script did not anticipate: the guest asks, nothing matches, and the
+  step waits out its whole deadline before reporting. A deadline sized for a
+  diagnostic that runs for minutes then costs minutes to learn one prompt.
+  The harness distinguishes the two by quiescence: a console that has gone
+  quiet **and whose last output ends in a prompt** is waiting for input, so
+  the step fails at once, naming the prompt to add. A console that is quiet
+  without a prompt is working, and is left alone. The stall window is
+  per-step and can be switched off where a step legitimately waits at a
+  prompt.
+- **A dialog loop that makes no progress is a failure.** Answering a prompt
+  and jumping back is the normal shape of a question set, but the same
+  prompt matching the same case with the same text over and over means the
+  guest did not accept the answer (a prompt with no default re-asked
+  forever). The run fails naming the prompt and the answer it refused,
+  rather than spinning until the deadline.
 
 ### Recording
 

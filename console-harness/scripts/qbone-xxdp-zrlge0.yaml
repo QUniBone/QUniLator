@@ -1,0 +1,70 @@
+# Boot XXDP on qbone and run the RLV12 controller diagnostic ZRLGE0 through
+# the DRS dialog to end of pass.
+#
+# Run with the xxdp configuration applied (rl0 carries the XXDP 2.5 pack,
+# the KW11-P supplies the programmable clock the diagnostic probes for) and
+# restart the machine as the script starts:
+#
+#   node dist/src/cli.js run scripts/qbone-xxdp-zrlge0.yaml --host qbone
+#
+# Dialog prompts answered by name where the value matters (one unit); any
+# other "... ? ^D" prompt takes its default with a bare CR — the catch-all
+# case matches later in the line than a named prompt, so a named case always
+# wins where both apply.
+console: auto
+host: qbone
+title: XXDP ZRLGE0 on the RLV12
+timeout: 60s
+deviations:
+  - event: halt
+    fail: the CPU halted during the run
+  - match: /NXT TST MAY ZERO LD UNIT/
+    fail: >-
+      the next test would zero the pack on the loaded drive — drive 0 carries
+      XXDP itself; run the drive tests against drive 1 with a scratch pack
+steps:
+  - name: boot
+    expect:
+      - match: "ENTER DATE"
+        send: ""
+      - match: /RESTART ADDR|\n\./
+        goto: load
+    timeout: 90s
+  - name: prompt
+    expect: /\n\./
+  - name: load
+    wait: 2s
+    send: R ZRLGE0
+  - name: supervisor
+    expect: "DR>"
+    send: START
+    timeout: 90s
+  - name: dialog
+    expect:
+      - match: /CHANGE HW.*\?/i
+        send: Y
+        goto: dialog
+      - match: /# UNITS.*\?/i
+        send: "1"
+        goto: dialog
+      - match: /RL11=1.*\?/i
+        send: "3"
+        goto: dialog
+      # a logical prompt has no default: a bare CR is re-asked forever
+      - match: /CHANGE SW.*\?/i
+        send: "N"
+        goto: dialog
+      - match: /\(L\)\s*\?/
+        send: "N"
+        goto: dialog
+      # any other prompt takes its default; DRSSM ends a prompt with "? ",
+      # DRSXM with "? ^D" — both leave the '?' at the end of the window
+      - match: /\?[\x00-\x20]*$/
+        send: ""
+        goto: dialog
+      # EOP prints on failing runs too; a pass is the zero error count
+      - match: /END PASS|\b0 CUMULATIVE ERRORS/i
+        done: true
+      - match: /DVC FTL|FTL ERR|FATAL|[1-9]\d* CUMULATIVE ERRORS/i
+        fail: the diagnostic reported errors
+    timeout: 300s

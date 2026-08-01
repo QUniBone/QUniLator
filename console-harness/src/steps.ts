@@ -46,6 +46,14 @@ export interface StepSpec {
   done?: boolean;
   timeout?: string | number;
   deviations?: Deviation[];
+  /** Pause before acting — for a guest that needs a moment after its banner. */
+  wait?: string | number;
+  /**
+   * How long the console may sit quiet at an unmatched prompt before this
+   * step is called stuck ("0" to disable). Defaults to the script's `stall`,
+   * then to the session's.
+   */
+  stall?: string | number;
 }
 
 export interface ScriptSpec {
@@ -54,6 +62,8 @@ export interface ScriptSpec {
   title?: string;
   timeout?: string | number;
   settle?: string | number;
+  /** Default unmatched-prompt stall window for every step. */
+  stall?: string | number;
   deviations?: Deviation[];
   steps: StepSpec[];
 }
@@ -138,8 +148,14 @@ export function validateScript(doc: unknown): ScriptSpec {
     } else if (step.expect !== undefined && typeof step.expect !== "string") {
       bad(where, "expect must be a string or a list of cases");
     }
-    if (step.expect === undefined && step.send === undefined && !step.break && !step.done)
-      bad(where, "does nothing (no expect, send, break or done)");
+    if (
+      step.expect === undefined &&
+      step.send === undefined &&
+      !step.break &&
+      !step.done &&
+      step.wait === undefined
+    )
+      bad(where, "does nothing (no expect, send, break, wait or done)");
   });
   // goto targets must exist
   const check = (g: string | undefined, where: string) => {
@@ -160,6 +176,17 @@ export interface RunResult {
 const JUMP_LIMIT = 10000;
 
 /**
+ * Consecutive identical (step, case, matched text) iterations tolerated
+ * before the run is called livelocked. A dialog loop that answers a prompt
+ * and jumps back is the normal shape of a DRS-style question set, but the
+ * same prompt matching the same case with the same text over and over means
+ * the guest did not accept the answer — a prompt with no default re-asked
+ * forever, say. Failing here reports the prompt that would not take the
+ * answer, which a step deadline minutes later cannot.
+ */
+const LOOP_LIMIT = 5;
+
+/**
  * Run the steps against an open session. Throws ScriptFailure on a failed
  * step (deviation, timeout, echo stall, or an explicit fail case), with the
  * session's diagnostics attached.
@@ -172,6 +199,8 @@ export async function runScript(
 ): Promise<RunResult> {
   const defaultTimeout =
     script.timeout !== undefined ? parseDuration(script.timeout) : undefined;
+  const defaultStall =
+    script.stall !== undefined ? parseDuration(script.stall) : undefined;
   const nameToIndex = new Map<string, number>();
   script.steps.forEach((s, i) => {
     if (s.name !== undefined) nameToIndex.set(s.name, i);
@@ -180,6 +209,8 @@ export async function runScript(
   let stepsRun = 0;
   let jumps = 0;
   let i = 0;
+  let lastIteration = ""; // (step, case, matched text) of the previous pass
+  let repeats = 0;
   while (i < script.steps.length) {
     const step = script.steps[i];
     const label = `step ${i + 1}${step.name ? `: ${step.name}` : ""}`;
@@ -189,6 +220,8 @@ export async function runScript(
 
     let chosen: CaseSpec | undefined;
     try {
+      if (step.wait !== undefined)
+        await new Promise((r) => setTimeout(r, parseDuration(step.wait!)));
       if (step.expect !== undefined) {
         const cases: CaseSpec[] = Array.isArray(step.expect)
           ? step.expect
@@ -208,9 +241,27 @@ export async function runScript(
             step.timeout !== undefined
               ? parseDuration(step.timeout)
               : defaultTimeout,
+          stallMs:
+            step.stall !== undefined
+              ? parseDuration(step.stall)
+              : defaultStall,
           deviations: step.deviations,
         });
         chosen = cases[outcome.index];
+        const iteration = `${i} ${outcome.index} ${outcome.match}`;
+        if (iteration === lastIteration) {
+          if (++repeats >= LOOP_LIMIT)
+            throw new ScriptFailure(
+              `the guest re-asked ${JSON.stringify(outcome.match)} ` +
+                `${repeats + 1} times running — it does not accept ` +
+                `${chosen.send === "" ? "a bare CR (the prompt has no default?)" : JSON.stringify(chosen.send ?? "")}`,
+              i,
+              step.name,
+            );
+        } else {
+          lastIteration = iteration;
+          repeats = 0;
+        }
         if (chosen.fail !== undefined)
           throw new ScriptFailure(chosen.fail, i, step.name);
         if (chosen.break) await session.sendBreak();

@@ -132,6 +132,35 @@ test("an explicit fail case reports the step", async () => {
   await session.close();
 });
 
+test("a prompt the guest keeps re-asking fails as a livelock", async () => {
+  // A logical prompt with no default: the guest re-asks it after every bare
+  // CR. Without loop detection the script spins until the step deadline.
+  const guest = new MockGuest({ live: true });
+  guest.onLine((line) => {
+    if (line === "") setTimeout(() => guest.output("\r\nNO DEFAULT\r\nCHANGE SW (L)  ? "), 2);
+  });
+  const session = makeSession(guest);
+  await session.open();
+  const script = validateScript({
+    steps: [
+      {
+        name: "dialog",
+        expect: [{ match: "(L)  ? ", send: "", goto: "dialog" }],
+        timeout: "5s",
+      },
+    ],
+  });
+  const run = assert.rejects(runScript(session, script), (err: Error) => {
+    assert.ok(err instanceof ScriptFailure);
+    assert.match(err.message, /re-asked/);
+    assert.match(err.message, /no default/);
+    return true;
+  });
+  guest.output("CHANGE SW (L)  ? ");
+  await run;
+  await session.close();
+});
+
 test("a step timeout becomes a ScriptFailure with diagnostics", async () => {
   const guest = new MockGuest({ live: true });
   const session = makeSession(guest);

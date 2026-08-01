@@ -7,6 +7,7 @@ import {
   DeviationError,
   EchoStallError,
   ExpectTimeoutError,
+  StalledAtPromptError,
 } from "../src/session.js";
 import type { MachineEventName } from "../src/events.js";
 import { MockGuest, FAST_INPUT } from "./mock-guest.js";
@@ -153,6 +154,53 @@ test("a machine event fails the step immediately", async () => {
   );
   fire!("halt");
   await p;
+  await session.close();
+});
+
+test("an unmatched prompt fails at once, naming the prompt", async () => {
+  // The failure this harness exists to make cheap: the guest asked something
+  // the script has no case for. Waiting out a 5-minute step deadline says
+  // nothing; failing on quiescence names the prompt to add.
+  const guest = new MockGuest({ live: true });
+  const session = makeSession(guest, { stallMs: 100 });
+  await session.open();
+  guest.output("\r\nUNIT 0\r\nRL11=1, RLV11=2, RLV12=3 (O)  ? ");
+  const started = Date.now();
+  try {
+    await session.expect("END PASS", { timeoutMs: 60000 });
+    assert.fail("must report the stall");
+  } catch (err) {
+    assert.ok(err instanceof StalledAtPromptError, String(err));
+    assert.match(err.message, /RL11=1, RLV11=2, RLV12=3 \(O\)\s+\?/);
+    assert.ok(
+      Date.now() - started < 5000,
+      "must not wait out the step deadline",
+    );
+  }
+  await session.close();
+});
+
+test("a busy guest that prints no prompt is left to work", async () => {
+  // The counterpart: silence during a running diagnostic is not a stall,
+  // so a long test is not cut short.
+  const guest = new MockGuest({ live: true });
+  const session = makeSession(guest, { stallMs: 100 });
+  await session.open();
+  guest.output("\r\nTESTING UNIT 0\r\n");
+  await new Promise((r) => setTimeout(r, 300)); // quiet, but not at a prompt
+  guest.output("END PASS\r\n");
+  const m = await session.expect("END PASS", { timeoutMs: 2000 });
+  assert.equal(m.match, "END PASS");
+  await session.close();
+});
+
+test("a prompt that arrives late still matches before the stall fires", async () => {
+  const guest = new MockGuest({ live: true });
+  const session = makeSession(guest, { stallMs: 400 });
+  await session.open();
+  setTimeout(() => guest.output("login: "), 150);
+  const m = await session.expect("login: ", { timeoutMs: 2000 });
+  assert.equal(m.match, "login: ");
   await session.close();
 });
 
