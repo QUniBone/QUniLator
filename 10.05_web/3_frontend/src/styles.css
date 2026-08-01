@@ -1041,6 +1041,21 @@ button.tree-name:hover .mono { color: var(--accent); }
 .modal-close:hover { background: var(--surface-2); color: var(--ink); }
 .modal-card .pick-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .modal-card .pick-list { padding: 4px 14px 14px; }
+/* the search field sits above the scrolling body, so it stays put while the
+   rows it narrows move under it */
+.modal-card .pick-head { flex: 0 0 auto; padding: 0 14px 10px; }
+.pick-search {
+  font-size: var(--fs-1); width: 100%;
+  padding: 6px 10px; border-radius: var(--r-sm);
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+}
+.pick-search:focus { border-color: var(--accent); background: var(--surface); outline: none; }
+.pick-group {
+  font-size: var(--fs-0); font-weight: 650; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ink-faint);
+  padding: 10px 2px 5px;
+}
+.pick-group:first-child { padding-top: 2px; }
 .pick-row {
   display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
   padding: 8px 10px; margin-bottom: 6px; cursor: pointer;
@@ -1049,8 +1064,9 @@ button.tree-name:hover .mono { color: var(--accent); }
 }
 .pick-row:hover { border-color: var(--accent); background: var(--surface-2); }
 .pick-row .mono:first-child { flex: 1; }
-/* the medium the drive holds now, so the list opens on a known position */
-.pick-row.current { border-color: var(--accent); background: var(--surface-2); }
+/* the medium the drive holds now, so the list opens on a known position; and
+   the row the keyboard stands on, which Enter takes */
+.pick-row.current, .pick-row.sel { border-color: var(--accent); background: var(--surface-2); }
 
 /* The image parameter is chosen, not typed: a field that opens the picker.
    Its width is fixed, so a widget's size follows the drive and not the length

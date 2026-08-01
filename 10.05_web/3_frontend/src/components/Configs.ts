@@ -70,6 +70,7 @@ interface Row {
   name: string;
   label: string;
   type: string;
+  category: string; // what the device is, which groups it in the Add picker
   enabled: boolean;
   takesImage: boolean;
   image: string;
@@ -87,6 +88,7 @@ function liveRow(d: LiveDev): Row {
     name: d.name,
     label: d.label || d.name,
     type: d.type,
+    category: d.category || '',
     enabled: d.enabled,
     takesImage: d.params.some((p) => p.n === 'image'),
     image: d.img,
@@ -102,6 +104,7 @@ function storedRow(d: LiveDev, st: Staged): Row {
     name: d.name,
     label: d.label || d.name,
     type: d.type,
+    category: d.category || '',
     enabled: !!st.enabled[d.name],
     takesImage: d.params.some((p) => p.n === 'image'),
     image: 'image' in pv ? pv.image : d.img,
@@ -503,7 +506,10 @@ function Detail({ name }: { name: string }) {
   // parameter dropdown.
   const visible = roots.filter((r) => r.enabled);
   const available = (() => {
-    const byType = new Map<string, { name: string; label: string; type: string; count: number }>();
+    const byType = new Map<
+      string,
+      { name: string; label: string; type: string; category: string; count: number }
+    >();
     roots
       .filter((r) => !r.enabled)
       .forEach((r) => {
@@ -514,12 +520,19 @@ function Detail({ name }: { name: string }) {
         }
         // the picker offers the type and adds its next free instance, so drop
         // the trailing number that only tells one instance from another
-        byType.set(r.type, { name: r.name, label: r.label.replace(/ \d+$/, ''), type: r.type, count: 1 });
+        byType.set(r.type, {
+          name: r.name,
+          label: r.label.replace(/ \d+$/, ''),
+          type: r.type,
+          category: r.category,
+          count: 1,
+        });
       });
     return Array.from(byType.values()).map((g) => ({
       name: g.name,
       label: g.count > 1 ? g.label + ' · ' + g.count + ' available' : g.label,
       type: g.type,
+      category: g.category,
     }));
   })();
   const conflicts = computeConflicts(visible);

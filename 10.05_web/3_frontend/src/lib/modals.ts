@@ -265,26 +265,34 @@ export async function pickImage(
   });
 }
 
+// The order the device groups stand in, which is the order a backplane is read:
+// the controllers a machine is built around first, the odds and ends last. A
+// category not named here follows them, so a device type added later still has
+// a place.
+const DEVICE_CATEGORIES = ['controller', 'memory', 'serial', 'network', 'video', 'clock', 'other'];
+
+function categoryRank(c: string): number {
+  const i = DEVICE_CATEGORIES.indexOf(c);
+  return i < 0 ? DEVICE_CATEGORIES.length : i;
+}
+
 // Pick a device to add to a configuration, from the types not already in it.
-// Resolves the chosen device handle, or null when cancelled.
+// The list is grouped by category and sorted by the label the operator reads,
+// so it opens the same way every time; a search field narrows it on label and
+// handle, and the body scrolls, so a machine offering more devices than the
+// window is tall still reaches its last row. Resolves the chosen device handle,
+// or null when cancelled.
 export function pickDevice(
   title: string,
-  options: { name: string; label: string; type: string }[]
+  options: { name: string; label: string; type: string; category?: string }[]
 ): Promise<string | null> {
-  const rows = options.length
-    ? options
-        .map(
-          (o) =>
-            '<button class="pick-row" data-pick-name="' +
-            esc(o.name) +
-            '"><span style="flex:1">' +
-            esc(o.label) +
-            '</span><span class="muted mono" style="font-size:var(--fs-0)">' +
-            esc(o.name) +
-            '</span></button>'
-        )
-        .join('')
-    : '<div class="muted" style="padding:8px">Every device is already in this configuration.</div>';
+  const sorted = options.slice().sort((a, b) => {
+    const ca = a.category || 'other',
+      cb = b.category || 'other';
+    if (categoryRank(ca) !== categoryRank(cb)) return categoryRank(ca) - categoryRank(cb);
+    if (ca !== cb) return ca.localeCompare(cb);
+    return a.label.localeCompare(b.label);
+  });
   return new Promise((resolve) => {
     const host = document.createElement('div');
     host.className = 'modal-overlay';
@@ -292,16 +300,79 @@ export function pickDevice(
       '<div class="card modal-card"><div class="card-head"><h3>' +
       esc(title) +
       '</h3><button class="modal-close" data-pick-close aria-label="Close" title="Close">&times;</button></div>' +
-      '<div class="pick-list">' +
-      rows +
-      '</div></div>';
+      (options.length
+        ? '<div class="pick-head"><input class="pick-search" type="text" ' +
+          'placeholder="Search devices" aria-label="Search devices"></div>'
+        : '') +
+      '<div class="pick-body"><div class="pick-list"></div></div></div>';
+    const list = host.querySelector('.pick-list') as HTMLElement;
+    const search = host.querySelector('.pick-search') as HTMLInputElement | null;
+
+    // the rows the query leaves, and which of them the keyboard is on
+    let shown = sorted;
+    let cursor = 0;
+
+    const render = () => {
+      const q = (search ? search.value : '').trim().toLowerCase();
+      shown = q
+        ? sorted.filter((o) => (o.label + ' ' + o.name).toLowerCase().includes(q))
+        : sorted;
+      cursor = Math.min(cursor, Math.max(0, shown.length - 1));
+      if (!options.length) {
+        list.innerHTML =
+          '<div class="muted" style="padding:8px">Every device is already in this configuration.</div>';
+        return;
+      }
+      if (!shown.length) {
+        list.innerHTML = '<div class="muted" style="padding:8px">No device matches.</div>';
+        return;
+      }
+      // A narrowed list is one run of matches: the groups it would be cut into
+      // say nothing the rows do not, and an empty heading would stand over
+      // nothing. So the headings are for the whole list only.
+      let group = '';
+      list.innerHTML = shown
+        .map((o, i) => {
+          let head = '';
+          const cat = o.category || 'other';
+          if (!q && cat !== group) {
+            group = cat;
+            head = '<div class="pick-group">' + esc(cat) + '</div>';
+          }
+          return (
+            head +
+            '<button class="pick-row' +
+            (i === cursor ? ' sel' : '') +
+            '" data-pick-name="' +
+            esc(o.name) +
+            '"><span style="flex:1">' +
+            esc(o.label) +
+            '</span><span class="muted mono" style="font-size:var(--fs-0)">' +
+            esc(o.name) +
+            '</span></button>'
+          );
+        })
+        .join('');
+      const sel = list.querySelector('.pick-row.sel');
+      if (sel) sel.scrollIntoView({ block: 'nearest' });
+    };
+
     const done = (v: string | null) => {
       host.remove();
       document.removeEventListener('keydown', onKey);
       resolve(v);
     };
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') done(null);
+      if (e.key === 'Escape') {
+        done(null);
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (!shown.length) return;
+        e.preventDefault();
+        cursor = (cursor + (e.key === 'ArrowDown' ? 1 : shown.length - 1)) % shown.length;
+        render();
+      } else if (e.key === 'Enter') {
+        if (shown.length) done(shown[cursor].name);
+      }
     }
     host.addEventListener('click', (e) => {
       const target = e.target as HTMLElement;
@@ -312,8 +383,11 @@ export function pickDevice(
       const row = target.closest('[data-pick-name]') as HTMLElement | null;
       if (row) done(row.dataset.pickName ?? null);
     });
+    if (search) search.addEventListener('input', render);
     document.addEventListener('keydown', onKey);
     document.body.appendChild(host);
+    render();
+    if (search) search.focus();
   });
 }
 
