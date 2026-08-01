@@ -895,6 +895,31 @@ static void config_put(struct mg_connection *conn, const std::string &name,
 	send_json(conn, 200, picojson::value(res));
 }
 
+// The first file two of a configuration's devices both name, as the message
+// that says so; "" when every medium is named once. Both the stored edit and
+// the apply refuse on this, so a document that would put one image in two
+// drives can be neither written nor restored.
+static std::string duplicate_image_in(const picojson::value &content) {
+	if (!content.get("devices").is<picojson::array>())
+		return "";
+	// image subpath -> the device that named it first
+	std::map<std::string, std::string> seen;
+	const picojson::array &devices = content.get("devices").get<picojson::array>();
+	for (const picojson::value &d : devices) {
+		std::string sub = webstorage_image_subpath(device_image(d));
+		if (sub.empty())
+			continue;
+		std::string devname = d.get("name").is<std::string>()
+				? d.get("name").get<std::string>() : "another drive";
+		std::map<std::string, std::string>::const_iterator it = seen.find(sub);
+		if (it != seen.end())
+			return "\"" + sub + "\" is the image of both " + it->second
+					+ " and " + devname;
+		seen[sub] = devname;
+	}
+	return "";
+}
+
 // PUT /api/configs/<name>/devices/<device>/image  {"value": "<image name>"}
 //
 // The medium a drive starts with belongs to the configuration, so it is
@@ -1133,13 +1158,30 @@ static void config_set_layout(struct mg_connection *conn, const std::string &nam
 // Returns false when the configuration cannot be read; parameters the devices
 // reject are collected in "errors" and do not fail the call.
 static bool apply_config(const std::string &name, picojson::array *errors,
-		std::string *error) {
+		std::string *error, int *status) {
 	picojson::value content;
-	if (!read_config(name, &content, error))
+	if (!read_config(name, &content, error)) {
+		if (status != nullptr)
+			*status = 404;
 		return false;
+	}
 	if (!content.get("devices").is<picojson::array>()) {
 		*error = "configuration \"" + name + "\" has no devices";
+		if (status != nullptr)
+			*status = 404;
 		return false;
+	}
+	// Two drives naming one file would open the image twice and both write it.
+	// The stored path refuses that as it is written; refusing it here too means a
+	// machine cannot be restored into a state that path prevents being saved.
+	{
+		std::string conflict = duplicate_image_in(content);
+		if (!conflict.empty()) {
+			*error = conflict;
+			if (status != nullptr)
+				*status = 409;
+			return false;
+		}
 	}
 	{
 		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
@@ -1271,8 +1313,9 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 static void config_apply(struct mg_connection *conn, const std::string &name) {
 	picojson::array errors;
 	std::string error;
-	if (!apply_config(name, &errors, &error)) {
-		send_error(conn, 404, error);
+	int status = 404;
+	if (!apply_config(name, &errors, &error, &status)) {
+		send_error(conn, status, error);
 		return;
 	}
 	set_current(name);
@@ -1285,7 +1328,7 @@ static void config_apply(struct mg_connection *conn, const std::string &name) {
 bool webconfigs_apply(const std::string &name, std::vector<std::string> *rejections,
 		std::string *error) {
 	picojson::array errors;
-	if (!apply_config(name, &errors, error))
+	if (!apply_config(name, &errors, error, nullptr))
 		return false;
 	set_current(name);
 	if (rejections != nullptr)
