@@ -186,6 +186,15 @@ export function validateScript(doc: unknown): ScriptSpec {
     }
     if (Array.isArray(step.expect)) {
       if (step.expect.length === 0) bad(where, "expect list is empty");
+      // A step with cases takes its answer from the case that matched, so a
+      // send beside them would never be sent. Silently ignoring it wastes a
+      // run finding out.
+      for (const k of ["send", "mode", "break", "goto", "done"] as const)
+        if (step[k] !== undefined)
+          bad(
+            where,
+            `${k} belongs on the expect case, not beside a list of them`,
+          );
       for (const c of step.expect) {
         if (typeof c !== "object" || c === null)
           bad(where, "every expect case must be a mapping");

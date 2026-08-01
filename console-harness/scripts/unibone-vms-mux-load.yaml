@@ -1,0 +1,49 @@
+# Put a known load on a DZ line, so the cost of a CPU bus access can be
+# measured while it runs (#21).
+#
+# This runs on the line itself, over TCP: the mux's listener is the far end of
+# the terminal, so everything it prints is bytes VMS's DZ driver pushed through
+# the register interface, one CSR poll and one TDR write at a time. The VAX
+# console is the processor's own and never touches the bus, so a listing there
+# measures nothing.
+#
+# The line must already be under modem control
+# (unibone-vms-mux-enable.yaml): the mux gates its listener on DTR, so without
+# it the connection is not accepted at all.
+#
+#   node dist/src/cli.js run scripts/unibone-vms-mux-load.yaml
+console: tcp:unibone:4000
+host: unibone
+title: VMS mux load
+# The deadlines come from a measured run (qcon timings), not from a guess:
+# every step but the listing is a prompt answering a keystroke.
+timeout: 5s
+machine:
+  start: none
+steps:
+  - name: wake
+    send: ""
+    wait: 1s
+  - name: greeting
+    expect:
+      - match: /Username:/
+        send: SYSTEM
+        goto: password
+      - match: "$ "
+        goto: load
+    timeout: 15s
+  - name: password
+    expect: /Password:/
+    send: MANAGER
+    mode: no-echo
+  - name: prompt
+    expect: "$ "
+    timeout: 20s
+  # The measurement: about 6 kB of listing, which at the throughput this ticket
+  # is about takes a little over twenty seconds.
+  - name: load
+    send: "DIRECTORY SYS$SYSTEM:"
+  - name: done
+    expect: "$ "
+    timeout: 45s
+    done: true

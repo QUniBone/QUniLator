@@ -1,0 +1,49 @@
+# Put a DZ line under modem control, so a telnet connection to it is accepted.
+#
+# The emulated mux gates its listener on DTR: with the line under VMS's modem
+# control DTR comes up, the connection is taken, and carrier makes VMS run a
+# login on it. A line left without modem control raises no DTR and the
+# connection is never accepted.
+#
+# Run this once on the console, then drive the line itself with
+# unibone-vms-mux-load.yaml.
+#
+#   node dist/src/cli.js run scripts/unibone-vms-mux-enable.yaml [--var LINE=TTA1:]
+console: vax
+host: unibone
+title: VMS mux line under modem control
+# Every step is a prompt answering a keystroke, which VMS does in well under a
+# second; the deadlines come from a measured run (qcon timings).
+timeout: 5s
+machine:
+  start: none
+steps:
+  # The console prints nothing until it is typed at.
+  - name: wake
+    send: ""
+    wait: 1s
+  - name: greeting
+    expect:
+      - match: /Username:/
+        send: SYSTEM
+        goto: password
+      - match: "$ "
+        goto: setline
+    timeout: 10s
+  - name: password
+    expect: /Password:/
+    send: MANAGER
+    mode: no-echo
+  - name: prompt
+    expect: "$ "
+    timeout: 15s
+  - name: setline
+    send: "SET TERMINAL ${LINE}/PERMANENT/MODEM/DIALUP/HANGUP/SPEED=9600"
+  - name: settled
+    expect: "$ "
+  - name: show
+    send: "SHOW TERMINAL ${LINE}"
+  - name: done
+    expect: "$ "
+    timeout: 10s
+    done: true

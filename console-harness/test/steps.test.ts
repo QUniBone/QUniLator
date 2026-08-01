@@ -177,3 +177,15 @@ test("a step timeout becomes a ScriptFailure with diagnostics", async () => {
   });
   await session.close();
 });
+
+test("a send beside a list of expect cases is refused, not ignored", () => {
+  // The case that matched carries the answer, so a send here would never be
+  // sent; a script that does this waits out its deadline for no reason.
+  assert.throws(
+    () =>
+      validateScript({
+        steps: [{ expect: [{ match: "x" }], send: "hello" }],
+      }),
+    /belongs on the expect case/,
+  );
+});

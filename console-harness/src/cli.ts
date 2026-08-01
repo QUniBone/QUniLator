@@ -6,6 +6,7 @@
  *   qcon record <out.cast> --console CH [--host H] [--pw-file PATH]
  *   qcon break [--console CH] [--host H]
  *   qcon render <session.cast> [--mode doc|player] [--out FILE] [--title T]
+ *   qcon timings <session.cast> [--margin N]
  *
  * run executes a step file against a console and always records the session
  * (default: <script-stem>-<timestamp>.cast in the working directory). Exit
@@ -32,13 +33,15 @@ import { MachineEvents } from "./events.js";
 import { CastRecorder } from "./recording.js";
 import { loadScript, runScript, parseDuration, ScriptFailure } from "./steps.js";
 import { renderDoc, renderPlayer } from "./render.js";
+import { runTimings, formatTimings } from "./timings.js";
 
 function usage(): never {
   process.stderr.write(
     "usage: qcon run <script.yaml> [--host H] [--console CH] [--var N=V]... [--record OUT] [--pw-file P] [--verbose]\n" +
       "       qcon record <out.cast> --console CH [--host H] [--pw-file P]\n" +
       "       qcon break [--console CH] [--host H] [--pw-file P]\n" +
-      "       qcon render <session.cast> [--mode doc|player] [--out FILE] [--title T]\n",
+      "       qcon render <session.cast> [--mode doc|player] [--out FILE] [--title T]\n" +
+      "       qcon timings <session.cast> [--margin N]\n",
   );
   process.exit(2);
 }
@@ -203,6 +206,16 @@ async function cmdRender(
   return 0;
 }
 
+// What each step took, and what its deadline should therefore be. A deadline
+// set from a measured run is the point of recording one: it is neither so
+// loose that a stuck step costs minutes before it says so, nor so tight that a
+// slow moment fails a run that would have worked.
+function cmdTimings(castPath: string, margin?: number): number {
+  const t = runTimings(castPath, { margin });
+  process.stdout.write(formatTimings(t));
+  return 0;
+}
+
 async function main(): Promise<number> {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
@@ -214,6 +227,7 @@ async function main(): Promise<number> {
       record: { type: "string" },
       verbose: { type: "boolean", default: false },
       mode: { type: "string", default: "doc" },
+      margin: { type: "string" },
       out: { type: "string" },
       title: { type: "string" },
     },
@@ -247,6 +261,12 @@ async function main(): Promise<number> {
     case "render":
       if (!arg) usage();
       return cmdRender(arg, values.mode ?? "doc", values.out, values.title);
+    case "timings":
+      if (!arg) usage();
+      return cmdTimings(
+        arg,
+        values.margin === undefined ? undefined : Number(values.margin),
+      );
     default:
       usage();
   }
