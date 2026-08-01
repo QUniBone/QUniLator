@@ -25,6 +25,12 @@ export interface ScreenModel {
   rows(): string[];
   /** The whole viewport as one newline-joined string. */
   text(): string;
+  /**
+   * Every line the session produced — scrollback and viewport — with the
+   * trailing blank lines dropped. This is the readable transcript: a line
+   * the guest rewrote in place reads as what it ended up saying.
+   */
+  transcript(): string[];
   cursor(): { x: number; y: number };
   readonly cols: number;
   readonly rows_: number;
@@ -51,6 +57,11 @@ export class XtermScreen implements ScreenModel {
       rows: this.rows_,
       scrollback: size.scrollback ?? 0,
       allowProposedApi: true,
+      // A PDP-11 console carries bytes xterm has no sequence for — the boot
+      // ROM's DEL padding among them — and the parser reports each one. They
+      // are fill characters a real terminal ignores, so silence the log
+      // rather than let a boot bury the run's own output.
+      logLevel: "off",
     });
   }
 
@@ -78,6 +89,17 @@ export class XtermScreen implements ScreenModel {
 
   text(): string {
     return this.rows().join("\n");
+  }
+
+  transcript(): string[] {
+    const buf = this.term.buffer.active;
+    const out: string[] = [];
+    for (let y = 0; y < buf.length; y++) {
+      const line = buf.getLine(y);
+      out.push(line ? line.translateToString(true) : "");
+    }
+    while (out.length > 0 && out[out.length - 1].trim() === "") out.pop();
+    return out;
   }
 
   cursor(): { x: number; y: number } {

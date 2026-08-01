@@ -5,6 +5,7 @@
  *                          [--record OUT.cast] [--pw-file PATH] [--verbose]
  *   qcon record <out.cast> --console CH [--host H] [--pw-file PATH]
  *   qcon break [--console CH] [--host H]
+ *   qcon render <session.cast> [--mode doc|player] [--out FILE] [--title T]
  *
  * run executes a step file against a console and always records the session
  * (default: <script-stem>-<timestamp>.cast in the working directory). Exit
@@ -14,6 +15,7 @@
  * a host-side capture of whatever the console prints (this client's view;
  * a capture of every client's input is the board-side recorder's job).
  */
+import { writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import { parseArgs } from "node:util";
 import {
@@ -29,12 +31,14 @@ import { Session } from "./session.js";
 import { MachineEvents } from "./events.js";
 import { CastRecorder } from "./recording.js";
 import { loadScript, runScript, parseDuration, ScriptFailure } from "./steps.js";
+import { renderDoc, renderPlayer } from "./render.js";
 
 function usage(): never {
   process.stderr.write(
     "usage: qcon run <script.yaml> [--host H] [--console CH] [--var N=V]... [--record OUT] [--pw-file P] [--verbose]\n" +
       "       qcon record <out.cast> --console CH [--host H] [--pw-file P]\n" +
-      "       qcon break [--console CH] [--host H] [--pw-file P]\n",
+      "       qcon break [--console CH] [--host H] [--pw-file P]\n" +
+      "       qcon render <session.cast> [--mode doc|player] [--out FILE] [--title T]\n",
   );
   process.exit(2);
 }
@@ -182,6 +186,23 @@ async function cmdBreak(opts: CommonOpts): Promise<number> {
   return 0;
 }
 
+async function cmdRender(
+  castPath: string,
+  mode: string,
+  outPath: string | undefined,
+  title: string | undefined,
+): Promise<number> {
+  const html =
+    mode === "player"
+      ? renderPlayer(castPath, { title })
+      : await renderDoc(castPath, { title });
+  const out =
+    outPath ?? castPath.replace(/\.cast$/, "") + (mode === "player" ? "-player.html" : ".html");
+  writeFileSync(out, html);
+  process.stderr.write(`wrote ${out} (${(html.length / 1024).toFixed(0)} KB)\n`);
+  return 0;
+}
+
 async function main(): Promise<number> {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
@@ -192,6 +213,9 @@ async function main(): Promise<number> {
       var: { type: "string", multiple: true, default: [] },
       record: { type: "string" },
       verbose: { type: "boolean", default: false },
+      mode: { type: "string", default: "doc" },
+      out: { type: "string" },
+      title: { type: "string" },
     },
   });
   const [cmd, arg] = positionals;
@@ -220,6 +244,9 @@ async function main(): Promise<number> {
       return cmdRecord(arg, { ...opts, host: opts.host || "qbone" });
     case "break":
       return cmdBreak({ ...opts, host: opts.host || "qbone" });
+    case "render":
+      if (!arg) usage();
+      return cmdRender(arg, values.mode ?? "doc", values.out, values.title);
     default:
       usage();
   }
