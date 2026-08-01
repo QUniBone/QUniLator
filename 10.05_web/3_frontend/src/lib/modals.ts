@@ -40,6 +40,42 @@ export function confirmModal(title: string, body: string, confirmLabel: string):
   });
 }
 
+// A refusal the operator has to take note of: the machine would not do what
+// they asked, and the reason it gave. It is dismissed by hand, so an operator
+// who looked away still learns that the device is not in the machine — a
+// message that fades on its own leaves them believing it went in.
+export function alertModal(title: string, body: string): Promise<void> {
+  return new Promise((resolve) => {
+    const host = document.createElement('div');
+    host.className = 'modal-overlay';
+    host.innerHTML =
+      '<div class="card modal-card"><div class="card-head"><h3>' +
+      esc(title) +
+      '</h3>' +
+      '<button class="modal-close" data-am-ok aria-label="Close" title="Close">&times;</button></div>' +
+      '<div class="card-body"><p class="muted" style="margin:0 0 16px; font-size:var(--fs-1)">' +
+      esc(body) +
+      '</p>' +
+      '<div style="display:flex; justify-content:flex-end">' +
+      '<button class="btn" data-am-ok>OK</button></div></div></div>';
+    const done = () => {
+      host.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve();
+    };
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key === 'Escape' || ev.key === 'Enter') done();
+    }
+    host.addEventListener('click', (ev) => {
+      const target = ev.target as HTMLElement;
+      if (target === host || target.closest('[data-am-ok]')) done();
+    });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(host);
+    (host.querySelector('[data-am-ok]') as HTMLElement).focus();
+  });
+}
+
 // A one-field text prompt (Save As, rename). Resolves the trimmed value, or
 // null when cancelled.
 //

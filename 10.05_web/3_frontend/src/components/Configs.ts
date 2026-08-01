@@ -15,7 +15,7 @@ import { html } from '../html';
 import { useState, useEffect } from 'preact/hooks';
 import { useRoute, useLocation } from 'preact-iso';
 import { esc, octalStr } from '../lib/util';
-import { confirmModal, promptModal, pickDevice } from '../lib/modals';
+import { alertModal, confirmModal, promptModal, pickDevice } from '../lib/modals';
 import { setNavGuard, clearNavGuard, guardedRoute } from '../lib/navguard';
 import {
   loadConfigs,
@@ -454,11 +454,27 @@ function Detail({ name }: { name: string }) {
   }, [isCurrent, dirty]);
 
   // live edits reach the running machine at once; staged edits sit in the editor
-  const liveToggle: SetEnabled = (dev, on) =>
-    liveSetParam(dev, 'enabled', on ? '1' : '0', on ? 'device enabled' : 'device disabled');
+  const liveToggle: SetEnabled = async (dev, on) => {
+    const res = await liveSetParam(
+      dev,
+      'enabled',
+      on ? '1' : '0',
+      on ? 'device enabled' : 'device disabled'
+    );
+    if (!res.ok)
+      await alertModal(
+        on ? 'Device not installed' : 'Device not removed',
+        res.data.error || 'The machine refused the change.'
+      );
+  };
   const liveParam: SetParam = (dev, pn, val) => liveSetParam(dev, pn, val, 'parameter set');
-  const liveImage: SetImage = (dev, img) => {
-    liveSetParam(dev, 'image', img, img ? 'image attached' : 'image detached');
+  const liveImage: SetImage = async (dev, img) => {
+    const res = await liveSetParam(dev, 'image', img, img ? 'image attached' : 'image detached');
+    if (!res.ok)
+      await alertModal(
+        img ? 'Medium not attached' : 'Medium not detached',
+        res.data.error || 'The machine refused the change.'
+      );
     setTimeout(() => refreshDevices().catch(() => {}), 300);
   };
   const stage = (fn: (st: Staged) => void) => {

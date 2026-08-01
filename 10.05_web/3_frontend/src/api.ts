@@ -53,15 +53,19 @@ export async function refreshDevices(): Promise<void> {
   emit();
 }
 
+// Echoes the command and its answer, and hands the answer back: a caller whose
+// operation the machine can refuse - putting a device in it, putting a medium
+// in a drive - reports the refusal in a dialog of its own.
 export async function liveSetParam(
   dev: string,
   param: string,
   value: string,
   okMsg: string
-): Promise<void> {
+): Promise<ApiResult<{ error?: string }>> {
   const res = await apiSetParam(dev, param, value);
   toast(dev + '.' + param + ' = ' + (value === '' ? '""' : value), res.ok ? okMsg : res.data.error || 'rejected');
   refreshDevices().catch(() => {});
+  return res;
 }
 
 export async function liveControl(action: string, okMsg: string): Promise<void> {

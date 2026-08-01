@@ -4,6 +4,7 @@ import { useEffect, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { LiveDev } from '../../types';
 import { liveSetParam } from '../../api';
+import { alertModal } from '../../lib/modals';
 import { ImageField } from '../common';
 import { Cap, PanelWidget, ReadyCap, paramVal } from './base';
 
@@ -13,9 +14,22 @@ import { Cap, PanelWidget, ReadyCap, paramVal } from './base';
 // saying whether it is.
 function DiskFoot({ d }: { d: LiveDev }) {
   const img = d.img || paramVal(d, 'image');
-  return html`<${ImageField} drive=${d.name} image=${img}
-    onPick=${(name: string) =>
-      liveSetParam(d.name, 'image', name, name ? 'image attached' : 'image detached')} />`;
+  // A medium puts the drive in the machine, which the machine can refuse; the
+  // operator is told so rather than left with a drive that took no pack.
+  const pick = async (name: string) => {
+    const res = await liveSetParam(
+      d.name,
+      'image',
+      name,
+      name ? 'image attached' : 'image detached'
+    );
+    if (!res.ok)
+      await alertModal(
+        name ? 'Medium not attached' : 'Medium not detached',
+        res.data.error || 'The machine refused the change.'
+      );
+  };
+  return html`<${ImageField} drive=${d.name} image=${img} onPick=${pick} />`;
 }
 
 // What every drive shares: a unit number on its READY cap, the medium it holds,
