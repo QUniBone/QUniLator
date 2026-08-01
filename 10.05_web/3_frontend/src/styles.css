@@ -1249,3 +1249,18 @@ button.tree-name:hover .mono { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .upd-bar-fill { animation: none; width: 100%; opacity: .5; }
 }
+
+/* The console record control and the recordings list. A running recording is
+   marked with the pulsing dot the rest of the world uses for one, so it is
+   visible at a glance that a session is being written to the board. */
+.btn.recording { color: #b4231d; border-color: #b4231d; }
+.rec-dot { display: inline-block; width: .5em; height: .5em; margin-right: .4em;
+  border-radius: 50%; background: #b4231d; vertical-align: baseline;
+  animation: rec-pulse 1.6s ease-in-out infinite; }
+@keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; } }
+.rec-table { width: 100%; border-collapse: collapse; }
+.rec-table td { padding: .35rem .5rem .35rem 0; vertical-align: middle;
+  border-bottom: 1px solid var(--line, #e4e4de); }
+.rec-table tr:last-child td { border-bottom: 0; }
+.rec-table td:last-child { text-align: right; white-space: nowrap; }

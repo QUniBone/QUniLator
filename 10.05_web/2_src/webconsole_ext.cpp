@@ -38,6 +38,7 @@
 
 #include "weblog.hpp"
 #include "webconsole_control.hpp"
+#include "webrecording.hpp"
 #include "webconsole_ext.hpp"
 
 static std::mutex port_mutex; // guards port_io + cur_* + port_open
@@ -53,6 +54,16 @@ static unsigned cur_baud = 38400;
 // exactly once however many consoles watch (see console_channel_c).
 static console_channel_c channel(web_ws_console_send, web_ws_console_send_text,
 		/*designate_answerer*/ true);
+
+// The session recorder for this channel. Output reaches it through the channel;
+// input is recorded here, in the data handler, because that is where every
+// client's bytes pass on their way to the line — no client can see what another
+// typed, so a recording of a hand-driven session can only be made here.
+static console_recorder_c recorder;
+
+console_recorder_c *webconsole_ext_recorder(void) {
+	return &recorder;
+}
 
 static std::atomic<bool> running(false);
 static std::thread reader;
@@ -207,6 +218,7 @@ static int ws_data_handler(struct mg_connection *, int opcode, char *data,
 		}
 		return 1;
 	}
+	recorder.input(data, len);
 	{
 		std::lock_guard<std::mutex> lk(tx_mutex);
 		for (size_t i = 0; i < len; i++)
@@ -221,6 +233,7 @@ static void ws_close_handler(const struct mg_connection *conn, void *) {
 }
 
 void webconsole_ext_register(struct mg_context *ctx) {
+	channel.set_recorder(&recorder);
 	mg_set_websocket_handler(ctx, "/ws/console/ext", ws_connect_handler,
 			ws_ready_handler, ws_data_handler, ws_close_handler, nullptr);
 	running = true;

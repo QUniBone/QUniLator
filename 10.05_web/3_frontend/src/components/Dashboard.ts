@@ -5,6 +5,7 @@ import { useLocation } from 'preact-iso';
 import { useStore, store, emit } from '../store';
 import { liveControl, loadConfigs, fetchConfigSnapshot, setConfigLayout } from '../api';
 import { initLiveTerminal, teardownTerminals, consoleSource, focusConsole } from '../lib/terminals';
+import { recordingState, startRecording, stopRecording } from '../api';
 import { enabledDevices } from '../lib/devmodel';
 import { placeItems, gridRows, fits, occupancyExcept } from '../lib/dashlayout';
 import type { GridItem } from '../lib/dashlayout';
@@ -167,12 +168,60 @@ const CONSOLE_SOURCE_LABEL: Record<string, string> = {
   dl11: 'DL11',
   vax: 'VAX console',
 };
+// The record control. A recording is made on the board, not here, because that
+// is the only place both directions of the session pass: this browser sees the
+// output every client gets, but not what another client typed. Off unless
+// asked for — the input it captures includes whatever was typed at a password
+// prompt, so a standing recording is not something to leave running.
+function RecordButton() {
+  const [on, setOn] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const channel = consoleSource() === 'vax' ? 'vax' : consoleSource() === 'dl11' ? '0' : 'ext';
+  useEffect(() => {
+    let live = true;
+    recordingState(channel)
+      .then((s) => {
+        if (live) setOn(s.recording);
+      })
+      .catch(() => {});
+    // a recording started elsewhere (the API, another tab) shows up here
+    const t = setInterval(() => {
+      recordingState(channel)
+        .then((s) => {
+          if (live) setOn(s.recording);
+        })
+        .catch(() => {});
+    }, 5000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [channel]);
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      const s = on ? await stopRecording(channel) : await startRecording(channel);
+      setOn(s.recording);
+    } catch {
+      /* leave the button as it was; the next poll corrects it */
+    }
+    setBusy(false);
+  };
+  return html`<button
+    class=${'btn small' + (on ? ' recording' : '')}
+    disabled=${busy}
+    title=${on ? 'Stop recording this session' : 'Record this session to a file on the board'}
+    onClick=${toggle}
+  >${on ? html`<span class="rec-dot"></span>Recording` : 'Record'}</button>`;
+}
+
 function ConsoleCard() {
   useStore();
   const live = store.consoleConnected;
   const src = CONSOLE_SOURCE_LABEL[consoleSource()] || '';
   return html`<div class=${'card console-card' + (live ? '' : ' console-down')}>
     <div class="card-head"><h3>Console</h3>
+      <${RecordButton} />
       <span class=${'disk-status ' + (live ? 'ok' : 'idle')}
         >${live ? src : 'disconnected'}</span>
     </div>

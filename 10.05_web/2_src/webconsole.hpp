@@ -19,4 +19,10 @@ void webconsole_shutdown(void);
 // not hand a reconnecting terminal the last machine's screen.
 void webconsole_clear(void);
 
+
+class console_recorder_c;
+// The session recorder for an emulated console line: 0 and 1 are the DL11
+// taps, 2 the emulated VAX console where the platform has one.
+console_recorder_c *webconsole_channel_recorder(unsigned index);
+
 #endif // _WEBCONSOLE_HPP_

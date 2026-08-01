@@ -25,4 +25,9 @@ void webconsole_ext_clear(void);
 std::string webconsole_ext_configure(const std::string &source,
 		const std::string &port, unsigned baud);
 
+
+class console_recorder_c;
+// The session recorder for /ws/console/ext (see webrecording.hpp).
+console_recorder_c *webconsole_ext_recorder(void);
+
 #endif // _WEBCONSOLE_EXT_HPP_

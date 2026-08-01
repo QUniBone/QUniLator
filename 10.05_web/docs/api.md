@@ -835,6 +835,50 @@ in the byte stream. On `/ws/console/ext` it holds the real tty spacing for
 which is what a UART gives its driver for a received BREAK. The VAX console
 ignores it. A client that ignores TEXT frames is unaffected by any of this.
 
+### Console recordings
+
+A session someone drives by hand is recorded **on the board**, because that is
+the only place both directions pass: output reaches every client, but each
+client's input goes straight to the line, so no client can see what another
+typed. The file is
+[asciicast v3](https://docs.asciinema.org/manual/asciicast/v3/), which `qcon
+render` turns into a page and an asciinema player replays.
+
+Recording is off until asked for, and stops itself at 16 MB. Input events carry
+whatever was typed, passwords included, so a recording is something an operator
+starts deliberately rather than a file the board always keeps.
+
+#### `GET /api/console/<channel>/recording`
+
+```json
+{"recording": true, "name": "console-ext-20260801-194245.cast", "bytes": 4197}
+```
+
+#### `POST /api/console/<channel>/recording`
+
+```json
+{"action": "start", "name": "install"}
+```
+
+`action` is `start` or `stop`. `name` is optional and gains a `.cast` suffix;
+without one the board names the file after the channel and the time. Answers
+`{"ok": true, "recording": …, "name": …}`. `404` for an unknown channel.
+
+#### `GET /api/recordings`
+
+```json
+{"recordings": [{"name": "install.cast", "bytes": 4197,
+                 "mtime": "2026-08-01 19:37"}]}
+```
+
+#### `GET /api/recordings/<name>`
+
+The cast itself, as `text/plain`.
+
+#### `DELETE /api/recordings/<name>`
+
+Removes it. Answers `{"ok": true}`; `404` when there is no such recording.
+
 ### `/ws/console/ext`
 
 Binary frames bridged to the real console SLU on `/dev/ttyS2` (the external

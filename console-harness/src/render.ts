@@ -33,8 +33,8 @@ interface Block {
   startMs: number;
   endMs: number;
   lines: string[];
-  /** Text typed during this block, in order, with its echo status. */
-  typed: { text: string; redacted: boolean }[];
+  /** Lines typed during this block, in order, with their echo status. */
+  typed: { text: string; redacted: boolean; closed: boolean }[];
 }
 
 /** Milliseconds from the session start, per event; v3 intervals are seconds
@@ -88,14 +88,23 @@ async function blocks(
       case "i": {
         inputIndex++;
         const isRedacted = redacted.has(inputIndex);
-        // The typing arrives one character per event; join it into the line
-        // it forms so the render shows a command, not a column of letters.
-        const last = cur.typed[cur.typed.length - 1];
+        // The typing arrives one character per event; join it into the line it
+        // forms, so the render shows a command rather than a column of
+        // letters. A carriage return ends that line: without breaking there,
+        // two commands merge into one string that matches no line on screen
+        // and neither gets highlighted.
+        const endsLine = /[\r\n]/.test(ev.data);
         const text = ev.data.replace(/[\r\n]/g, "");
-        if (text.length === 0) break;
-        if (last !== undefined && last.redacted === isRedacted)
-          last.text += text;
-        else cur.typed.push({ text, redacted: isRedacted });
+        const last = cur.typed[cur.typed.length - 1];
+        if (text.length > 0) {
+          if (last !== undefined && !last.closed && last.redacted === isRedacted)
+            last.text += text;
+          else cur.typed.push({ text, redacted: isRedacted, closed: false });
+        }
+        if (endsLine) {
+          const open = cur.typed[cur.typed.length - 1];
+          if (open !== undefined) open.closed = true;
+        }
         break;
       }
       case "m": {
@@ -133,7 +142,10 @@ function esc(text: string): string {
  * from the input events — except where it was never echoed (a password),
  * which is shown as a redaction chip instead.
  */
-function markupLine(line: string, typed: { text: string; redacted: boolean }[]): string {
+function markupLine(
+  line: string,
+  typed: { text: string; redacted: boolean }[],
+): string {
   let html = esc(line);
   for (const t of typed) {
     if (t.redacted || t.text.length === 0) continue;

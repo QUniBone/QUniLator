@@ -32,6 +32,8 @@
 #include <set>
 #include <string>
 
+class console_recorder_c;
+
 class console_channel_c {
 public:
 	// Send len bytes to one client. Return follows web_ws_try_send:
@@ -77,6 +79,12 @@ public:
 	// not be handed the previous machine's output as though it were current.
 	void clear_ring();
 
+	// The recorder this channel feeds, or null. Output is recorded here, in
+	// append(); the input direction is recorded by the bridge, which is where
+	// client bytes pass on their way to the line.
+	void set_recorder(console_recorder_c *rec);
+	console_recorder_c *recorder();
+
 	// Introspection for tests.
 	size_t ring_size();
 	size_t client_count();
@@ -92,6 +100,7 @@ private:
 	std::set<void *> clients_;
 	send_fn_t send_;
 	send_text_fn_t send_text_;     // null: no out-of-band control frames at all
+	console_recorder_c *recorder_ = nullptr;
 	bool designate_answerer_;      // false: every client is a plain mirror
 	void *answerer_ = nullptr;     // the one client that answers guest queries
 };

@@ -11,7 +11,7 @@
 import { html } from '../html';
 import { useEffect, useState } from 'preact/hooks';
 import { useStore } from '../store';
-import { apiJSON, liveControl } from '../api';
+import { apiJSON, liveControl, listRecordings, deleteRecording, type Recording } from '../api';
 import { confirmModal, USER_NAME_HELP, USER_NAME_REFUSAL, USER_NAME_RULE } from '../lib/modals';
 import { toast } from '../lib/toast';
 import { bundleVersion } from '../lib/version';
@@ -295,6 +295,54 @@ function AccessCard() {
     </div></div>`;
 }
 
+// What the board has recorded. A recording is downloaded and read with
+// `qcon render`, which turns it into a page with the typing marked off from
+// what the machine printed; the file itself is standard asciicast, so an
+// asciinema player takes it too.
+function RecordingsCard() {
+  const [items, setItems] = useState<Recording[] | null>(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    listRecordings()
+      .then(setItems)
+      .catch(() => setItems([]));
+  }, [tick]);
+  if (items === null)
+    return html`<div class="card" style="max-width:720px">
+      <div class="card-head"><h3>Console recordings</h3></div>
+      <div class="card-body"><p class="muted">Reading…</p></div></div>`;
+  return html`<div class="card" style="max-width:720px">
+    <div class="card-head"><h3>Console recordings</h3>
+      <button class="btn small" onClick=${() => setTick(tick + 1)}>Refresh</button>
+    </div>
+    <div class="card-body">
+      ${
+        items.length === 0
+          ? html`<p class="muted">None yet. Record a session with the Record button
+              on the dashboard's console card; both what the machine printed and
+              what was typed at it are captured, whoever typed it.</p>`
+          : html`<table class="rec-table"><tbody>
+              ${items.map(
+                (r) => html`<tr>
+                  <td class="mono">${r.name}</td>
+                  <td class="muted">${r.mtime}</td>
+                  <td class="muted">${(r.bytes / 1024).toFixed(0)} KB</td>
+                  <td>
+                    <a class="btn small" href=${'/api/recordings/' + encodeURIComponent(r.name)}
+                       download=${r.name}>Download</a>
+                    <button class="btn small danger" onClick=${async () => {
+                      await deleteRecording(r.name);
+                      setTick(tick + 1);
+                    }}>Delete</button>
+                  </td>
+                </tr>`,
+              )}
+            </tbody></table>`
+      }
+    </div>
+  </div>`;
+}
+
 export function SystemPage() {
   const s = useStore();
   const [tick, setTick] = useState(0);
@@ -315,6 +363,8 @@ export function SystemPage() {
     <p class="lede">Who reaches this board, what it runs, and updating it.</p>
 
     <${AccessCard} />
+
+    <${RecordingsCard} />
 
     <div class="card" style="max-width:720px">
       <div class="card-head"><h3>${u.package || 'emulator'}</h3><${StateChip} u=${u} /></div>

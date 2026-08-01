@@ -62,7 +62,16 @@ $CXX -std=c++11 -Wall -Wextra $INCLUDES \
 $CXX -std=c++11 -Wall -Wextra -I "$WEB" \
 	"$TOOLS/console_channel_test.cpp" \
 	"$WEB/webconsole_channel.cpp" \
+	"$WEB/webrecording.cpp" \
 	-lpthread -o "$OUT/console_channel_test"
+
+# The session recorder is civetweb-free too; it links with the channel so the
+# test can drive both together.
+$CXX -std=c++11 -Wall -Wextra -I "$WEB" \
+	"$TOOLS/recording_test.cpp" \
+	"$WEB/webconsole_channel.cpp" \
+	"$WEB/webrecording.cpp" \
+	-lpthread -o "$OUT/recording_test"
 
 # The disk-status and power-gate helpers are pure functions with no device or
 # civetweb dependency, so they link against nothing but their own units.
@@ -90,6 +99,7 @@ $CXX -std=c++11 -Wall -Wextra -I "$DEV" \
 "$OUT/config_test"
 "$OUT/auth_test"
 "$OUT/console_channel_test"
+"$OUT/recording_test"
 "$OUT/status_power_test"
 "$OUT/serial_tcp_line_test"
 "$OUT/simh_tape_test"

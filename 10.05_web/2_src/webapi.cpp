@@ -52,6 +52,7 @@
 #include "webconsole.hpp"
 #include "webserial.hpp"
 #include "webconsole_ext.hpp"
+#include "webrecordings.hpp"
 #include "webvcb01.hpp"
 #include "webstorage.hpp"
 #include "webconfigs.hpp"
@@ -1082,6 +1083,8 @@ void webapi_register(struct mg_context *ctx) {
 	webevents_register(ctx);
 	webconsole_register(ctx);
 	webconsole_ext_register(ctx);
+	// after both console backends: the recordings API reaches their recorders
+	webrecordings_register(ctx);
 	webserial_register(ctx);
 	webvcb01_register(ctx);
 	// apply the persisted external-console setting (loaded by

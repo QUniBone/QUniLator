@@ -39,6 +39,7 @@
 #include "device_configuration.hpp"
 
 #include "webconsole_control.hpp"
+#include "webrecording.hpp"
 #include "webconsole.hpp"
 
 // per-SLU bridge state
@@ -79,6 +80,10 @@ struct console_c {
 	// condition the model presents through its registers, not a byte the
 	// receive stream can carry. Null for the VAX console.
 	slu_c *slu = nullptr;
+
+	// This line's session recorder: output through the channel, input in the
+	// data handler below (the one place every client's bytes pass).
+	console_recorder_c recorder;
 
 	console_c() : tap_stream(&tap_buf) {
 		tap_buf.owner = this;
@@ -138,6 +143,7 @@ static int ws_data_handler(struct mg_connection *, int opcode, char *data,
 	// inject like the menu's "dl11 rcv" command
 	if (console->adapter == nullptr)
 		return 1;
+	console->recorder.input(data, len);
 	pthread_mutex_lock(&console->adapter->mutex);
 	console->rcv_stream->clear();
 	console->rcv_stream->write(data, len);
@@ -173,11 +179,18 @@ void webconsole_register(struct mg_context *ctx) {
 	mg_set_websocket_handler(ctx, "/ws/console/vax", ws_connect_handler,
 			ws_ready_handler, ws_data_handler, ws_close_handler, &consoles[2]);
 #endif
+	for (console_c &console : consoles)
+		console.channel.set_recorder(&console.recorder);
 	running = true;
 	flusher = std::thread(flush_loop);
 	for (console_c &console : consoles)
 		if (console.adapter != nullptr)
 			console.adapter->stream_xmt_tap = &console.tap_stream;
+}
+
+// The recorder for an emulated-console channel, for the recordings API.
+console_recorder_c *webconsole_channel_recorder(unsigned index) {
+	return index < CONSOLE_COUNT ? &consoles[index].recorder : nullptr;
 }
 
 void webconsole_clear(void) {

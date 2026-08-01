@@ -475,3 +475,74 @@ export async function setStoredImage(name: string, drive: string, image: string)
   await loadConfigs().catch(() => {});
   return res.ok;
 }
+
+// ---- console recordings ---------------------------------------------------
+//
+// A session driven by hand is recorded on the board, because that is the only
+// place both directions pass: output reaches every client, but each client's
+// input goes straight to the line, so no client can see what another typed.
+
+export interface Recording {
+  name: string;
+  bytes: number;
+  mtime: string;
+}
+
+export interface RecordingState {
+  recording: boolean;
+  name?: string;
+  bytes?: number;
+}
+
+export async function recordingState(channel: string): Promise<RecordingState> {
+  const r = await apiJSON<RecordingState>(`/api/console/${channel}/recording`);
+  if (!r.ok) throw new Error('cannot read the recording state');
+  return r.data;
+}
+
+async function postRecording(
+  channel: string,
+  body: Record<string, string>,
+): Promise<RecordingState> {
+  const r = await apiJSON<RecordingState & { error?: string }>(
+    `/api/console/${channel}/recording`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!r.ok) throw new Error(r.data?.error || 'the board refused the request');
+  return r.data;
+}
+
+export async function startRecording(
+  channel: string,
+  name?: string,
+): Promise<RecordingState> {
+  const s = await postRecording(
+    channel,
+    name ? { action: 'start', name } : { action: 'start' },
+  );
+  toast('record', 'Recording to ' + (s.name ?? 'a file on the board'));
+  return s;
+}
+
+export async function stopRecording(channel: string): Promise<RecordingState> {
+  const s = await postRecording(channel, { action: 'stop' });
+  toast('record', 'Recording stopped');
+  return s;
+}
+
+export async function listRecordings(): Promise<Recording[]> {
+  const r = await apiJSON<{ recordings?: Recording[] }>('/api/recordings');
+  return r.ok ? (r.data.recordings ?? []) : [];
+}
+
+export async function deleteRecording(name: string): Promise<boolean> {
+  const r = await apiJSON(`/api/recordings/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+  if (!r.ok) toast('delete', 'Could not delete ' + name);
+  return r.ok;
+}

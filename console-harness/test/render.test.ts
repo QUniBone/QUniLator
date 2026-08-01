@@ -64,6 +64,28 @@ test("a cast without a sidecar still renders", async () => {
   assert.match(html, /step 1: login/);
 });
 
+test("two typed lines in one block are highlighted separately", async () => {
+  // A board-side capture has no step markers, so the whole session is one
+  // block: typing must still break at the carriage return, or the two
+  // commands merge into a string that matches no line and neither shows.
+  const path = tmp("twolines.cast");
+  const rec = new CastRecorder(path, { title: "two lines" });
+  const type = (s: string) => {
+    for (const ch of s) rec.input(new Uint8Array(Buffer.from(ch, "latin1")));
+  };
+  rec.output(new Uint8Array(Buffer.from(": ", "latin1")));
+  type("boot unix\r");
+  rec.output(new Uint8Array(Buffer.from("boot unix\r\n# ", "latin1")));
+  type("echo hello\r");
+  rec.output(new Uint8Array(Buffer.from("echo hello\r\nhello\r\n# ", "latin1")));
+  await rec.close(0);
+  const html = await renderDoc(path);
+  assert.match(html, /<span class="typed">boot unix<\/span>/);
+  assert.match(html, /<span class="typed">echo hello<\/span>/);
+  // the guest's own reply is not marked as typing
+  assert.ok(!/<span class="typed">hello<\/span>/.test(html));
+});
+
 test("the player render is one self-contained file", async () => {
   const path = await sampleCast();
   const html = renderPlayer(path);

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "webconsole_channel.hpp"
+#include "webrecording.hpp"
 
 console_channel_c::console_channel_c(send_fn_t send, send_text_fn_t send_text,
 		bool designate_answerer, size_t cap)
@@ -77,6 +78,8 @@ void console_channel_c::append(const char *data, size_t len) {
 	if (len == 0)
 		return;
 	std::lock_guard<std::mutex> lock(mutex_);
+	if (recorder_ != nullptr)
+		recorder_->output(data, len);
 	ring_.append(data, len);
 	trim_locked();
 	std::vector<void *> dead;
@@ -140,6 +143,16 @@ void console_channel_c::clear_ring(void) {
 void console_channel_c::clear_clients(void) {
 	std::lock_guard<std::mutex> lock(mutex_);
 	clients_.clear();
+}
+
+void console_channel_c::set_recorder(console_recorder_c *rec) {
+	std::lock_guard<std::mutex> lock(mutex_);
+	recorder_ = rec;
+}
+
+console_recorder_c *console_channel_c::recorder(void) {
+	std::lock_guard<std::mutex> lock(mutex_);
+	return recorder_;
 }
 
 size_t console_channel_c::ring_size(void) {
