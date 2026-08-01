@@ -1,0 +1,221 @@
+#!/usr/bin/env node
+/* cli.ts: the qcon command.
+ *
+ *   qcon run <script.yaml> [--host H] [--console CH] [--var NAME=VALUE]...
+ *                          [--record OUT.cast] [--pw-file PATH] [--verbose]
+ *   qcon record <out.cast> --console CH [--host H] [--pw-file PATH]
+ *   qcon break --console CH [--host H] [--oob]
+ *
+ * run executes a step file against a console and always records the session
+ * (default: <script-stem>-<timestamp>.cast in the working directory). Exit
+ * status: 0 pass, 1 script failure, 2 usage or connection error.
+ *
+ * record taps a channel and writes its output to a cast until interrupted —
+ * a host-side capture of whatever the console prints (this client's view;
+ * a capture of every client's input is the board-side recorder's job).
+ */
+import { basename } from "node:path";
+import { parseArgs } from "node:util";
+import {
+  makeTarget,
+  resolveConsoleChannel,
+  consoleWsUrl,
+  eventsWsUrl,
+} from "./board.js";
+import { WsTransport, TcpTransport, type Transport } from "./transport.js";
+import { Session } from "./session.js";
+import { MachineEvents } from "./events.js";
+import { CastRecorder } from "./recording.js";
+import { loadScript, runScript, parseDuration, ScriptFailure } from "./steps.js";
+
+function usage(): never {
+  process.stderr.write(
+    "usage: qcon run <script.yaml> [--host H] [--console CH] [--var N=V]... [--record OUT] [--pw-file P] [--verbose]\n" +
+      "       qcon record <out.cast> --console CH [--host H] [--pw-file P]\n" +
+      "       qcon break --console CH [--host H] [--pw-file P] --oob\n",
+  );
+  process.exit(2);
+}
+
+function timestamp(): string {
+  return new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "");
+}
+
+interface CommonOpts {
+  host: string;
+  pwFile?: string;
+  channel?: string;
+  verbose: boolean;
+}
+
+function makeTransport(
+  opts: CommonOpts,
+  channel: string,
+  oobBreak = false,
+): Transport {
+  const tcp = /^tcp:([^:]+):(\d+)$/.exec(channel);
+  if (tcp) return new TcpTransport(tcp[1], parseInt(tcp[2], 10));
+  const target = makeTarget(opts.host, opts.pwFile);
+  return new WsTransport(consoleWsUrl(target, channel), {
+    authHeader: target.authHeader,
+    oobBreak,
+  });
+}
+
+async function resolveChannel(
+  opts: CommonOpts,
+  fromScript?: string,
+): Promise<string> {
+  const requested = opts.channel ?? fromScript ?? "auto";
+  if (requested !== "auto") return requested;
+  return resolveConsoleChannel(makeTarget(opts.host, opts.pwFile));
+}
+
+async function cmdRun(scriptPath: string, opts: CommonOpts, args: {
+  vars: Record<string, string>;
+  recordPath?: string;
+}): Promise<number> {
+  const script = loadScript(scriptPath);
+  const host = opts.host !== "" ? opts.host : (script.host ?? "qbone");
+  const common = { ...opts, host };
+  const channel = await resolveChannel(common, script.console);
+  const isTcp = channel.startsWith("tcp:");
+  const target = makeTarget(host, opts.pwFile);
+
+  const castPath =
+    args.recordPath ??
+    `${basename(scriptPath).replace(/\.[^.]*$/, "")}-${timestamp()}.cast`;
+  const recorder = new CastRecorder(castPath, {
+    title: script.title ?? basename(scriptPath),
+  });
+
+  const events = isTcp
+    ? undefined
+    : new MachineEvents(eventsWsUrl(target), target.authHeader);
+  const transport = makeTransport(common, channel);
+  const session = new Session(transport, {
+    recorder,
+    events,
+    deviations: script.deviations,
+    defaultTimeoutMs:
+      script.timeout !== undefined ? parseDuration(script.timeout) : undefined,
+    settleMs:
+      script.settle !== undefined ? parseDuration(script.settle) : undefined,
+  });
+  if (opts.verbose)
+    transport.onData((b) =>
+      process.stderr.write(Buffer.from(b).toString("latin1")),
+    );
+
+  // vars: CLI --var wins over the environment
+  const vars: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env))
+    if (v !== undefined) vars[k] = v;
+  Object.assign(vars, args.vars);
+
+  try {
+    if (events) await events.open();
+    await session.open();
+    const result = await runScript(session, script, vars, recorder);
+    await session.close(0);
+    process.stdout.write(
+      `PASS ${basename(scriptPath)} (${result.stepsRun} steps) — recorded ${castPath}\n`,
+    );
+    return 0;
+  } catch (err) {
+    await session.close(1).catch(() => {});
+    if (err instanceof ScriptFailure) {
+      process.stderr.write(`FAIL ${basename(scriptPath)}: ${err.message}\n`);
+      process.stderr.write(`recorded ${castPath}\n`);
+      return 1;
+    }
+    throw err;
+  }
+}
+
+async function cmdRecord(outPath: string, opts: CommonOpts): Promise<number> {
+  const channel = await resolveChannel(opts);
+  const recorder = new CastRecorder(outPath, {
+    title: `${opts.host}:${channel}`,
+  });
+  const transport = makeTransport(opts, channel);
+  let bytes = 0;
+  transport.onData((b) => {
+    recorder.output(b);
+    bytes += b.length;
+  });
+  await transport.open();
+  process.stderr.write(`recording ${opts.host} channel ${channel} to ${outPath} — ^C to stop\n`);
+  await new Promise<void>((resolve) => {
+    transport.onClose(() => resolve());
+    process.on("SIGINT", () => resolve());
+  });
+  transport.close();
+  await recorder.close(0);
+  process.stderr.write(`${bytes} bytes recorded\n`);
+  return 0;
+}
+
+async function cmdBreak(opts: CommonOpts, oob: boolean): Promise<number> {
+  const channel = await resolveChannel(opts);
+  const transport = makeTransport(opts, channel, oob);
+  await transport.open();
+  await transport.sendBreak();
+  transport.close();
+  process.stderr.write(`BREAK sent on ${channel}\n`);
+  return 0;
+}
+
+async function main(): Promise<number> {
+  const { values, positionals } = parseArgs({
+    allowPositionals: true,
+    options: {
+      host: { type: "string", default: "" },
+      console: { type: "string" },
+      "pw-file": { type: "string" },
+      var: { type: "string", multiple: true, default: [] },
+      record: { type: "string" },
+      verbose: { type: "boolean", default: false },
+      oob: { type: "boolean", default: false },
+    },
+  });
+  const [cmd, arg] = positionals;
+  const opts: CommonOpts = {
+    host: values.host ?? "",
+    pwFile: values["pw-file"],
+    channel: values.console,
+    verbose: values.verbose ?? false,
+  };
+  const vars: Record<string, string> = {};
+  for (const kv of values.var ?? []) {
+    const eq = kv.indexOf("=");
+    if (eq < 1) usage();
+    vars[kv.slice(0, eq)] = kv.slice(eq + 1);
+  }
+
+  switch (cmd) {
+    case "run":
+      if (!arg) usage();
+      return cmdRun(arg, { ...opts, host: opts.host || "" }, {
+        vars,
+        recordPath: values.record,
+      });
+    case "record":
+      if (!arg) usage();
+      return cmdRecord(arg, { ...opts, host: opts.host || "qbone" });
+    case "break":
+      return cmdBreak({ ...opts, host: opts.host || "qbone" }, values.oob ?? false);
+    default:
+      usage();
+  }
+}
+
+main().then(
+  (code) => process.exit(code),
+  (err: unknown) => {
+    process.stderr.write(
+      `qcon: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    process.exit(2);
+  },
+);
