@@ -34,6 +34,10 @@ bool webevents_is_powered(void);
 // transitions (apply, save, default change, rename).
 void webevents_note_config(void);
 
+// Publish a settings event: a machine setting changed. The frame carries no
+// payload, so a page rereads /api/settings for what they now are.
+void webevents_note_settings(void);
+
 // Something that could have moved the "modified" flag has happened, so the poll
 // should recompute it once. Answering that question is expensive - a snapshot of
 // every enabled device compared against the saved file - so it is not asked on a

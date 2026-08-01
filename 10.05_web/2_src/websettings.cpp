@@ -244,6 +244,9 @@ static void settings_put(struct mg_connection *conn) {
 		return;
 	}
 	picojson::array warnings;
+	// whether a setting was actually applied, so the settings event announces a
+	// change rather than every PUT that asked for one
+	bool changed = false;
 
 	// address width — validate, then apply only while halted
 	const picojson::value &aw = req.get("address_width");
@@ -264,6 +267,7 @@ static void settings_put(struct mg_connection *conn) {
 			std::lock_guard<std::mutex> ops(device_configuration_c::operations_mutex);
 			qunibus->set_addr_width(w);
 			WEB_INFO("address width %u", w);
+			changed = true;
 		}
 	}
 
@@ -292,6 +296,7 @@ static void settings_put(struct mg_connection *conn) {
 		std::string reason = webconsole_ext_configure(now.source, now.port, now.baud);
 		if (!reason.empty())
 			warnings.push_back(picojson::value(reason));
+		changed = true;
 	}
 
 	// the emulated CPU — the board is either a peripheral of a real PDP-11 or
@@ -304,6 +309,7 @@ static void settings_put(struct mg_connection *conn) {
 		if (ecpu.get<bool>() != websettings_emulated_cpu()) {
 			websettings_set_emulated_cpu(ecpu.get<bool>());
 			WEB_INFO("emulated CPU %s", ecpu.get<bool>() ? "on" : "off");
+			changed = true;
 			warnings.push_back(picojson::value(std::string(
 				"emulated CPU setting stored; restart the service to build the "
 				"device set with it")));
@@ -324,7 +330,11 @@ static void settings_put(struct mg_connection *conn) {
 		WEB_INFO("bus %s", ibus.get<bool>() ? "internal" : "physical");
 		warnings.push_back(picojson::value(std::string(
 			"bus mode stored; restart the service to load the firmware for it")));
+		changed = true;
 	}
+
+	if (changed)
+		webevents_note_settings();
 
 	picojson::object res;
 	res["ok"] = picojson::value(true);

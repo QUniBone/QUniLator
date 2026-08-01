@@ -1,7 +1,8 @@
 // /ws/events: committed parameter changes, log lines and hardware state.
 import { store, setStore, emit, emitSoon } from '../store';
+import { refreshSettings } from '../api';
 import { patchParam } from './devmodel';
-import { clearConsole } from './terminals';
+import { clearConsole, updateConsoleSource } from './terminals';
 import { wsURL } from './util';
 import { syncVersion } from './version';
 import type { LogLevelName, LogLine, UpdateStatus } from '../types';
@@ -57,6 +58,10 @@ export function initEvents(): void {
   function applyEvent(ev: any): 'soon' | 'now' {
     if (ev.t === 'param') {
       patchParam(ev.dev, ev.param, ev.value);
+      // a device coming or going can be the one that carries the console — a
+      // VAX holds its console inside the processor — so re-point the terminal
+      // on the switch rather than waiting for the next full device reload
+      if (ev.param === 'enabled') updateConsoleSource();
       return /lamp$/.test(ev.param) ? 'soon' : 'now';
     } else if (ev.t === 'log') {
       // the journal assigns the id and server timestamp; append only when this
@@ -103,6 +108,13 @@ export function initEvents(): void {
       const { t, ...status } = ev;
       void t;
       store.update = status as UpdateStatus;
+      return 'now';
+    } else if (ev.t === 'settings') {
+      // A machine setting moved, wherever it was moved from. Reread them; that
+      // re-points the console when the setting names a different port for it,
+      // so a change made in another browser or over the API does not leave this
+      // page holding a terminal that has gone silent.
+      refreshSettings().catch(() => {});
       return 'now';
     } else if (ev.t === 'config') {
       // keep the configuration master list's current mark and the modified

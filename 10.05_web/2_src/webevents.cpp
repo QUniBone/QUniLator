@@ -166,6 +166,15 @@ void webevents_note_config(void) {
 	publish_config(true);
 }
 
+// A machine setting changed. The frame carries no payload: a page rereads
+// /api/settings, which is the one description of what the settings now are.
+// This is how a page follows a change it did not make itself — another browser,
+// a curl, a second operator — and in particular how a console that has moved to
+// a different port re-points itself instead of going quietly dead.
+void webevents_note_settings(void) {
+	enqueue_str("{\"t\":\"settings\"}");
+}
+
 // The DIP switches read as one 0..15 value, SW0 the least significant bit.
 // Read from the pins directly (not the cached poll sample) so a power-on
 // selection sees the switches as they stand now, even before the first poll.
