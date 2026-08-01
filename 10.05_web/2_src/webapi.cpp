@@ -410,6 +410,30 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 						send_error(conn, 409, "that image is mounted on " + other);
 						return;
 					}
+					// Attaching a medium is the operator saying they want this
+					// drive in the machine, so it is switched on with the same
+					// call their own switch makes — a configuration saved
+					// afterwards records the drive as enabled. A drive on a
+					// disabled controller cannot come up at all, so that is
+					// reported rather than leaving the drive silently off.
+					storagedrive_c *drv = dynamic_cast<storagedrive_c *>(dev);
+					if (drv != nullptr && !value.empty() && !dev->enabled.value) {
+						if (drv->controller != nullptr
+								&& !drv->controller->enabled.value) {
+							send_error(conn, 409, "enable controller \""
+									+ drv->controller->name.value
+									+ "\" before putting a medium in "
+									+ dev->name.value);
+							return;
+						}
+						param->parse(value);
+						dev->enabled.set(true);
+						WEB_INFO("%s enabled with its medium", dev->name.value.c_str());
+						webstorage_refresh_readonly(webevents_is_powered()
+								&& !webevents_is_halted());
+						send_json(conn, 200, param_to_json(param));
+						return;
+					}
 				} else if (param->name == "romfile") {
 					// a ROM image is a file of the same tree, named by its
 					// subpath. Several boards may be programmed from one file,
