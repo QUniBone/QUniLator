@@ -86,6 +86,14 @@ public:
 	pru_c();
 	int start(enum prucode_enum prucode_id);
 	int stop(void);
+
+	// true while a bus emulation runs, be the bus the backplane or the PRU's
+	// own latches: both firmwares carry the full master and slave protocols,
+	// so a bus cycle means the same thing to either.
+	bool emulating(void) const {
+		return prucode_id == PRUCODE_EMULATION
+				|| prucode_id == PRUCODE_EMULATION_INTERNAL_BUS;
+	}
 };
 
 extern pru_c *pru; // singleton

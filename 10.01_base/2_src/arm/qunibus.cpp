@@ -488,7 +488,7 @@ bool qunibus_c::dma(bool blocking, uint8_t qunibus_cycle, uint32_t startaddr, ui
     int dma_bandwidth_percent = 50; // use 50% of time for DMA, rest for running PDP-11 CPU
     uint64_t dmatime_ns, totaltime_ns;
     // can access bus with DMA when there's a Bus Arbitrator
-    assert(pru->prucode_id == pru_c::PRUCODE_EMULATION);
+    assert(pru->emulating());
 
     timeout.start_ns(0); // no timeout, just running timer
     qunibusadapter->DMA(*dma_request, blocking, qunibus_cycle, startaddr, buffer, wordcount);
@@ -566,7 +566,7 @@ void qunibus_c::mem_write(uint16_t *words, unsigned unibus_start_addr, unsigned 
 {
     unsigned wordcount = (unibus_end_addr - unibus_start_addr) / 2 + 1;
     uint16_t *buffer_start_addr = words + unibus_start_addr / 2;
-    assert(pru->prucode_id == pru_c::PRUCODE_EMULATION);
+    assert(pru->emulating());
     *result_timeout = !dma(true, QUNIBUS_CYCLE_DATO, unibus_start_addr, buffer_start_addr, wordcount);
     if (*result_timeout) {
         printf("\nWrite result_timeout @ %s\n", qunibus->addr2text(mailbox->dma.cur_addr));
@@ -583,7 +583,7 @@ void qunibus_c::mem_read(uint16_t *words, uint32_t unibus_start_addr, uint32_t u
 {
     unsigned wordcount = (unibus_end_addr - unibus_start_addr) / 2 + 1;
     uint16_t *buffer_start_addr = words + unibus_start_addr / 2;
-    assert(pru->prucode_id == pru_c::PRUCODE_EMULATION);
+    assert(pru->emulating());
 
     *result_timeout = !dma(true, QUNIBUS_CYCLE_DATI, unibus_start_addr, buffer_start_addr, wordcount);
     if (*result_timeout) {
@@ -599,7 +599,7 @@ void qunibus_c::mem_access_random(uint8_t unibus_control, uint16_t *words,
 {
     uint32_t block_unibus_start_addr, block_unibus_end_addr;
     // in average, make 16 sub transactions
-    assert(pru->prucode_id == pru_c::PRUCODE_EMULATION);
+    assert(pru->emulating());
     assert(unibus_control == QUNIBUS_CYCLE_DATI || unibus_control == QUNIBUS_CYCLE_DATO);
     block_unibus_start_addr = unibus_start_addr;
     // split transaction in random sized blocks
@@ -664,7 +664,7 @@ void qunibus_c::test_mem(uint32_t start_addr, uint32_t end_addr, unsigned mode)
     uint32_t cur_test_addr;
     unsigned pass_count = 0, total_read_block_count = 0, total_write_block_count = 0;
 
-    assert(pru->prucode_id == pru_c::PRUCODE_EMULATION);
+    assert(pru->emulating());
 
     // Setup ^C catcher
     SIGINTcatchnext();
