@@ -1,7 +1,7 @@
 // /ws/events: committed parameter changes, log lines and hardware state.
 import { store, setStore, emit, emitSoon } from '../store';
 import { refreshSettings } from '../api';
-import { patchParam } from './devmodel';
+import { patchParam, patchStatus } from './devmodel';
 import { clearConsole, updateConsoleSource } from './terminals';
 import { wsURL } from './util';
 import { syncVersion } from './version';
@@ -63,6 +63,12 @@ export function initEvents(): void {
       // on the switch rather than waiting for the next full device reload
       if (ev.param === 'enabled') updateConsoleSource();
       return /lamp$/.test(ev.param) ? 'soon' : 'now';
+    } else if (ev.t === 'status') {
+      // the drive's verbal state, so the chip follows a drive the machine moves
+      // on its own. It turns on the access lamp among others, so it flips as
+      // fast as one during a transfer and is damped the same way.
+      patchStatus(ev.dev, ev.status);
+      return 'soon';
     } else if (ev.t === 'log') {
       // the journal assigns the id and server timestamp; append only when this
       // line is newer than the last held, so a live frame never duplicates one

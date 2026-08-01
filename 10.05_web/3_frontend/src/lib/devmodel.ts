@@ -1,7 +1,7 @@
 // Builds and mutates the live device model from /api/devices and /ws/events.
 import { store } from '../store';
 import { hexStr, octalStr } from './util';
-import type { ApiDevice, ApiParam, LiveDev, LiveParam } from '../types';
+import type { ApiDevice, ApiParam, DiskStatus, LiveDev, LiveParam } from '../types';
 
 function liveParam(p: ApiParam): LiveParam {
   const out: LiveParam = {
@@ -149,6 +149,17 @@ export function applyParamValue(dev: string, name: string, value: unknown): void
 export function patchParam(dev: string, name: string, value: unknown): void {
   EVENT_VALUES.set(dev + '\0' + name, value);
   applyParamValue(dev, name, value);
+}
+
+// The drive's verbal status, as the event stream reports it. The backend
+// derives it from the drive's signals and is the single source of it, so the
+// page holds what it was told rather than reading the chip off the parameters
+// beneath. It needs no replay onto a rebuilt model: the GET the rebuild is made
+// from carries the status as it stands, and the stream carries it on from there.
+export function patchStatus(dev: string, status: string): void {
+  walkDevs((d) => {
+    if (d.name === dev) d.status = status as DiskStatus;
+  });
 }
 
 // Restore the newest machine-driven values onto a freshly rebuilt model. Only

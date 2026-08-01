@@ -15,6 +15,10 @@
 #ifndef _DEVICE_STATUS_HPP_
 #define _DEVICE_STATUS_HPP_
 
+#include <string>
+
+class device_c;
+
 // Drive families that need different treatment for the loaded/ready split.
 // Most drives report ready as soon as a medium is present (no modelled
 // spin-up); the RL01/RL02 walk a spin-up/seek/lock-on state machine, so they
@@ -51,5 +55,11 @@ struct disk_signals_c {
 //   ready        — online, ready for I/O
 //   busy         — actively transferring
 const char *disk_status(disk_family_e family, const disk_signals_c &s);
+
+// The same status read off a live device: gathers the signals from the drive's
+// parameters and maps them, "" for a device that is not a disk drive. Defined
+// in webapi.cpp, which knows the drive classes, and declared here so the REST
+// snapshot and the /ws/events stream answer with one derivation.
+std::string device_status_for(device_c *d);
 
 #endif // _DEVICE_STATUS_HPP_

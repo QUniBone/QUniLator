@@ -168,7 +168,7 @@ static_assert(RL0102_STATE_spin_down == DISK_STATUS_RL_SPIN_DOWN,
 // Computed verbal status for a disk drive, one of off/idle/loaded/ready/busy.
 // Reads only the parameters the drive already publishes and defers the mapping
 // to disk_status(); "" for a non-disk device, which omits the field.
-static std::string device_status_for(device_c *d) {
+std::string device_status_for(device_c *d) {
 	storagedrive_c *drv = dynamic_cast<storagedrive_c *>(d);
 	if (drv == nullptr)
 		return "";

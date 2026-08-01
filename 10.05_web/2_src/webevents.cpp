@@ -7,6 +7,7 @@
    One multiplexed JSON WebSocket keeps every open page live:
 
      {"t":"param","dev":…,"param":…,"value":…}   committed parameter change
+     {"t":"status","dev":…,"status":…}           drive's verbal state, on change
      {"t":"log","level":n,"label":…,"text":…}    log message
      {"t":"state","halt":…,"leds":[…],"switches":[…]}   hardware, on change
 
@@ -43,6 +44,8 @@
 #include "qunibus.h"
 #include "qunibusadapter.hpp"
 #include "device_configuration.hpp"
+
+#include "device_status.hpp"
 
 #include "webevents.hpp"
 #include "webconfigs.hpp"
@@ -408,6 +411,7 @@ bool webevents_is_powered(void) {
 struct status_cache_t {
 	std::vector<parameter_c *> params; // the device's PARAM_STATUS parameters
 	std::vector<std::string> rendered; // what was last published, by index
+	std::string status;                // verbal drive status, as last published
 	size_t parameter_count = 0;        // the list this was built from
 	bool enabled = false;              // as of the last pass
 	unsigned seen = 0;                 // the pass that last found the device
@@ -450,6 +454,20 @@ static void poll_status_params(void) {
 			event["dev"] = picojson::value(dev->name.value);
 			event["param"] = picojson::value(p->name);
 			event["value"] = v;
+			enqueue(event);
+		}
+		// A disk drive's verbal status is derived from the very signals scanned
+		// above, so it moves whenever they do — a pack spinning down, a medium
+		// coming out, a transfer starting. Publishing it here carries a state
+		// the machine reaches by itself to the page, the way the lamps beside
+		// the chip already travel.
+		std::string status = device_status_for(dev);
+		if (!status.empty() && status != c.status) {
+			c.status = status;
+			picojson::object event;
+			event["t"] = picojson::value("status");
+			event["dev"] = picojson::value(dev->name.value);
+			event["status"] = picojson::value(status);
 			enqueue(event);
 		}
 	}
