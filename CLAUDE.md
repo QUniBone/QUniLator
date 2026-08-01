@@ -80,7 +80,9 @@ the bridge fail to open with "Another process has locked the comport".
 
 ## Building
 
-`./crossbuild.sh` builds for the board in Docker; `-d` deploys the binary.
+`./crossbuild.sh` builds for the board in Docker; `-d` deploys the binary, and
+`-g` builds unoptimised with debug symbols into its own object directory
+(`4_deploy<suffix>_dbg`), so a debug and a release tree can live side by side.
 The builder image is Debian trixie, the same distribution the appliance image
 carries, and its tag is a hash of the recipe in the script, so editing the
 recipe builds a new image rather than reusing the old one.

@@ -13,6 +13,11 @@
 # so that summary is the one place they are listed. Plain "./crossbuild.sh"
 # builds the QBUS binary.
 #
+# "-g" builds the emulator unoptimised and with debug symbols, into an object
+# directory of its own, so a debug and an optimised tree never share objects and
+# switching between them costs no rebuild. It changes only the C++ emulator: the
+# PRU firmware, whose timing is the product, is always built the one way.
+#
 # A UNIBUS build tests the emulated CPU cores before it builds the binary: the
 # MAINDEC diagnostics of 10.06_cputest run with the host compiler in the same
 # container, so a core defect stops the build (and any deploy) rather than
@@ -51,12 +56,14 @@ DOCKER_USER="$(id -u):$(id -g)"
 
 usage() {
     cat <<EOF
-usage: $(basename "$0") [-u] [-d] [-c] [-p] [-t]
+usage: $(basename "$0") [-u] [-g] [-d] [-c] [-p] [-t]
 
 Cross-compile the emulator for the BeagleBone in a Docker container.
-Without options it builds the QBUS binary and leaves it in the tree.
+Without options it builds the optimised QBUS binary and leaves it in the tree.
 
   -u  build for UNIBUS instead of QBUS; also runs the CPU core tests
+  -g  build unoptimised and with debug symbols (-O0 -ggdb3), into its own
+      object directory 10.03_app_demo/4_deploy<suffix>_dbg
   -d  deploy the binary to \$QUNILATOR_HOST after a successful build
   -c  remove the object directories first, forcing a full rebuild - and, on a
       UNIBUS build, a full re-run of the CPU core tests
@@ -76,13 +83,15 @@ DEPLOY=0
 CLEAN=0
 PRU_CLEAN=0
 SKIP_TESTS=0
+DEBUG=0
 # The leading colon silences getopts' own message, so an unknown option is
 # reported here instead. "?" is both an option letter and the marker getopts
 # uses for a bad one, so the case below asks OPTARG - silent mode sets it to the
 # offending letter - which letter it really was.
-while getopts ":udcpth" opt; do
+while getopts ":udcpgth" opt; do
     case $opt in
         u) SUFFIX=_u; PLATFORM=UNIBUS;;
+        g) DEBUG=1;;
         d) DEPLOY=1;;
         c) CLEAN=1;;
         p) PRU_CLEAN=1;;
@@ -214,7 +223,18 @@ if [ $SKIP_TESTS = 0 ] && [ $PLATFORM = UNIBUS ]; then
         make -j"$JOBS" QUNIBONE_DIR=/qunibone test
 fi
 
-OBJDIR="10.03_app_demo/4_deploy$SUFFIX"
+# A debug build is a different set of objects from an optimised one, so it gets
+# an object directory of its own: the two can then live side by side and neither
+# invalidates the other's incremental state. The makefile fixes OBJDIR at
+# 4_deploy<suffix>, but a variable given on make's command line wins over the
+# makefile's own assignment, so passing it is all that is needed.
+if [ $DEBUG = 1 ]; then
+    CONFIGURATION=DBG
+    OBJDIR="10.03_app_demo/4_deploy${SUFFIX}_dbg"
+else
+    CONFIGURATION=RELEASE
+    OBJDIR="10.03_app_demo/4_deploy$SUFFIX"
+fi
 HEADER_STAMP="$OBJDIR/.headers.sha"
 
 # Adding or removing a virtual method, or changing a struct layout, in a
@@ -243,7 +263,8 @@ docker run --rm --user "$DOCKER_USER" -v "$PWD:/qunibone" \
     -w /qunibone/10.03_app_demo/2_src $IMAGE \
     make -f makefile$SUFFIX -j"$JOBS" \
         QUNILATOR_DIR=/qunibone \
-        MAKE_CONFIGURATION=RELEASE \
+        OBJDIR="/qunibone/$OBJDIR" \
+        MAKE_CONFIGURATION=$CONFIGURATION \
         MAKE_TARGET_ARCH=BBB \
         BBB_CC=arm-linux-gnueabihf-gcc \
         CCDEFS=-I/usr/local/tirpc-armhf/include/tirpc \
@@ -259,6 +280,8 @@ echo "$HEADER_HASH" > "$HEADER_STAMP"
 
 if [ $DEPLOY = 1 ]; then
     echo "Deploying to $QUNILATOR_HOST:$QUNILATOR_REMOTE_DIR/$BINARY ..."
+    # the debug object directory has no counterpart in the checkout on the board
+    ssh "$QUNILATOR_HOST" "mkdir -p '$QUNILATOR_REMOTE_DIR/$OBJDIR'"
     # upload beside the binary, then rename: replaces it even while it runs
     scp "$BINARY" "$QUNILATOR_HOST:$QUNILATOR_REMOTE_DIR/$BINARY.new"
     ssh "$QUNILATOR_HOST" "mv '$QUNILATOR_REMOTE_DIR/$BINARY.new' '$QUNILATOR_REMOTE_DIR/$BINARY'"

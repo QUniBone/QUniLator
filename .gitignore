@@ -1,6 +1,9 @@
 # object/binary output of the demo application build
 10.03_app_demo/4_deploy_q/
 10.03_app_demo/4_deploy_u/
+# the same, for a debug build ("crossbuild.sh -g")
+10.03_app_demo/4_deploy_q_dbg/
+10.03_app_demo/4_deploy_u_dbg/
 # host-built CPU core test binary, objects and per-run stamps
 10.06_cputest/4_deploy/
 # host-built VAX simulators, objects and test run output
