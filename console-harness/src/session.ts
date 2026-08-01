@@ -25,6 +25,13 @@ import {
 } from "./matcher.js";
 import type { CastRecorder } from "./recording.js";
 import type { EventSource, MachineEventName } from "./events.js";
+import {
+  XtermScreen,
+  screenMatches,
+  describeCondition,
+  type ScreenCondition,
+  type ScreenSize,
+} from "./screen.js";
 
 export interface Deviation {
   /** Pattern spec matched against the step's output window. */
@@ -80,6 +87,12 @@ export interface SessionOptions {
   events?: EventSource;
   /** Record no-echo input verbatim (default: redacted). */
   recordSecrets?: boolean;
+  /**
+   * Geometry of the screen a `screen:` condition is matched against. The
+   * interpreter is built on first use, so a session that never matches on
+   * screen state never pays for one.
+   */
+  screen?: ScreenSize;
 }
 
 export interface ExpectOutcome {
@@ -88,6 +101,18 @@ export interface ExpectOutcome {
   match: string;
   /** Output from the step start up to the match. */
   before: string;
+}
+
+/**
+ * What one expect case waits for: text in the byte stream, or a state of the
+ * screen the stream draws. A case names one or the other.
+ */
+export type Awaited =
+  | { kind: "stream"; spec: string }
+  | { kind: "screen"; cond: ScreenCondition };
+
+export function describeAwaited(a: Awaited): string {
+  return a.kind === "stream" ? a.spec : describeCondition(a.cond);
 }
 
 export interface FailureDiagnostics {
@@ -181,6 +206,8 @@ export class Session {
   private eventFlags = new Set<MachineEventName>();
   private tuning: InputTuning;
   private deviations: { spec: Deviation; pattern?: CompiledPattern }[];
+  // built on first screen condition; a stream-only run never makes one
+  private screen: XtermScreen | null = null;
   readonly settleMs: number;
   readonly anchorTimeoutMs: number;
   readonly defaultTimeoutMs: number;
@@ -207,6 +234,7 @@ export class Session {
       const text = Buffer.from(bytes).toString("latin1");
       if (this.anchored) {
         this.buf += text;
+        this.screen?.write(bytes);
         this.opts.recorder?.output(bytes);
       } else {
         this.preBuf += text;
@@ -324,8 +352,20 @@ export class Session {
    * a deviation (pattern or machine event) fails the step the moment it
    * appears. The match consumes the window up to and including itself.
    */
+  /** The screen interpreter, built on demand. */
+  private ensureScreen(): XtermScreen {
+    if (this.screen === null) {
+      this.screen = new XtermScreen(this.opts.screen);
+      // The screen starts at the anchor, like matching: what the guest drew
+      // before the script connected is not this run's screen.
+      if (this.buf.length > 0)
+        this.screen.write(new Uint8Array(Buffer.from(this.buf, "latin1")));
+    }
+    return this.screen;
+  }
+
   async expect(
-    patternSpecs: string | string[],
+    awaited: string | string[] | Awaited[],
     opts: {
       timeoutMs?: number;
       deviations?: Deviation[];
@@ -333,8 +373,17 @@ export class Session {
       stallMs?: number;
     } = {},
   ): Promise<ExpectOutcome> {
-    const specs = Array.isArray(patternSpecs) ? patternSpecs : [patternSpecs];
-    const patterns = specs.map(compilePattern);
+    const cases: Awaited[] = (
+      Array.isArray(awaited) ? awaited : [awaited]
+    ).map((a) =>
+      typeof a === "string" ? ({ kind: "stream", spec: a } as Awaited) : a,
+    );
+    const specs = cases.map(describeAwaited);
+    if (cases.some((c) => c.kind === "screen")) this.ensureScreen();
+    // compiled once per expect; index into cases is preserved
+    const patterns: (CompiledPattern | null)[] = cases.map((c) =>
+      c.kind === "stream" ? compilePattern(c.spec) : null,
+    );
     const extraDevs = (opts.deviations ?? []).map((spec) => ({
       spec,
       pattern: spec.match !== undefined ? compilePattern(spec.match) : undefined,
@@ -348,10 +397,43 @@ export class Session {
 
     for (;;) {
       const text = this.buf.slice(stepMark);
-      const m: MatchResult | null = scan(text, patterns);
+      // Stream patterns first, in list order, earliest occurrence winning:
+      // a case naming a prompt beats a catch-all that matches later in the
+      // same line.
+      const streamPatterns = patterns.filter(
+        (p): p is CompiledPattern => p !== null,
+      );
+      const m: MatchResult | null = scan(text, streamPatterns);
       if (m) {
+        // map back to the caller's case index
+        let seen = -1;
+        let index = 0;
+        for (let i = 0; i < patterns.length; i++) {
+          if (patterns[i] === null) continue;
+          if (++seen === m.index) {
+            index = i;
+            break;
+          }
+        }
         this.cursor = stepMark + m.end;
-        return { index: m.index, match: m.match, before: m.before };
+        return { index, match: m.match, before: m.before };
+      }
+      if (this.screen !== null) {
+        await this.screen.flush();
+        for (let i = 0; i < cases.length; i++) {
+          const c = cases[i];
+          if (c.kind !== "screen") continue;
+          if (screenMatches(this.screen, c.cond)) {
+            // A screen condition consumes nothing: the screen is a state, not
+            // a position in the stream, and the bytes that drew it may still
+            // matter to a later step.
+            return {
+              index: i,
+              match: describeCondition(c.cond),
+              before: text,
+            };
+          }
+        }
       }
       for (const d of devs) {
         if (d.pattern && d.pattern.regex.test(text))
@@ -494,8 +576,14 @@ export class Session {
     this.opts.recorder?.marker("BREAK");
   }
 
+  /** The screen the guest has drawn, where a screen condition built one. */
+  screenText(): string | null {
+    return this.screen === null ? null : this.screen.text();
+  }
+
   async close(exitStatus = 0): Promise<void> {
     this.closed = true;
+    this.screen?.dispose();
     this.transport.close();
     this.opts.events?.close();
     await this.opts.recorder?.close(exitStatus);

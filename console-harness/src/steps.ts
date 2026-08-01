@@ -23,11 +23,24 @@
  */
 import { readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
-import { Session, SessionError, type Deviation, type InputMode } from "./session.js";
+import {
+  Session,
+  SessionError,
+  type Awaited,
+  type Deviation,
+  type InputMode,
+} from "./session.js";
+import type { ScreenCondition } from "./screen.js";
 import type { CastRecorder } from "./recording.js";
 
 export interface CaseSpec {
-  match: string;
+  /** Text to wait for in the byte stream. Alternative to `screen`. */
+  match?: string;
+  /**
+   * Screen state to wait for, for a guest that redraws in place instead of
+   * appending lines: {row?, contains?, matches?, cursor?}.
+   */
+  screen?: ScreenCondition;
   send?: string;
   mode?: InputMode;
   break?: boolean;
@@ -39,6 +52,7 @@ export interface CaseSpec {
 export interface StepSpec {
   name?: string;
   expect?: string | CaseSpec[];
+  screen?: ScreenCondition;
   send?: string;
   mode?: InputMode;
   break?: boolean;
@@ -172,20 +186,28 @@ export function validateScript(doc: unknown): ScriptSpec {
     }
     if (Array.isArray(step.expect)) {
       if (step.expect.length === 0) bad(where, "expect list is empty");
-      for (const c of step.expect)
-        if (typeof c !== "object" || c === null || typeof c.match !== "string")
-          bad(where, "every expect case needs a match");
+      for (const c of step.expect) {
+        if (typeof c !== "object" || c === null)
+          bad(where, "every expect case must be a mapping");
+        const hasMatch = typeof c.match === "string";
+        const hasScreen = typeof c.screen === "object" && c.screen !== null;
+        if (!hasMatch && !hasScreen)
+          bad(where, "every expect case needs a match or a screen condition");
+        if (hasMatch && hasScreen)
+          bad(where, "an expect case names either match or screen, not both");
+      }
     } else if (step.expect !== undefined && typeof step.expect !== "string") {
       bad(where, "expect must be a string or a list of cases");
     }
     if (
       step.expect === undefined &&
+      step.screen === undefined &&
       step.send === undefined &&
       !step.break &&
       !step.done &&
       step.wait === undefined
     )
-      bad(where, "does nothing (no expect, send, break, wait or done)");
+      bad(where, "does nothing (no expect, screen, send, break, wait or done)");
   });
   // goto targets must exist
   const check = (g: string | undefined, where: string) => {
@@ -252,12 +274,13 @@ export async function runScript(
     try {
       if (step.wait !== undefined)
         await new Promise((r) => setTimeout(r, parseDuration(step.wait!)));
-      if (step.expect !== undefined) {
+      if (step.expect !== undefined || step.screen !== undefined) {
         const cases: CaseSpec[] = Array.isArray(step.expect)
           ? step.expect
           : [
               {
                 match: step.expect,
+                screen: step.screen,
                 send: step.send,
                 mode: step.mode,
                 break: step.break,
@@ -265,8 +288,12 @@ export async function runScript(
                 done: step.done,
               },
             ];
-        const patterns = cases.map((c) => interpolate(c.match, vars));
-        const outcome = await session.expect(patterns, {
+        const awaited: Awaited[] = cases.map((c) =>
+          c.screen !== undefined
+            ? { kind: "screen", cond: c.screen }
+            : { kind: "stream", spec: interpolate(c.match!, vars) },
+        );
+        const outcome = await session.expect(awaited, {
           timeoutMs:
             step.timeout !== undefined
               ? parseDuration(step.timeout)
