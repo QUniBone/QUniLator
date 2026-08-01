@@ -1,0 +1,22 @@
+# Make 2.11BSD read the RX floppy, to put real traffic through the RX model.
+# Used to reproduce #47: the RX workers are realtime threads, and at debug
+# level a transfer makes each of them log per operation.
+console: auto
+host: qbone
+title: 2.11BSD reads the RX
+timeout: 10s
+machine:
+  start: none
+steps:
+  - name: wake
+    send: ""
+    wait: 1s
+  - name: shell
+    expect: "# "
+    timeout: 15s
+  - name: read
+    send: "dd if=/dev/rrx0 of=/dev/null bs=512 count=40"
+  - name: done
+    expect: /records out|# $/
+    timeout: 60s
+    done: true
