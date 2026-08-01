@@ -45,6 +45,7 @@
 #include "device_label.hpp"
 #include "device_status.hpp"
 #include "webcontrol.hpp"
+#include "webpower.hpp"
 
 #include "weblog.hpp"
 #include "webevents.hpp"
@@ -95,7 +96,7 @@ static bool read_json_body(struct mg_connection *conn, picojson::value *out) {
 
 // one parameter with metadata, typed values serialized from the value
 // members (render() mutates shared state and is left to the menu thread)
-static picojson::value param_to_json(parameter_c *p) {
+static picojson::value param_to_json(device_c *dev, parameter_c *p) {
 	picojson::object o;
 	o["name"] = picojson::value(p->name);
 	o["shortname"] = picojson::value(p->shortname);
@@ -107,7 +108,8 @@ static picojson::value param_to_json(parameter_c *p) {
 
 	if (parameter_string_c *ps = dynamic_cast<parameter_string_c *>(p)) {
 		o["type"] = picojson::value("string");
-		o["value"] = picojson::value(ps->value);
+		// the medium a switched-off drive holds is the one it comes back with
+		o["value"] = picojson::value(webpower_param_value(dev, ps));
 	} else if (parameter_bool_c *pb = dynamic_cast<parameter_bool_c *>(p)) {
 		o["type"] = picojson::value("bool");
 		o["value"] = picojson::value(pb->value);
@@ -258,10 +260,14 @@ static void devices_list(struct mg_connection *conn) {
 			if (drv != nullptr) {
 				o["removable"] = picojson::value(drv->removable());
 				o["locked"] = picojson::value(drv->locked());
-				// computed verbal status, shared with the dashboard and MCP
+				// computed verbal status, shared with the dashboard and MCP. It
+				// reads the live device, so a drive with no power reads "off"
+				// while the card it sits behind is still in the machine.
 				o["status"] = picojson::value(device_status_for(d));
 			}
-			o["enabled"] = picojson::value(d->enabled.value);
+			// A card the power-down took out is still in the machine: losing the
+			// supply does not unplug it, and power-up puts it back.
+			o["enabled"] = picojson::value(webpower_is_in_machine(d));
 			o["parent"] = d->parent ?
 					picojson::value(d->parent->name.value) : picojson::value();
 			// two collections split by parameter kind: "params" is the
@@ -274,9 +280,9 @@ static void devices_list(struct mg_connection *conn) {
 			picojson::array params, statusparams;
 			for (parameter_c *p : d->parameter) {
 				if (p->kind == parameter_c::PARAM_STATUS)
-					statusparams.push_back(param_to_json(p));
+					statusparams.push_back(param_to_json(d, p));
 				else
-					params.push_back(param_to_json(p));
+					params.push_back(param_to_json(d, p));
 			}
 			o["params"] = picojson::value(params);
 			o["statusparams"] = picojson::value(statusparams);
@@ -473,7 +479,7 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 						WEB_INFO("%s enabled with its medium", dev->name.value.c_str());
 						webstorage_refresh_readonly(webevents_is_powered()
 								&& !webevents_is_halted());
-						send_json(conn, 200, param_to_json(param));
+						send_json(conn, 200, param_to_json(dev, param));
 						return;
 					}
 				} else if (param->name == "romfile") {
@@ -512,7 +518,7 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 			return;
 		}
 	}
-	send_json(conn, 200, param_to_json(param));
+	send_json(conn, 200, param_to_json(dev, param));
 }
 
 // /api/devices and /api/devices/<device>/params/<param>
@@ -691,16 +697,25 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 			webevents_note_halt(true);
 		}
 #endif
-		if (dec.do_init)
-			qunibus->init();
-		if (dec.do_powercycle)
-			qunibus->powercycle();
 #if defined(QBUS)
+		// Stop the CPU before the cards come out, so no guest transfer is in
+		// flight while a device is torn down and the bus can still complete the
+		// cycles already started.
 		if (dec.do_halt) {
 			qunibus->set_halt(1);
 			webevents_note_halt(true);
 		}
 #endif
+		// The cards are rebuilt before the CPU is given its power-up edge, so a
+		// machine coming up finds the whole configuration present.
+		if (dec.devices_off)
+			webpower_devices_off();
+		if (dec.devices_on)
+			webpower_devices_on();
+		if (dec.do_init)
+			qunibus->init();
+		if (dec.do_powercycle)
+			qunibus->powercycle();
 #if defined(UNIBUS)
 		if (ecpu != nullptr && dec.set_powered == 1) {
 			// the START switch rebuilds the machine and runs it, which is what
@@ -715,6 +730,11 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 			webevents_note_powered(dec.set_powered != 0);
 		WEB_INFO("control %s", action.c_str());
 	}
+	// The shares hold an attached image read-only while the machine runs, and a
+	// power cycle changes what is attached: a machine switched off holds no
+	// medium, so the files it had open are the operator's again.
+	if (dec.devices_off || dec.devices_on)
+		webstorage_refresh_readonly(webevents_is_powered() && !webevents_is_halted());
 	picojson::object res;
 	res["ok"] = picojson::value(true);
 	send_json(conn, 200, picojson::value(res));

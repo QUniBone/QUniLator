@@ -109,17 +109,22 @@ static void test_power_gate(void) {
 	// Powered on: every action is known and allowed.
 	control_decision_c d;
 
+	// a bus INIT resets registers; it is not a power event, so the cards stay
+	// where they are
 	d = dec("init", true);
 	check(d.known && d.allowed && d.do_init && !d.do_powercycle
 			&& !d.do_halt && !d.do_resume && d.set_powered == -1,
 			"init -> pulse INIT only");
+	check(!d.devices_off && !d.devices_on, "init leaves the cards in the machine");
 
 	// a power cycle keeps the running configuration: the DIP switches are read
-	// when the backend starts and nowhere else
+	// when the backend starts and nowhere else. Every card comes out and goes
+	// back, which is what drops the state a card loses with its supply.
 	d = dec("powercycle", true);
 	check(d.known && d.allowed && d.do_powercycle && !d.do_init
 			&& d.set_powered == -1,
 			"powercycle -> power cycle, keeping the running configuration");
+	check(d.devices_off && d.devices_on, "powercycle rebuilds every card");
 
 	// restart reboots the CPU from its power-up vector: release HALT, then power
 	// cycle. A bare INIT would not restart the CPU, so restart drives the power
@@ -128,27 +133,35 @@ static void test_power_gate(void) {
 	check(d.known && d.allowed && d.do_resume && d.do_powercycle
 			&& !d.do_init && !d.do_halt && d.set_powered == -1,
 			"restart -> release HALT then power cycle");
+	check(d.devices_off && d.devices_on, "restart rebuilds every card");
 
 	d = dec("halt", true);
 	check(d.known && d.allowed && d.do_halt && !d.do_resume
 			&& d.set_powered == -1, "halt -> assert HALT");
+	check(!d.devices_off && !d.devices_on, "halt leaves the cards in the machine");
 
 	d = dec("continue", true);
 	check(d.known && d.allowed && d.do_resume && !d.do_halt
 			&& d.set_powered == -1, "continue -> release HALT");
+	check(!d.devices_off && !d.devices_on,
+			"continue leaves the cards in the machine");
 
-	// dc_off halts the CPU and clears the power flag.
+	// dc_off halts the CPU, takes the cards out and clears the power flag, so
+	// the machine reads as switched off: lamps dark, drives spun down, units
+	// offline.
 	d = dec("dc_off", true);
 	check(d.known && d.allowed && d.do_halt && d.set_powered == 0
 			&& !d.do_powercycle, "dc_off -> halt and clear powered");
+	check(d.devices_off && !d.devices_on, "dc_off takes the cards out and leaves them out");
 
-	// dc_on sets the flag, releases HALT and power cycles the machine up. The
-	// resume clears the HALT a preceding dc_off left asserted, so the CPU comes
-	// up running rather than halted into ODT.
+	// dc_on sets the flag, releases HALT, puts the cards back and power cycles
+	// the machine up. The resume clears the HALT a preceding dc_off left
+	// asserted, so the CPU comes up running rather than halted into ODT.
 	d = dec("dc_on", true);
 	check(d.known && d.allowed && d.do_powercycle && d.do_resume
 			&& !d.do_halt && d.set_powered == 1,
 			"dc_on -> release HALT, power cycle, set powered");
+	check(!d.devices_off && d.devices_on, "dc_on brings the cards back up");
 
 	d = dec("bogus", true);
 	check(!d.known, "unknown action -> not known");
@@ -166,12 +179,20 @@ static void test_power_gate(void) {
 			&& d.set_powered == 1,
 			"dc_on allowed while powered off, releases HALT and sets powered");
 
+	d = dec("dc_on", false);
+	check(!d.devices_off && d.devices_on,
+			"dc_on brings the cards back up from a dark machine");
+
 	// init/powercycle are not run controls; they are not gated.
 	d = dec("init", false);
 	check(d.known && d.allowed && d.do_init, "init allowed while powered off");
 	d = dec("powercycle", false);
 	check(d.known && d.allowed && d.do_powercycle,
 			"powercycle allowed while powered off");
+	// A machine with no power has its cards out already, and they stay out: the
+	// bus edges alone reach the CPU, and only dc_on switches the machine on.
+	check(!d.devices_off && !d.devices_on,
+			"a power cycle of a dark machine leaves the cards out");
 }
 
 int main(void) {

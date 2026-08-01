@@ -128,6 +128,11 @@ into the configuration. Both collections use the same entry shape. Parameter
 parameters carry `base` (usually 8) and `bitwidth`. Drives reference their
 controller through `parent`.
 
+`enabled` says the card is **in the machine**, not that it is answering the bus
+this instant: a machine switched off at the panel still carries its cards, and
+each drive still names the medium it holds (see
+[what a power cycle resets](#what-a-power-cycle-resets)).
+
 Disk drives (category `disk`) additionally carry `removable`, `locked`, and a
 computed, read-only `status` string — the drive's verbal runtime state (distinct
 from the `statusparams` collection), one of:
@@ -218,16 +223,56 @@ Actions:
 | action | effect |
 |---|---|
 | `init` | pulse bus INIT |
-| `powercycle` | simulated DCOK/POK power-fail cycle |
+| `powercycle` | simulated DCOK/POK power-fail cycle, and every card rebuilt with it |
 | `restart` | reboot from the power-up vector: release the HALT line, then power cycle so the CPU restarts execution |
 | `halt` / `continue` | QBUS HALT line |
-| `dc_on` | logical power on: set `powered`, release HALT, then power cycle the machine up running |
-| `dc_off` | logical power off: halt the CPU and clear `powered` |
+| `dc_on` | logical power on: set `powered`, release HALT, bring the cards back up, then power cycle the machine up running |
+| `dc_off` | logical power off: halt the CPU, take the cards out of the machine and clear `powered` |
 
 The HALT line is released before any power-up and asserted after it, so a
 machine brought up by `dc_on` or `restart` comes up **running** from the
 power-up vector rather than halted into micro-ODT. A `dc_off` leaves the CPU
 halted; the following `dc_on` clears that HALT as part of the power-up.
+
+#### What a power cycle resets
+
+`powercycle`, `restart` and the `dc_off`/`dc_on` pair rebuild every enabled
+device: each is taken out of the emulation and put back, the same teardown a
+device gets when its `enabled` parameter is switched off and on again. So the
+cycle drops everything a card loses when it loses its supply —
+
+- the device's worker threads, stopped and started fresh;
+- its registration on the bus, redone, with the DCLO cycle `install()` drives
+  over it;
+- its controller state machine, including a latched MSCP/TMSCP initialization
+  step, controller flags and credits;
+- a drive's mechanics: media at load point (tape) or track 0 (disk), latched
+  exceptions and software write locks cleared, and the unit offline so the host
+  brings it up again;
+- the image file, closed and reopened, so a partially written medium is read
+  afresh from disk.
+
+The pack stays in the drive and the card stays in the machine: a drive comes
+back holding the medium it held, and no route through a second configuration is
+needed. `init` is not a power event — it pulses BINIT and resets registers,
+leaving all of the above standing.
+
+Two consequences an operator sees:
+
+- **A serial mux's TCP sessions end.** A DZV11, DHV11 or DL11 line serving
+  telnet or RFC2217 closes its client connection and releases its listening
+  port with the rest of the teardown, and binds again as the card comes back.
+  A session open across an AUX OFF/ON has to be reconnected.
+- **A machine switched off reads as switched off.** While `powered` is false
+  the cards are out of the emulation: lamps are dark, drives are spun down and
+  units are offline. What the machine *carries* is unchanged, so
+  [`GET /api/devices`](#get-apidevices) still reports each card as `enabled`
+  with the medium its drive holds, and the machine still matches the
+  configuration it is loaded with (`modified` stays as it was). A drive's
+  computed `status` reads `off`, because that is the drive's live state.
+
+A configuration applied to a switched-off machine leaves it switched off: the
+devices it names are what the next `dc_on` brings up.
 
 `dc_on`/`dc_off` drive a **runtime logical power flag**, `powered`, reported in
 the `state` event. It is runtime only — a service restart comes up powered on —
@@ -417,9 +462,10 @@ At **power-on** the configuration is chosen by the board's four DIP switches
 (read as a value 0..15): the one whose `dip_value` matches the switches is
 applied. When no configuration claims that value the bundled empty configuration
 is applied, leaving the machine passive on the bus. The selection runs at
-service startup and again on a power cycle or `dc_on` (see
-[`POST /api/control`](#post-apicontrol)), so changing the switches and cycling
-power switches machines. A configuration binds itself to a value with
+service startup and nowhere else: a power cycle or `dc_on` (see
+[`POST /api/control`](#post-apicontrol)) keeps whatever configuration is loaded,
+so switching machines means changing the switches and restarting the service. A
+configuration binds itself to a value with
 [`PUT /api/configs/<name>/dip`](#put-apiconfigsnamedip); at most one may claim a
 given value.
 

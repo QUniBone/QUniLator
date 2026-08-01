@@ -291,6 +291,7 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/device_label.o	\
 	$(OBJDIR)/device_status.o	\
 	$(OBJDIR)/webcontrol.o	\
+	$(OBJDIR)/webpower.o	\
 	$(OBJDIR)/webevents.o	\
 	$(OBJDIR)/webconsole.o	\
 	$(OBJDIR)/webconsole_ext.o	\
@@ -671,7 +672,7 @@ $(OBJDIR)/webserver.o :  $(WEB_SRC_DIR)/webserver.cpp $(WEB_SRC_DIR)/webserver.h
 $(OBJDIR)/weblog.o :  $(WEB_SRC_DIR)/weblog.cpp $(WEB_SRC_DIR)/weblog.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/webapi.o :  $(WEB_SRC_DIR)/webapi.cpp $(WEB_SRC_DIR)/webserver.hpp $(WEB_SRC_DIR)/webevents.hpp $(WEB_SRC_DIR)/webconsole.hpp $(WEB_SRC_DIR)/device_label.hpp $(WEB_SRC_DIR)/device_status.hpp $(WEB_SRC_DIR)/webcontrol.hpp device_configuration.hpp
+$(OBJDIR)/webapi.o :  $(WEB_SRC_DIR)/webapi.cpp $(WEB_SRC_DIR)/webserver.hpp $(WEB_SRC_DIR)/webevents.hpp $(WEB_SRC_DIR)/webconsole.hpp $(WEB_SRC_DIR)/device_label.hpp $(WEB_SRC_DIR)/device_status.hpp $(WEB_SRC_DIR)/webcontrol.hpp $(WEB_SRC_DIR)/webpower.hpp device_configuration.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/device_label.o :  $(WEB_SRC_DIR)/device_label.cpp $(WEB_SRC_DIR)/device_label.hpp
@@ -681,6 +682,9 @@ $(OBJDIR)/device_status.o :  $(WEB_SRC_DIR)/device_status.cpp $(WEB_SRC_DIR)/dev
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webcontrol.o :  $(WEB_SRC_DIR)/webcontrol.cpp $(WEB_SRC_DIR)/webcontrol.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/webpower.o :  $(WEB_SRC_DIR)/webpower.cpp $(WEB_SRC_DIR)/webpower.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webevents.o :  $(WEB_SRC_DIR)/webevents.cpp $(WEB_SRC_DIR)/webevents.hpp $(WEB_SRC_DIR)/webupdate.hpp
@@ -704,7 +708,7 @@ $(OBJDIR)/webvcb01.o :  $(WEB_SRC_DIR)/webvcb01.cpp $(WEB_SRC_DIR)/webvcb01.hpp 
 $(OBJDIR)/webstorage.o :  $(WEB_SRC_DIR)/webstorage.cpp $(WEB_SRC_DIR)/webstorage.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/webconfigs.o :  $(WEB_SRC_DIR)/webconfigs.cpp $(WEB_SRC_DIR)/webconfigs.hpp device_configuration.hpp
+$(OBJDIR)/webconfigs.o :  $(WEB_SRC_DIR)/webconfigs.cpp $(WEB_SRC_DIR)/webconfigs.hpp $(WEB_SRC_DIR)/webpower.hpp device_configuration.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/websettings.o :  $(WEB_SRC_DIR)/websettings.cpp $(WEB_SRC_DIR)/websettings.hpp $(WEB_SRC_DIR)/webevents.hpp $(WEB_SRC_DIR)/weblogging.hpp device_configuration.hpp

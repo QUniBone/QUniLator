@@ -36,6 +36,7 @@ INCLUDES="-I $STUBS -I $WEB -I $BASE -I $COMMON -I $PICO -I $CIVET"
 $CXX -std=c++11 -Wall -Wextra $INCLUDES \
 	"$TOOLS/config_test.cpp" \
 	"$WEB/webconfigs.cpp" \
+	"$WEB/webpower.cpp" \
 	"$WEB/weblogging.cpp" \
 	"$WEB/device_label.cpp" \
 	"$WEB/weblog.cpp" \

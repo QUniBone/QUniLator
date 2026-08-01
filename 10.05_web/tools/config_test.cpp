@@ -48,6 +48,7 @@
 #include "websettings.hpp"
 #include "weblogging.hpp"
 #include "webevents.hpp"
+#include "webpower.hpp"
 #include "webstorage.hpp"
 
 /*** logger / logsource stubs: quiet unless something logs an error ***/
@@ -206,6 +207,24 @@ struct test_busdevice_c : public qunibusdevice_c {
 	}
 	void on_power_changed(signal_edge_enum, signal_edge_enum) override {}
 	void on_init_changed(void) override {}
+};
+
+/*** a synthetic controller: switching it off takes its drives with it, the way
+     a storage controller unplugged from the bus takes the drives that hang off
+     it (storagecontroller_c::on_after_uninstall). A power-down that read a
+     drive after its controller had gone would never see the drive, and would
+     leave it out of the machine when the power came back. ***/
+struct test_controller_c : public test_device_c {
+	std::vector<test_device_c *> drives;
+
+	test_controller_c(const char *nm, const char *ty) : test_device_c(nm, ty) {}
+
+	bool on_param_changed(parameter_c *param) override {
+		if (param == &enabled && !enabled.new_value)
+			for (test_device_c *d : drives)
+				d->enabled.set(false);
+		return device_c::on_param_changed(param);
+	}
 };
 
 static test_device_c *rl, *rl0, *rl1, *dl;
@@ -949,9 +968,128 @@ int main(void) {
 		delete disk;
 	}
 
+	/* 11. the power cycle (webpower.cpp): the panel switch takes every card out
+	       of the machine and puts it back, which is the complete teardown — the
+	       reset a card gets when it loses its supply. What the machine carries
+	       is unchanged by that: the cards are still in it and the drives still
+	       hold their packs, so a switched-off machine still describes the
+	       configuration it is loaded with. */
+	{
+		// a controller and the two drives that hang off it, so the cascade a
+		// real controller runs when it leaves the bus is part of the test
+		test_controller_c *uda = new test_controller_c("uda", "UDA50");
+		test_device_c *uda0 = new test_device_c("uda0", "RA81");
+		test_device_c *uda1 = new test_device_c("uda1", "RA81");
+		uda->drives.push_back(uda0);
+		uda->drives.push_back(uda1);
+
+		reset_devices();
+		webconfigs_init(configs_dir);
+		rl->enabled.set(true);
+		rl0->enabled.set(true);
+		rl0->image.set("rt11.rl02");
+		rl1->enabled.set(true);
+		rl1->image.set("games.rl02");
+		uda->enabled.set(true);
+		uda0->enabled.set(true);
+		uda0->image.set("2.11bsd.dsk");
+		std::string err;
+		check(webconfigs_save("powercfg", &err), "save powercfg");
+		check(!modified_now(), "clean powercfg before the power cycle");
+
+		/* a. power down takes the cards out and sets the packs aside */
+		webpower_devices_off();
+		check(webpower_devices_are_off(), "the machine reads as switched off");
+		check(!rl->enabled.value && !rl0->enabled.value && !rl1->enabled.value,
+				"every card is out of the emulation");
+		check(!uda->enabled.value && !uda0->enabled.value,
+				"a controller and its drives are out too");
+		check(rl0->image.value == "" && rl1->image.value == ""
+				&& uda0->image.value == "",
+				"the image files are closed, so a written medium is read afresh");
+		check(dl->enabled.value == false, "a card that was out stays out");
+
+		/* b. and yet the machine still carries them: the pack is in the drive,
+		      the card is in the machine, and nothing reads as an operator edit */
+		check(webpower_is_in_machine(rl0), "the card is still in the machine");
+		check(webpower_is_in_machine(uda0),
+				"a drive its controller took with it is still in the machine");
+		check(!webpower_is_in_machine(uda1), "an empty drive bay stays empty");
+		check(!webpower_is_in_machine(dl), "a card that was never in stays out");
+		check(webpower_param_value(rl0, &rl0->image) == "rt11.rl02",
+				"the drive still holds its pack");
+		check(webpower_param_value(uda0, &uda0->image) == "2.11bsd.dsk",
+				"a drive behind a controller holds its pack too");
+		check(!modified_now(), "a switched-off machine does not read as modified");
+		{
+			picojson::value live;
+			check(webconfigs_save("offsave", &err), "save while switched off");
+			check(read_json_file(cfg_path("offsave"), &live), "offsave written");
+			check(snap_device(live, "rl0") != nullptr,
+					"the snapshot of a dark machine still names its cards");
+			check(dev_param(live, "rl0", "image") == "rt11.rl02",
+					"the snapshot of a dark machine still names the pack");
+			unlink(cfg_path("offsave").c_str());
+			std::vector<std::string> rej;
+			webconfigs_apply("powercfg", &rej, &err); // offsave took the pointer
+		}
+
+		/* c. switching an already dark machine off changes nothing */
+		webpower_devices_off();
+		check(webpower_is_in_machine(rl0), "a second power-down keeps the record");
+
+		/* d. power up puts the cards back, each with the pack it held */
+		webpower_devices_on();
+		check(!webpower_devices_are_off(), "the machine reads as switched on");
+		check(rl->enabled.value && rl0->enabled.value && rl1->enabled.value,
+				"every card is back in the emulation");
+		check(uda->enabled.value && uda0->enabled.value,
+				"a drive its controller took with it comes back with the power");
+		check(!uda1->enabled.value, "an empty drive bay stays empty on power-up");
+		check(!dl->enabled.value, "a card that was out is not brought in by power-up");
+		check(rl0->image.value == "rt11.rl02" && rl1->image.value == "games.rl02"
+				&& uda0->image.value == "2.11bsd.dsk",
+				"each drive comes back with the pack it held");
+		check(!modified_now(), "the machine is unmodified across a power cycle");
+
+		/* e. power up with nothing set aside changes nothing */
+		webpower_devices_on();
+		check(rl->enabled.value, "a second power-up leaves the machine alone");
+
+		/* f. a configuration loaded into a dark machine leaves it dark, and it
+		      is that configuration the panel switch brings up */
+		webpower_devices_off();
+		{
+			picojson::value doc = make_doc({ dev_entry("rl", true, {}),
+					dev_entry("dl", true, {}) });
+			int status = 0;
+			check(webconfigs_write("powercfg2", doc, false, &err, &status),
+					"write powercfg2");
+			std::vector<std::string> rej;
+			check(webconfigs_apply("powercfg2", &rej, &err), "apply into a dark machine");
+			check(webpower_devices_are_off(), "the machine stays dark across the apply");
+			check(!rl->enabled.value && !dl->enabled.value,
+					"the new configuration's cards are out too");
+			check(webpower_is_in_machine(rl) && webpower_is_in_machine(dl),
+					"the new configuration is what the machine now carries");
+			check(!webpower_is_in_machine(rl0),
+					"a card the new configuration drops is not carried");
+			check(!modified_now(), "a dark machine is unmodified against what it loaded");
+		}
+		webpower_devices_on();
+		check(rl->enabled.value && dl->enabled.value,
+				"the panel switch brings up the configuration that was loaded");
+		check(!rl0->enabled.value, "and only that one");
+		check(!modified_now(), "clean after the power cycle");
+		unlink(cfg_path("powercfg2").c_str());
+		delete uda0;
+		delete uda1;
+		delete uda;
+	}
+
 	// tidy the temp tree
 	for (const char *n : {"cfgA", "cfgB", "cfgC", "default", "legacy", "logcfg",
-			"runcfg", "stored1", "live1", "live2"})
+			"powercfg", "runcfg", "stored1", "live1", "live2"})
 		unlink(cfg_path(n).c_str());
 	rmdir(configs_dir.c_str());
 	rmdir(dir);

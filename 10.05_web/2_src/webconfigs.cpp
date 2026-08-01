@@ -21,11 +21,12 @@
    of the current configuration; this is computed by comparison, not tracked at
    write time.
 
-   At power-on the configuration is chosen by the board's 4 DIP switches: the
-   one whose stored *dip_value* (0..15) matches the switches is applied. When no
-   configuration claims that value the bundled empty configuration is applied,
-   leaving the machine passive on the bus. The control API re-selects on a power
-   cycle or dc_on, so changing the switches and cycling power switches machines.
+   The board's 4 DIP switches choose the configuration once, when the backend
+   starts: the one whose stored *dip_value* (0..15) matches the switches is
+   applied. When no configuration claims that value the bundled empty
+   configuration is applied, leaving the machine passive on the bus. A power
+   cycle keeps the configuration that is loaded, so switching machines means
+   changing the switches and restarting the backend.
 
      GET    /api/configs               {current, modified, configs[]}
      GET    /api/configs?current=1     the live setup in snapshot form, for
@@ -90,6 +91,7 @@
 
 #include "weblog.hpp"
 #include "webconfigs.hpp"
+#include "webpower.hpp"
 #include "webstorage.hpp"
 #include "websettings.hpp"
 #include "weblogging.hpp"
@@ -138,10 +140,14 @@ static void send_error(struct mg_connection *conn, int status, const std::string
 	send_json(conn, status, picojson::value(err));
 }
 
+// infrastructure: part of the bridge or of a controller's implementation, not
+// of the emulated configuration. mscp_server_base covers both protocol
+// engines, the MSCP disk server and the TMSCP tape server; each is a device_c
+// only so the logging macros work, and each is permanently enabled.
 static bool device_is_infrastructure(device_c *d) {
 	return dynamic_cast<qunibusadapter_c *>(d) != nullptr
 			|| dynamic_cast<paneldriver_c *>(d) != nullptr
-			|| dynamic_cast<mscp_server *>(d) != nullptr;
+			|| dynamic_cast<mscp_server_base *>(d) != nullptr;
 }
 
 // Parameter values as the devices were constructed. Captured once at
@@ -173,6 +179,12 @@ static void capture_parameter_defaults(void) {
 static bool is_default(parameter_c *p) {
 	std::map<parameter_c *, param_default_t>::iterator it = parameter_defaults.find(p);
 	return it != parameter_defaults.end() && it->second.value == *p->render();
+}
+
+// the same question about a value the caller already has in hand
+static bool is_default_value(parameter_c *p, const std::string &value) {
+	std::map<parameter_c *, param_default_t>::iterator it = parameter_defaults.find(p);
+	return it != parameter_defaults.end() && it->second.value == value;
 }
 
 // The bus-placement parameters an operator sets in a configuration: where the
@@ -316,11 +328,16 @@ static void apply_memory_placement(memory_c *mem, const picojson::object &po,
 // switched on and, of those, only the parameters that differ from the
 // construction defaults. Everything it does not mention is off and default.
 //
+// What the machine carries is read through webpower, so a machine switched off
+// at the panel still describes the configuration it holds: its cards are out of
+// the emulation for the duration, and losing power neither unplugs a card nor
+// ejects a pack.
+//
 // Caller holds operations_mutex and mydevices_mutex.
 static picojson::value snapshot_devices_locked(void) {
 	picojson::array devices;
 	for (device_c *dev : device_c::mydevices) {
-		if (device_is_infrastructure(dev) || !dev->enabled.value)
+		if (device_is_infrastructure(dev) || !webpower_is_in_machine(dev))
 			continue;
 		picojson::object o;
 		o["name"] = picojson::value(dev->name.value);
@@ -338,9 +355,10 @@ static picojson::value snapshot_devices_locked(void) {
 			// machine from reading modified
 			if (p->kind == parameter_c::PARAM_STATUS)
 				continue;
-			if (!is_settable(p) || is_default(p))
+			std::string value = webpower_param_value(dev, p);
+			if (!is_settable(p) || is_default_value(p, value))
 				continue;
-			params[p->name] = picojson::value(*p->render());
+			params[p->name] = picojson::value(value);
 		}
 		o["params"] = picojson::value(params);
 		devices.push_back(picojson::value(o));
@@ -1361,6 +1379,10 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 			for (device_c *dev : device_c::mydevices)
 				dev->config_apply_immediate = false;
 		}
+
+		// A configuration loaded into a switched-off machine leaves it switched
+		// off: the devices it names are what the panel switch will bring up.
+		webpower_recapture_if_off();
 	}
 	// An apply resets every device's verbosity to its construction default, so
 	// re-assert the persisted log levels: the stored overrides win, the rest
