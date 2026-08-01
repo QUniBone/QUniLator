@@ -88,8 +88,20 @@ bool RL0102_c::on_param_changed(parameter_c *param)
         // A drive with a cartridge comes up loaded: attaching an image presses
         // the LOAD button, so it spins up to READY without a manual runstop
         // toggle. An empty image (detach) leaves it in LOAD.
-        if (param == &image_filepath)
-            runstop_button.value = !image_filepath.new_value.empty();
+        //
+        // A drive already spinning takes the change too. A real one would have
+        // to bring the pack to rest before the cartridge came out, so the drive
+        // does that as part of the change: LOAD is released here, and the
+        // "load cartridge" state it settles into presses it again for the new
+        // pack. The medium is what the operator names; the mechanics of getting
+        // to it are the drive's business.
+        if (param == &image_filepath) {
+            bool spinning = state.value != RL0102_STATE_power_off
+                            && state.value != RL0102_STATE_load_cartridge;
+            bool loading = !image_filepath.new_value.empty();
+            media_change_pending = spinning && loading;
+            runstop_button.value = loading && !spinning;
+        }
         return true ; // param accepted
     }
 
@@ -265,8 +277,12 @@ void RL0102_c::state_load_cartridge()
     ready_lamp.value = 0;
     writeprotect_lamp.value = writeprotect_button.value;
     cover_open.readonly = false; // can be changed ("opened") only in LOAD state
-    // only in "load" state may the "media" be changed
-    image_params_readonly(false) ;
+    // The pack is at rest and the new medium is in: press LOAD for it, the way
+    // the drive would have been loaded by hand.
+    if (media_change_pending) {
+        media_change_pending = false;
+        runstop_button.value = true;
+    }
     // Path to FAULT: try to load illegal file
     // Path out of FAULT: File OK, or RUN runstop_button released
     // FAULT => state is "load cartridge"
@@ -311,7 +327,6 @@ void RL0102_c::state_spin_up()
     if (!spinup_delay.value || config_apply_immediate) { // skip the modeled spin-up
         rotation_umin.value = full_rpm;
         cylinder = 0;
-        image_params_readonly(true);
         change_state(RL0102_STATE_brush_cycle);
         return;
     }
@@ -330,12 +345,11 @@ void RL0102_c::state_spin_up()
     load_lamp.value = 0;
     ready_lamp.value = 0;
     writeprotect_lamp.value = writeprotect_button.value || image_is_readonly();
-    image_params_readonly(true) ; // "door locked", disk can not be changed
 
     state_timeout.wait_ms(calcperiod_ms);
 }
 
-void RL0102_c::state_brush_cycle() 
+void RL0102_c::state_brush_cycle()
 {
     // a real brush was used only on early RL01
     // drive_ready_line = false ;
@@ -482,7 +496,6 @@ void RL0102_c::state_spin_down()
     load_lamp.value = 0;
     ready_lamp.value = 0;
     writeprotect_lamp.value = writeprotect_button.value || image_is_readonly();
-    image_params_readonly(true) ; // "door locked", disk can not be changed
 
     state_timeout.wait_ms(calcperiod_ms);
 }

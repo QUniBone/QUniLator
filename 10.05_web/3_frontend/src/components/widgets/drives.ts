@@ -7,29 +7,15 @@ import { liveSetParam } from '../../api';
 import { ImageField } from '../common';
 import { Cap, PanelWidget, ReadyCap, paramVal } from './base';
 
-const driveRemovable = (d: LiveDev): boolean => d.removable === true;
-function driveLocked(d: LiveDev): boolean {
-  const img = (d.params || []).find((p) => p.n === 'image');
-  if (img && img.ro) return true;
-  return paramVal(d, 'lock') === '1' || d.locked === true;
-}
-
-// A tag on the drive foot: a fixed pack, a removable one the host can change, or
-// a removable one the host currently holds locked.
-function LockTag({ d }: { d: LiveDev }) {
-  if (!driveRemovable(d)) return html`<span class="w-tag fixed">fixed</span>`;
-  return driveLocked(d)
-    ? html`<span class="w-tag locked" title="host holds the medium locked">🔒 locked</span>`
-    : html`<span class="w-tag unlocked" title="medium can be changed">🔓 removable</span>`;
-}
-
-// The drive foot: its removable-media tag and the shared image picker, which is
-// the drive's image-swap control.
+// The drive foot: the shared image picker, which is the drive's image-swap
+// control. The medium is always changeable — a drive that models a spin-up
+// brings the pack to rest as part of the change — so the foot carries no tag
+// saying whether it is.
 function DiskFoot({ d }: { d: LiveDev }) {
   const img = d.img || paramVal(d, 'image');
-  return html`${html`<${LockTag} d=${d} />`}${html`<${ImageField} drive=${d.name} image=${img}
+  return html`<${ImageField} drive=${d.name} image=${img}
     onPick=${(name: string) =>
-      liveSetParam(d.name, 'image', name, name ? 'image attached' : 'image detached')} />`}`;
+      liveSetParam(d.name, 'image', name, name ? 'image attached' : 'image detached')} />`;
 }
 
 // What every drive shares: a unit number on its READY cap, the medium it holds,

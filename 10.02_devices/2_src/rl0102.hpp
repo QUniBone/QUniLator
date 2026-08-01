@@ -62,14 +62,14 @@ class RL11_c;
 class RL0102_c: public storagedrive_c {
 public:
 	bool removable(void) const override { return true; }
-	// The drive decides when the pack may be swapped: it locks the image
-	// parameters while the pack spins ("door locked") and releases them in the
-	// LOAD and power-off states. Deriving this from the LOAD lamp instead would
-	// call a powered-off drive locked - all its lamps are dark.
-	bool locked(void) const override { return image_filepath.readonly; }
 private:
 	uint16_t calc_crc(const int wc, const uint16_t *data);
 	void change_state(unsigned new_state);
+
+	// The medium was changed while the pack was spinning: LOAD has been released
+	// so the drive comes to rest, and "load cartridge" presses it again for the
+	// pack now in the drive.
+	bool media_change_pending = false;
 
 	void state_power_off(void);
 	void state_load_cartridge(void);

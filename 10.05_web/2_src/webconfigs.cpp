@@ -1226,34 +1226,7 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 				}
 			}
 
-			// A running drive holds its image parameter read-only ("door locked"),
-			// so a plain apply would skip a new medium and leave the old disk
-			// mounted. When the configuration names a different image on a locked
-			// drive, reset the device fully (which powers it down) and wait for the
-			// door to unlock before the loop below loads the new image and powers it
-			// back up. The wait is bounded, so a drive that never releases degrades
-			// to the previous best-effort behaviour rather than stalling the apply.
-			bool reload_image = false;
-			{
-				parameter_c *img = dev->param_by_name("image");
-				if (img != nullptr && img->readonly
-						&& d.get("params").is<picojson::object>()) {
-					const picojson::object &po = d.get("params").get<picojson::object>();
-					picojson::object::const_iterator it = po.find("image");
-					if (it != po.end() && it->second.is<std::string>()
-							&& it->second.get<std::string>() != *img->render())
-						reload_image = true;
-				}
-			}
-			if (reload_image) {
-				reset_to_defaults(dev, nullptr, errors);
-				parameter_c *img = dev->param_by_name("image");
-				for (unsigned waited = 0;
-						img != nullptr && img->readonly && waited < 3000; waited += 50)
-					usleep(50000);
-			} else {
-				reset_to_defaults(dev, &listed, errors);
-			}
+			reset_to_defaults(dev, &listed, errors);
 
 			if (d.get("params").is<picojson::object>())
 				for (const std::pair<const std::string, picojson::value> &kv :

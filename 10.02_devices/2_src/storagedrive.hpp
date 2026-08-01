@@ -83,9 +83,9 @@ public:
     const char *category(void) const override { return "disk"; }
     // removable media (pack/cartridge/floppy) versus a fixed disk
     virtual bool removable(void) const { return false; }
-    // while locked, the emulated machine holds the medium and it cannot be
-    // swapped. Base: the host lock flag; drives with a real door/spin state
-    // (RL) override this with that state.
+    // the host lock flag, reported for the API. The medium itself is always
+    // changeable: a drive that models a spin-up brings the pack to rest as part
+    // of the change rather than asking for it first.
     virtual bool locked(void) const { return lock.value; }
 private:
     uint8_t	zeros[4096] ; // a block of 00s
@@ -136,8 +136,7 @@ public:
 
     void refresh_activity(void) override ;
 
-    // host lock: while set, the medium cannot be swapped. Meaningful for
-    // removable non-RL drives; RL drives derive locked() from their spin state.
+    // host lock, reported to the API as the drive's locked() state
     parameter_bool_c lock = parameter_bool_c(this, "lock", "lk", false,
                             "Host lock: medium cannot be changed while set");
 
