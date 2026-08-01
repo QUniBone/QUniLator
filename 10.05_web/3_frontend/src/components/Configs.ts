@@ -31,7 +31,7 @@ import {
   setConfigDip,
   deleteConfig,
 } from '../api';
-import { flatDevices } from '../lib/devmodel';
+import { keptDevices } from '../lib/devmodel';
 import { serialEndpoint, serialLines } from '../lib/serial';
 import type { SerialLine, SerialRole } from '../lib/serial';
 import { useStore } from '../store';
@@ -53,11 +53,15 @@ function seedStaged(doc: ConfigSnapshot): Staged {
 }
 // The staged document written by a stored-config Save: every staged-enabled
 // device with the parameters staged for it (untouched defaults are omitted, so
-// the backend fills them in).
+// the backend fills them in). A drive is written only under a controller the
+// document carries, so a removed controller takes its drives — and the media
+// they named — out of the document with it.
 function serialize(st: Staged): ConfigSnapshot {
-  const devices = flatDevices()
-    .filter((d) => st.enabled[d.name])
-    .map((d) => ({ name: d.name, enabled: true, params: st.params[d.name] || {} }));
+  const devices = keptDevices((d) => !!st.enabled[d.name]).map((d) => ({
+    name: d.name,
+    enabled: true,
+    params: st.params[d.name] || {},
+  }));
   return { devices };
 }
 

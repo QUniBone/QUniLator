@@ -117,6 +117,20 @@ export function flatDevices(): LiveDev[] {
   return out;
 }
 
+// The device tree kept down to those the predicate accepts. A drive rides with
+// its controller: a controller the predicate rejects takes its drives out of the
+// list with it, whatever the predicate would have said about them on their own.
+export function keptDevices(keep: (d: LiveDev) => boolean): LiveDev[] {
+  const out: LiveDev[] = [];
+  const take = (d: LiveDev): void => {
+    if (!keep(d)) return;
+    out.push(d);
+    (d.drives || []).forEach(take);
+  };
+  store.devmodel.forEach(take);
+  return out;
+}
+
 export function devEnabled(name: string): boolean {
   let f = false;
   walkDevs((d) => {

@@ -184,6 +184,19 @@ std::string device_status_for(device_c *d) {
 	return disk_status(fam, s);
 }
 
+// Take the medium out of a drive that is leaving the machine. A drive switched
+// off answers nothing on the bus, so the file it named is held by nobody: the
+// media manager stops counting it as in use, and it can be deleted and renamed
+// again. Returns whether a medium was actually released.
+static bool release_medium(storagedrive_c *drv) {
+	if (drv == nullptr || drv->image_filepath.value.empty())
+		return false;
+	WEB_INFO("%s released %s", drv->name.value.c_str(),
+			drv->image_filepath.value.c_str());
+	drv->image_filepath.set("");
+	return true;
+}
+
 // A device type's standard bus placements, gathered from the construction
 // defaults of every instance of that type in the registry (the pool the DEC
 // floating-address scheme lays down: e.g. the four DZV11 addresses). The UI
@@ -356,10 +369,21 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 					send_error(conn, 400, "\"enabled\" must be 1/0 or true/false");
 					return;
 				}
-				dev->enabled.set(on);
-				// disabling a controller disables the drives it contains:
-				// a drive on a removed controller cannot function
+				// A device leaving the machine takes the media with it, the way
+				// pulling a drive takes its pack out. A drive switched off gives
+				// up what it held, and so does every drive of a controller
+				// switched off — those go with their controller, since a drive
+				// on a removed controller cannot function.
 				storagecontroller_c *ctrl = dynamic_cast<storagecontroller_c *>(dev);
+				bool released = false;
+				if (!on) {
+					released = release_medium(dynamic_cast<storagedrive_c *>(dev));
+					if (ctrl != nullptr)
+						for (storagedrive_c *drv : ctrl->storagedrives)
+							if (drv != nullptr)
+								released |= release_medium(drv);
+				}
+				dev->enabled.set(on);
 				if (!on && ctrl != nullptr)
 					for (storagedrive_c *drv : ctrl->storagedrives)
 						if (drv != nullptr && drv->enabled.value) {
@@ -367,6 +391,11 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 							WEB_INFO("%s disabled with controller %s",
 									drv->name.value.c_str(), dev->name.value.c_str());
 						}
+				// the shares hold an attached image read-only while the machine
+				// runs, and what was released is attached no longer
+				if (released)
+					webstorage_refresh_readonly(webevents_is_powered()
+							&& !webevents_is_halted());
 			} else if (is_bus_placement_param(param->name)
 					&& dynamic_cast<qunibusdevice_c *>(dev) != nullptr
 					&& dev->enabled.value) {

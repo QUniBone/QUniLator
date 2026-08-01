@@ -170,6 +170,14 @@ the parameter (as in the snapshot) after the write. Validation failures
 respond `422` with the device's message. Attaching a disk image is a
 write to the drive's `image` parameter; an empty value detaches.
 
+**Media follow the drive into the machine and out of it.** Attaching an image to
+a disabled drive switches the drive on; a drive whose controller is off is
+refused with `409` naming the controller. Setting `enabled` to `0` on a drive
+takes its medium out — the `image` parameter is cleared — and on a controller
+does that for every drive it carries, alongside switching those drives off. The
+released files are then held by nobody, so they can be deleted and renamed
+again.
+
 A device's **bus placement** — `base_addr`, `intr_vector`, `intr_level`,
 `slot` — is locked while the device is installed, since moving it re-registers
 the device on the bus. Changing one on an enabled device is refused with `409`
