@@ -146,6 +146,7 @@ const PHASE_TEXT: Record<string, string> = {
 // must not depend on the server it is waiting for.
 function installOverlay(from: string, to: string): {
   phase: (state: string, detail?: string) => void;
+  waiting: (elapsedMs: number, answering: boolean) => void;
   fail: (title: string, detail: string, journal: string[]) => void;
 } {
   const host = document.createElement('div');
@@ -160,8 +161,10 @@ function installOverlay(from: string, to: string): {
     '<div class="card-body">' +
     '<p class="upd-phase">Starting the install…</p>' +
     '<div class="upd-bar"><div class="upd-bar-fill"></div></div>' +
-    '<p class="muted upd-detail">The interface reconnects on its own, in about half a minute. ' +
+    '<p class="muted upd-detail">The board stops the emulated machine, unpacks the package ' +
+    'and restarts; that takes a few minutes. The interface reconnects on its own. ' +
     'Leave this page open.</p>' +
+    '<p class="muted upd-elapsed"></p>' +
     '<pre class="upd-journal" hidden></pre>' +
     '<div class="upd-actions" hidden><button class="btn primary" data-upd-reload>Reload</button></div>' +
     '</div></div>';
@@ -175,11 +178,19 @@ function installOverlay(from: string, to: string): {
       q('.upd-phase').textContent = PHASE_TEXT[state] || 'Working…';
       if (detail) q('.upd-detail').textContent = detail;
     },
+    // How long this has been going, so a long install reads as progress rather
+    // than as a stall, and whether the board is answering at all — the two look
+    // the same from the phase line, and only one of them is a reason to worry.
+    waiting(elapsedMs: number, answering: boolean) {
+      q('.upd-elapsed').textContent =
+        mmss(elapsedMs) + ' elapsed — ' + (answering ? 'the board is answering' : 'the board is down');
+    },
     fail(title: string, detail: string, journal: string[]) {
       q('.upd-phase').textContent = title;
       q('.upd-phase').classList.add('err');
       q('.upd-bar').setAttribute('hidden', '');
       q('.upd-detail').textContent = detail;
+      q('.upd-elapsed').textContent = '';
       if (journal.length) {
         const pre = q('.upd-journal');
         pre.textContent = journal.join('\n');
@@ -190,18 +201,34 @@ function installOverlay(from: string, to: string): {
   };
 }
 
-const POLL_LIMIT_MS = 120000;
+// How long the board may answer nothing at all before it is called gone. Only
+// silence runs against it: a board that answers on the old version is an install
+// still working, however long it takes. An install stops the emulated machine,
+// unpacks the package and restarts the service, which on a busy board runs to
+// several minutes, so this sits well past that.
+const SILENT_LIMIT_MS = 600000;
+
+// mm:ss for the elapsed counter
+function mmss(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
 
 // Wait for the board to come back on `to`, then reload. A connection refusal is
 // "not back yet", not a fault: the server is being replaced.
 async function awaitNewVersion(
   to: string,
-  ui: ReturnType<typeof installOverlay>
+  ui: ReturnType<typeof installOverlay>,
+  startedAt: number = Date.now()
 ): Promise<void> {
-  const deadline = Date.now() + POLL_LIMIT_MS;
+  // the last moment the board answered anything; the deadline runs from here,
+  // so it measures silence rather than the length of the install
+  let lastAnswer = Date.now();
   for (;;) {
     await new Promise((r) => setTimeout(r, 1000));
     const v = await fetchVersion();
+    if (v) lastAnswer = Date.now();
+    ui.waiting(Date.now() - startedAt, v != null);
     if (v && v.version === to) {
       writeFlag(null);
       location.reload();
@@ -230,11 +257,13 @@ async function awaitNewVersion(
       }
       if (u) ui.phase(u.state);
     }
-    if (Date.now() > deadline) {
+    if (Date.now() - lastAnswer > SILENT_LIMIT_MS) {
       writeFlag(null);
       ui.fail(
         'The board has not come back',
-        'It has been two minutes. On the board, "systemctl status ' +
+        'It has answered nothing for ' +
+          mmss(Date.now() - lastAnswer) +
+          '. On the board, "systemctl status ' +
           (store.update?.package || 'qbone') +
           '" says whether the service is running, and ' +
           '"journalctl -u qunilator-update" says what the install did.',
@@ -264,7 +293,9 @@ export async function installUpdate(to: string): Promise<void> {
 export function resumeInstallIfPending(): void {
   const f = readFlag();
   if (!f) return;
-  if (Date.now() - f.started > POLL_LIMIT_MS * 2) {
+  // a flag older than any install could still be running belongs to a window
+  // that has long closed, so it is dropped rather than picked back up
+  if (Date.now() - f.started > SILENT_LIMIT_MS * 2) {
     writeFlag(null);
     return;
   }
@@ -273,6 +304,8 @@ export function resumeInstallIfPending(): void {
     writeFlag(null);
     return;
   }
+  // the elapsed counter runs from when the install was started, not from this
+  // page load, so a reload mid-install does not restart the clock
   const ui = installOverlay(f.from, f.to);
-  awaitNewVersion(f.to, ui).catch(() => {});
+  awaitNewVersion(f.to, ui, f.started).catch(() => {});
 }
