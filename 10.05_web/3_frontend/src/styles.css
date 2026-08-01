@@ -837,6 +837,26 @@ button.tree-name:hover .mono { color: var(--accent); }
 .row-folder td { background: color-mix(in srgb, var(--accent-soft) 30%, transparent); }
 .pick-row.folder .mono { flex: 1; }
 
+/* a folder with nothing in it keeps the twisty's width so the names line up */
+.contents-toggle:disabled { opacity: 0; cursor: default; }
+
+/* the selected folder — where an upload or a new image lands */
+.row-current td:first-child { box-shadow: inset 3px 0 0 var(--line); }
+.row-current .tree-name .mono { font-weight: 650; }
+
+/* moving an image by dragging its row onto a folder or a breadcrumb */
+.row-image .tree-name { cursor: grab; }
+.row-image.held .tree-name { cursor: not-allowed; }
+.row-image.dragging td { opacity: .45; }
+/* while a drag is live, every folder that would take the file lifts a little */
+.row-folder.drop-open td { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.crumb.drop-open { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+/* the one under the pointer says so */
+.row-folder.drop-into td { background: var(--accent-soft); }
+.row-folder.drop-into td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.crumb.drop-into { background: var(--accent); color: var(--on-accent); box-shadow: none; }
+.drop-hint { color: var(--accent); font-weight: 600; }
+
 /* ============================ configurations ============================ */
 /* master (list) beside detail (the selected config's editor) */
 .cfg-layout { display: flex; gap: 16px; align-items: flex-start; }
