@@ -1,15 +1,19 @@
-// The System page: what this board runs, and updating it.
+// The System page: who reaches this board, what it runs, and updating it.
 //
-// Two rows, kept apart because they promise different things. The emulator update
-// is reversible - the board watches the new version come up and puts the old one
-// back if it does not - and it stops the emulated machine, so it says so and asks
-// for a confirmation. The operating-system upgrade cannot be undone by apt at
-// all, and leaves the machine running, so it says that instead.
+// Access comes first: the one pair of credentials that reaches the board, by the
+// browser and by the file shares alike.
+//
+// The two update rows are kept apart because they promise different things. The
+// emulator update is reversible - the board watches the new version come up and
+// puts the old one back if it does not - and it stops the emulated machine, so it
+// says so and asks for a confirmation. The operating-system upgrade cannot be
+// undone by apt at all, and leaves the machine running, so it says that instead.
 import { html } from '../html';
 import { useEffect, useState } from 'preact/hooks';
 import { useStore } from '../store';
-import { liveControl } from '../api';
-import { confirmModal } from '../lib/modals';
+import { apiJSON, liveControl } from '../api';
+import { confirmModal, USER_NAME_HELP, USER_NAME_REFUSAL, USER_NAME_RULE } from '../lib/modals';
+import { toast } from '../lib/toast';
 import { bundleVersion } from '../lib/version';
 import {
   refreshUpdate,
@@ -165,6 +169,132 @@ function OsRow({ u }: { u: UpdateStatus }) {
     </div></div>`;
 }
 
+type AuthStatus = {
+  configured: boolean;
+  source: string;
+  user: string;
+  min_length: number;
+};
+
+// The credentials this board answers to. The user name is an account on the
+// board as well, so the same pair reaches the image library over SMB, FTP and
+// SFTP; a board that carries only a password takes whatever name the browser
+// offers, and says so until one is set.
+function AccessCard() {
+  const [auth, setAuth] = useState<AuthStatus | null>(null);
+  const [user, setUser] = useState('');
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [repeat, setRepeat] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const load = () =>
+    apiJSON<AuthStatus>('/api/auth')
+      .then((r) => {
+        if (!r.ok) return;
+        setAuth(r.data);
+        setUser(r.data.user || '');
+      })
+      .catch(() => {});
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!auth) return null;
+  const min = auth.min_length || 8;
+  const fromEnvironment = auth.source === 'environment';
+
+  async function save() {
+    const name = user.trim();
+    if (name !== '' && !USER_NAME_RULE.test(name)) return setError(USER_NAME_REFUSAL);
+    if (next !== '') {
+      if (next.length < min) return setError('A password is at least ' + min + ' characters.');
+      if (next !== repeat) return setError('The two password entries do not match.');
+    }
+    setError('');
+    setSaving(true);
+    const body: Record<string, string> = { user: name, current };
+    if (next !== '') body.password = next;
+    const res = await apiJSON<{ error?: string }>('/api/auth', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).catch(() => ({ ok: false, data: { error: 'The board did not answer.' } }));
+    setSaving(false);
+    if (!res.ok) return setError(res.data.error || 'The credentials could not be changed.');
+    setCurrent('');
+    setNext('');
+    setRepeat('');
+    toast('auth', name ? 'The board answers to ' + name : 'The board takes any user name');
+    load();
+  }
+
+  return html`<div class="card" style="max-width:720px">
+    <div class="card-head"><h3>Access</h3>
+      ${auth.user
+        ? html`<span class="chip ok mono">${auth.user}</span>`
+        : html`<span class="chip warn">any user name</span>`}
+    </div>
+    <div class="card-body">
+      ${fromEnvironment
+        ? html`<p class="muted">The credentials come from <span class="mono">WEBUI_PASSWORD</span>
+            in the service environment, so they are set outside this interface and any user name is
+            accepted. Remove that setting and restart the service to set a name here.</p>`
+        : html`
+        <div class="set-grid">
+          <div class="set-name">User name</div>
+          <div class="set-val">
+            <input type="text" autocapitalize="off" spellcheck="false" autocomplete="username"
+              value=${user} disabled=${saving}
+              onInput=${(e: Event) => setUser((e.target as HTMLInputElement).value)} />
+          </div>
+          <div class="set-info">${
+            auth.user
+              ? html`The browser prompt takes this name, and so do the SMB, FTP and SFTP shares of
+                  the image library. Changing it moves the board's file-share account to the new
+                  name.`
+              : html`No user name is set, so the browser prompt takes any name and the file shares
+                  answer to <span class="mono">qunilator</span>. Setting one here makes a single pair
+                  of credentials reach the board by every route.`
+          } ${USER_NAME_HELP}</div>
+
+          <div class="set-name">Current password</div>
+          <div class="set-val">
+            <input type="password" autocomplete="current-password" value=${current}
+              disabled=${saving}
+              onInput=${(e: Event) => setCurrent((e.target as HTMLInputElement).value)} />
+          </div>
+          <div class="set-info">Changing either half takes the password in force.</div>
+
+          <div class="set-name">New password</div>
+          <div class="set-val">
+            <input type="password" autocomplete="new-password" value=${next} disabled=${saving}
+              onInput=${(e: Event) => setNext((e.target as HTMLInputElement).value)} />
+          </div>
+          <div class="set-info">Leave empty to keep the password and change the name alone.</div>
+
+          ${next !== ''
+            ? html`<div class="set-name">Repeat</div>
+              <div class="set-val">
+                <input type="password" autocomplete="new-password" value=${repeat}
+                  disabled=${saving}
+                  onInput=${(e: Event) => setRepeat((e.target as HTMLInputElement).value)} />
+              </div>
+              <div class="set-info">At least ${min} characters.</div>`
+            : null}
+        </div>
+        ${error ? html`<p class="upd-warn">${error}</p>` : null}
+        <p class="muted" style="margin:12px 0 0">The browser holds the old credentials until it is
+          asked again, so the next request after a change brings up its prompt.</p>
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px">
+          <button class="btn primary" disabled=${saving || current === ''}
+            onClick=${save}>Save</button>
+        </div>`}
+    </div></div>`;
+}
+
 export function SystemPage() {
   const s = useStore();
   const [tick, setTick] = useState(0);
@@ -175,13 +305,16 @@ export function SystemPage() {
   const u = s.update;
   if (!u)
     return html`<section class="page active" data-page="system">
-      <p class="lede">What this board runs, and updating it.</p>
+      <p class="lede">Who reaches this board, what it runs, and updating it.</p>
+      <${AccessCard} />
       <p class="muted">Reading the update status…</p></section>`;
 
   const busy = updateRunning(u);
   const last = u.last || {};
   return html`<section class="page active" data-page="system">
-    <p class="lede">What this board runs, and updating it.</p>
+    <p class="lede">Who reaches this board, what it runs, and updating it.</p>
+
+    <${AccessCard} />
 
     <div class="card" style="max-width:720px">
       <div class="card-head"><h3>${u.package || 'emulator'}</h3><${StateChip} u=${u} /></div>

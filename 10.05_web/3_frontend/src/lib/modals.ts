@@ -391,42 +391,60 @@ export function pickDevice(
   });
 }
 
-function setPasswordModal(minLength: number): Promise<boolean> {
+// The one pair of credentials this board answers to: the browser's basic-auth
+// prompt and the SMB, FTP and SFTP shares all take it.
+export const USER_NAME_RULE = /^[a-z_][a-z0-9_-]{0,31}$/;
+export const USER_NAME_HELP =
+  'A user name is 1 to 32 characters: a lower case letter or underscore, then lower case ' +
+  'letters, digits, underscores and hyphens.';
+// said where the rule is already on the page, so it points at it rather than repeating it
+export const USER_NAME_REFUSAL = 'The user name does not follow that rule.';
+
+function setCredentialsModal(minLength: number): Promise<boolean> {
   return new Promise((resolve) => {
     const host = document.createElement('div');
     host.className = 'modal-overlay';
     host.innerHTML =
-      '<div class="card modal-card"><div class="card-head"><h3>Set an admin password</h3></div>' +
+      '<div class="card modal-card"><div class="card-head"><h3>Set the credentials</h3></div>' +
       '<div class="card-body"><p class="muted" style="margin:0 0 16px; font-size:var(--fs-1)">' +
-      'This interface controls the machine and is open to anyone who can reach it until a password ' +
-      'is set. At least ' +
+      'This interface controls the machine and is open to anyone who can reach it until ' +
+      'credentials are set. The name and password chosen here are what the browser asks for, ' +
+      'and what the SMB, FTP and SFTP shares of the image library take. At least ' +
       minLength +
-      ' characters. Any user name is accepted when the browser asks.</p>' +
+      ' characters for the password.</p>' +
       '<div class="set-grid">' +
+      '<label class="set-name" for="pw-user">User name</label>' +
+      '<input class="set-val" id="pw-user" type="text" autocomplete="username" ' +
+      'autocapitalize="off" spellcheck="false">' +
       '<label class="set-name" for="pw1">Password</label>' +
       '<input class="set-val" id="pw1" type="password" autocomplete="new-password">' +
       '<label class="set-name" for="pw2">Repeat</label>' +
       '<input class="set-val" id="pw2" type="password" autocomplete="new-password"></div>' +
+      '<p class="muted" style="margin:12px 0 0; font-size:var(--fs-1)">' +
+      esc(USER_NAME_HELP) +
+      '</p>' +
       '<p id="pw-err" class="muted" style="margin:12px 0 0; font-size:var(--fs-1); color:var(--err); min-height:1.2em"></p>' +
       '<div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">' +
-      '<button class="btn primary" data-pw-set>Set password</button></div></div></div>';
+      '<button class="btn primary" data-pw-set>Set credentials</button></div></div></div>';
     const err = (msg: string) => {
       (host.querySelector('#pw-err') as HTMLElement).textContent = msg || '';
     };
     async function submit() {
+      const user = (host.querySelector('#pw-user') as HTMLInputElement).value.trim();
       const p1 = (host.querySelector('#pw1') as HTMLInputElement).value;
       const p2 = (host.querySelector('#pw2') as HTMLInputElement).value;
+      if (!USER_NAME_RULE.test(user)) return err(USER_NAME_REFUSAL);
       if (p1.length < minLength) return err('At least ' + minLength + ' characters.');
       if (p1 !== p2) return err('The two entries do not match.');
       err('');
       const res = await apiJSON<{ error?: string }>('/api/auth', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: p1 }),
+        body: JSON.stringify({ user, password: p1 }),
       }).catch(() => ({ ok: false, data: {} as { error?: string } }));
-      if (!res.ok) return err(res.data.error || 'The password could not be set.');
+      if (!res.ok) return err(res.data.error || 'The credentials could not be set.');
       host.remove();
-      toast('auth', 'Admin password set');
+      toast('auth', 'Credentials set for ' + user);
       resolve(true);
     }
     host.addEventListener('click', (ev) => {
@@ -436,7 +454,7 @@ function setPasswordModal(minLength: number): Promise<boolean> {
       if (ev.key === 'Enter') submit();
     });
     document.body.appendChild(host);
-    (host.querySelector('#pw1') as HTMLElement).focus();
+    (host.querySelector('#pw-user') as HTMLElement).focus();
   });
 }
 
@@ -445,5 +463,5 @@ export async function checkAuth(): Promise<void> {
   if (!r.ok) return;
   const auth = await r.json();
   if (auth.configured) return;
-  await setPasswordModal(auth.min_length || 8);
+  await setCredentialsModal(auth.min_length || 8);
 }

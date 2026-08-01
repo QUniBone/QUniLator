@@ -246,6 +246,7 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/websettings.o	\
 	$(OBJDIR)/weblogging.o	\
 	$(OBJDIR)/webauth.o	\
+	$(OBJDIR)/webshares.o	\
 	$(OBJDIR)/webversion.o	\
 	$(OBJDIR)/webupdate.o	\
 	$(OBJDIR)/civetweb.o
@@ -647,7 +648,10 @@ $(OBJDIR)/websettings.o :  $(WEB_SRC_DIR)/websettings.cpp $(WEB_SRC_DIR)/websett
 $(OBJDIR)/weblogging.o :  $(WEB_SRC_DIR)/weblogging.cpp $(WEB_SRC_DIR)/weblogging.hpp $(WEB_SRC_DIR)/websettings.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/webauth.o :  $(WEB_SRC_DIR)/webauth.cpp $(WEB_SRC_DIR)/webauth.hpp $(WEB_SRC_DIR)/websettings.hpp
+$(OBJDIR)/webauth.o :  $(WEB_SRC_DIR)/webauth.cpp $(WEB_SRC_DIR)/webauth.hpp $(WEB_SRC_DIR)/websettings.hpp $(WEB_SRC_DIR)/webshares.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/webshares.o :  $(WEB_SRC_DIR)/webshares.cpp $(WEB_SRC_DIR)/webshares.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webversion.o :  $(WEB_SRC_DIR)/webversion.cpp $(WEB_SRC_DIR)/webversion.hpp $(QUNILATOR_ROOT)/packaging/debian/changelog

@@ -44,6 +44,18 @@ $CXX -std=c++11 -Wall -Wextra $INCLUDES \
 	"$OUT/civetweb.o" \
 	-lpthread -o "$OUT/config_test"
 
+# The credentials: webauth.cpp with the name rules and account provisioning of
+# webshares.cpp behind it. The provisioning is root-only, so a test run creates
+# no account; what it drives is the verification, the name rules and the
+# settings.json round trip.
+$CXX -std=c++11 -Wall -Wextra $INCLUDES \
+	"$TOOLS/auth_test.cpp" \
+	"$WEB/webauth.cpp" \
+	"$WEB/webshares.cpp" \
+	"$WEB/weblog.cpp" \
+	"$OUT/civetweb.o" \
+	-lpthread -o "$OUT/auth_test"
+
 # The console channel is civetweb-free, so it links against nothing but its own
 # translation unit.
 $CXX -std=c++11 -Wall -Wextra -I "$WEB" \
@@ -75,6 +87,7 @@ $CXX -std=c++11 -Wall -Wextra -I "$DEV" \
 	-o "$OUT/simh_tape_test"
 
 "$OUT/config_test"
+"$OUT/auth_test"
 "$OUT/console_channel_test"
 "$OUT/status_power_test"
 "$OUT/serial_tcp_line_test"

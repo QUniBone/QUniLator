@@ -328,13 +328,20 @@ if [ "$1" = configure ]; then
         adduser --system --ingroup qunilator --home /var/lib/qunilator \
             --no-create-home --shell /usr/sbin/nologin qunilator || true
     fi
-    install -d -m 755 /var/lib/qunilator/images
+    install -d -m 2775 /var/lib/qunilator/images
     # the seeded media folders, re-asserted on an upgrade so a board that
     # predates one of them gets it
     for d in dk dl du mu rx roms; do
-        install -d -m 755 /var/lib/qunilator/images/$d || true
+        install -d -m 2775 /var/lib/qunilator/images/$d || true
     done
+    # The tree belongs to the qunilator group and every member of it may write:
+    # the service account owns the files, and the operator account the web
+    # interface creates for the file shares reaches them through the group.
+    # set-group-id on the directories keeps what either of them creates in the
+    # group. Re-asserted on every upgrade, next to the ownership.
     chown -R qunilator:qunilator /var/lib/qunilator/images || true
+    chmod -R g+w /var/lib/qunilator/images || true
+    find /var/lib/qunilator/images -type d -exec chmod g+s {} + || true
     # The updater's state stays root-only: it sits inside the tree the SMB/FTP/
     # SFTP shares are chrooted to, and holds staged packages and the requested
     # version. Re-asserted on every upgrade in case a mode was widened.

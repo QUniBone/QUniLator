@@ -748,6 +748,12 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
   padding: 4px 8px; border-radius: var(--r-sm);
   border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
 }
+/* a text field in the settings grid reads like the selects beside it */
+.set-val input[type="text"], .set-val input[type="password"], input.set-val {
+  font-family: var(--font-mono); font-size: var(--fs-1);
+  padding: 4px 8px; border-radius: var(--r-sm); min-width: 220px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+}
 .set-info { grid-column: 2; font-size: var(--fs-0); color: var(--ink-faint); margin: -2px 0 12px; }
 .set-val .radio { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-1); cursor: pointer; }
 .set-val .radio input { margin: 0; }

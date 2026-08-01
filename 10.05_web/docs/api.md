@@ -4,9 +4,9 @@ The `demo` application serves this API when started with `--web [port]`
 (default port 80). All request and response bodies are JSON unless noted.
 Errors use HTTP status codes with a body of `{"error": "message"}`.
 
-With `WEBUI_PASSWORD` set in the environment, every request requires HTTP
-basic auth: any user name, the password must match. Browsers replay the
-credentials on the WebSocket handshakes. Unset, access is open.
+With credentials set - through `PUT /api/auth` or as `WEBUI_PASSWORD` in the
+environment - every request requires HTTP basic auth. Browsers replay the
+credentials on the WebSocket handshakes. With none set, access is open.
 
 ## State
 
@@ -42,31 +42,50 @@ A page compares the version it was built from with what this reports and reloads
 when they differ, so an upgrade — through the interface or a hand-run
 `apt upgrade` — carries every open page onto the matching bundle.
 
-## Admin password
+## Admin credentials
 
 Every request needs HTTP basic auth once a password is set - static files and
-the WebSocket handshakes included. Any user name is accepted. A board with no
-password answers everything, which is how a new one is reached in order to set
-one.
+the WebSocket handshakes included. A board with no password answers everything,
+which is how a new one is reached in order to set some.
+
+The user name is an account on the board as well: setting one creates it beside
+the `qunilator` service account, in the `qunilator` group with the image tree as
+its home, and gives it the web password, so the same pair reaches the image
+library over SMB, FTP and SFTP. Changing the name creates the new account and
+removes the old one. While no name is set, any user name is accepted and the
+shares answer to `qunilator` - which is what an installation made before the
+name existed keeps doing until one is set.
 
 ### `GET /api/auth`
 
 ```json
-{"configured": false, "source": "none", "min_length": 8}
+{"configured": true, "source": "settings", "user": "operators", "min_length": 8}
 ```
 
-`source` is `none`, `settings` for a password set through this endpoint, or
-`environment` for one given as `WEBUI_PASSWORD`.
+`source` is `none`, `settings` for credentials set through this endpoint, or
+`environment` for a password given as `WEBUI_PASSWORD`. `user` is the configured
+name, empty when any name is accepted.
 
 ### `PUT /api/auth`
 
 ```json
-{"password": "...", "current": "..."}
+{"user": "operators", "password": "...", "current": "..."}
 ```
 
+At least one of `user` and `password` is required. A body without `user` leaves
+the name in force; `"user": ""` clears it, which puts the shares back on
+`qunilator` and removes the operator's account. A body without `password` keeps
+the password, so a name changes on its own.
+
 `current` is required once a password exists, and refused with 403 if it does
-not match. A password shorter than `min_length` is refused with 422, as is any
-attempt to change one that came from the environment. Answers `{"ok": true}`.
+not match - changing either half takes the password in force. A password shorter
+than `min_length` is refused with 422, as is a user name that is not a portable
+one (1 to 32 characters: a lower case letter or underscore, then lower case
+letters, digits, underscores and hyphens), one the board reserves, or one that
+already belongs to an account the service did not create. Credentials that came
+from the environment refuse both halves with 422.
+
+Answers `{"ok": true, "user": "operators"}`.
 
 ## Devices and parameters
 

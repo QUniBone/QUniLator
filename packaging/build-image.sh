@@ -154,10 +154,12 @@ chmod 644 /etc/ssh/sshd_config.d/10-${NAME}.conf
 
 # Network file access to the disk/tape image tree: SMB (Samba), FTP (vsftpd)
 # and SFTP (over the SSH the board already runs). The image tree is owned by
-# the qunilator system user (created by the emulator package's postinst); all
-# three authenticate as that user, and the web interface sets its password when
-# the operator sets the web password. FTP is cleartext, offered for legacy
-# clients on a trusted LAN; SFTP is the encrypted path.
+# the qunilator system user (created by the emulator package's postinst), and
+# all three authenticate against the qunilator group: the service account is in
+# it, and so is the operator account the web interface creates when a user name
+# is set. The web interface gives both accounts the web password. FTP is
+# cleartext, offered for legacy clients on a trusted LAN; SFTP is the encrypted
+# path.
 DEBIAN_FRONTEND=noninteractive apt-get -qq install -y samba vsftpd >/dev/null
 cat > /etc/samba/smb.conf <<'EOF'
 [global]
@@ -177,7 +179,7 @@ cat > /etc/samba/smb.conf <<'EOF'
 [images]
    comment = QUniLator disk and tape images
    path = /var/lib/qunilator/images
-   valid users = qunilator
+   valid users = @qunilator
    force user = qunilator
    force group = qunilator
    read only = no
@@ -191,7 +193,9 @@ listen_ipv6=NO
 anonymous_enable=NO
 local_enable=YES
 write_enable=YES
-local_umask=022
+# the image tree is shared by the qunilator group, so an upload stays writable
+# by every account that serves it
+local_umask=002
 use_localtime=YES
 xferlog_enable=YES
 pam_service_name=vsftpd
@@ -208,17 +212,18 @@ EOF
 chmod 644 /etc/vsftpd.conf
 echo qunilator > /etc/vsftpd.userlist
 chmod 644 /etc/vsftpd.userlist
-# vsftpd's PAM stack checks the login shell against /etc/shells; the qunilator
-# user has a nologin shell (no interactive login), so allow it there for FTP.
+# vsftpd's PAM stack checks the login shell against /etc/shells; the accounts
+# that serve the shares have a nologin shell (no interactive login), so allow it
+# there for FTP.
 grep -qx /usr/sbin/nologin /etc/shells || echo /usr/sbin/nologin >> /etc/shells
-# Confine the qunilator user's SSH login to an SFTP session in the image tree.
-# sshd requires the chroot root to be root-owned and unwritable, which
-# /var/lib/qunilator is; the writable images/ subdir inside it is where uploads
-# land, so the session opens there.
+# Confine the SSH login of every account in the qunilator group to an SFTP
+# session in the image tree. sshd requires the chroot root to be root-owned and
+# unwritable, which /var/lib/qunilator is; the writable images/ subdir inside it
+# is where uploads land, so the session opens there.
 cat >> /etc/ssh/sshd_config.d/10-${NAME}.conf <<'EOF'
-Match User qunilator
+Match Group qunilator
     ChrootDirectory /var/lib/qunilator
-    ForceCommand internal-sftp -d /images
+    ForceCommand internal-sftp -d /images -u 0002
     AllowTcpForwarding no
     X11Forwarding no
     PermitTunnel no

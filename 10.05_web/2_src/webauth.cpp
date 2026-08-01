@@ -1,16 +1,22 @@
-/* webauth.cpp: admin password for the web interface
+/* webauth.cpp: admin credentials for the web interface
 
    Copyright (c) 2026, Hans Huebner
    hans@huebner.org
    MIT license, see webserver.hpp for the full text.
 
    The interface is open until a password is set, which is what makes a fresh
-   board reachable at all. The frontend asks for one on first contact and PUTs
-   it here; from then on every request needs it, static files and WebSocket
-   handshakes included (see begin_request_handler in webserver.cpp).
+   board reachable at all. The frontend asks for a user name and a password on
+   first contact and PUTs them here; from then on every request needs them,
+   static files and WebSocket handshakes included (see begin_request_handler in
+   webserver.cpp).
 
-     GET /api/auth   {configured, source, min_length}
-     PUT /api/auth   {password, current?}
+     GET /api/auth   {configured, source, user, min_length}
+     PUT /api/auth   {user?, password?, current?}
+
+   The user name is what the file shares answer to as well, so setting it
+   creates the matching OS account through webshares.cpp. A board that carries
+   only a password takes any name, which is what an installation made before
+   the name existed keeps doing until one is set.
 
    The password is stored as a PBKDF2-HMAC-SHA256 digest over a random salt.
    The build links no crypto library - it is static and civetweb is compiled
@@ -26,9 +32,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pwd.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 #include <mutex>
 #include <string>
@@ -40,28 +43,7 @@
 #include "weblog.hpp"
 #include "webauth.hpp"
 #include "websettings.hpp"
-
-// Propagate a freshly set web password to the qunilator OS user so the SMB,
-// FTP and SFTP shares accept the same credential. Best effort, root-only:
-// chpasswd sets the PAM/Unix password (FTP + SFTP), smbpasswd the separate
-// Samba database. The password is fed on stdin, never on a command line, and
-// never logged. A missing user or tool (a dev host) is ignored.
-static void feed_password(const char *cmd, const std::string &lines) {
-	FILE *p = popen(cmd, "w");
-	if (p == nullptr)
-		return;
-	fwrite(lines.data(), 1, lines.size(), p);
-	pclose(p);
-}
-
-static void sync_share_password(const std::string &password) {
-	if (getuid() != 0 || getpwnam("qunilator") == nullptr)
-		return;
-	feed_password("chpasswd 2>/dev/null", "qunilator:" + password + "\n");
-	feed_password("smbpasswd -s -a qunilator 2>/dev/null",
-			password + "\n" + password + "\n");
-	WEB_INFO("share password for user qunilator updated from the web password");
-}
+#include "webshares.hpp"
 
 /*** SHA-256 (FIPS 180-4) ***/
 
@@ -272,6 +254,7 @@ static bool random_bytes(uint8_t *out, size_t len) {
 static std::mutex auth_mutex; // guards everything below
 static webauth_source_e source = webauth_source_none;
 static std::string env_password;     // WEBUI_PASSWORD, verified as given
+static std::string stored_user;      // the operator's name, empty to take any
 static uint8_t stored_salt[SALT_LEN];
 static uint8_t stored_hash[SHA256_LEN];
 static unsigned stored_iterations = PBKDF2_ITERATIONS;
@@ -329,7 +312,24 @@ bool webauth_configured(void) {
 	return source != webauth_source_none;
 }
 
-bool webauth_verify(const std::string &password) {
+std::string webauth_user(void) {
+	std::lock_guard<std::mutex> lock(auth_mutex);
+	return source == webauth_source_settings ? stored_user : std::string();
+}
+
+bool webauth_verify(const std::string &user, const std::string &password) {
+	{
+		std::lock_guard<std::mutex> lock(auth_mutex);
+		// The name is not a secret, so it is compared plainly; the password
+		// below is what the constant-time comparison protects.
+		if (source == webauth_source_settings && !stored_user.empty()
+				&& user != stored_user)
+			return false;
+	}
+	return webauth_verify_password(password);
+}
+
+bool webauth_verify_password(const std::string &password) {
 	std::lock_guard<std::mutex> lock(auth_mutex);
 	switch (source) {
 	case webauth_source_none:
@@ -351,11 +351,13 @@ bool webauth_verify(const std::string &password) {
 	return true;
 }
 
-bool webauth_set_password(const std::string &password, std::string *error) {
+bool webauth_set_credentials(const std::string &user, const std::string &password,
+		std::string *error) {
+	std::string previous_user;
 	{
 		std::lock_guard<std::mutex> lock(auth_mutex);
 		if (source == webauth_source_environment) {
-			*error = "the password comes from WEBUI_PASSWORD and is set outside the interface";
+			*error = "the credentials come from WEBUI_PASSWORD and are set outside the interface";
 			return false;
 		}
 		if (password.size() < MIN_PASSWORD_LEN) {
@@ -365,6 +367,8 @@ bool webauth_set_password(const std::string &password, std::string *error) {
 			*error = msg;
 			return false;
 		}
+		if (!user.empty() && !webshares_name_acceptable(user, error))
+			return false;
 		if (!random_bytes(stored_salt, sizeof(stored_salt))) {
 			*error = "no randomness available for a salt";
 			return false;
@@ -372,11 +376,15 @@ bool webauth_set_password(const std::string &password, std::string *error) {
 		stored_iterations = PBKDF2_ITERATIONS;
 		pbkdf2_sha256(password, stored_salt, sizeof(stored_salt), stored_iterations,
 				stored_hash);
-		source = webauth_source_settings;
 		cache_store(password);
+		previous_user = stored_user;
+		stored_user = user;
+		source = webauth_source_settings;
 	}
 	websettings_save();
-	sync_share_password(password);
+	// The shares authenticate against the OS, so the password reaches the
+	// accounts from here - the one place that has it in plain form.
+	webshares_apply(previous_user, user, password);
 	return true;
 }
 
@@ -396,6 +404,8 @@ void webauth_load(const picojson::value &admin) {
 		return;
 	memcpy(stored_salt, salt, sizeof(stored_salt));
 	memcpy(stored_hash, hash, sizeof(stored_hash));
+	stored_user = admin.get("user").is<std::string>()
+			? admin.get("user").get<std::string>() : std::string();
 	stored_iterations = admin.get("iterations").is<double>()
 			? (unsigned) admin.get("iterations").get<double>() : PBKDF2_ITERATIONS;
 	if (stored_iterations == 0)
@@ -410,6 +420,8 @@ picojson::value webauth_json(void) {
 		return picojson::value(); // null: nothing of ours to persist
 	picojson::object o;
 	o["algorithm"] = picojson::value("pbkdf2-sha256");
+	if (!stored_user.empty())
+		o["user"] = picojson::value(stored_user);
 	o["iterations"] = picojson::value((double) stored_iterations);
 	o["salt"] = picojson::value(to_hex(stored_salt, sizeof(stored_salt)));
 	o["hash"] = picojson::value(to_hex(stored_hash, sizeof(stored_hash)));
@@ -461,6 +473,7 @@ static void auth_get(struct mg_connection *conn) {
 	picojson::object o;
 	o["configured"] = picojson::value(s != webauth_source_none);
 	o["source"] = picojson::value(source_name(s));
+	o["user"] = picojson::value(webauth_user());
 	o["min_length"] = picojson::value((double) MIN_PASSWORD_LEN);
 	send_json(conn, 200, picojson::value(o));
 }
@@ -471,27 +484,41 @@ static void auth_put(struct mg_connection *conn) {
 		send_error(conn, 400, "expected a JSON object");
 		return;
 	}
-	if (!body.get("password").is<std::string>()) {
-		send_error(conn, 400, "password is required");
+	bool have_user = body.get("user").is<std::string>();
+	bool have_password = body.get("password").is<std::string>();
+	if (!have_user && !have_password) {
+		send_error(conn, 400, "a user name or a password is required");
 		return;
 	}
-	// Once a password exists, changing it takes the current one. Basic auth has
-	// already been satisfied to get here; this is what stops a left-open browser
-	// from being enough.
+	// Once credentials exist, changing either takes the current password.
+	// Basic auth has already been satisfied to get here; this is what stops a
+	// left-open browser from being enough.
+	std::string current;
 	if (webauth_configured()) {
 		if (!body.get("current").is<std::string>()
-				|| !webauth_verify(body.get("current").get<std::string>())) {
+				|| !webauth_verify_password(body.get("current").get<std::string>())) {
 			send_error(conn, 403, "the current password does not match");
 			return;
 		}
+		current = body.get("current").get<std::string>();
+	} else if (!have_password) {
+		send_error(conn, 400, "password is required");
+		return;
 	}
+	// A request that changes only the name keeps the password in force, and
+	// the shares are given that one.
+	std::string password = have_password
+			? body.get("password").get<std::string>() : current;
+	std::string user = have_user ? body.get("user").get<std::string>()
+			: webauth_user();
 	std::string error;
-	if (!webauth_set_password(body.get("password").get<std::string>(), &error)) {
+	if (!webauth_set_credentials(user, password, &error)) {
 		send_error(conn, 422, error);
 		return;
 	}
 	picojson::object o;
 	o["ok"] = picojson::value(true);
+	o["user"] = picojson::value(webauth_user());
 	send_json(conn, 200, picojson::value(o));
 }
 
