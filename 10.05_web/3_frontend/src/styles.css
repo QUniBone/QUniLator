@@ -1058,11 +1058,16 @@ button.tree-name:hover .mono { color: var(--accent); }
 /* the medium the drive holds now, so the list opens on a known position */
 .pick-row.current { border-color: var(--accent); background: var(--surface-2); }
 
-/* the image parameter is chosen, not typed: a field that opens the picker */
+/* The image parameter is chosen, not typed: a field that opens the picker.
+   Its width is fixed, so a widget's size follows the drive and not the length
+   of the name of whatever is in it. A longer subpath is elided; the whole of it
+   is on the button's title, so hovering still reads it. */
 .imgfield {
   font-size: var(--fs-1); text-align: left; cursor: pointer;
   padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--r-sm);
-  background: var(--surface); color: var(--ink); min-width: 16ch;
+  background: var(--surface); color: var(--ink);
+  width: 22ch;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .imgfield:hover { border-color: var(--accent); background: var(--surface-2); }
 
