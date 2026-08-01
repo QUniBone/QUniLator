@@ -36,6 +36,13 @@ ExecStart=/usr/bin/qbone --port 80 --webroot /usr/share/qunilator/frontend
 # memory, so this stays privileged.
 LimitRTPRIO=99
 LimitMEMLOCK=infinity
+# A crash here leaves nothing to look at otherwise: the emulator dies with the
+# machine's whole state in it - the device set, the bus adapter's schedule, the
+# thread that was mid-transfer - and none of that reaches the journal. Allow a
+# core so the next one can be read (#48). The board writes it as "core" in the
+# working directory below, since it carries no systemd-coredump; the cap keeps
+# a mapped bus window from filling the card.
+LimitCORE=2G
 Restart=no
 # Answering SIGTERM shuts the device set down in order, but a stop must never
 # be able to hang a reboot: if the process has not exited in time - e.g. a

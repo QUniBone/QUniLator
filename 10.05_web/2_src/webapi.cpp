@@ -24,6 +24,7 @@
 #include <map>
 #include <set>
 #include <vector>
+#include <chrono>
 #include <mutex>
 
 #include "civetweb.h"
@@ -632,6 +633,51 @@ static bool control_apply_to_emulated_cpu(const std::string &action) {
 
 // POST /api/control
 // {"action": "init"|"powercycle"|"restart"|"halt"|"continue"|"dc_on"|"dc_off"}
+
+/* What a control action cost and how soon it followed the last one.
+ *
+ * Power cycles already serialize: this handler holds operations_mutex for the
+ * whole sequence, so one cannot start while another is mid-flight. What is not
+ * bounded is how soon the next may begin once the previous returns, and a
+ * cycle arriving while the bus is still settling from the last one is the
+ * shape #49 points at - the CPU there failed its own self-test, which is what
+ * a machine still being driven when DCLO/ACLO come round again would do.
+ *
+ * The ordinary cadence is an info line. A cycle following its predecessor
+ * closely enough to be suspicious says so at warning, where it will be in the
+ * journal without anyone having raised a log level first - which is the whole
+ * point, since the wedge is not reproducible on demand.
+ */
+static void control_note_timing(const std::string &action) {
+	static std::mutex timing_mutex;
+	static std::chrono::steady_clock::time_point last_end;
+	static std::string last_action;
+	static bool have_last = false;
+	// Below this the previous cycle's bus activity may not have finished.
+	static const long CLOSE_MS = 2000;
+
+	std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+	std::lock_guard<std::mutex> lock(timing_mutex);
+	if (have_last) {
+		long gap_ms = (long) std::chrono::duration_cast<std::chrono::milliseconds>(
+				now - last_end).count();
+		bool disruptive = action == "powercycle" || action == "dc_on"
+				|| action == "dc_off" || action == "restart";
+		if (disruptive && gap_ms < CLOSE_MS)
+			WEB_WARNING("control %s came %ld ms after %s: a bus still settling "
+					"from the previous cycle is what #49 looks like",
+					action.c_str(), gap_ms, last_action.c_str());
+		else
+			WEB_INFO("control %s, %ld ms after %s", action.c_str(), gap_ms,
+					last_action.c_str());
+	} else {
+		WEB_INFO("control %s", action.c_str());
+	}
+	last_end = std::chrono::steady_clock::now();
+	last_action = action;
+	have_last = true;
+}
+
 static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	const struct mg_request_info *ri = mg_get_request_info(conn);
 	if (strcmp(ri->request_method, "POST") != 0) {
@@ -729,7 +775,7 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 #endif
 		if (dec.set_powered >= 0)
 			webevents_note_powered(dec.set_powered != 0);
-		WEB_INFO("control %s", action.c_str());
+		control_note_timing(action);
 	}
 	// The shares hold an attached image read-only while the machine runs, and a
 	// power cycle changes what is attached: a machine switched off holds no
