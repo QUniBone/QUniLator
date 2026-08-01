@@ -37,6 +37,7 @@
 #include "device_configuration.hpp"
 
 #include "weblog.hpp"
+#include "webconsole_control.hpp"
 #include "webconsole_ext.hpp"
 
 static std::mutex port_mutex; // guards port_io + cur_* + port_open
@@ -46,9 +47,12 @@ static std::string cur_source = "webserial";
 static std::string cur_port = "ttyS2";
 static unsigned cur_baud = 38400;
 
-// retained history + live clients for /ws/console/ext; the text callback lets
-// the channel name one client the terminal answerer (see console_channel_c)
-static console_channel_c channel(web_ws_console_send, web_ws_console_send_text);
+// retained history + live clients for /ws/console/ext. The text callback carries
+// the channel's control frames (end of replay, answerer designation); this
+// channel names an answerer, so the guest's identification queries are answered
+// exactly once however many consoles watch (see console_channel_c).
+static console_channel_c channel(web_ws_console_send, web_ws_console_send_text,
+		/*designate_answerer*/ true);
 
 static std::atomic<bool> running(false);
 static std::thread reader;
@@ -61,14 +65,21 @@ static std::thread reader;
 // to RSX's SET /INQUIRE), so RSX could not identify the terminal. Queue all
 // client->tty bytes and drip them out one every TX_PACE_MS instead.
 static const unsigned TX_PACE_MS = 5;
+// A BREAK queued among the bytes. The queue holds ints so this marker cannot
+// collide with any of the 256 byte values a client may send.
+static const int TX_BREAK = -1;
+// How long the line is held spacing. A receiver recognizes BREAK once the
+// space outlasts one character frame; 300 ms is well past that at every rate
+// the SLU runs, and is what a terminal's BREAK key sends.
+static const unsigned TX_BREAK_MS = 300;
 static std::mutex tx_mutex;
 static std::condition_variable tx_cv;
-static std::deque<unsigned char> tx_queue;
+static std::deque<int> tx_queue;
 static std::thread tx_writer;
 
 static void tx_writer_loop(void) {
 	while (running) {
-		unsigned char c;
+		int item;
 		{
 			std::unique_lock<std::mutex> lk(tx_mutex);
 			tx_cv.wait_for(lk, std::chrono::milliseconds(50),
@@ -77,9 +88,28 @@ static void tx_writer_loop(void) {
 				break;
 			if (tx_queue.empty())
 				continue;
-			c = tx_queue.front();
+			item = tx_queue.front();
 			tx_queue.pop_front();
 		}
+		if (item == TX_BREAK) {
+			// Log it: a BREAK leaves no trace in the byte stream, so without
+			// this an operator whose guest ignores it cannot tell whether the
+			// line condition was asserted at all.
+			WEB_INFO("external console: asserting BREAK for %u ms", TX_BREAK_MS);
+			{
+				std::lock_guard<std::mutex> lock(port_mutex);
+				if (port_open)
+					port_io.SetBreak(1);
+			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(TX_BREAK_MS));
+			{
+				std::lock_guard<std::mutex> lock(port_mutex);
+				if (port_open)
+					port_io.SetBreak(0);
+			}
+			continue;
+		}
+		unsigned char c = (unsigned char) item;
 		{
 			std::lock_guard<std::mutex> lock(port_mutex);
 			if (port_open)
@@ -165,6 +195,18 @@ static int ws_data_handler(struct mg_connection *, int opcode, char *data,
 		return 0;
 	if (len == 0)
 		return 1;
+	// A TEXT frame is out-of-band control, never line data (see
+	// webconsole_control.hpp). BREAK is a line condition, so it is queued as an
+	// action rather than written: the tx writer holds it between the bytes
+	// already queued and the ones after it, in the order the client sent them.
+	if ((opcode & 0x0f) == MG_WEBSOCKET_OPCODE_TEXT) {
+		if (web_console_is_break(data, len)) {
+			std::lock_guard<std::mutex> lk(tx_mutex);
+			tx_queue.push_back(TX_BREAK);
+			tx_cv.notify_one();
+		}
+		return 1;
+	}
 	{
 		std::lock_guard<std::mutex> lk(tx_mutex);
 		for (size_t i = 0; i < len; i++)

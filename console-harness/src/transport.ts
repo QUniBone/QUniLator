@@ -73,10 +73,10 @@ export interface WsTransportOptions {
   /** "Basic …" header value; omitted when the board runs without a password. */
   authHeader?: string;
   /**
-   * Send BREAK as the {"break":true} OOB TEXT frame. Requires a backend that
-   * handles TEXT frames on the console channels; an older backend types the
-   * frame's characters into the console, so this stays opt-in until the
-   * backend support is deployed everywhere.
+   * Send BREAK as the {"break":true} OOB TEXT frame (the default). A backend
+   * older than that control-frame contract has no TEXT-frame handling and
+   * would type the frame's characters into the console, so a session against
+   * one sets this false and gets a refusal instead.
    */
   oobBreak?: boolean;
 }
@@ -142,11 +142,9 @@ export class WsTransport extends TransportBase {
 
   sendBreak(): Promise<void> {
     if (!this.ws) return Promise.reject(new Error("transport not open"));
-    if (!this.opts.oobBreak)
+    if (this.opts.oobBreak === false)
       return Promise.reject(
-        new Error(
-          "BREAK needs the backend's OOB TEXT-frame support (enable with oobBreak once deployed)",
-        ),
+        new Error("BREAK is disabled for this transport (oobBreak: false)"),
       );
     this.ws.send('{"break":true}');
     return Promise.resolve();

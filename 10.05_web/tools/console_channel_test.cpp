@@ -52,6 +52,15 @@ static int mock_send_text(void *client, const char *data, size_t len) {
 	return 1;
 }
 
+static const std::string ANS = "{\"answerer\":true}";
+static const std::string LIVE = "{\"live\":true}";
+
+// Was this client named the answerer? Its control stream also carries the
+// end-of-replay marker, which every client gets.
+static bool is_answerer(const mock_client &m) {
+	return m.ctrl.find(ANS) != std::string::npos;
+}
+
 /*** test scaffolding ***/
 static int failures = 0;
 static int checks = 0;
@@ -180,21 +189,20 @@ int main(void) {
 	/* 8. with a text callback the channel names exactly one answerer among the
 	      clients and promotes another when the answerer leaves */
 	{
-		const std::string ANS = "{\"answerer\":true}";
-		console_channel_c ch(mock_send, mock_send_text);
+		console_channel_c ch(mock_send, mock_send_text, /*designate_answerer*/ true);
 		mock_client a, b, c;
 		ch.add_client(&a);
-		check(a.ctrl == ANS, "first client is named the answerer");
+		check(is_answerer(a), "first client is named the answerer");
 		ch.add_client(&b);
 		ch.add_client(&c);
-		check(b.ctrl.empty() && c.ctrl.empty(), "later clients are viewers");
+		check(!is_answerer(b) && !is_answerer(c), "later clients are viewers");
 
 		ch.remove_client(&a);           // the answerer leaves
-		int promoted = (b.ctrl == ANS) + (c.ctrl == ANS);
+		int promoted = is_answerer(b) + is_answerer(c);
 		check(promoted == 1, "exactly one viewer is promoted when the answerer leaves");
 
 		// removing the other viewer must not re-designate the sitting answerer
-		mock_client *ansr = (b.ctrl == ANS) ? &b : &c;
+		mock_client *ansr = is_answerer(b) ? &b : &c;
 		mock_client *viewer = (ansr == &b) ? &c : &b;
 		std::string before = ansr->ctrl;
 		ch.remove_client(viewer);
@@ -204,20 +212,19 @@ int main(void) {
 		check(ch.client_count() == 0, "all clients gone");
 		mock_client d;
 		ch.add_client(&d);
-		check(d.ctrl == ANS, "a fresh client is named answerer when none exists");
+		check(is_answerer(d), "a fresh client is named answerer when none exists");
 	}
 
 	/* 9. a dead first client is not designated; the next live one is */
 	{
-		const std::string ANS = "{\"answerer\":true}";
-		console_channel_c ch(mock_send, mock_send_text);
+		console_channel_c ch(mock_send, mock_send_text, /*designate_answerer*/ true);
 		ch.append("h", 1);              // non-empty ring so the dead client is detected
 		mock_client dead, live;
 		dead.alive = false;
 		ch.add_client(&dead);           // send_text reports dead -> not designated, not inserted
 		check(ch.client_count() == 0 && dead.ctrl.empty(), "dead client is not the answerer");
 		ch.add_client(&live);
-		check(live.ctrl == ANS, "the next live client becomes the answerer");
+		check(is_answerer(live), "the next live client becomes the answerer");
 	}
 
 	/* 11. the replay strips terminal-query escapes (DA/DECID/DSR) so a connecting
@@ -253,6 +260,57 @@ int main(void) {
 		ch.add_client(&b);
 		check(a.ctrl.empty() && b.ctrl.empty(),
 				"no answerer designation without a text callback");
+	}
+
+	/* 12. the end-of-replay marker: every client is told where the replayed
+	      history ends and the live stream begins, so a script driving the
+	      console anchors its matching there rather than on a prompt that
+	      scrolled past minutes ago */
+	{
+		console_channel_c ch(mock_send, mock_send_text);
+		ch.append("old prompt> ", 12);
+		mock_client c;
+		ch.add_client(&c);
+		check(c.got == "old prompt> ", "the replay arrives before the marker");
+		check(c.ctrl == LIVE, "the client is told the replay has ended");
+		check(!is_answerer(c), "a channel that designates no answerer sends only the marker");
+		ch.append("live", 4);
+		check(c.got == "old prompt> live", "live bytes follow the marker");
+	}
+
+	/* 13. an empty ring still marks the boundary: a client that connects to a
+	      silent line must know it is already live, not still waiting for a
+	      replay that will never come */
+	{
+		console_channel_c ch(mock_send, mock_send_text);
+		mock_client c;
+		ch.add_client(&c);
+		check(c.ctrl == LIVE, "an empty ring still sends the marker");
+		check(c.got.empty(), "and no bytes with it");
+	}
+
+	/* 14. the answerer designation precedes the replay, and the marker follows
+	      it: a client's control stream reads answerer-then-live */
+	{
+		console_channel_c ch(mock_send, mock_send_text, /*designate_answerer*/ true);
+		ch.append("hist", 4);
+		mock_client c;
+		ch.add_client(&c);
+		check(c.ctrl == ANS + LIVE, "answerer is named first, then the replay ends");
+	}
+
+	/* 15. a client that dies on the marker never joins the live set: the
+	      channel must not stream to a client it could not tell about the
+	      boundary */
+	{
+		console_channel_c ch(mock_send, mock_send_text);
+		mock_client c;
+		ch.add_client(&c);              // gets the marker, joins
+		check(ch.client_count() == 1, "a live client joins");
+		mock_client dead;
+		dead.alive = false;
+		ch.add_client(&dead);
+		check(ch.client_count() == 1, "a client dead on the marker does not join");
 	}
 
 	printf("%d checks, %d failures\n", checks, failures);

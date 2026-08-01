@@ -42,20 +42,28 @@ public:
 
 	static const size_t default_cap = 256 * 1024; // per-channel ring, bytes
 
-	// send_text designates the terminal "answerer": when non-null, the channel
-	// picks one client as the single terminal that answers the guest's
-	// identification queries (so N mirrored consoles do not each answer), and
-	// tells it so with a control frame. A null send_text leaves every client a
-	// plain mirror (the DL11 taps).
+	// send_text carries the channel's out-of-band control frames to one client:
+	// the end-of-replay marker every channel sends, and the answerer
+	// designation. `designate_answerer` picks one client as the single terminal
+	// that answers the guest's identification queries, so N mirrored consoles do
+	// not each answer; a channel without it leaves every client a plain mirror
+	// (the DL11 taps). A null send_text sends no control frames at all.
 	explicit console_channel_c(send_fn_t send, send_text_fn_t send_text = nullptr,
-			size_t cap = default_cap);
+			bool designate_answerer = false, size_t cap = default_cap);
 
 	// Producer thread: append raw bytes to the ring and broadcast them live,
 	// dropping any client that reports dead.
 	void append(const char *data, size_t len);
 
-	// ws_ready_handler: atomically replay the ring to the new client, then add
-	// it to the live set. A client that reports dead on the snapshot is dropped.
+	// ws_ready_handler: atomically replay the ring to the new client, mark the
+	// end of that replay, then add it to the live set. A client that reports
+	// dead on the snapshot is dropped.
+	//
+	// The end-of-replay marker is the TEXT frame {"live":true}, sent after the
+	// history and before the client joins the live set: everything before it is
+	// what the line printed earlier, everything after it is happening now. A
+	// script driving the console anchors its pattern matching there, so a prompt
+	// that scrolled past is never mistaken for the one it is waiting for.
 	void add_client(void *client);
 
 	// ws_close_handler: forget a client.
@@ -83,7 +91,8 @@ private:
 	size_t cap_;
 	std::set<void *> clients_;
 	send_fn_t send_;
-	send_text_fn_t send_text_;     // null: no answerer designation (plain mirror)
+	send_text_fn_t send_text_;     // null: no out-of-band control frames at all
+	bool designate_answerer_;      // false: every client is a plain mirror
 	void *answerer_ = nullptr;     // the one client that answers guest queries
 };
 

@@ -156,6 +156,13 @@ private:
 
 public:
 
+	// A BREAK received on the line: a spacing condition longer than one
+	// character time, which the UART reports as a null data byte with a
+	// framing error. Presented through the same registers as a received
+	// character, so a guest waiting for BREAK (a boot monitor, a debugger)
+	// sees what real hardware would give it.
+	void receive_break(void);
+
 	slu_c();
 	~slu_c();
 	

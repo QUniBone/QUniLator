@@ -4,7 +4,7 @@
  *   qcon run <script.yaml> [--host H] [--console CH] [--var NAME=VALUE]...
  *                          [--record OUT.cast] [--pw-file PATH] [--verbose]
  *   qcon record <out.cast> --console CH [--host H] [--pw-file PATH]
- *   qcon break --console CH [--host H] [--oob]
+ *   qcon break [--console CH] [--host H]
  *
  * run executes a step file against a console and always records the session
  * (default: <script-stem>-<timestamp>.cast in the working directory). Exit
@@ -34,7 +34,7 @@ function usage(): never {
   process.stderr.write(
     "usage: qcon run <script.yaml> [--host H] [--console CH] [--var N=V]... [--record OUT] [--pw-file P] [--verbose]\n" +
       "       qcon record <out.cast> --console CH [--host H] [--pw-file P]\n" +
-      "       qcon break --console CH [--host H] [--pw-file P] --oob\n",
+      "       qcon break [--console CH] [--host H] [--pw-file P]\n",
   );
   process.exit(2);
 }
@@ -50,17 +50,12 @@ interface CommonOpts {
   verbose: boolean;
 }
 
-function makeTransport(
-  opts: CommonOpts,
-  channel: string,
-  oobBreak = false,
-): Transport {
+function makeTransport(opts: CommonOpts, channel: string): Transport {
   const tcp = /^tcp:([^:]+):(\d+)$/.exec(channel);
   if (tcp) return new TcpTransport(tcp[1], parseInt(tcp[2], 10));
   const target = makeTarget(opts.host, opts.pwFile);
   return new WsTransport(consoleWsUrl(target, channel), {
     authHeader: target.authHeader,
-    oobBreak,
   });
 }
 
@@ -177,9 +172,9 @@ async function cmdRecord(outPath: string, opts: CommonOpts): Promise<number> {
   return 0;
 }
 
-async function cmdBreak(opts: CommonOpts, oob: boolean): Promise<number> {
+async function cmdBreak(opts: CommonOpts): Promise<number> {
   const channel = await resolveChannel(opts);
-  const transport = makeTransport(opts, channel, oob);
+  const transport = makeTransport(opts, channel);
   await transport.open();
   await transport.sendBreak();
   transport.close();
@@ -197,7 +192,6 @@ async function main(): Promise<number> {
       var: { type: "string", multiple: true, default: [] },
       record: { type: "string" },
       verbose: { type: "boolean", default: false },
-      oob: { type: "boolean", default: false },
     },
   });
   const [cmd, arg] = positionals;
@@ -225,7 +219,7 @@ async function main(): Promise<number> {
       if (!arg) usage();
       return cmdRecord(arg, { ...opts, host: opts.host || "qbone" });
     case "break":
-      return cmdBreak({ ...opts, host: opts.host || "qbone" }, values.oob ?? false);
+      return cmdBreak({ ...opts, host: opts.host || "qbone" });
     default:
       usage();
   }

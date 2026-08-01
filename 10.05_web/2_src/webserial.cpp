@@ -48,7 +48,9 @@
 // transmit buffer the flush thread drains. Created on first use and never freed.
 struct serial_bridge_c {
 	serial_tcp_line_c *line = nullptr;
-	console_channel_c channel{web_ws_console_send};
+	// The text callback carries the end-of-replay marker; a mux line designates no
+	// answerer (it is not a console a guest queries for its terminal type).
+	console_channel_c channel{web_ws_console_send, web_ws_console_send_text};
 	std::mutex xmt_mutex;
 	std::string xmt_buffer;
 };

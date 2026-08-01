@@ -38,6 +38,7 @@
 #include "logger.hpp"
 #include "device_configuration.hpp"
 
+#include "webconsole_control.hpp"
 #include "webconsole.hpp"
 
 // per-SLU bridge state
@@ -57,10 +58,12 @@ struct console_c {
 	};
 
 	// retained history + live clients for this line's /ws/console/<n>. The text
-	// callback lets the channel name one client the terminal answerer, so the
-	// guest's identification queries — RSX's SET /INQUIRE, VMS's SET
-	// TERMINAL/INQUIRE — are answered exactly once however many consoles watch.
-	console_channel_c channel{web_ws_console_send, web_ws_console_send_text};
+	// callback carries the channel's control frames; this channel names one
+	// client the terminal answerer, so the guest's identification queries —
+	// RSX's SET /INQUIRE, VMS's SET TERMINAL/INQUIRE — are answered exactly once
+	// however many consoles watch.
+	console_channel_c channel{web_ws_console_send, web_ws_console_send_text,
+			/*designate_answerer*/ true};
 
 	// xmt bytes from the PDP-11, buffered so the DL11 thread never blocks
 	std::mutex xmt_mutex;
@@ -72,6 +75,10 @@ struct console_c {
 	// the line this bridge carries, whatever device owns it
 	rs232adapter_c *adapter = nullptr;  // set while registered
 	std::stringstream *rcv_stream = nullptr;
+	// the SLU behind this line, where there is one: a BREAK is a line
+	// condition the model presents through its registers, not a byte the
+	// receive stream can carry. Null for the VAX console.
+	slu_c *slu = nullptr;
 
 	console_c() : tap_stream(&tap_buf) {
 		tap_buf.owner = this;
@@ -121,6 +128,13 @@ static int ws_data_handler(struct mg_connection *, int opcode, char *data,
 		return 0;
 	if (len == 0 || device_configuration == nullptr)
 		return 1;
+	// A TEXT frame is out-of-band control, never line data (see
+	// webconsole_control.hpp).
+	if ((opcode & 0x0f) == MG_WEBSOCKET_OPCODE_TEXT) {
+		if (web_console_is_break(data, len) && console->slu != nullptr)
+			console->slu->receive_break();
+		return 1;
+	}
 	// inject like the menu's "dl11 rcv" command
 	if (console->adapter == nullptr)
 		return 1;
@@ -140,8 +154,10 @@ void webconsole_register(struct mg_context *ctx) {
 	if (device_configuration != nullptr) {
 		consoles[0].adapter = &device_configuration->DL11->rs232adapter;
 		consoles[0].rcv_stream = &device_configuration->dl11_rcv_stream;
+		consoles[0].slu = device_configuration->DL11;
 		consoles[1].adapter = &device_configuration->DL11b->rs232adapter;
 		consoles[1].rcv_stream = &device_configuration->dl11b_rcv_stream;
+		consoles[1].slu = device_configuration->DL11b;
 #if defined(UNIBUS)
 		if (device_configuration->CPUVAX != nullptr) {
 			consoles[2].adapter = &device_configuration->CPUVAX->rs232adapter;

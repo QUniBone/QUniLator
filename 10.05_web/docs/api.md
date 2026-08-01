@@ -803,6 +803,38 @@ mid-session reconstructs the current screen from the replay; xterm.js repaints
 from the raw bytes with no server-side screen model. The ring is per channel and
 does not persist across a service restart; it is unrelated to the log journal.
 
+#### Control frames
+
+Anything that is not a byte on the line travels as a **TEXT** frame holding one
+small JSON object, so it can never be mistaken for terminal data. Binary frames
+are always the byte stream.
+
+Server to client:
+
+| | |
+|---|---|
+| `{"live":true}` | the replayed history ends here; everything after is live |
+| `{"answerer":true}` | you are the one client that answers the guest's terminal queries |
+
+The `live` marker is sent after the replay and before the client joins the live
+set, so the boundary is exact. A program driving the console anchors its pattern
+matching there and never mistakes a prompt that scrolled past for the one it is
+waiting for. Every channel sends it; only a console channel designates an
+answerer.
+
+Client to server:
+
+| | |
+|---|---|
+| `{"break":true}` | assert a line BREAK |
+
+BREAK is a line condition rather than a character, which is why it cannot ride
+in the byte stream. On `/ws/console/ext` it holds the real tty spacing for
+300 ms, ordered among the bytes already queued for the line. On an emulated DL11
+(`/ws/console/0`, `/1`) the SLU reports a null data byte with a framing error,
+which is what a UART gives its driver for a received BREAK. The VAX console
+ignores it. A client that ignores TEXT frames is unaffected by any of this.
+
 ### `/ws/console/ext`
 
 Binary frames bridged to the real console SLU on `/dev/ttyS2` (the external
