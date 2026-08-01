@@ -905,16 +905,23 @@ mscp_disk_server::GetUnitStatus(
             mscp_drive_c* candidate = GetDiskDrive(unitNumber);
             if (nullptr != candidate && candidate->IsAvailable())
             {
-                drive = candidate;
                 break;
             }
             unitNumber++;
         }
-        // Past the last unit the controller has: the walk is over, which the
-        // offline answer below tells the host.
+        // Past the last unit: the walk comes back around to unit 0 and answers
+        // for it. That wrap is what ends the walk. A host asks for one past
+        // the unit it was last given and stops when a number it has already
+        // seen comes back; naming a unit above the last one instead leaves it
+        // asking for ever, each time for one more than the answer carried.
+        if (unitNumber >= _port->GetDriveCount())
+        {
+            unitNumber = 0;
+        }
         header->UnitNumber = unitNumber;
     }
-    else if (unitNumber < _port->GetDriveCount())
+
+    if (unitNumber < _port->GetDriveCount())
     {
         drive = GetDiskDrive(unitNumber);
     }
