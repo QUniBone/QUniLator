@@ -309,7 +309,8 @@ export function StoragePage() {
       pick === CUSTOM ? 'New ' + humanSize(size) + ' disk image' : 'New ' + pick + ' image',
       'File name',
       'scratch' + suffix,
-      'Create'
+      'Create',
+      'stem'
     );
     if (!name) return;
     await createImage(name, cwd, kind, size);

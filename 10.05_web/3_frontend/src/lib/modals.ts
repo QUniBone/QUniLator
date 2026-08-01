@@ -42,11 +42,18 @@ export function confirmModal(title: string, body: string, confirmLabel: string):
 
 // A one-field text prompt (Save As, rename). Resolves the trimmed value, or
 // null when cancelled.
+//
+// `select` says what the opened prompt offers to be typed over. 'all' is the
+// whole value, which is what a rename or a Save As wants. 'stem' stops the
+// selection before the last dot, for a suggested file name whose extension the
+// medium implies: typing replaces the name and leaves the extension standing,
+// and an operator who does mean to change it can still select it.
 export function promptModal(
   title: string,
   label: string,
   initial: string,
-  confirmLabel: string
+  confirmLabel: string,
+  select: 'all' | 'stem' = 'all'
 ): Promise<string | null> {
   return new Promise((resolve) => {
     const host = document.createElement('div');
@@ -89,7 +96,11 @@ export function promptModal(
     document.body.appendChild(host);
     const el = host.querySelector('#pm-in') as HTMLInputElement;
     el.focus();
-    el.select();
+    // a leading dot is a hidden file's name, not an extension, so a value with
+    // no dot past its first character has no extension to leave standing
+    const dot = select === 'stem' ? initial.lastIndexOf('.') : -1;
+    if (dot > 0) el.setSelectionRange(0, dot);
+    else el.select();
   });
 }
 
