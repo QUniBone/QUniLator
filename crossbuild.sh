@@ -9,12 +9,16 @@
 # a build needs nothing but this repository and Docker. See PRU_CGT_VERSION
 # below for what pins the compiler.
 #
-# usage:
-#   ./crossbuild.sh            build for QBUS (demo binary)
-#   ./crossbuild.sh -u         build for UNIBUS
-#   ./crossbuild.sh -d         build and deploy the binary to $QUNILATOR_HOST
-#   ./crossbuild.sh -c         clean object directory first
-#   ./crossbuild.sh -p         rebuild the PRU firmware even if it is present
+# "./crossbuild.sh -h" summarises the options; usage() below is what it prints,
+# so that summary is the one place they are listed. Plain "./crossbuild.sh"
+# builds the QBUS binary.
+#
+# A UNIBUS build tests the emulated CPU cores before it builds the binary: the
+# MAINDEC diagnostics of 10.06_cputest run with the host compiler in the same
+# container, so a core defect stops the build (and any deploy) rather than
+# reaching the board. Only the (core, tape) pairs whose sources changed are
+# re-run, so an unrelated build pays nothing. A QBUS build does not run them -
+# a QBone drives a real CPU board and has no emulated CPU.
 #
 # Both PRU firmwares are built: the one that drives a backplane and the one that
 # keeps the bus inside the PRU. The emulator carries both and loads whichever the
@@ -45,20 +49,55 @@ PRU_CGT_VERSION=2.3.1
 # header-stamp write that follow the build.
 DOCKER_USER="$(id -u):$(id -g)"
 
+usage() {
+    cat <<EOF
+usage: $(basename "$0") [-u] [-d] [-c] [-p] [-t]
+
+Cross-compile the emulator for the BeagleBone in a Docker container.
+Without options it builds the QBUS binary and leaves it in the tree.
+
+  -u  build for UNIBUS instead of QBUS; also runs the CPU core tests
+  -d  deploy the binary to \$QUNILATOR_HOST after a successful build
+  -c  remove the object directories first, forcing a full rebuild - and, on a
+      UNIBUS build, a full re-run of the CPU core tests
+  -p  rebuild the PRU firmware even when it is already present
+  -t  skip the CPU core tests of a UNIBUS build
+  -h  show this summary (-? does the same)
+
+environment:
+  QUNILATOR_HOST        ssh destination of the device (default $QUNILATOR_HOST)
+  QUNILATOR_REMOTE_DIR  checkout directory on the device (default $QUNILATOR_REMOTE_DIR)
+EOF
+}
+
 SUFFIX=_q
 PLATFORM=QBUS
 DEPLOY=0
 CLEAN=0
 PRU_CLEAN=0
-while getopts "udcp" opt; do
+SKIP_TESTS=0
+# The leading colon silences getopts' own message, so an unknown option is
+# reported here instead. "?" is both an option letter and the marker getopts
+# uses for a bad one, so the case below asks OPTARG - silent mode sets it to the
+# offending letter - which letter it really was.
+while getopts ":udcpth" opt; do
     case $opt in
         u) SUFFIX=_u; PLATFORM=UNIBUS;;
         d) DEPLOY=1;;
         c) CLEAN=1;;
         p) PRU_CLEAN=1;;
-        *) exit 1;;
+        t) SKIP_TESTS=1;;
+        h) usage; exit 0;;
+        ?) case $OPTARG in
+               ''|'?') usage; exit 0;;
+           esac
+           echo "$(basename "$0"): unknown option -$OPTARG" >&2
+           usage >&2
+           exit 1;;
     esac
 done
+
+JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
 # builder image: Debian with the armhf cross toolchain.
 #
@@ -70,9 +109,12 @@ CROSSBUILD_RECIPE=$(cat <<'EOF'
 FROM debian:trixie-slim
 # armhf as a foreign architecture: the target's libraries are linked into the
 # emulator, not run on the builder
+# g++ is the native compiler, for the CPU core tests of 10.06_cputest: those run
+# on the build machine against a fake bus, so they need a host compiler, not the
+# cross one.
 RUN dpkg --add-architecture armhf && apt-get update \
     && apt-get install -y --no-install-recommends \
-        gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf make file \
+        gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf g++ make file \
         curl ca-certificates bzip2 \
         libx11-dev:armhf libxcb1-dev:armhf libxau-dev:armhf libxdmcp-dev:armhf \
     && rm -rf /var/lib/apt/lists/*
@@ -152,6 +194,26 @@ fi
 # make must see them as newer than the PRU sources, or it tries to run clpru
 touch "$PRU_DEPLOY_DIR"/*_array.c
 
+# The emulated CPU cores against the DEC MAINDEC diagnostics. Host compiler,
+# host binary, a bus made of a word array. UNIBUS only: a QBone carries a real
+# CPU board and ships no emulated CPU, so the cores are none of its build's
+# business. Stamps under 10.06_cputest/4_deploy keep this to the pairs whose
+# sources actually changed.
+if [ $SKIP_TESTS = 0 ] && [ $PLATFORM = UNIBUS ]; then
+    # -c means "build everything again", so it throws away the harness objects
+    # and the stamps too and every (core, tape) pair runs afresh. Serially: the
+    # clean would otherwise race the compiles of the run that follows.
+    if [ $CLEAN = 1 ]; then
+        docker run --rm --user "$DOCKER_USER" -v "$PWD:/qunibone" \
+            -w /qunibone/10.06_cputest/2_src $IMAGE \
+            make QUNIBONE_DIR=/qunibone clean
+    fi
+    echo "Running the CPU core tests ..."
+    docker run --rm --user "$DOCKER_USER" -v "$PWD:/qunibone" \
+        -w /qunibone/10.06_cputest/2_src $IMAGE \
+        make -j"$JOBS" QUNIBONE_DIR=/qunibone test
+fi
+
 OBJDIR="10.03_app_demo/4_deploy$SUFFIX"
 HEADER_STAMP="$OBJDIR/.headers.sha"
 
@@ -179,7 +241,7 @@ fi
 
 docker run --rm --user "$DOCKER_USER" -v "$PWD:/qunibone" \
     -w /qunibone/10.03_app_demo/2_src $IMAGE \
-    make -f makefile$SUFFIX -j"$(sysctl -n hw.ncpu 2>/dev/null || echo 4)" \
+    make -f makefile$SUFFIX -j"$JOBS" \
         QUNILATOR_DIR=/qunibone \
         MAKE_CONFIGURATION=RELEASE \
         MAKE_TARGET_ARCH=BBB \

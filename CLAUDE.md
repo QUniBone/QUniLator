@@ -105,7 +105,10 @@ KT11-D memory management). It builds with the **host** compiler and runs on the
 build machine: the cores reach the world only through the `unibone_*()` functions
 of `cpu_bus_adapter.h`, and `10.06_cputest/2_src/testbus.cpp` implements those on
 a word array with KL11 and KW11 stubs, so no board and no bus hardware take part.
-CI runs the same command.
+CI runs the same command, and so does `./crossbuild.sh -u` before it builds the
+binary — a failing core stops the build and any deploy. A QBUS build does not
+run them: a QBone drives a real CPU board and ships no emulated CPU.
+`./crossbuild.sh -t` skips them when iterating on something else.
 
 Change a core and the tapes for it re-run; a stamp per (core, tape) pair keeps an
 unrelated build from re-running anything. Drop a tape into `3_tapes/both`,
