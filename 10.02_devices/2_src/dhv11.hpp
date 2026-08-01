@@ -331,6 +331,14 @@ private:
 	intr_request_c rcvintr_request = intr_request_c(this);
 	intr_request_c xmtintr_request = intr_request_c(this);
 	dma_request_c  dma_request = dma_request_c(this);
+	// How long a transmit DMA may take before it is called lost. A real
+	// transfer is microseconds; this is only there so a bus that has stopped
+	// answering cannot park the transmit worker for good.
+	static const unsigned DMA_TIMEOUT_MS = 2000;
+	// The transmit DMA lands here. It belongs to the device rather than to the
+	// worker's stack: a transfer reported timed out may still be owned by the
+	// PRU, which would write into the buffer after the worker had moved on.
+	uint16_t dma_buf[4096];
 
 	pthread_mutex_t state_mutex = PTHREAD_MUTEX_INITIALIZER;
 	pthread_cond_t  xmt_cond = PTHREAD_COND_INITIALIZER;
@@ -401,12 +409,12 @@ private:
 	// set that follows the guest's DTR bit, otherwise the line always may.
 	void refresh_listen_gates(void);
 
-	void open_lines(void);
+	std::string open_lines(void);
 	void close_lines(void);
 	// (re)configure and (re)open one line's TCP transport with the given role/
 	// host/port. Closes any transport already running on the line first; an empty
 	// role leaves it closed. Used both at install and for a live tcp_* edit.
-	void open_line(unsigned i, const std::string &role, const std::string &host,
+	bool open_line(unsigned i, const std::string &role, const std::string &host,
 			uint16_t port);
 
 	bool dma_read_words(uint32_t addr, uint16_t *buffer, unsigned wordcount);

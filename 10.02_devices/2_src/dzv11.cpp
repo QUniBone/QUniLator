@@ -156,7 +156,7 @@ bool dzv11_c::on_param_changed(parameter_c *param)
 // the workers stop touching the line, but the blocking socket close()/open()
 // runs outside the lock — the same "never hold state_mutex across blocking I/O"
 // rule the transmit path follows.
-void dzv11_c::open_line(unsigned i, const std::string &role, const std::string &host,
+bool dzv11_c::open_line(unsigned i, const std::string &role, const std::string &host,
 		uint16_t port)
 {
 	pthread_mutex_lock(&state_mutex);
@@ -167,7 +167,7 @@ void dzv11_c::open_line(unsigned i, const std::string &role, const std::string &
 		tcp_line[i].close(); // drops any client connected under the old config
 
 	if (role.empty())
-		return; // an empty tcp_role leaves the line closed
+		return true; // an empty tcp_role leaves the line closed on purpose
 
 	serial_tcp_line_c &ln = tcp_line[i];
 	if (role == "listen")
@@ -178,7 +178,7 @@ void dzv11_c::open_line(unsigned i, const std::string &role, const std::string &
 		ln.role = serial_tcp_line_c::ROLE_WEBSOCKET;
 	else {
 		WARNING("line %u: tcp_role must be listen/connect/websocket, got \"%s\"", i, role.c_str());
-		return;
+		return false;
 	}
 	ln.host = host;
 	ln.port = port;
@@ -186,13 +186,14 @@ void dzv11_c::open_line(unsigned i, const std::string &role, const std::string &
 	snprintf(lbl, sizeof lbl, "dzv11.%u", i);
 	ln.log_label = lbl;
 	ln.verbose = true;
-	if (ln.open()) {
-		pthread_mutex_lock(&state_mutex);
-		line_open[i] = true;
-		pthread_mutex_unlock(&state_mutex);
-	} else {
+	if (!ln.open()) {
 		WARNING("line %u: cannot open TCP transport (port %u)", i, (unsigned) port);
+		return false;
 	}
+	pthread_mutex_lock(&state_mutex);
+	line_open[i] = true;
+	pthread_mutex_unlock(&state_mutex);
+	return true;
 }
 
 void dzv11_c::refresh_listen_gates(void)
@@ -201,11 +202,20 @@ void dzv11_c::refresh_listen_gates(void)
 		tcp_line[i].set_listen_gate(!dtr_listen.value || line_dtr[i]);
 }
 
-void dzv11_c::open_lines(void)
+// "" when every line that wants a transport got one, else which ones did not.
+std::string dzv11_c::open_lines(void)
 {
 	refresh_listen_gates();
+	std::string failed;
 	for (unsigned i = 0; i < DZ_LINE_COUNT; i++)
-		open_line(i, tcp_role[i].value, tcp_host[i].value, (uint16_t) tcp_port[i].value);
+		if (!open_line(i, tcp_role[i].value, tcp_host[i].value,
+				(uint16_t) tcp_port[i].value)) {
+			if (!failed.empty())
+				failed += ", ";
+			failed += std::to_string(i) + " (port "
+					+ std::to_string((unsigned) tcp_port[i].value) + ")";
+		}
+	return failed;
 }
 
 void dzv11_c::close_lines(void)
@@ -223,7 +233,22 @@ bool dzv11_c::on_before_install(void)
 	// role can be retuned live (see on_param_changed); they do not touch the bus
 	// registration. The base class locks the bus params (base_addr/slot/vector/
 	// level) on enable.
-	open_lines();
+	//
+	// A card whose serial side is not there must not report itself installed:
+	// the operator would be told the card is in the machine while nothing can
+	// reach its lines. A port already held -- by another process, or by this
+	// card's own listener from an incarnation that has not let go yet -- is
+	// therefore a refusal, like a memory card whose range is already answered.
+	// Whatever did come up is closed again, so a refused enable leaves no
+	// listener behind.
+	std::string failed = open_lines();
+	if (!failed.empty()) {
+		close_lines();
+		ERROR("cannot open the TCP transport of line %s; the port may be in "
+				"use, or held by a previous incarnation of this card",
+				failed.c_str());
+		return false;
+	}
 	return true;
 }
 
