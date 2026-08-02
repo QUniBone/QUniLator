@@ -31,19 +31,27 @@ static bool device_is_infrastructure(device_c *d) {
 			|| dynamic_cast<mscp_server_base *>(d) != nullptr;
 }
 
-// The medium a drive holds is its "image" parameter, the path of the file the
-// drive has open. Naming it keeps this module on the device_c/parameter_c
-// abstraction, which is what makes it host testable.
+// The medium a drive holds is the parameter the drive declares as one — a file
+// of the image tree, CONTENT_IMAGE — rather than one recognised by the name it
+// was given. That keeps this module on the device_c/parameter_c abstraction,
+// which is what makes it host testable, and it follows a drive that names the
+// parameter something else.
 //
 // The parameter is moved with set(), the call the devices menu makes. A drive
 // locks the parameter while a pack spins, and that lock speaks for the operator
 // setting a value by hand on a running machine; the power switch reaches past
 // it, the way pulling the supply does.
-static const char *image_param_name = "image";
+static bool is_image_param(parameter_c *p) {
+	return p != nullptr && p->content == parameter_c::CONTENT_IMAGE;
+}
 
 static parameter_string_c *image_param_of(device_c *dev) {
-	return dev == nullptr ? nullptr
-			: dynamic_cast<parameter_string_c *>(dev->param_by_name(image_param_name));
+	if (dev == nullptr)
+		return nullptr;
+	for (parameter_c *p : dev->parameter)
+		if (is_image_param(p))
+			return dynamic_cast<parameter_string_c *>(p);
+	return nullptr;
 }
 
 // A card of the dark machine, and the medium its drive holds.
@@ -91,7 +99,7 @@ bool webpower_is_in_machine(device_c *dev) {
 }
 
 std::string webpower_param_value(device_c *dev, parameter_c *p) {
-	if (p != nullptr && dev != nullptr && strcasecmp(p->name.c_str(), image_param_name) == 0) {
+	if (is_image_param(p) && dev != nullptr) {
 		std::lock_guard<std::mutex> lock(carried_mutex);
 		const carried_device_t *d = carried_entry_locked(dev);
 		if (d != nullptr && d->had_image)

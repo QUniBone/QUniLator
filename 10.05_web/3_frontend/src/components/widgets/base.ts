@@ -2,7 +2,7 @@
 // carrying its own controls and the space they take on the grid.
 import { html } from '../../html';
 import type { ComponentChildren } from 'preact';
-import type { LiveDev } from '../../types';
+import type { LiveDev, LiveParam } from '../../types';
 import { store } from '../../store';
 import { statusParam } from '../../lib/devmodel';
 
@@ -15,6 +15,13 @@ export function lampOn(d: LiveDev, n: string): boolean {
 export function paramVal(d: LiveDev, n: string): string {
   const p = (d.params || []).find((q) => q.n === n);
   return p ? p.v : '';
+}
+
+// The parameter a drive declares as the medium it holds — the device says so
+// (content "image"), rather than the widget knowing a name. Undefined for a
+// device that takes no medium.
+export function mediumParam(d: LiveDev): LiveParam | undefined {
+  return (d.params || []).find((p) => p.c === 'image');
 }
 
 // A card's size on the dashboard grid, in whole cells.

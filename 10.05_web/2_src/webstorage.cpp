@@ -16,6 +16,8 @@
      POST   /api/move                   {from,to} rename/move a file or folder
      POST   /api/folders                {path} create a folder
      DELETE /api/folders/<subpath>      remove an empty folder
+     GET    /api/roms                   the ROM listings the package ships
+     POST   /api/roms                   {name,dir} copy one into the tree
 
    Attaching an image to a drive is a parameter write on the drive
    (PUT /api/devices/<drive>/params/image with the subpath).
@@ -378,6 +380,165 @@ static void images_list(struct mg_connection *conn) {
 	out["dirs"] = picojson::value(dirs);
 	out["images"] = picojson::value(images);
 	send_json(conn, 200, picojson::value(out));
+}
+
+// -------------------------------------------------------------------------
+// the ROM listings the package ships
+//
+// These are package content, not operator state: they live under /usr/share
+// and every upgrade rewrites them, so nothing references them by path. They are
+// offered as a *source* instead — the operator copies one into the images tree
+// and the copy is theirs, to attach to a card and to edit. That keeps the two
+// trees from being confused for one another: a device only ever names a file
+// under images/.
+
+// Where the packaging installs the M9312 console/diagnostic and boot PROM
+// listings. Overridable so a build tree can be run without installing.
+static std::string package_roms_dir() {
+	const char *env = getenv("QUNILATOR_ROMS_DIR");
+	return env != nullptr ? std::string(env) : "/usr/share/qunilator/roms";
+}
+
+// A MACRO-11 listing names itself on its ".title" line, which is what an
+// operator can recognise a PROM by — the 23-nnnnn part number alone says
+// nothing. Empty when the file carries no title.
+static std::string listing_title(const std::string &abspath) {
+	FILE *f = fopen(abspath.c_str(), "r");
+	if (f == nullptr)
+		return "";
+	char line[512];
+	std::string title;
+	// the title is the first statement of the file; a handful of lines is
+	// enough to find it without reading a 26 kB listing
+	for (int n = 0; n < 20 && fgets(line, sizeof line, f) != nullptr; n++) {
+		const char *p = strstr(line, ".title");
+		if (p == nullptr)
+			continue;
+		p += strlen(".title");
+		while (*p == ' ' || *p == '\t')
+			p++;
+		title = p;
+		while (!title.empty() && (title.back() == '\n' || title.back() == '\r'
+				|| title.back() == ' ' || title.back() == '\t'))
+			title.pop_back();
+		break;
+	}
+	fclose(f);
+	return title;
+}
+
+// GET /api/roms — what the package offers to copy
+static void package_roms_list(struct mg_connection *conn) {
+	std::string dir = package_roms_dir();
+	// by part number, which is the order the listing files are named in and the
+	// one an operator looking for a known PROM expects
+	std::vector<std::string> names;
+	DIR *d = opendir(dir.c_str());
+	if (d != nullptr) {
+		struct dirent *e;
+		while ((e = readdir(d)) != nullptr) {
+			std::string name = e->d_name;
+			if (name.empty() || name[0] == '.')
+				continue;
+			struct stat st;
+			if (stat((dir + "/" + name).c_str(), &st) != 0 || !S_ISREG(st.st_mode))
+				continue;
+			names.push_back(name);
+		}
+		closedir(d);
+	}
+	std::sort(names.begin(), names.end());
+	picojson::array roms;
+	for (const std::string &name : names) {
+		std::string abs = dir + "/" + name;
+		struct stat st;
+		if (stat(abs.c_str(), &st) != 0)
+			continue;
+		picojson::object o;
+		o["name"] = picojson::value(name);
+		o["size"] = picojson::value((double) st.st_size);
+		o["title"] = picojson::value(listing_title(abs));
+		roms.push_back(picojson::value(o));
+	}
+	picojson::object out;
+	out["roms"] = picojson::value(roms);
+	send_json(conn, 200, picojson::value(out));
+}
+
+// POST /api/roms — {"name": .., "dir": ..} copy one into the images tree
+static void package_rom_copy(struct mg_connection *conn) {
+	picojson::value req;
+	if (!read_json_body(conn, &req) || !req.get("name").is<std::string>()) {
+		send_error(conn, 400, "body must be {\"name\":.., \"dir\":..}");
+		return;
+	}
+	std::string name = req.get("name").get<std::string>();
+	if (name.empty() || name[0] == '.' || name.find('/') != std::string::npos) {
+		send_error(conn, 400, "\"" + name + "\" is not a ROM file name");
+		return;
+	}
+	// the images-tree folder the copy lands in; the ROM folder by default, so
+	// the copy sits where a machine's ROMs belong even if nothing was selected
+	std::string dir = req.get("dir").is<std::string>()
+			? webstorage_image_subpath(req.get("dir").get<std::string>()) : "";
+	if (dir.empty())
+		dir = "roms";
+	std::string sub = dir + "/" + name;
+	if (!valid_subpath(sub)) {
+		send_error(conn, 400, "\"" + sub + "\" is not a valid image path");
+		return;
+	}
+
+	std::string src = package_roms_dir() + "/" + name;
+	int in = open(src.c_str(), O_RDONLY);
+	if (in < 0) {
+		send_error(conn, 404, "no ROM \"" + name + "\" is installed");
+		return;
+	}
+	if (!make_dirs(dir)) {
+		close(in);
+		send_error(conn, 500, "cannot create folder \"" + dir + "\"");
+		return;
+	}
+	std::string dest = images_dir + "/" + sub;
+	// O_EXCL: a copy the operator has since edited is theirs, and a second copy
+	// must not silently throw those edits away
+	int out = open(dest.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0664);
+	if (out < 0) {
+		int err = errno;
+		close(in);
+		if (err == EEXIST)
+			send_error(conn, 409, "\"" + sub + "\" already exists — "
+					"delete or rename it to copy a fresh one");
+		else
+			send_error(conn, 500, "cannot create \"" + sub + "\": " + strerror(err));
+		return;
+	}
+	char buf[65536];
+	ssize_t n;
+	bool ok = true;
+	uint64_t size = 0;
+	while (ok && (n = read(in, buf, sizeof buf)) > 0) {
+		ok = write(out, buf, (size_t) n) == n;
+		size += (uint64_t) n;
+	}
+	if (n < 0)
+		ok = false;
+	close(in);
+	close(out);
+	if (!ok) {
+		unlink(dest.c_str());
+		send_error(conn, 500, "cannot write \"" + sub + "\"");
+		return;
+	}
+	own_by_qunilator(dest);
+	WEB_INFO("ROM %s copied to %s, %llu bytes", name.c_str(), sub.c_str(),
+			(unsigned long long) size);
+	picojson::object res;
+	res["ok"] = picojson::value(true);
+	res["path"] = picojson::value(sub);
+	res["size"] = picojson::value((double) size);
+	send_json(conn, 200, picojson::value(res));
 }
 
 // -------------------------------------------------------------------------
@@ -870,6 +1031,20 @@ static int api_move_handler(struct mg_connection *conn, void *) {
 	return 200;
 }
 
+// GET /api/roms  and  POST /api/roms
+static int api_roms_handler(struct mg_connection *conn, void *) {
+	const struct mg_request_info *ri = mg_get_request_info(conn);
+	if (strcmp(ri->request_method, "GET") == 0)
+		package_roms_list(conn);
+	else if (strcmp(ri->request_method, "POST") == 0)
+		package_rom_copy(conn);
+	else {
+		send_error(conn, 405, "GET or POST required");
+		return 405;
+	}
+	return 200;
+}
+
 // POST /api/folders {path}  and  DELETE /api/folders/<subpath>
 static int api_folders_handler(struct mg_connection *conn, void *) {
 	const struct mg_request_info *ri = mg_get_request_info(conn);
@@ -939,4 +1114,5 @@ void webstorage_register(struct mg_context *ctx) {
 	mg_set_request_handler(ctx, "/api/images", api_images_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/move", api_move_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/folders", api_folders_handler, nullptr);
+	mg_set_request_handler(ctx, "/api/roms", api_roms_handler, nullptr);
 }

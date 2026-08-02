@@ -310,7 +310,11 @@ function crumbHTML(cwd: string): string {
 export async function pickImage(
   title: string,
   emptyLabel: string,
-  current: string
+  current: string,
+  // Where the browser opens when the parameter holds nothing yet: the folder
+  // that kind of file belongs in (a PROM card opens on roms/). With a value
+  // set, the folder holding it wins — the list lands on what is loaded.
+  startDir?: string
 ): Promise<string | null> {
   const listing: ImageListing = await fetch('/api/images')
     .then((r) => r.json())
@@ -319,7 +323,7 @@ export async function pickImage(
   const images: ImageInfo[] = listing.images || [];
   const now = imageSubpath(current || '');
   // open in the folder that holds the current medium, so the list lands on it
-  let cwd = now.includes('/') ? parentDir(now) : '';
+  let cwd = now.includes('/') ? parentDir(now) : startDir || '';
 
   return new Promise((resolve) => {
     const host = document.createElement('div');
@@ -436,8 +440,13 @@ function categoryRank(c: string): number {
 // or null when cancelled.
 export function pickDevice(
   title: string,
-  options: { name: string; label: string; type: string; category?: string }[]
+  options: { name: string; label: string; type: string; category?: string }[],
+  // What the list holds, for the search field and the two empty states. The
+  // picker is the same widget whatever it offers — devices, blank media, the
+  // ROMs the package ships — so only its wording changes.
+  texts?: { noun?: string; empty?: string }
 ): Promise<string | null> {
+  const noun = texts?.noun || 'device';
   const sorted = options.slice().sort((a, b) => {
     const ca = a.category || 'other',
       cb = b.category || 'other';
@@ -454,7 +463,7 @@ export function pickDevice(
       '</h3><button class="modal-close" data-pick-close aria-label="Close" title="Close">&times;</button></div>' +
       (options.length
         ? '<div class="pick-head"><input class="pick-search" type="text" ' +
-          'placeholder="Search devices" aria-label="Search devices"></div>'
+          'placeholder="Search ' + esc(noun) + 's" aria-label="Search ' + esc(noun) + 's"></div>'
         : '') +
       '<div class="pick-body"><div class="pick-list"></div></div></div>';
     const list = host.querySelector('.pick-list') as HTMLElement;
@@ -472,11 +481,14 @@ export function pickDevice(
       cursor = Math.min(cursor, Math.max(0, shown.length - 1));
       if (!options.length) {
         list.innerHTML =
-          '<div class="muted" style="padding:8px">Every device is already in this configuration.</div>';
+          '<div class="muted" style="padding:8px">' +
+          esc(texts?.empty || 'Every device is already in this configuration.') +
+          '</div>';
         return;
       }
       if (!shown.length) {
-        list.innerHTML = '<div class="muted" style="padding:8px">No device matches.</div>';
+        list.innerHTML =
+          '<div class="muted" style="padding:8px">No ' + esc(noun) + ' matches.</div>';
         return;
       }
       // A narrowed list is one run of matches: the groups it would be cut into

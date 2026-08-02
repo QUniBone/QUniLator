@@ -177,6 +177,10 @@ struct test_device_c : public device_c {
 	test_device_c(const char *nm, const char *ty) {
 		name.value = nm;
 		type_name.value = ty;
+		// the parameter names a medium of the image tree, and says so the way a
+		// real drive does — what makes it a drive's pack is the declaration,
+		// not that the parameter happens to be called "image"
+		image.content = parameter_c::CONTENT_IMAGE;
 		// running state the emulator drives, classified by kind — the settable
 		// activity LED and the read-only access lamp are both PARAM_STATUS
 		activity_led.kind = parameter_c::PARAM_STATUS;

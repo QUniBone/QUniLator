@@ -7,20 +7,22 @@ import { liveSetParam } from '../../api';
 import { alertModal } from '../../lib/modals';
 import { ImageField } from '../common';
 import { statusParam } from '../../lib/devmodel';
-import { Cap, PanelWidget, ReadyCap, paramVal } from './base';
+import { Cap, PanelWidget, ReadyCap, mediumParam } from './base';
 
 // The drive foot: the shared image picker, which is the drive's image-swap
 // control. The medium is always changeable — a drive that models a spin-up
 // brings the pack to rest as part of the change — so the foot carries no tag
 // saying whether it is.
 function DiskFoot({ d }: { d: LiveDev }) {
-  const img = d.img || paramVal(d, 'image');
+  const medium = mediumParam(d);
+  const img = d.img || (medium ? medium.v : '');
   // A medium puts the drive in the machine, which the machine can refuse; the
   // operator is told so rather than left with a drive that took no pack.
   const pick = async (name: string) => {
+    if (!medium) return; // a device with no medium has no foot to swap one in
     const res = await liveSetParam(
       d.name,
-      'image',
+      medium.n,
       name,
       name ? 'image attached' : 'image detached'
     );
@@ -40,7 +42,8 @@ export abstract class DriveWidget extends PanelWidget {
     return this.param('unit') || this.d.name.replace(/\D/g, '');
   }
   protected loaded(): boolean {
-    return !!(this.d.img || this.param('image'));
+    const medium = mediumParam(this.d);
+    return !!(this.d.img || (medium && medium.v));
   }
   protected foot(): ComponentChildren {
     return html`<${DiskFoot} d=${this.d} />`;

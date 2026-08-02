@@ -49,6 +49,32 @@ export function ImageField({
     ${image ? imageLabel(image) : html`<span class="muted">no image</span>`}</button>`;
 }
 
+// The file a device is programmed from, for a parameter the backend marks as
+// naming one — a PROM card's socket. The same library browser the drives use,
+// opened on the folder that kind of file belongs in; picking nothing empties
+// the socket. The label is the file name, the full subpath its tooltip.
+export function FileField({
+  label,
+  value,
+  startDir,
+  emptyLabel,
+  onPick,
+}: {
+  label: string;
+  value: string;
+  startDir?: string;
+  emptyLabel: string;
+  onPick: (name: string) => void;
+}) {
+  const open = async () => {
+    const name = await pickImage(label, emptyLabel, value, startDir);
+    if (name === null) return;
+    onPick(name);
+  };
+  return html`<button class="imgfield mono" title=${value || emptyLabel} onClick=${open}>
+    ${value ? imageLabel(value) : html`<span class="muted">${emptyLabel}</span>`}</button>`;
+}
+
 const ARM_MS = 5000;
 export function DangerButton({
   action,

@@ -22,7 +22,14 @@ export interface ApiParam {
   unit?: string;
   values?: string[];
   options?: string[];
+  // What the value names, when it is not an ordinary one: a file of the image
+  // tree. "image" is a medium a drive holds, "rom" the file a PROM card is
+  // programmed from. The device declares it, so the interface offers the file
+  // browser for such a parameter whatever the device called it.
+  content?: ParamContent;
 }
+
+export type ParamContent = 'image' | 'rom';
 
 // The verbal runtime state of a disk drive (GET /api/devices → status).
 export type DiskStatus =
@@ -67,6 +74,7 @@ export interface LiveParam {
   v: string; // display value
   bw?: number; // bitwidth (octal)
   opts?: string[]; // enum options
+  c?: ParamContent; // names a file of the image tree (medium / ROM)
 }
 
 export interface LiveDev {
@@ -126,6 +134,16 @@ export interface ImageInfo {
   overlay?: boolean;
   overlay_dirty_blocks?: number;
   overlay_bytes?: number;
+}
+
+// GET /api/roms — the M9312 PROM listings the package ships, offered as a
+// source to copy from. They are not part of the image tree and nothing
+// references them by path: the operator copies one into images/roms and owns
+// the copy. `title` is the listing's ".title" line, empty if it has none.
+export interface PackageRom {
+  name: string;
+  size: number;
+  title: string;
 }
 
 // GET /api/images now returns a folder tree: the flat list of folder subpaths

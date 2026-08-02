@@ -189,6 +189,35 @@ into the configuration. Both collections use the same entry shape. Parameter
 parameters carry `base` (usually 8) and `bitwidth`. Drives reference their
 controller through `parent`.
 
+A parameter whose value names a **file of the image tree** says so with
+`content`, which is absent for an ordinary value:
+
+| `content` | what it names | empty value means |
+|---|---|---|
+| `image` | the medium a drive holds | no medium in the drive |
+| `rom` | the file a PROM card's socket is programmed from | an empty socket |
+
+The device declares this, so a caller offers the file browser for such a
+parameter whatever the device called it — a drive's `image`, the MRV11-D's
+`romfile`, the M9312's five `bootromN_file` sockets — rather than recognising
+particular names. A `PUT` of one resolves its value against the image tree the
+way a drive's medium is resolved (a subpath, `images/…`, or an absolute path
+inside the tree); an absolute path outside the tree is stored unchanged, which
+is what keeps a configuration naming a file under `/usr/share` working.
+
+The M9312's `bootaddress_label` names a MACRO-11 label of one of those
+listings, and a label no plugged ROM defines is a machine that comes up and
+does nothing. So a `PUT` of it is checked against the code labels of the
+sockets that carry a listing: a label none of them defines is refused `409`,
+the message naming the labels there are to choose from, and with every socket
+empty it is refused as naming nothing — program a socket first. An applied
+configuration therefore sets a device's ROM sockets before the rest of its
+parameters, whatever order the document lists them in.
+
+`bootaddress_info` is the resolved power-on PC. `DISABLED` means no autoboot
+was asked for; `UNRESOLVED` means a label was and the plugged ROMs no longer
+define it — swapping a ROM out from under a resolved address leaves it there.
+
 `enabled` says the card is **in the machine**, not that it is answering the bus
 this instant: a machine switched off at the panel still carries its cards, and
 each drive still names the medium it holds (see
@@ -555,6 +584,31 @@ target already exists.
 
 Create a folder (body `{"path": <subpath>}`, parents made as needed), or remove
 an **empty** folder (`409` if not empty).
+
+### `GET /api/roms` · `POST /api/roms`
+
+The M9312 console/diagnostic and boot PROM listings the package installs under
+`/usr/share/qunilator/roms` (overridable with `QUNILATOR_ROMS_DIR` for a build
+tree). They are package content, not operator state — every upgrade rewrites
+them — so nothing references them by path: they are offered as a **source** to
+copy from, and the copy in the images tree is what a card is programmed from and
+what the operator may edit.
+
+`GET` lists what is on offer. `title` is the listing's MACRO-11 `.title` line,
+which is what makes a part number recognisable; it is empty for a file that
+carries none:
+
+```json
+{"roms": [{"name": "23-751A9.lst", "size": 21902,
+           "title": "M9312 'DL' BOOT prom for RL11 controller"}]}
+```
+
+`POST` body `{"name": <file>, "dir": <subpath>}` copies one into the images
+tree; `dir` defaults to `roms`, and its folders are made as needed. `name` is a
+single path segment naming a listed file — anything else is `400`, an unknown
+one `404`. Answers `{"ok": true, "path": "roms/23-751A9.lst", "size": …}`.
+Refused `409` when the target file exists, so a copy the operator has since
+edited is never overwritten; delete or rename it to take a fresh one.
 
 ### `GET /api/images/<subpath>/contents`
 

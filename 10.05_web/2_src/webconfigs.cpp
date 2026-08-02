@@ -1437,7 +1437,14 @@ static bool apply_document(const picojson::value &content, const std::string &na
 
 			reset_to_defaults(dev, &listed, errors);
 
-			if (d.get("params").is<picojson::object>())
+			// What a card is programmed from comes before what refers to it: the
+			// M9312's boot address names a code label of a socket's listing, and
+			// a label is checked against the ROMs that are in. A file names
+			// itself and depends on nothing, so the two passes are ROM sockets
+			// first and everything else after — the document's own order is a
+			// map's, which would set the label before the ROM that defines it.
+			for (int pass = 0; pass < 2; pass++) {
+			  if (d.get("params").is<picojson::object>())
 				for (const std::pair<const std::string, picojson::value> &kv :
 						d.get("params").get<picojson::object>()) {
 					if (!kv.second.is<std::string>())
@@ -1450,15 +1457,34 @@ static bool apply_document(const picojson::value &content, const std::string &na
 					parameter_c *param = dev->param_by_name(kv.first);
 					if (param == nullptr || param->readonly)
 						continue;
-					if (*param->render() == kv.second.get<std::string>())
+					if ((param->content == parameter_c::CONTENT_ROM) != (pass == 0))
+						continue; // the other pass takes it
+					// A file of the image tree is named the way the API takes
+					// it: a bare subpath is one of the files this interface
+					// manages, an absolute path outside the tree stands as it
+					// is. Without this a configuration saying "roms/x.lst"
+					// would be read against the working directory and fail.
+					std::string text = kv.second.get<std::string>();
+					if (param->content != parameter_c::CONTENT_PLAIN && !text.empty())
+						text = webstorage_image_path(text);
+					if (*param->render() == text)
 						continue; // unchanged — don't disturb the device
 					try {
-						param->parse(kv.second.get<std::string>());
+						// A device may refuse a value and keep the one it had -
+						// a boot address naming a label no ROM defines. That is
+						// a rejection like any other, so it is reported rather
+						// than leaving the file and the machine quietly apart.
+						dev->last_error.clear();
+						param->parse(text);
+						if (*param->render() != text && !dev->last_error.empty())
+							errors->push_back(picojson::value(
+									devname + "." + kv.first + ": " + dev->last_error));
 					} catch (bad_parameter &e) {
 						errors->push_back(picojson::value(
 								devname + "." + kv.first + ": " + e.what()));
 					}
 				}
+			}
 
 			// The card takes its range once the parameters that qualify the
 			// claim are in place: the probe reads the file's setting, not the

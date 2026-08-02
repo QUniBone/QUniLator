@@ -21,6 +21,8 @@ import {
   commitOverlay,
   exportOverlay,
   createImage,
+  packageRoms,
+  copyPackageRom,
   type OverlayResult,
 } from '../api';
 import { promptModal, confirmModal, pickDevice } from '../lib/modals';
@@ -46,6 +48,14 @@ export function parseSize(text: string): number {
 
 const storageRoute = (cwd: string): string =>
   cwd ? subURL('/storage/', cwd) : '/storage';
+
+// The folder a PROM card is programmed from, and the tree below it. The package
+// ships the DEC M9312 listings under /usr/share, where nothing may reference
+// them: they are offered here as something to copy in, and the copy is the
+// operator's — attachable to a card, and editable.
+const ROM_DIR = 'roms';
+const isRomFolder = (path: string): boolean =>
+  path === ROM_DIR || path.startsWith(ROM_DIR + '/');
 
 // Which folders are open and which image rows show their file listing are the
 // operator's view of the tree, so they are kept in localStorage and restored on
@@ -440,6 +450,30 @@ export function StoragePage() {
     await createFolder(path);
   };
 
+  // Copy one of the ROM listings the package ships into this folder. The
+  // package tree is never named by a device — an upgrade rewrites it — so the
+  // operator takes a copy and that copy is what a card is programmed from. A
+  // listing names itself on its ".title" line, which is what makes a 23-nnnnn
+  // part number recognisable.
+  const copyDefaultRom = async (dir: string) => {
+    const roms = await packageRoms();
+    const options = roms.map((r) => {
+      const title = r.title || r.name;
+      const category = /boot/i.test(title)
+        ? 'boot PROM'
+        : /console|diag/i.test(title)
+          ? 'console & diagnostic PROM'
+          : 'PROM';
+      return { name: r.name, label: title, type: 'rom', category };
+    });
+    const pick = await pickDevice('Copy a ROM into ' + dir, options, {
+      noun: 'ROM',
+      empty: 'This board carries no packaged ROMs.',
+    });
+    if (!pick) return;
+    await copyPackageRom(pick, dir);
+  };
+
   // A blank medium to write on. What is on offer comes from the drives the
   // machine can carry: each publishes the capacity of the medium it takes, so
   // the list is what this board knows about rather than a table kept in step by
@@ -452,7 +486,7 @@ export function StoragePage() {
   const newImage = async () => {
     const media = new Map<string, { name: string; label: string; type: string; size: number }>();
     flatDevices().forEach((d) => {
-      if (!d.params.some((p) => p.n === 'image') || media.has(d.type)) return;
+      if (!d.params.some((p) => p.c === 'image') || media.has(d.type)) return;
       const tape = d.category === 'tape';
       const cap = d.params.find((p) => p.n === 'capacity');
       const size = tape ? 0 : Number(cap ? cap.v : 0);
@@ -552,6 +586,10 @@ export function StoragePage() {
       <td class="muted">${target ? html`<span class="drop-hint">drop to move here</span>` : 'folder'}</td>
       <td class="muted">—</td>
       <td style="text-align:right; white-space:nowrap">
+        ${isRomFolder(path)
+          ? html`<button class="btn small" title="Copy one of the ROM listings the package ships into this folder"
+              onClick=${() => copyDefaultRom(path)}>Copy default ROM…</button>${' '}`
+          : null}
         <button class="btn small" onClick=${() => renameEntry(path, true)}>Rename…</button>${' '}
         <${DelButton} label="Delete" confirmLabel="Confirm delete" onConfirm=${() => removeFolder(path)} />
       </td></tr>`;
