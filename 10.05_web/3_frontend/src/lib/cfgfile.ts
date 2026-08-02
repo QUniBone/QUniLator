@@ -16,6 +16,19 @@ const encoder = new TextEncoder();
 export interface ZipEntry {
   name: string;
   data: Uint8Array;
+  // When the file this entry copies was last written. A generated document
+  // carries the moment it was made, which is what an entry without one gets.
+  mtime?: Date;
+}
+
+// A zip records a timestamp as two 16-bit DOS fields in local time, seconds to
+// an even number, and its epoch is 1980 - an older date reads as that epoch.
+function dosStamp(when: Date): { time: number; date: number } {
+  const y = Math.max(1980, when.getFullYear());
+  return {
+    time: (when.getHours() << 11) | (when.getMinutes() << 5) | (when.getSeconds() >> 1),
+    date: ((y - 1980) << 9) | ((when.getMonth() + 1) << 5) | when.getDate(),
+  };
 }
 
 // CRC-32, the one a zip's directory carries. The table is built once.
@@ -59,17 +72,25 @@ class ByteWriter {
 /** Build a zip holding these entries, stored. */
 export function makeZip(entries: ZipEntry[]): Blob {
   const out = new ByteWriter();
-  const central: { name: Uint8Array; crc: number; size: number; offset: number }[] = [];
+  const now = new Date();
+  const central: {
+    name: Uint8Array;
+    crc: number;
+    size: number;
+    offset: number;
+    stamp: { time: number; date: number };
+  }[] = [];
   for (const e of entries) {
     const name = encoder.encode(e.name);
     const crc = crc32(e.data);
-    central.push({ name, crc, size: e.data.length, offset: out.length });
+    const stamp = dosStamp(e.mtime ?? now);
+    central.push({ name, crc, size: e.data.length, offset: out.length, stamp });
     out.u32(0x04034b50); // local file header
     out.u16(20); // version needed
     out.u16(0); // flags
     out.u16(0); // stored
-    out.u16(0); // time
-    out.u16(0); // date
+    out.u16(stamp.time);
+    out.u16(stamp.date);
     out.u32(crc);
     out.u32(e.data.length); // compressed
     out.u32(e.data.length); // uncompressed
@@ -85,8 +106,8 @@ export function makeZip(entries: ZipEntry[]): Blob {
     out.u16(20); // version needed
     out.u16(0);
     out.u16(0); // stored
-    out.u16(0);
-    out.u16(0);
+    out.u16(c.stamp.time);
+    out.u16(c.stamp.date);
     out.u32(c.crc);
     out.u32(c.size);
     out.u32(c.size);

@@ -649,9 +649,13 @@ export async function exportConfigBundle(
       toast('export', 'could not read image ' + images[i]);
       return false;
     }
+    // the board's own timestamp for the file, so the archive carries when the
+    // image was last written rather than when it was fetched
+    const modified = Date.parse(r.headers.get('Last-Modified') || '');
     entries.push({
       name: 'images/' + images[i],
       data: new Uint8Array(await r.arrayBuffer()),
+      mtime: Number.isNaN(modified) ? undefined : new Date(modified),
     });
   }
   onProgress?.('building the archive');

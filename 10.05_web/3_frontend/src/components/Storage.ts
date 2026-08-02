@@ -577,7 +577,7 @@ export function StoragePage() {
       <td class="muted mono" style="font-size:var(--fs-0); white-space:nowrap">${im.mtime}</td>
       <td style="text-align:right; white-space:nowrap">
         <button class="btn small" onClick=${() => toggleContents(im.path)}>${open ? 'Hide' : 'Contents'}</button>${' '}
-        <a class="btn small" href=${subURL('/api/images/', im.path)} download>Download</a>${' '}
+        <a class="btn small" href=${subURL('/api/images/', im.path)} download=${im.name}>Download</a>${' '}
         <button class="btn small" onClick=${() => renameEntry(im.path, false)}>Rename…</button>${' '}
         <${DelButton} label="Delete" confirmLabel="Confirm delete" onConfirm=${() => deleteImage(im.path)} />
       </td></tr>
