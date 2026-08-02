@@ -152,6 +152,14 @@ PermitEmptyPasswords no
 EOF
 chmod 644 /etc/ssh/sshd_config.d/10-${NAME}.conf
 
+# The client's locale stays on the client. The image generates en_US.UTF-8 and
+# nothing else, so a session forwarding LANG and LC_* from a desktop in another
+# language asks for a locale the board cannot set, and perl and apt-listchanges
+# say so on every apt run. AcceptEnv names accumulate across directives, so
+# withdrawing the locale ones takes an edit of the line that grants them; the
+# terminal-capability variables stay.
+sed -i 's|^AcceptEnv .*|AcceptEnv COLORTERM NO_COLOR|' /etc/ssh/sshd_config
+
 # Network file access to the disk/tape image tree: SMB (Samba), FTP (vsftpd)
 # and SFTP (over the SSH the board already runs). The image tree is owned by
 # the qunilator system user (created by the emulator package's postinst), and
@@ -160,7 +168,15 @@ chmod 644 /etc/ssh/sshd_config.d/10-${NAME}.conf
 # is set. The web interface gives both accounts the web password. FTP is
 # cleartext, offered for legacy clients on a trusted LAN; SFTP is the encrypted
 # path.
-DEBIAN_FRONTEND=noninteractive apt-get -qq install -y samba vsftpd >/dev/null
+#
+# Recommends are off for these two: samba recommends samba-ad-dc, which brings
+# winbind and libnss-winbind, and libnss-winbind's postinst writes winbind into
+# the passwd: and group: lines of /etc/nsswitch.conf. The board joins no domain,
+# so every first NSS lookup of a session then waits out the winbind timeout -
+# about eight seconds before the first command of a login answers. The
+# standalone file server this image runs needs nothing from the recommends.
+DEBIAN_FRONTEND=noninteractive apt-get -qq install -y --no-install-recommends \
+    samba vsftpd >/dev/null
 cat > /etc/samba/smb.conf <<'EOF'
 [global]
    workgroup = WORKGROUP
