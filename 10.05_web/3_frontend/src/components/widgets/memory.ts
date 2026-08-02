@@ -6,6 +6,7 @@ import { useEffect, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { octalStr } from '../../lib/util';
 import { apiJSON } from '../../api';
+import { store } from '../../store';
 import { statusParam } from '../../lib/devmodel';
 import { Cap, PanelWidget } from './base';
 
@@ -71,9 +72,23 @@ export class MemoryWidget extends PanelWidget {
 
     // The map follows the device: enabling the card or moving its range
     // changes what the board answers, and both arrive as a parameter change.
+    //
+    // The power switch changes it too, and does so without touching a
+    // parameter: a switched-off machine still carries its cards, so `enabled`
+    // reads the same dark or lit, while the range the board actually serves is
+    // released and claimed again underneath. Without the power flag here the
+    // card drawn is whichever map was fetched last — a machine switched off,
+    // its card placed and switched back on keeps showing the range it had
+    // while dark, which is none.
     const endp = statusParam(this.d, 'endaddr');
     const range =
-      this.param('startaddr') + '/' + (endp ? endp.v : '') + '/' + this.d.enabled;
+      this.param('startaddr') +
+      '/' +
+      (endp ? endp.v : '') +
+      '/' +
+      this.d.enabled +
+      '/' +
+      (store.hw.powered !== false);
     useEffect(() => {
       let live = true;
       apiJSON<MemoryMap>('/api/memory/map')
