@@ -58,7 +58,7 @@ uint8_t emulated_addr_read(uint32_t addr, uint16_t *val) {
 		// speed priority on memory access: test for end_addr first
 			// addr in an emulated memory range, not in I/O page
 			*val = DDRMEM_MEMGET_W(addr);
-			DDRMEM_COUNT_ACCESS(in0, in1);
+			DDRMEM_COUNT_READ(in0, in1);
 			return 1;
 	} else if (addr & QUNIBUS_IOPAGE_ADDR_BITMASK) {
 		// high "iopage" bit set in addr: only addr<11:0> relevant
@@ -107,7 +107,7 @@ uint8_t emulated_addr_write_w(uint32_t addr, uint16_t w) {
    		// no check wether addr is even (A00=0)
 		// write 16 bits
 		DDRMEM_MEMSET_W(addr, w);
-		DDRMEM_COUNT_ACCESS(in0, in1);
+		DDRMEM_COUNT_WRITE(in0, in1);
 		return 1;
 	} else if (addr & QUNIBUS_IOPAGE_ADDR_BITMASK) {
 		// high "iopage" bit set in addr: only addr<11:0> relevant
@@ -138,7 +138,7 @@ uint8_t emulated_addr_write_b(uint32_t addr, uint8_t b) {
 		// speed priority on memory access: test for end_addr first
 		// addr in an emulated memory range, not in I/O page
 		DDRMEM_MEMSET_B(addr, b);
-		DDRMEM_COUNT_ACCESS(in0, in1);
+		DDRMEM_COUNT_WRITE(in0, in1);
 		return 1;
 	} else if (addr & QUNIBUS_IOPAGE_ADDR_BITMASK) {
 		// high "iopage" bit set in addr: only addr<11:0> relevant

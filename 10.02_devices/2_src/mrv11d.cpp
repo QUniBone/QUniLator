@@ -445,7 +445,8 @@ void mrv11d_c::refresh_activity(void)
 	// through sit in the I/O page shadow, and the direct-mode array answers
 	// out of the device DDR range.
 	uint32_t rom = pru_iopage_registers->rom_access_count;
-	uint32_t direct = pru_iopage_registers->memory_access_count[DDRMEM_RANGE_DEVICE];
+	uint32_t direct = pru_iopage_registers->memory_read_count[DDRMEM_RANGE_DEVICE]
+			+ pru_iopage_registers->memory_write_count[DDRMEM_RANGE_DEVICE];
 	uint64_t now = now_ms();
 	if (rom != last_rom_count || direct != last_array_count) {
 		last_rom_count = rom;

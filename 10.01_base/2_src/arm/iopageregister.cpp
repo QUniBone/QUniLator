@@ -70,7 +70,8 @@ void iopageregisters_init()
 	for (unsigned slot = 0; slot < DDRMEM_RANGE_COUNT; slot++) {
 		pru_iopage_registers->memory_start_addr[slot] = 0 ;
 		pru_iopage_registers->memory_limit_addr[slot] = 0 ; // no mem emulation
-		pru_iopage_registers->memory_access_count[slot] = 0 ;
+		pru_iopage_registers->memory_read_count[slot] = 0 ;
+		pru_iopage_registers->memory_write_count[slot] = 0 ;
 	}
 	pru_iopage_registers->rom_access_count = 0 ;
 

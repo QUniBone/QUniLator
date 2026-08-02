@@ -51,7 +51,9 @@ pru_iopage_registers_t pru_iopage_registers;
  * for post processing. SSYN must remain asserted until ARM is complete
  */
 uint8_t emulated_addr_read(uint32_t addr, uint16_t *val) {
-	if (DDRMEM_ADDR_EMULATED(addr)) {
+	uint32_t in0 = DDRMEM_ADDR_IN_SLOT(addr, 0);
+	uint32_t in1 = DDRMEM_ADDR_IN_SLOT(addr, 1);
+	if (in0 | in1) {
 		// speed priority on memory access: test for end_addr first
 		// addr in an emulated memory range, not in I/O page
 		// behind an adapter the map says where the page really is
@@ -66,6 +68,7 @@ uint8_t emulated_addr_read(uint32_t addr, uint16_t *val) {
 			phys = DDRMEM_MAP_APPLY(entry, addr);
 		}
 		*val = DDRMEM_MEMGET_W(phys);
+		DDRMEM_COUNT_READ(in0, in1);
 		return 1;
 	} else if (addr >= pru_iopage_registers.iopage_start_addr) {
 		uint8_t reghandle;
@@ -118,6 +121,7 @@ uint8_t emulated_addr_write_w(uint32_t addr, uint16_t w) {
 			phys = DDRMEM_MAP_APPLY(entry, addr);
 		}
 		DDRMEM_MEMSET_W(phys, w);
+		DDRMEM_COUNT_WRITE(in0, in1);
 		return 1;
 	} else if (addr >= pru_iopage_registers.iopage_start_addr) {
 		uint8_t reghandle = IOPAGE_REGISTER_ENTRY(pru_iopage_registers, addr);
@@ -156,6 +160,7 @@ uint8_t emulated_addr_write_b(uint32_t addr, uint8_t b) {
 			phys = DDRMEM_MAP_APPLY(entry, addr);
 		}
 		DDRMEM_MEMSET_B(phys, b);
+		DDRMEM_COUNT_WRITE(in0, in1);
 		return 1;
 	} else if (addr >= pru_iopage_registers.iopage_start_addr) {
 		uint8_t reghandle = IOPAGE_REGISTER_ENTRY(pru_iopage_registers, addr);

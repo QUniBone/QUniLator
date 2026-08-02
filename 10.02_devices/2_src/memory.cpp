@@ -34,7 +34,8 @@ memory_c::memory_c() :
 	// address and the size
 	endaddr.kind = parameter_c::PARAM_STATUS;
 	// a lamp is live state, not part of a saved configuration
-	access_lamp.kind = parameter_c::PARAM_STATUS;
+	read_lamp.kind = parameter_c::PARAM_STATUS;
+	write_lamp.kind = parameter_c::PARAM_STATUS;
 
 	placing = false;
 	startaddr.value = 0;
@@ -254,7 +255,7 @@ void memory_c::on_init_changed(void)
 }
 
 
-// How long the lamp stays lit after the count last moved. A card is touched in
+// How long a lamp stays lit after its count last moved. A card is touched in
 // bursts of microseconds and sampled every few hundred milliseconds, so
 // without a dwell the sampler would almost always look between them.
 static const uint64_t ACCESS_LAMP_MS = 250;
@@ -263,12 +264,19 @@ void memory_c::refresh_activity(void)
 {
 	if (pru_iopage_registers == nullptr)
 		return;
-	uint32_t count = pru_iopage_registers->memory_access_count[DDRMEM_RANGE_MEMORY];
+	uint32_t reads = pru_iopage_registers->memory_read_count[DDRMEM_RANGE_MEMORY];
+	uint32_t writes = pru_iopage_registers->memory_write_count[DDRMEM_RANGE_MEMORY];
 	uint64_t now = now_ms();
-	if (count != last_access_count) {
-		last_access_count = count;
-		access_lamp_until_ms = now + ACCESS_LAMP_MS;
-		access_lamp.value = true;
-	} else if (access_lamp.value && now >= access_lamp_until_ms)
-		access_lamp.value = false;
+	if (reads != last_read_count) {
+		last_read_count = reads;
+		read_lamp_until_ms = now + ACCESS_LAMP_MS;
+		read_lamp.value = true;
+	} else if (read_lamp.value && now >= read_lamp_until_ms)
+		read_lamp.value = false;
+	if (writes != last_write_count) {
+		last_write_count = writes;
+		write_lamp_until_ms = now + ACCESS_LAMP_MS;
+		write_lamp.value = true;
+	} else if (write_lamp.value && now >= write_lamp_until_ms)
+		write_lamp.value = false;
 }

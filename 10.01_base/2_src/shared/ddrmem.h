@@ -129,12 +129,17 @@ extern ddrmem_c *ddrmem;
 #define DDRMEM_ADDR_EMULATED(addr) ( \
 	  DDRMEM_ADDR_IN_SLOT(addr, 0) | DDRMEM_ADDR_IN_SLOT(addr, 1) )
 
-/* Count the answer, one slot at a time. The tests are the ones the caller has
- * already made, handed back in so the cycle pays for them once. A card served
- * out of DDR has no other way to show the machine is reading it. */
-#define DDRMEM_COUNT_ACCESS(in0, in1) do { \
-	pru_iopage_registers.memory_access_count[0] += (in0); \
-	pru_iopage_registers.memory_access_count[1] += (in1); \
+/* Count the answer, one slot at a time, reads and writes apart. The tests are
+ * the ones the caller has already made, handed back in so the cycle pays for
+ * them once. A card served out of DDR has no other way to show the machine is
+ * touching it, or in which direction. */
+#define DDRMEM_COUNT_READ(in0, in1) do { \
+	pru_iopage_registers.memory_read_count[0] += (in0); \
+	pru_iopage_registers.memory_read_count[1] += (in1); \
+	} while (0)
+#define DDRMEM_COUNT_WRITE(in0, in1) do { \
+	pru_iopage_registers.memory_write_count[0] += (in0); \
+	pru_iopage_registers.memory_write_count[1] += (in1); \
 	} while (0)
 
 // What a device's address reaches.

@@ -510,31 +510,13 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
   letter-spacing: .04em; color: var(--sw-legend);
 }
 
-/* ---- memory card ---- what answers, one row per range: what the machine
-   carries and what the board answers out of its own memory. Addresses no row
-   names are the ones nothing answers at, the I/O page on top among them. */
-.membody { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px; }
-.mem-map { display: flex; flex-direction: column; gap: 9px; }
-.mem-legend { display: flex; flex-direction: column; gap: 3px; }
-.mem-legend-row {
-  display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center;
-  font-size: var(--fs-0); color: var(--ink-muted);
-}
-.mem-legend-row .mem-addr { font-family: var(--font-mono); color: var(--ink); }
-.mem-legend-row .mem-size { font-variant-numeric: tabular-nums; }
-.mem-note, .mem-empty { font-size: var(--fs-0); color: var(--ink-faint); }
-/* where the card is placed: the start address and the size the operator gives,
-   and the last address they reach */
-.mem-place {
-  display: flex; flex-direction: column; gap: 5px;
-  padding-top: 9px; border-top: 1px solid var(--line);
-}
-.mem-field {
-  display: grid; grid-template-columns: 3.4em 1fr; gap: 8px; align-items: center;
-  font-size: var(--fs-0); color: var(--ink-muted);
-}
-.mem-field input { width: 100%; min-width: 0; padding: 2px 6px; }
-.mem-place .mem-addr { color: var(--ink); }
+/* ---- memory card ---- READ/WRITE lamps over one fact box, a line per range:
+   what the machine's hardware carries and what the board answers out of its
+   own memory. Addresses no line names are the ones nothing answers at. A card
+   clamped narrower than a line (a narrow window caps the grid's columns) wraps
+   the line rather than clipping the address range. */
+.memcard .rl-foot { display: flex; flex-direction: column; gap: 6px; }
+.memcard .rl-info { white-space: normal; }
 
 /* ---- bootstrap PROM card ---- the sockets and what reaches the machine from
    them. A ROM chip beside the name of what it was programmed with, then the

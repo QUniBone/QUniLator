@@ -850,13 +850,17 @@ static void memory_map(struct mg_connection *conn) {
 		r["slot"] = picojson::value(std::string(slot_names[slot]));
 		r["start"] = picojson::value((double) ddrmem->range_start(slot));
 		r["end"] = picojson::value((double) ddrmem->range_end(slot));
-		// How many cycles the board has answered out of this range. The PRU
-		// serves them without telling the ARM, so this count is the only
-		// evidence a range is being used at all - which is what an operator
-		// looking at a card placed over the wrong addresses needs to see.
-		if (pru_iopage_registers != nullptr)
-			r["accesses"] = picojson::value(
-					(double) pru_iopage_registers->memory_access_count[slot]);
+		// How many cycles the board has answered out of this range, reads and
+		// writes apart. The PRU serves them without telling the ARM, so these
+		// counts are the only evidence a range is being used at all - which is
+		// what an operator looking at a card placed over the wrong addresses
+		// needs to see.
+		if (pru_iopage_registers != nullptr) {
+			r["reads"] = picojson::value(
+					(double) pru_iopage_registers->memory_read_count[slot]);
+			r["writes"] = picojson::value(
+					(double) pru_iopage_registers->memory_write_count[slot]);
+		}
 		ranges.push_back(picojson::value(r));
 	}
 	res["emulated"] = picojson::value(ranges);

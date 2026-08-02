@@ -34,13 +34,15 @@
 
 class memory_c: public device_c {
 public:
-	// Sampled by the status poll: light the lamp when the PRU's count for this
-	// card's range has moved, and put it out once the dwell has passed.
+	// Sampled by the status poll: light a lamp when the PRU's count for its
+	// direction has moved, and put it out once the dwell has passed.
 	void refresh_activity(void) override;
 
 private:
-	uint32_t last_access_count = 0;   // PRU count at the last sample
-	uint64_t access_lamp_until_ms = 0; // the lamp stays lit until then
+	uint32_t last_read_count = 0;      // PRU counts at the last sample
+	uint32_t last_write_count = 0;
+	uint64_t read_lamp_until_ms = 0;   // each lamp stays lit until then
+	uint64_t write_lamp_until_ms = 0;
 public:
 
 	const char *category(void) const override { return "memory"; }
@@ -62,13 +64,16 @@ public:
 	// A range claimed over memory the machine already carries has two slaves
 	// answering one cycle. Clear this only where the probe cannot work: a bus
 	// with no arbitrator to grant the DMA it needs.
-	// Lit while the machine is reading or writing the card. The PRU answers
-	// this card's range out of DDR on its own, so the only thing the ARM sees
-	// of a transfer is the count the PRU keeps; the lamp is that count having
-	// moved since the last look, held on long enough for a periodic sampler to
-	// catch a burst rather than miss it between two.
-	parameter_bool_c access_lamp = parameter_bool_c(this, "accesslamp", "acl",
-			/*readonly*/true, "machine is accessing the card");
+	// Lit while the machine is reading or writing the card, one lamp per
+	// direction. The PRU answers this card's range out of DDR on its own, so
+	// the only thing the ARM sees of a transfer is the counts the PRU keeps;
+	// a lamp is its count having moved since the last look, held on long
+	// enough for a periodic sampler to catch a burst rather than miss it
+	// between two.
+	parameter_bool_c read_lamp = parameter_bool_c(this, "readlamp", "rdl",
+			/*readonly*/true, "machine is reading the card");
+	parameter_bool_c write_lamp = parameter_bool_c(this, "writelamp", "wrl",
+			/*readonly*/true, "machine is writing the card");
 
 	parameter_bool_c probe = parameter_bool_c(this, "probe", "pr", /*readonly*/false,
 			"check the range answers to nothing before claiming it");
