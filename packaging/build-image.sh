@@ -3,10 +3,11 @@
 #
 # Produces a bootable microSD image: the rcn-ee Debian base, customised into an
 # appliance - the emulator installed, eth0 moved to the legacy Ethernet driver,
-# boot settings applied, the operator toolset added, nginx/cockpit removed, and
-# the sample operating systems and their boot configurations placed under
-# /var/lib/qunilator. NAME picks the board: qbone (QBUS, the default) or unibone
-# (UNIBUS); it sets the package installed, the hostname and the image name.
+# boot settings applied, the operator toolset added and nginx/cockpit removed.
+# The machines a board can run come from its package, which carries the XXDP
+# sample, and from configurations an operator imports. NAME picks the board:
+# qbone (QBUS, the default) or unibone (UNIBUS); it sets the package installed,
+# the hostname and the image name.
 #
 # The Linux-specific work (loop-mounting ext4, an armhf chroot, resizing) runs
 # in a privileged Docker container, because macOS can do none of it. Apple
@@ -15,8 +16,6 @@
 # Inputs, under $DIST (default ./dist):
 #   base.img.xz          the rcn-ee base-v6.12 armhf image
 #   <name>_*_armhf.deb   the emulator package for this board
-#   images/              disk images to ship (*.dsk, *.rl02, ...)
-#   configs/             boot configurations (*.json) naming those images
 # and from the repository:
 #   02_bbb_config/01_cape/am335x-boneblack-bone.dts
 #   packaging/debian/network/*
@@ -48,8 +47,6 @@ MARGIN_MB=${MARGIN_MB:-400}
 ls "$DIST"/base.img.xz >/dev/null 2>&1 || { echo "missing $DIST/base.img.xz" >&2; exit 1; }
 ls "$DIST"/${NAME}_*_armhf.deb >/dev/null 2>&1 || { echo "missing $DIST/${NAME}_*_armhf.deb" >&2; exit 1; }
 [ "$(ls "$DIST"/${NAME}_*_armhf.deb | wc -l)" -eq 1 ] || { echo "expected exactly one $NAME deb in $DIST" >&2; exit 1; }
-[ -d "$DIST/images" ] || { echo "missing $DIST/images" >&2; exit 1; }
-[ -d "$DIST/configs" ] || { echo "missing $DIST/configs" >&2; exit 1; }
 DTS=$HERE/02_bbb_config/01_cape/am335x-boneblack-bone.dts
 NET=$HERE/packaging/debian/network
 [ -r "$DTS" ] || { echo "missing $DTS" >&2; exit 1; }
@@ -104,10 +101,8 @@ RESOLV_LINK=$(readlink /mnt/etc/resolv.conf 2>/dev/null || true)
 cp --remove-destination /etc/resolv.conf /mnt/etc/resolv.conf
 
 # stage the inputs inside the rootfs
-mkdir -p /mnt/tmp/in/images /mnt/tmp/in/configs
+mkdir -p /mnt/tmp/in
 cp /dist/${NAME}_*_armhf.deb /mnt/tmp/in/
-cp /dist/images/* /mnt/tmp/in/images/
-cp /dist/configs/* /mnt/tmp/in/configs/
 cp /in/board.dts /mnt/tmp/in/board.dts
 
 echo "-- customising the rootfs (armhf chroot)"
@@ -287,11 +282,6 @@ Debian GNU/Linux \r on \m
 
 ISSUE
 chmod 644 /etc/issue
-
-# the sample operating systems and their boot configurations
-install -d -m 755 /var/lib/qunilator/images /var/lib/qunilator/configs
-cp /tmp/in/images/* /var/lib/qunilator/images/
-cp /tmp/in/configs/* /var/lib/qunilator/configs/
 
 rm -rf /tmp/in
 CHROOT

@@ -4,11 +4,10 @@ name: release-image
 # for every release. On a v* tag each image is built from that tag's package and
 # attached to the tag's GitHub Release, beside the .debs, so a downloaded image
 # always carries the release's package version. build-image.sh turns the rcn-ee
-# base image into a card-ready image; the base image and each board's
-# OS-images/configs come from the Actions variables BASE_IMAGE_URL,
-# ASSETS_URL_QBONE and ASSETS_URL_UNIBONE (each set expands to images/ and
-# configs/ at its top level). workflow_dispatch rebuilds images for an existing
-# tag on demand.
+# base image into a card-ready image, taking that base from the Actions variable
+# BASE_IMAGE_URL. The machines a board can run travel in the package, which
+# carries the XXDP sample, and in the configurations an operator imports.
+# workflow_dispatch rebuilds images for an existing tag on demand.
 
 on:
   push:
@@ -71,25 +70,14 @@ jobs:
       - name: Assemble the staging directory
         env:
           BASE_IMAGE_URL: ${{ vars.BASE_IMAGE_URL }}
-          ASSETS_URL_QBONE: ${{ vars.ASSETS_URL_QBONE }}
-          ASSETS_URL_UNIBONE: ${{ vars.ASSETS_URL_UNIBONE }}
         run: |
-          case "${{ matrix.board }}" in
-            unibone) assets=$ASSETS_URL_UNIBONE ;;
-            *)       assets=$ASSETS_URL_QBONE ;;
-          esac
-          [ -n "$BASE_IMAGE_URL" ] && [ -n "$assets" ] \
-            || { echo "set the BASE_IMAGE_URL and ASSETS_URL_* repo variables" >&2; exit 1; }
-          mkdir -p dist/images dist/configs
+          [ -n "$BASE_IMAGE_URL" ] \
+            || { echo "set the BASE_IMAGE_URL repo variable" >&2; exit 1; }
+          mkdir -p dist
           cp ${{ matrix.board }}_*_armhf.deb dist/
           echo "-- fetching the base image"
           curl --fail-with-body -L -o dist/base.img.xz "$BASE_IMAGE_URL"
-          echo "-- fetching the OS images and configs"
-          curl --fail-with-body -L -o /tmp/assets.tar "$assets"
-          tar -xf /tmp/assets.tar -C dist
-          test -d dist/images && test -d dist/configs \
-            || { echo "assets must contain images/ and configs/ at top level" >&2; exit 1; }
-          ls dist dist/images dist/configs
+          ls dist
 
       - name: Build the image
         env:

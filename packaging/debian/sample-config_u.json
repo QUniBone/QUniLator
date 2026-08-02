@@ -1,0 +1,21 @@
+{
+  "title": "PDP-11/20 (emulated)",
+  "devices": [
+    { "name": "rl", "enabled": true, "params": {} },
+    { "name": "rl0", "enabled": true,
+      "params": { "image": "images/xxdp25.rl02", "powerswitch": "1", "runstopbutton": "1" } },
+    { "name": "DL11", "enabled": true, "params": {} },
+    { "name": "M9312", "enabled": true,
+      "params": { "bootaddress_label": "dl0n",
+                  "bootrom1_file": "/usr/share/qunilator/roms/23-751A9.lst",
+                  "consemu_file": "/usr/share/qunilator/roms/23-248F1.lst" } },
+    { "name": "CPU20", "enabled": true, "params": { "pmi": "1" } }
+  ],
+  "layout": {
+    "controlpanel": { "x": 0, "y": 0 },
+    "frontpanel": { "x": 13, "y": 0 },
+    "console": { "x": 0, "y": 3 },
+    "CPU20": { "x": 0, "y": 13 },
+    "rl0": { "x": 7, "y": 13 }
+  }
+}

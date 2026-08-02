@@ -152,6 +152,21 @@ install -m 440 packaging/debian/sudoers-qunilator-admin \
 # exists. Shipped as a template and copied into place by postinst only when
 # absent, so an operator's own default.json is never overwritten.
 install -m 644 packaging/debian/default-config.json $STAGE/usr/share/qunilator/default-config.json
+# The sample machine. XXDP is the DEC diagnostic monitor, small enough to ship
+# and the one pack that says whether a board works at all, so a freshly flashed
+# board has something to run before its operator has found anything of their
+# own. The pack is read-only and belongs to the package: a drive takes its
+# writes into a copy-on-write overlay, so the shipped file stays as it was.
+# Stored compressed in git, where it is the one binary that is not a build
+# product.
+xz -dc packaging/images/xxdp25.rl02.xz > $STAGE/var/lib/qunilator/images/xxdp25.rl02
+chmod 444 $STAGE/var/lib/qunilator/images/xxdp25.rl02
+# and the machine that boots it, as a template postinst copies in when the
+# board has no configuration of that name. Only a UNIBUS build carries the
+# processors, so that one is a whole PDP-11/20 with the ROMs to boot the pack;
+# a QBUS board is a peripheral of a real machine, which brings its own.
+install -m 644 packaging/debian/sample-config$SUFFIX.json \
+    $STAGE/usr/share/qunilator/sample-config.json
 # the image-introspection decoders: the web interface shells out to introspect.py
 # to list the files inside an RT-11 / Files-11 image
 install -d -m 755 $STAGE/usr/share/qunilator/decoders
@@ -325,6 +340,14 @@ if [ "$1" = configure ]; then
         install -d -m 755 /var/lib/qunilator/configs
         install -m 644 /usr/share/qunilator/default-config.json \
             /var/lib/qunilator/configs/default.json || true
+    fi
+    # The sample machine that boots the shipped XXDP pack, on the same terms:
+    # placed when the board has no configuration by that name, so an operator
+    # who has edited or deleted it keeps their decision.
+    if [ ! -e /var/lib/qunilator/configs/xxdp.json ]; then
+        install -d -m 755 /var/lib/qunilator/configs
+        install -m 644 /usr/share/qunilator/sample-config.json \
+            /var/lib/qunilator/configs/xxdp.json || true
     fi
     if [ -d /run/systemd/system ]; then
         systemctl daemon-reload || true

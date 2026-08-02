@@ -117,6 +117,27 @@ qunilator-network creates and joins to the bridge qunilator-setup builds from th
 uplink. Rename it in /etc/qunilator/network.conf and the delqa's "interface"
 parameter has to follow.
 
+Machines
+--------
+
+A machine is a saved configuration and the media its drives hold. This package
+ships one: the XXDP diagnostic pack as /var/lib/qunilator/images/xxdp25.rl02,
+and a configuration named "xxdp" that attaches it. On a UNIBUS board that
+configuration is a whole emulated PDP-11/20 with the M9312 ROMs, so it boots
+the pack by itself and is the quickest check that a board works; on a QBUS
+board it is the drive alone, for the real machine in the backplane to boot.
+
+The pack is read-only and belongs to this package. A drive keeps its guest's
+writes in a copy-on-write overlay beside the file, so the shipped pack stays as
+it was and reinstalling cannot lose any work.
+
+The configuration is placed only when the board has none by that name, so
+editing or deleting it is a decision an upgrade will not undo.
+
+Other machines are imported. The web interface exports a configuration and
+every image it names as a single <name>.qcfg.zip, and the Configurations page
+imports the same file back, so a machine travels as one file between boards.
+
 Status LEDs
 -----------
 

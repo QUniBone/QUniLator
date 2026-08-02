@@ -1,0 +1,25 @@
+# Boot the XXDP pack the package ships, with the sample configuration it ships
+# beside it — the check that a freshly flashed board runs at all.
+#
+# The sample is an emulated PDP-11/20 with the M9312 ROMs, so the console is the
+# DL11 at 777560 rather than a processor's own.
+#
+#   node dist/src/cli.js run scripts/unibone-xxdp-sample.yaml
+console: "0"
+host: unibone
+title: the shipped XXDP sample
+timeout: 180s
+machine:
+  config: xxdp-sample
+  start: restart
+  settle: 3s
+deviations:
+  - match: /Non bootable media/i
+    fail: the M9312 did not find a bootable pack on RL0
+steps:
+  # The M9312 boots RL0 by itself from the power-up vector; XXDP prints its
+  # banner and ends it with the restart address and a "." prompt.
+  - name: banner
+    expect: /RESTART ADDRESS/i
+    timeout: 150s
+    done: true

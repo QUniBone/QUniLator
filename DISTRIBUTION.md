@@ -345,60 +345,45 @@ each named for its board and mutually exclusive with the other through a
 `Conflicts`/`Replaces` pair, so they share one repository and a board is only
 ever offered the brand it has.
 
-## The assets bundle
+## Where machines come from
 
-`build-image.sh` refuses to run without `$DIST/images` and `$DIST/configs`: the
-sample operating systems it places under `/var/lib/qunilator`, and the saved
-device configurations that boot them. A board flashed from an image built
-without them comes up with an empty media library and no configuration to
-apply, which is a board that does nothing until its operator has found disk
-images of their own.
+A machine is a saved configuration and the media its drives hold, and the two
+travel together: the web interface exports `<name>.qcfg.zip`, holding the
+configuration document and every image it names, and imports the same zip back.
+So a machine is a file an operator can be handed, and a board acquires one
+without anything having been baked into its image.
 
-The two directories travel together as one tar archive, the **assets bundle**.
-`release-image.yml` fetches it per board from the `ASSETS_URL_QBONE` and
-`ASSETS_URL_UNIBONE` repository variables, unpacks it into `dist/`, and checks
-that both directories arrived.
+The appliance image therefore carries no operating systems. What a freshly
+flashed board has is what its package ships: the **XXDP diagnostic pack**
+(`xxdp25.rl02`, stored compressed in `packaging/images/` and the one binary in
+this repository that is not a build product) and a configuration that attaches
+it. XXDP earns the space by being the pack that says whether a board works at
+all. On a UNIBUS build that configuration is a whole emulated PDP-11/20 with the
+M9312 ROMs to boot the pack; a QBUS board is a peripheral of a real machine,
+which brings its own processor and console, so there it is the drive alone.
 
-### Layout
+The pack is read-only and belongs to the package. A drive takes its guest's
+writes into a copy-on-write overlay, so the shipped file stays as it was and a
+reinstall cannot lose an operator's work.
 
-`images/` and `configs/` are at the top level of the archive, and both hold
-plain files - the copy into the rootfs is not recursive, so a subdirectory below
-either one fails the build.
+Everything else is imported. [Issue #64](https://github.com/QUniBone/QUniLator/issues/64)
+covers doing that from the interface: a board subscribes to several catalogues -
+the project's, a user group's, an operator's own - and imports what one lists.
+Until then an operator is handed a zip and feeds it to the import dialog.
 
-    images/     the disk and tape images to ship: *.dsk, *.rl02, *.rx02, *.tap
-    configs/    one *.json per bootable machine, naming those images
+### What this settles about the licensing
 
-The media tree's folders by DEC device mnemonic - `dk/`, `dl/`, `du/`, `mu/`,
-`rx/`, `roms/` - are created by the package and are where an operator's own
-uploads land. Shipped images sit beside them at the top of the library.
+Decision 3 asked which sample operating systems ship and under what licence. The
+answer is that the distributed image ships one, and it is the same DEC
+diagnostic pack the boards have always carried. Everything with a less certain
+standing - RT-11, RSX-11M+, and VAX/VMS most of all, which VSI licenses today
+and runs its own community programme for - is no longer something a download
+carries whether or not it was wanted. It becomes a configuration an operator
+goes and gets, which is a materially better position than serving it to
+everyone who flashes a card.
 
-A configuration is the same JSON the web interface writes, so the way to author
-one is to bring a board up on the images the bundle carries, get it booting, and
-save the configuration under a name; `GET /api/configs/<name>` is then the file
-that belongs in `configs/`. Its drives carry an `image` parameter of the form
-`images/<file>`, resolved against `/var/lib/qunilator`, so each one has to name
-a file the bundle also ships.
-
-### Assembling one
-
-From a board that boots what the bundle should ship:
-
-    tar -cf assets.tar -C /var/lib/qunilator images configs
-
-Each board gets its own bundle: a QBUS machine and a UNIBUS machine boot
-different controllers, so a configuration written for one names devices the
-other has not got.
-
-### Publishing one
-
-**Whether a bundle can be offered publicly is the licensing question of
-Decision 3, and it is still open.** 2.11BSD and Unix V6 are settled -
-BSD-licensed and covered by the Caldera release. RT-11, RSX-11M+ and XXDP are
-DEC software whose hobbyist-licence standing nobody has tested, which is why the
-bundle URLs are private repository variables rather than a link in this
-repository. A public bundle of the freely-licensed images only is the
-conservative form, with the interface pointing at `files.retrocmp.com/qunibone/`
-for the DEC ones.
+What a published catalogue may carry is the same question in a smaller place,
+and it is still open.
 
 ## Self-update, done
 
