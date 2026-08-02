@@ -128,6 +128,16 @@ export interface ImageInfo {
   overlay_bytes?: number;
 }
 
+// GET /api/roms — the M9312 PROM listings the package ships, offered as a
+// source to copy from. They are not part of the image tree and nothing
+// references them by path: the operator copies one into images/roms and owns
+// the copy. `title` is the listing's ".title" line, empty if it has none.
+export interface PackageRom {
+  name: string;
+  size: number;
+  title: string;
+}
+
 // GET /api/images now returns a folder tree: the flat list of folder subpaths
 // alongside the files.
 export interface ImageListing {

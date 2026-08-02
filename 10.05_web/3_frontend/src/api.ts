@@ -14,6 +14,7 @@ import type {
   ConfigSnapshot,
   LogLine,
   LogLevelName,
+  PackageRom,
 } from './types';
 
 export interface ApiResult<T = Record<string, unknown>> {
@@ -262,6 +263,29 @@ export async function deleteFolder(path: string): Promise<boolean> {
   toast('DELETE /api/folders/' + path, res.ok ? 'folder removed' : res.data.error || 'remove failed');
   await refreshImages().catch(() => {});
   return res.ok;
+}
+
+// The ROM listings the package ships, offered as a source to copy from. They
+// live outside the image tree — /usr/share, rewritten by every upgrade — so
+// nothing names them directly; this only lists what is on offer.
+export async function packageRoms(): Promise<PackageRom[]> {
+  const res = await apiJSON<{ roms?: PackageRom[] }>('/api/roms');
+  return res.ok && Array.isArray(res.data.roms) ? res.data.roms : [];
+}
+
+// Copy one of those into the image tree, where it becomes an ordinary file the
+// operator owns: a card can be programmed from it and it can be edited. Refused
+// (409) when the folder already holds a file of that name, so a copy carrying
+// the operator's edits is never overwritten.
+export async function copyPackageRom(name: string, dir: string): Promise<string> {
+  const res = await apiJSON<{ path?: string; error?: string }>('/api/roms', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, dir }),
+  });
+  toast('POST /api/roms ' + name, res.ok ? 'copied to ' + res.data.path : res.data.error || 'copy failed');
+  await refreshImages().catch(() => {});
+  return res.ok && res.data.path ? res.data.path : '';
 }
 
 // Rename or move a file or folder (subpaths). Refused (409) when the source is

@@ -556,6 +556,31 @@ target already exists.
 Create a folder (body `{"path": <subpath>}`, parents made as needed), or remove
 an **empty** folder (`409` if not empty).
 
+### `GET /api/roms` · `POST /api/roms`
+
+The M9312 console/diagnostic and boot PROM listings the package installs under
+`/usr/share/qunilator/roms` (overridable with `QUNILATOR_ROMS_DIR` for a build
+tree). They are package content, not operator state — every upgrade rewrites
+them — so nothing references them by path: they are offered as a **source** to
+copy from, and the copy in the images tree is what a card is programmed from and
+what the operator may edit.
+
+`GET` lists what is on offer. `title` is the listing's MACRO-11 `.title` line,
+which is what makes a part number recognisable; it is empty for a file that
+carries none:
+
+```json
+{"roms": [{"name": "23-751A9.lst", "size": 21902,
+           "title": "M9312 'DL' BOOT prom for RL11 controller"}]}
+```
+
+`POST` body `{"name": <file>, "dir": <subpath>}` copies one into the images
+tree; `dir` defaults to `roms`, and its folders are made as needed. `name` is a
+single path segment naming a listed file — anything else is `400`, an unknown
+one `404`. Answers `{"ok": true, "path": "roms/23-751A9.lst", "size": …}`.
+Refused `409` when the target file exists, so a copy the operator has since
+edited is never overwritten; delete or rename it to take a fresh one.
+
 ### `GET /api/images/<subpath>/contents`
 
 Read-only listing of the files inside a disk/tape image, decoded by the Python
