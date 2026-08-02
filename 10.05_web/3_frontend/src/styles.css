@@ -812,6 +812,12 @@ button.tree-name:hover .mono { color: var(--accent); }
 /* master (list) beside detail (the selected config's editor) */
 .cfg-layout { display: flex; gap: 16px; align-items: flex-start; }
 .cfg-master { width: 260px; flex: 0 0 auto; overflow: hidden; }
+/* Two buttons and the heading do not fit across 260px, and a truncated
+   "Configur…" is a worse loss than a second line: the group wraps below the
+   heading instead of eating it. */
+.cfg-master .card-head { flex-wrap: wrap; }
+.cfg-master .card-head h3 { flex: 1 0 auto; }
+.cfg-master-actions { display: flex; gap: 8px; margin-left: auto; }
 .cfg-detail { flex: 1 1 auto; min-width: 0; }
 
 .cfg-list { display: flex; flex-direction: column; }
