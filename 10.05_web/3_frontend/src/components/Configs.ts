@@ -803,6 +803,44 @@ function ExportMenu({ name }: { name: string }) {
   </span>`;
 }
 
+// A new configuration is an empty machine: no device in it, named by the
+// operator. The name is the file's identity, so it is held to what the board
+// accepts as one — and to a name no configuration here already carries, since
+// writing the empty document over an existing one would empty that machine.
+const NAME_CHARS = /^[A-Za-z0-9._ -]+$/;
+function nameComplaint(name: string, taken: string[]): string {
+  if (name.length > 64) return 'A name is at most 64 characters.';
+  if (!NAME_CHARS.test(name))
+    return 'A name holds letters, digits, spaces and “-”, “_”, “.” only.';
+  if (name[0] === '.') return 'A name may not start with “.”.';
+  if (taken.some((n) => n === name)) return 'There is already a configuration named “' + name + '”.';
+  return '';
+}
+
+function NewButton() {
+  const s = useStore();
+  const loc = useLocation();
+  const doNew = async () => {
+    const taken = (s.configs || []).map((c) => c.name);
+    let suggested = '';
+    // re-ask on a name the board would refuse, with what was typed still there
+    for (;;) {
+      const name = await promptModal('New configuration', 'Name', suggested, 'Create');
+      if (!name) return;
+      const bad = nameComplaint(name, taken);
+      if (bad) {
+        await alertModal('Name not usable', bad);
+        suggested = name;
+        continue;
+      }
+      if (await saveConfigDoc(name, { devices: [] }))
+        guardedRoute(loc, '/config/' + encodeURIComponent(name));
+      return;
+    }
+  };
+  return html`<button class="btn small primary" onClick=${doNew}>New…</button>`;
+}
+
 // Bringing one in. The name is the operator's: an import is a machine this
 // board did not have, and the board refuses a name already taken rather than
 // writing over what is there.
@@ -867,7 +905,9 @@ export function ConfigsPage() {
   return html`<section class="page active" data-page="configurations">
     <div class="cfg-layout">
       <div class="cfg-master card">
-        <div class="card-head"><h3>Configurations</h3><${ImportButton} /></div>
+        <div class="card-head"><h3>Configurations</h3>
+          <span class="cfg-master-actions"><${NewButton} /><${ImportButton} /></span>
+        </div>
         <div class="cfg-list">
           ${
             configs.length
