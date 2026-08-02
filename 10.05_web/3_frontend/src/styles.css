@@ -521,40 +521,6 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
 .memcard .rl-foot { display: flex; flex-direction: column; gap: 6px; }
 .memcard .rl-info { white-space: normal; }
 
-/* ---- bootstrap PROM card ---- the sockets and what reaches the machine from
-   them. A ROM chip beside the name of what it was programmed with, then the
-   two ways the array is read: the bootstrap windows, named by the page each
-   currently shows, and the array's own range in memory space. */
-.rombody { display: flex; flex-direction: column; gap: 11px; padding: 12px 14px 14px; }
-.rom-sockets {
-  display: grid; grid-template-columns: auto 1fr auto; gap: 9px; align-items: center;
-  padding: 6px 9px; border-radius: var(--r-sm);
-  background: var(--surface-2); border: 1px solid var(--line);
-}
-/* a ceramic PROM with its window, small enough to read as the part it names */
-.rom-chip {
-  width: 24px; height: 12px; border-radius: 2px; background: var(--bezel);
-  border: 1px solid var(--bezel-2); position: relative;
-}
-.rom-chip::after {
-  content: ''; position: absolute; inset: 3px 8px; border-radius: 1px;
-  background: var(--ink-faint);
-}
-.rom-label {
-  font-family: var(--font-mono); color: var(--ink);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.rom-size { font-size: var(--fs-0); color: var(--ink-muted); font-variant-numeric: tabular-nums; }
-.rom-rows { display: flex; flex-direction: column; gap: 5px; }
-.rom-row {
-  display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline;
-  font-size: var(--fs-0); color: var(--ink-muted);
-}
-.rom-row .rom-name { min-width: 68px; }
-.rom-row .rom-val { color: var(--ink); }
-.rom-row .rom-addr { font-family: var(--font-mono); color: var(--ink); }
-.rom-row .rom-off { color: var(--ink-faint); }
-
 /* the emulated CPU's console: the registers it displays sit above the switch
    caps, each value in the engraved octal style the front panel uses. The switch
    register is the one an operator sets, so it is a field rather than a readout */
