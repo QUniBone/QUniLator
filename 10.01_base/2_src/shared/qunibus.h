@@ -81,9 +81,11 @@
 
 // probe_range(): no address in the range answered
 #define QUNIBUS_PROBE_NONE	0xffffffff
-// One word every 8 KB, the granularity a memory card is strapped at, plus both
-// ends of the range. A card answering anywhere is found; silence proves nothing.
-#define QUNIBUS_PROBE_STEP	8192
+// One word every 64 KB, the span of the smallest card a machine of this size
+// carries, plus both ends of the range. A card answering anywhere across a
+// probe point is found; silence proves nothing, and a card narrower than the
+// step that falls between two points is silence.
+#define QUNIBUS_PROBE_STEP	65536
 
 /*
 UNIBUS: DATIP never used.
@@ -196,8 +198,11 @@ public:
 	dma_request_c *dma_request;
 	//intr_request_c *intr_request;
 
+	// share_bus leaves the running machine bus bandwidth by pausing as long as
+	// the transfer took; a cycle the board makes for itself asks for none.
 	bool dma(bool blocking,
-			uint8_t qunibus_cycle, uint32_t startaddr, uint16_t *buffer, unsigned wordcount);
+			uint8_t qunibus_cycle, uint32_t startaddr, uint16_t *buffer, unsigned wordcount,
+			bool share_bus = true);
 
 	void mem_read(uint16_t *words,
 			uint32_t unibus_start_addr, uint32_t unibus_end_addr, bool *timeout);

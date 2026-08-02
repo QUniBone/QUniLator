@@ -1216,8 +1216,12 @@ void qunibusadapter_c::worker_device_dma_chunk_complete_event()
         //
         // A device losing a transfer is the other thing entirely: an MSCP port
         // that cannot read its rings resets itself and strands the guest's I/O.
-        if (dmareq->is_cpu_access)
-            DEBUG("CPU access timed out: %s @ %s, PRU status %u",
+        //
+        // A probe is a third thing: the board asking whether anything answers
+        // an address, where the timeout is the answer it went looking for.
+        if (dmareq->is_cpu_access || dmareq->timeout_expected)
+            DEBUG("%s timed out: %s @ %s, PRU status %u",
+                    dmareq->is_cpu_access ? "CPU access" : "probe",
                     qunibus->control2text(dmareq->qunibus_control),
                     qunibus->addr2text(dmareq->qunibus_start_addr),
                     (unsigned) mailbox->dma.cur_status);

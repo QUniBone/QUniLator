@@ -76,6 +76,7 @@ dma_request_c::dma_request_c(qunibusdevice_c *_device) :
 	level_index = PRIORITY_LEVEL_INDEX_NPR;
 	success = false;
 	is_cpu_access = false ;// over written for emulated CPU
+	timeout_expected = false; // set for the length of a probe
 	// register request for device
 	if (_device) {
 		_device->dma_requests.push_back(this);

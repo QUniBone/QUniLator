@@ -105,7 +105,7 @@ private:
 	// move the card, re-claiming out of DDR when it is in the machine
 	bool place(uint32_t start, uint32_t bytes);
 	// have the PRU answer the range out of DDR, or refuse and say why
-	bool claim(uint32_t start, uint32_t end);
+	bool claim(uint32_t start, uint32_t end, bool putting_the_card_in = false);
 	void release(void);
 	// a byte count as a card is described ("256 KB", "2 MB"), and back
 	static std::string size_text(uint32_t bytes);

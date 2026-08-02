@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <cctype>
 #include <cstring>
+#include <fstream>
+#include <string>
 
 #include "logger.hpp"
 #include "qunibus.h"
@@ -155,10 +157,42 @@ bool memory_c::reaches_no_further_than_the_cpu_allows(uint32_t start, uint32_t e
 	return false;
 }
 
+// What the machine answered the last time a range was probed and found clear.
+// The card complement of the machine the board sits in is the same after a
+// restart as before it, so a range the bus once declared free is taken as free
+// when the same card is put back in; strapping the card asks the bus again.
+static std::string probe_record_path(void)
+{
+	const char *dir = getenv("QUNILATOR_DIR");
+	return std::string(dir && *dir ? dir : "/var/lib/qunilator") + "/memory-probe";
+}
+
+static bool probe_record_holds(uint32_t start, uint32_t end)
+{
+	std::ifstream in(probe_record_path().c_str());
+	uint32_t recorded_start = 0, recorded_end = 0;
+	return in && (in >> std::hex >> recorded_start >> recorded_end)
+			&& recorded_start == start && recorded_end == end;
+}
+
+static void probe_record_write(uint32_t start, uint32_t end)
+{
+	std::ofstream out(probe_record_path().c_str(), std::ios::trunc);
+	if (out)
+		out << std::hex << start << " " << end << "\n";
+}
+
+static void probe_record_forget(void)
+{
+	remove(probe_record_path().c_str());
+}
+
 // claim(): have the PRU answer [start, end] out of DDR.
 // Refuses rather than claiming a range that would collide, so a card is never
-// installed against memory the machine already answers.
-bool memory_c::claim(uint32_t start, uint32_t end)
+// installed against memory the machine already answers. "putting_the_card_in"
+// is the machine being assembled - at startup, or when the operator switches
+// the card on - which is where a range found clear before is taken on trust.
+bool memory_c::claim(uint32_t start, uint32_t end, bool putting_the_card_in)
 {
 	// Checked again here, not only where the card is placed: a configuration
 	// saved before the reservation was known reaches power-up with its range
@@ -166,14 +200,19 @@ bool memory_c::claim(uint32_t start, uint32_t end)
 	if (!reaches_no_further_than_the_cpu_allows(start, end))
 		return false;
 
-	if (probe.value) {
+	if (probe.value && putting_the_card_in && probe_record_holds(start, end)) {
+		INFO("%s..%s answered nothing when it was last probed; the card goes in "
+				"on that", qunibus->addr2text(start), qunibus->addr2text(end));
+	} else if (probe.value) {
 		uint32_t answered = qunibus->probe_range(start, end);
 		if (answered != QUNIBUS_PROBE_NONE) {
+			probe_record_forget();
 			ERROR("%s is answered by the machine already; a card claimed over it "
 					"would drive the bus against what answers there",
 					qunibus->addr2text(answered));
 			return false;
 		}
+		probe_record_write(start, end);
 	}
 
 	if (!ddrmem->set_range(DDRMEM_RANGE_MEMORY, start, end)) {
@@ -244,7 +283,7 @@ bool memory_c::on_param_changed(parameter_c *param)
 {
 	if (param == &enabled) {
 		if (enabled.new_value) {
-			if (!claim(startaddr.value, endaddr.value))
+			if (!claim(startaddr.value, endaddr.value, /*putting_the_card_in*/true))
 				return false;
 		} else
 			release();

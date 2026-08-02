@@ -492,7 +492,7 @@ bool qunibus_c::get_arbitrator_active(void)
 // 1 = all transfered
 // A limit for time used by DMA can be compiled-in
 bool qunibus_c::dma(bool blocking, uint8_t qunibus_cycle, uint32_t startaddr, uint16_t *buffer,
-                    unsigned wordcount)
+                    unsigned wordcount, bool share_bus)
 {
     int dma_bandwidth_percent = 50; // use 50% of time for DMA, rest for running PDP-11 CPU
     uint64_t dmatime_ns, totaltime_ns;
@@ -503,14 +503,20 @@ bool qunibus_c::dma(bool blocking, uint8_t qunibus_cycle, uint32_t startaddr, ui
     qunibusadapter->DMA(*dma_request, blocking, qunibus_cycle, startaddr, buffer, wordcount);
 
     dmatime_ns = timeout.elapsed_ns();
-    // wait before next transaction, to reduce QBUS/UNIBUS bandwidth
-    // calc required total time for DMA time + wait
-    // 100% -> total = dma
-    // 50% -> total = 2*dma
-    // 25% -> total = 4* dma
-    totaltime_ns = (dmatime_ns * 100) / dma_bandwidth_percent;
-    // whole transaction requires totaltime, dma already done
-    timeout.wait_ns(totaltime_ns - dmatime_ns);
+    // Wait before the next transaction, to leave the running PDP-11 the rest of
+    // the bus. A single-word transfer the board makes for itself - a probe
+    // before a card is placed - takes no bandwidth worth sharing, and the pause
+    // is charged on what the cycle took: a cycle that waited seconds for the
+    // machine to grant the bus would be followed by seconds of sleep.
+    if (share_bus) {
+        // calc required total time for DMA time + wait
+        // 100% -> total = dma
+        // 50% -> total = 2*dma
+        // 25% -> total = 4* dma
+        totaltime_ns = (dmatime_ns * 100) / dma_bandwidth_percent;
+        // whole transaction requires totaltime, dma already done
+        timeout.wait_ns(totaltime_ns - dmatime_ns);
+    }
 
     return dma_request->success; // only useful if blocking
 }
@@ -549,16 +555,44 @@ uint32_t qunibus_c::probe_range(uint32_t startaddr, uint32_t endaddr, uint32_t s
     if (startaddr > endaddr || step < 2)
         return QUNIBUS_PROBE_NONE;
 
+    // Every cycle here is expected to time out, and none of them shares the bus
+    // with anything: the machine is not running the range being probed.
+    dma_request->timeout_expected = true;
+    timeout_c probe_time;
+    probe_time.start_ns(0);
+    unsigned cycles = 0;
+    uint64_t first_cycle_ms = 0;
+    uint32_t answered = QUNIBUS_PROBE_NONE;
+
     for (uint32_t addr = startaddr; addr <= endaddr; addr += step) {
-        if (dma(true, QUNIBUS_CYCLE_DATI, addr, &w, 1))
-            return addr;
+        cycles++;
+        bool hit = dma(true, QUNIBUS_CYCLE_DATI, addr, &w, 1, /*share_bus*/false);
+        if (cycles == 1)
+            first_cycle_ms = probe_time.elapsed_ms();
+        if (hit) {
+            answered = addr;
+            break;
+        }
         if (endaddr - addr < step)
             break; // last step would wrap
     }
     // the end of the range need not fall on a step boundary
-    if (dma(true, QUNIBUS_CYCLE_DATI, endaddr, &w, 1))
-        return endaddr;
-    return QUNIBUS_PROBE_NONE;
+    if (answered == QUNIBUS_PROBE_NONE) {
+        cycles++;
+        if (dma(true, QUNIBUS_CYCLE_DATI, endaddr, &w, 1, /*share_bus*/false))
+            answered = endaddr;
+    }
+
+    // What the probe cost, in the terms it can be shortened by: how many cycles
+    // the step asked for, and how long they took. The first cycle is called out
+    // because it carries what the machine takes to grant the bus after a power
+    // cycle, which the rest of the walk does not pay again.
+    INFO("probed %s..%s in %u cycles, %llu ms (first cycle %llu ms)",
+            addr2text(startaddr), addr2text(endaddr), cycles,
+            (unsigned long long) probe_time.elapsed_ms(),
+            (unsigned long long) first_cycle_ms);
+    dma_request->timeout_expected = false;
+    return answered;
 }
 
 /*

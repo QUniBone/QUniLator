@@ -108,6 +108,11 @@ public:
 
 	bool is_cpu_access; // true if DMA is CPU memory access
 
+	// A transfer that asks a question the bus answers by not answering: a probe
+	// of an address to see whether anything lives there. Its timeout is the
+	// result, not a fault, so it is not reported as one.
+	bool timeout_expected;
+
 	// DMA transaction are divided in to smaller DAT transfer "chunks" 
 	uint32_t chunk_max_words; // max is PRU capacity PRU_MAX_DMA_WORDCOUNT (512)
 	uint32_t chunk_qunibus_start_addr; // current chunk
