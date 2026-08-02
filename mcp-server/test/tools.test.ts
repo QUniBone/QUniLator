@@ -343,25 +343,71 @@ test("get_log collects log events over the window, filtered by level", async () 
   assert.ok(!texts.includes("chatter")); // debug filtered out at warning
 });
 
-test("auth: Authorization header comes from a stubbed ~/.qbone-pw", async () => {
+// The credential the board takes is a name and a password. These pin both
+// files, so the workstation's own ~/.qbone-user never reaches the assertion.
+function withStubbedCredential(
+  pw: string,
+  user: string | null,
+  body: () => Promise<void>
+): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), "qbone-pw-"));
   const pwFile = join(dir, ".qbone-pw");
-  writeFileSync(pwFile, "s3cr3t\n");
-  const prevFile = process.env.QBONE_PW_FILE;
-  const prevHost = process.env.QBONE_HOST;
+  writeFileSync(pwFile, pw + "\n");
+  const userFile = join(dir, ".qbone-user");
+  if (user !== null) writeFileSync(userFile, user + "\n");
+  const prev = {
+    pw: process.env.QBONE_PW_FILE,
+    user: process.env.QBONE_USER_FILE,
+    env: process.env.QBONE_USER,
+    host: process.env.QBONE_HOST,
+  };
   process.env.QBONE_PW_FILE = pwFile;
+  process.env.QBONE_USER_FILE = userFile;
+  delete process.env.QBONE_USER;
   process.env.QBONE_HOST = host;
-  try {
+  const restore = () => {
+    for (const [k, v] of [
+      ["QBONE_PW_FILE", prev.pw],
+      ["QBONE_USER_FILE", prev.user],
+      ["QBONE_USER", prev.env],
+      ["QBONE_HOST", prev.host],
+    ] as const) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  };
+  return body().finally(restore);
+}
+
+test("auth: a board that names no user takes the password alone", async () => {
+  await withStubbedCredential("s3cr3t", null, async () => {
     const cfg = loadConfig();
     const expected = "Basic " + Buffer.from(":s3cr3t").toString("base64");
     assert.equal(cfg.authHeader, expected);
     const client = await connectClient(cfg);
     await client.callTool({ name: "get_devices", arguments: {} });
     assert.equal(board.requests.at(-1)!.auth, expected);
-  } finally {
-    if (prevFile === undefined) delete process.env.QBONE_PW_FILE;
-    else process.env.QBONE_PW_FILE = prevFile;
-    if (prevHost === undefined) delete process.env.QBONE_HOST;
-    else process.env.QBONE_HOST = prevHost;
-  }
+  });
+});
+
+test("auth: ~/.qbone-user names the account the board provisioned", async () => {
+  await withStubbedCredential("s3cr3t", "operator", async () => {
+    const cfg = loadConfig();
+    const expected = "Basic " + Buffer.from("operator:s3cr3t").toString("base64");
+    assert.equal(cfg.authHeader, expected);
+    const client = await connectClient(cfg);
+    await client.callTool({ name: "get_devices", arguments: {} });
+    assert.equal(board.requests.at(-1)!.auth, expected);
+  });
+});
+
+test("auth: QBONE_USER wins over the file", async () => {
+  await withStubbedCredential("s3cr3t", "from-file", async () => {
+    process.env.QBONE_USER = "from-env";
+    const cfg = loadConfig();
+    assert.equal(
+      cfg.authHeader,
+      "Basic " + Buffer.from("from-env:s3cr3t").toString("base64")
+    );
+  });
 });

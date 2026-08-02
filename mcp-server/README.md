@@ -13,10 +13,17 @@ board C++.
 
 - **Board host** — `QBONE_HOST` (default `qbone`). May carry a port, e.g.
   `QBONE_HOST=127.0.0.1:8080`.
-- **Credential** — QBone's HTTP basic password, read once from `~/.qbone-pw`
-  (any user name, that password), the same auth the REST examples and the Vite
-  dev proxy use. Override the file with `QBONE_PW_FILE` (the test suite points it
-  at a stub). A board with no password answers without the header.
+- **Credential** — QBone's HTTP basic user name and password, the same auth the
+  REST examples and the Vite dev proxy use. The password is read once from
+  `~/.qbone-pw`, the name from `QBONE_USER` or `~/.qbone-user`. Override the
+  files with `QBONE_PW_FILE` and `QBONE_USER_FILE` (the test suite points them
+  at stubs). A board with no password answers without the header.
+
+  **The name is part of the credential.** A board provisioned through the
+  first-run dialog carries one identity that is both the operator's account and
+  the web login, and it answers `401` to the right password under the wrong
+  name. A board set up before that dialog carries only a password and takes any
+  name, which is what an unset name still serves.
 
 Control is always exposed; there is no read-only mode.
 
