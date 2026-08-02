@@ -148,6 +148,10 @@ if [ $PRU_CLEAN = 1 ]; then
     rm -f "$PRU_DEPLOY_DIR"/*.out "$PRU_DEPLOY_DIR"/*_array.c \
           "$PRU_DEPLOY_DIR"/*.object "$PRU_DEPLOY_DIR"/*.pp \
           "$PRU_DEPLOY_DIR"/*.asm "$PRU_DEPLOY_DIR"/*.map "$PRU_DEPLOY_DIR"/*.nfo
+    # The internal-bus image is judged stale against its copy in internal/, so
+    # that copy goes with the rest: left standing it reads as current, the image
+    # is not rebuilt, and the copy the app build links is never put back.
+    rm -rf "$PRU_DEPLOY_DIR/internal"
 fi
 # The firmware is rebuilt when it is missing, and when any PRU source is newer
 # than the image built from it. Without the second test a change to the bus
