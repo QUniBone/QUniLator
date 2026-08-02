@@ -206,11 +206,14 @@ static int ws_data_handler(struct mg_connection *, int opcode, char *data,
 		return 0;
 	if (len == 0)
 		return 1;
-	// A TEXT frame is out-of-band control, never line data (see
-	// webconsole_control.hpp). BREAK is a line condition, so it is queued as an
-	// action rather than written: the tx writer holds it between the bytes
-	// already queued and the ones after it, in the order the client sent them.
-	if ((opcode & 0x0f) == MG_WEBSOCKET_OPCODE_TEXT) {
+	// A TEXT frame carrying one of the control messages is out-of-band (see
+	// webconsole_control.hpp); any other TEXT frame is what the operator typed,
+	// which the web interface sends as text, and goes to the line like every
+	// other byte. BREAK is a line condition, so it is queued as an action
+	// rather than written: the tx writer holds it between the bytes already
+	// queued and the ones after it, in the order the client sent them.
+	if ((opcode & 0x0f) == MG_WEBSOCKET_OPCODE_TEXT
+			&& web_console_is_control(data, len)) {
 		if (web_console_is_break(data, len)) {
 			std::lock_guard<std::mutex> lk(tx_mutex);
 			tx_queue.push_back(TX_BREAK);

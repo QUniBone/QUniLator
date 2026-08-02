@@ -22,6 +22,30 @@
 #include <cstddef>
 #include <cstring>
 
+// Is this TEXT frame one of the control messages at all?
+//
+// A console is byte-transparent, and a client is free to send what the operator
+// typed as a TEXT frame -- the web interface does exactly that. So a TEXT frame
+// is control only when it is shaped like one of the messages above: a JSON
+// object naming a key this side knows. Everything else is what somebody typed
+// and goes to the line, which is what a console did before any of these
+// messages existed.
+static inline bool web_console_is_control(const char *data, size_t len) {
+	size_t b = 0, e = len;
+	while (b < e && (data[b] == ' ' || data[b] == '\t' || data[b] == '\n'
+			|| data[b] == '\r'))
+		b++;
+	while (e > b && (data[e - 1] == ' ' || data[e - 1] == '\t'
+			|| data[e - 1] == '\n' || data[e - 1] == '\r'))
+		e--;
+	if (e - b < 2 || data[b] != '{' || data[e - 1] != '}')
+		return false;
+	for (size_t i = b; i + 7 <= e; i++)
+		if (memcmp(data + i, "\"break\"", 7) == 0)
+			return true;
+	return false;
+}
+
 // Is this TEXT frame the {"break":true} control message? Parsed by hand: the
 // frame is a fixed tiny object, and the alternative is dragging a JSON parser
 // into the WebSocket data path for one key.
