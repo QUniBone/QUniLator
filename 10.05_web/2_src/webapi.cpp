@@ -26,6 +26,7 @@
 #include <vector>
 #include <chrono>
 #include <mutex>
+#include <thread>
 
 #include "civetweb.h"
 #include "picojson.h"
@@ -725,48 +726,78 @@ static bool control_apply_to_emulated_cpu(const std::string &action) {
 // POST /api/control
 // {"action": "init"|"powercycle"|"restart"|"halt"|"continue"|"dc_on"|"dc_off"}
 
-/* What a control action cost and how soon it followed the last one.
- *
- * Power cycles already serialize: this handler holds operations_mutex for the
- * whole sequence, so one cannot start while another is mid-flight. What is not
- * bounded is how soon the next may begin once the previous returns, and a
- * cycle arriving while the bus is still settling from the last one is the
- * shape #49 points at - the CPU there failed its own self-test, which is what
- * a machine still being driven when DCLO/ACLO come round again would do.
- *
- * The ordinary cadence is an info line. A cycle following its predecessor
- * closely enough to be suspicious says so at warning, where it will be in the
- * journal without anyone having raised a log level first - which is the whole
- * point, since the wedge is not reproducible on demand.
+/* The cadence of the control actions: when the last one finished, and what it
+ * was. control_await_settle() reads it before a power sequence begins and
+ * control_note_timing() writes it once one has ended.
  */
-static void control_note_timing(const std::string &action) {
-	static std::mutex timing_mutex;
-	static std::chrono::steady_clock::time_point last_end;
-	static std::string last_action;
-	static bool have_last = false;
-	// Below this the previous cycle's bus activity may not have finished.
-	static const long CLOSE_MS = 2000;
+static std::mutex control_timing_mutex;
+static std::chrono::steady_clock::time_point control_last_end;
+static std::string control_last_action;
+static bool control_have_last = false;
 
-	std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
-	std::lock_guard<std::mutex> lock(timing_mutex);
-	if (have_last) {
+// How long the bus is given to finish the previous power sequence. The DCLO
+// and ACLO edges drive real cards, whose power-up behaviour outlasts the
+// handler that asked for it, so the interval belongs to the backplane rather
+// than to the request.
+static const long CONTROL_SETTLE_MS = 2000;
+
+// The actions that drive the bus edges, as against reading state or moving the
+// run/halt lines.
+static bool control_is_disruptive(const std::string &action) {
+	return action == "powercycle" || action == "dc_on"
+			|| action == "dc_off" || action == "restart";
+}
+
+/* Hold a power sequence off until the previous one has settled.
+ *
+ * The handler already serializes these: it holds operations_mutex for the
+ * whole sequence, so one cannot begin while another is mid-flight. What that
+ * does not bound is how soon the next may begin once the previous returns, and
+ * a machine still coming up when the next DCLO/ACLO arrives is driven through
+ * a power sequence it never finished - which is what the KDJ11 failing its own
+ * self-test in #49 looks like.
+ *
+ * So the interval is waited out rather than merely reported. A wait is logged
+ * with what it cost, which is also the record of a crowded cadence that the
+ * warning here used to carry: if the wedge recurs, the journal says whether
+ * the cycles were close enough to matter.
+ */
+static void control_await_settle(const std::string &action) {
+	if (!control_is_disruptive(action))
+		return;
+	long wait_ms = 0;
+	std::string after;
+	{
+		std::lock_guard<std::mutex> lock(control_timing_mutex);
+		if (!control_have_last)
+			return;
 		long gap_ms = (long) std::chrono::duration_cast<std::chrono::milliseconds>(
-				now - last_end).count();
-		bool disruptive = action == "powercycle" || action == "dc_on"
-				|| action == "dc_off" || action == "restart";
-		if (disruptive && gap_ms < CLOSE_MS)
-			WEB_WARNING("control %s came %ld ms after %s: a bus still settling "
-					"from the previous cycle is what #49 looks like",
-					action.c_str(), gap_ms, last_action.c_str());
-		else
-			WEB_INFO("control %s, %ld ms after %s", action.c_str(), gap_ms,
-					last_action.c_str());
+				std::chrono::steady_clock::now() - control_last_end).count();
+		if (gap_ms >= CONTROL_SETTLE_MS)
+			return;
+		wait_ms = CONTROL_SETTLE_MS - gap_ms;
+		after = control_last_action;
+	}
+	WEB_INFO("control %s waits %ld ms for the bus to settle after %s",
+			action.c_str(), wait_ms, after.c_str());
+	std::this_thread::sleep_for(std::chrono::milliseconds(wait_ms));
+}
+
+// What a control action cost and how soon it followed the last one.
+static void control_note_timing(const std::string &action) {
+	std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+	std::lock_guard<std::mutex> lock(control_timing_mutex);
+	if (control_have_last) {
+		long gap_ms = (long) std::chrono::duration_cast<std::chrono::milliseconds>(
+				now - control_last_end).count();
+		WEB_INFO("control %s, %ld ms after %s", action.c_str(), gap_ms,
+				control_last_action.c_str());
 	} else {
 		WEB_INFO("control %s", action.c_str());
 	}
-	last_end = std::chrono::steady_clock::now();
-	last_action = action;
-	have_last = true;
+	control_last_end = std::chrono::steady_clock::now();
+	control_last_action = action;
+	control_have_last = true;
 }
 
 static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
@@ -815,6 +846,11 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		send_json(conn, 200, picojson::value(res));
 		return 200;
 	}
+
+	// The bus edges below drive real cards. Give the previous power sequence
+	// time to finish before starting another, outside operations_mutex so the
+	// wait blocks this request rather than every device operation.
+	control_await_settle(action);
 
 	{
 		// Bringing the cards back checks each one against the machine before it
