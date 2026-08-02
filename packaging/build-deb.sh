@@ -5,9 +5,15 @@
 #
 # Two programs are installed. "qbone-web" in the source tree becomes
 # /usr/bin/<name>, the service the unit runs: it serves the web interface and
-# has no menu. "demo" becomes /usr/bin/<name>-demo, the interactive tool for
+# has no menu. "demo" becomes /usr/bin/<name>-cli, the interactive tool for
 # bus latches, master/slave tests and the device exercisers. The renames
 # happen here so the tree stays mergeable with upstream.
+#
+# <name>-cli drives the PRU and the bus, which is root's work, and it is run by
+# an operator at a terminal rather than through sudo: it is installed set-user-id
+# root and executable only by qunilator-admin, the group that already carries the
+# right to sudo and a login shell. Everyone outside that group is left with the
+# web interface.
 #
 # The binary carries the PRU firmware inside it, and links against libraries
 # the appliance image already has, which the control file names. dpkg-deb runs
@@ -117,7 +123,7 @@ install -d -m 700 $STAGE/var/lib/qunilator/updates
 
 # The emulator, built for this board's bus
 install -m 755 $BINARY $STAGE/usr/bin/$NAME
-install -m 755 $BINARY_DEMO $STAGE/usr/bin/$NAME-demo
+install -m 755 $BINARY_DEMO $STAGE/usr/bin/$NAME-cli
 # its unit, the one that names the binary
 rebrand < packaging/debian/qbone.service > $STAGE/lib/systemd/system/$NAME.service
 # the web root, branded for this board
@@ -315,6 +321,17 @@ if [ "$1" = configure ]; then
     # group otherwise gets. The web interface puts the operator's account in it.
     if ! getent group qunilator-admin >/dev/null; then
         addgroup --system qunilator-admin || true
+    fi
+    # The interactive program takes the PRU, the GPIOs and the bus, all of which
+    # are root's. An operator at a terminal runs it directly rather than through
+    # sudo, so it is set-user-id root, and only qunilator-admin may execute it -
+    # the same group that already carries sudo and a login shell. Re-asserted on
+    # every upgrade: the group does not exist while dpkg-deb builds the archive,
+    # so the mode cannot be carried in it.
+    cli="/usr/bin/${DPKG_MAINTSCRIPT_PACKAGE:-qbone}-cli"
+    if [ -x "$cli" ]; then
+        chown root:qunilator-admin "$cli" || true
+        chmod 4750 "$cli" || true
     fi
     install -d -m 2775 /var/lib/qunilator/images
     # the seeded media folders, re-asserted on an upgrade so a board that

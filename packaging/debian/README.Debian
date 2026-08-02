@@ -108,9 +108,16 @@ does not run again.
 /usr/bin/qbone (/usr/bin/unibone on a UNIBUS board) serves the web interface
 and has no menu. The machine a board
 comes up as is a saved configuration: add "--config <name>" to the unit's
-ExecStart to apply one at startup. /usr/bin/qbone-demo is the same emulation
+ExecStart to apply one at startup. /usr/bin/qbone-cli is the same emulation
 driven from a terminal menu, for bus latch, master/slave and device exerciser
-work; it needs an operator on stdin and is not what the service runs.
+work; it needs an operator on stdin and is not what the service runs. It drives
+the PRU and the bus, so it is installed set-user-id root and executable only by
+the qunilator-admin group - the same membership that carries sudo and a login
+shell. An operator in that group runs it directly; everyone else has the web
+interface.
+
+A board is one set of hardware, so one program drives it at a time: stop the
+service before starting qbone-cli, and start it again afterwards.
 
 The emulated Ethernet controller binds to veth-pdp, the interface
 qunilator-network creates and joins to the bridge qunilator-setup builds from the
@@ -230,7 +237,8 @@ Then build, from the top of the checkout:
 
 It writes both programs into 10.03_app_demo/4_deploy_q (4_deploy_u on a UNIBUS
 board): qbone-web, the service the unit runs, and demo, the same emulation
-driven from a terminal menu. Expect the better part of an hour on a BeagleBone.
+driven from a terminal menu, which the package installs as qbone-cli. Expect the
+better part of an hour on a BeagleBone.
 
 To run what was built, put it where the unit looks. Renaming onto the file
 replaces it even while it is running, and the restart picks it up:
