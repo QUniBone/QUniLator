@@ -12,7 +12,7 @@
 # usage:
 #   ./crossbuild.sh            build for QBUS (demo binary)
 #   ./crossbuild.sh -u         build for UNIBUS
-#   ./crossbuild.sh -d         build and deploy the binary to $QUNILATOR_HOST
+#   ./crossbuild.sh -d         build and deploy to the board build.env names
 #   ./crossbuild.sh -c         clean object directory first
 #   ./crossbuild.sh -p         rebuild the PRU firmware even if it is present
 #
@@ -20,15 +20,19 @@
 # keeps the bus inside the PRU. The emulator carries both and loads whichever the
 # board's bus-mode setting names, so one binary serves either use.
 #
-# environment:
-#   QUNILATOR_HOST   ssh destination of the device (default hans@qbone.huebner.org)
-#   QUNILATOR_REMOTE_DIR  checkout directory on the device (default ~/QUniLator)
+# Where -d deploys to is described by build.env, which names one person's board
+# and so is not in git. build.env.example documents every setting; copy it and
+# fill it in.
 
 set -e
 cd "$(dirname "$0")"
 
-QUNILATOR_HOST=${QUNILATOR_HOST:-hans@qbone.huebner.org}
-QUNILATOR_REMOTE_DIR=${QUNILATOR_REMOTE_DIR:-QUniLator}
+# Deploy settings. Sourced whenever the file is there, so a syntax error in it
+# is reported by any build rather than only by one that deploys.
+if [ -f build.env ]; then
+    . ./build.env
+fi
+
 IMAGE=qunibone-crossbuild
 PRU_IMAGE=qunibone-pru-cgt
 
@@ -59,6 +63,30 @@ while getopts "udcp" opt; do
         *) exit 1;;
     esac
 done
+
+# The board's own name: the emulator is installed as /usr/bin/<name> and run by
+# <name>.service, so an appliance deploy needs to know which board this is.
+. packaging/board.sh
+
+# What a deploy needs, checked before the build rather than after it.
+if [ $DEPLOY = 1 ]; then
+    missing=
+    [ -n "$QUNILATOR_HOST" ] || missing="$missing QUNILATOR_HOST"
+    case "$QUNILATOR_DEPLOY_MODE" in
+        appliance) ;;
+        checkout) [ -n "$QUNILATOR_REMOTE_DIR" ] \
+                || missing="$missing QUNILATOR_REMOTE_DIR" ;;
+        "") missing="$missing QUNILATOR_DEPLOY_MODE" ;;
+        *) echo "QUNILATOR_DEPLOY_MODE is \"$QUNILATOR_DEPLOY_MODE\";" \
+                "it is appliance or checkout" >&2; exit 1 ;;
+    esac
+    if [ -n "$missing" ]; then
+        echo "-d needs$missing." >&2
+        [ -f build.env ] && echo "Set it in build.env." >&2 \
+            || echo "Copy build.env.example to build.env and fill it in." >&2
+        exit 1
+    fi
+fi
 
 # builder image: Debian with the armhf cross toolchain.
 #
@@ -151,7 +179,9 @@ fi
 # touches a bus latch. Only the image and its ELF are lifted out; the objects
 # stay behind so they never mix with the physical ones.
 INT_NAME=$([ "$SUFFIX" = _u ] && echo unibusint || echo qbusint)
-if [ ! -s "$PRU_DEPLOY_DIR/pru1_code_${INT_NAME}_array.c" ]; then
+# Staleness is judged against the copy in internal/: the lifted-out copies are
+# touched after every run for make's sake, which would hide a source edit.
+if pru_sources_newer "$PRU_DEPLOY_DIR/internal/pru1_code_${INT_NAME}_array.c"; then
     echo "Building the internal-bus PRU firmware ..."
     docker run --rm --platform linux/amd64 --user "$DOCKER_USER" \
         -v "$PWD:/qunibone" \
@@ -203,16 +233,60 @@ docker run --rm --user "$DOCKER_USER" -v "$PWD:/qunibone" \
         EXTRA_LIBS="-L/usr/local/tirpc-armhf/lib -ltirpc" \
         all
 
+# Two programs come out of the build: qbone-web, the service that serves the web
+# interface, and demo, the interactive menu.
 BINARY=$OBJDIR/demo
-file "$BINARY"
+BINARY_WEB=$OBJDIR/qbone-web
+file "$BINARY" "$BINARY_WEB"
 
 # record the header state so the next incremental build detects ABI changes
 # (the build recreated $OBJDIR); only reached on a successful build (set -e)
 echo "$HEADER_HASH" > "$HEADER_STAMP"
 
-if [ $DEPLOY = 1 ]; then
+# A board flashed from the release image carries no source tree: the package put
+# the service at /usr/bin/<name> and a unit of the same name runs it. Upload
+# beside it and rename, which replaces the file even while it is running, then
+# restart the unit onto the new one.
+deploy_appliance() {
+    echo "Deploying $BINARY_WEB to $QUNILATOR_HOST:/usr/bin/$NAME ..."
+    scp "$BINARY_WEB" "$QUNILATOR_HOST:/tmp/$NAME.new"
+    ssh "$QUNILATOR_HOST" "sudo install -m 755 /tmp/$NAME.new /usr/bin/$NAME.new \
+        && sudo mv /usr/bin/$NAME.new /usr/bin/$NAME \
+        && rm -f /tmp/$NAME.new \
+        && sudo systemctl restart $NAME.service"
+
+    # The frontend is served from disk, so swapping it needs no restart. The
+    # bundles are content-hashed, so this unpacks over what is there: index.html
+    # names the new ones and the superseded ones are simply no longer asked for.
+    if [ "$QUNILATOR_DEPLOY_FRONTEND" = 1 ]; then
+        echo "Deploying the frontend to $QUNILATOR_HOST:/usr/share/qunilator/frontend ..."
+        stage=$(mktemp -d)
+        trap 'rm -rf "$stage"' EXIT
+        stage_frontend "$stage"
+        # --no-xattrs: macOS bsdtar otherwise records a provenance attribute per
+        # file, which GNU tar on the board reports as an unknown header for each
+        COPYFILE_DISABLE=1 tar --no-xattrs -C "$stage" -czf "$stage.tgz" . \
+            2>/dev/null || tar -C "$stage" -czf "$stage.tgz" .
+        scp "$stage.tgz" "$QUNILATOR_HOST:/tmp/qunilator-frontend.tgz"
+        rm -f "$stage.tgz"
+        # --no-same-owner: the archive carries the developer's uid, which means
+        # nothing on the board; the web root belongs to root as the package left it
+        ssh "$QUNILATOR_HOST" "sudo tar --no-same-owner -C /usr/share/qunilator/frontend \
+            -xzf /tmp/qunilator-frontend.tgz && rm -f /tmp/qunilator-frontend.tgz"
+    fi
+}
+
+# A board with a checkout runs the binary out of it, so the deploy lands in the
+# same place the build wrote it.
+deploy_checkout() {
     echo "Deploying to $QUNILATOR_HOST:$QUNILATOR_REMOTE_DIR/$BINARY ..."
-    # upload beside the binary, then rename: replaces it even while it runs
     scp "$BINARY" "$QUNILATOR_HOST:$QUNILATOR_REMOTE_DIR/$BINARY.new"
     ssh "$QUNILATOR_HOST" "mv '$QUNILATOR_REMOTE_DIR/$BINARY.new' '$QUNILATOR_REMOTE_DIR/$BINARY'"
+}
+
+if [ $DEPLOY = 1 ]; then
+    case "$QUNILATOR_DEPLOY_MODE" in
+        appliance) deploy_appliance;;
+        checkout)  deploy_checkout;;
+    esac
 fi

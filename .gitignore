@@ -11,6 +11,10 @@
 # packages built by packaging/build-deb.sh
 *.deb
 
+# deploy settings of one person's board, read by crossbuild.sh -d
+# (build.env.example documents them)
+build.env
+
 # reMarkable pull-annotations local watermark (per-checkout)
 .claude/.rm-*.json
 .venv/

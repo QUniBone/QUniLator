@@ -66,24 +66,10 @@ while getopts "u" opt; do
     esac
 done
 
-# Board identity. The emulator is compiled for one bus, so the binary, the unit
-# that runs it and the package carry the board's name: QBUS is qbone/QBone,
-# UNIBUS is unibone/UniBone. The web interface shows the software's own product
-# name, QUniLator, which is the same on both buses. The appliance's own files -
-# the provisioning tools, their units, and the paths under /etc, /var/lib and
-# /usr/share - are named "qunilator" whichever bus the cape bridges.
-if [ "$SUFFIX" = _u ]; then
-    NAME=unibone; DISPLAY=UniBone; OTHER=qbone; BUS=Unibus
-else
-    NAME=qbone;   DISPLAY=QBone;   OTHER=unibone; BUS=Qbus
-fi
-
-# Carry the board brand and its bus into the emulator's unit, which names its
-# binary, and rewrite any board-brand token that lingers in a web asset.
-# Everything else is installed as it is in the repository.
-rebrand() {
-    sed -e "s/qbone/$NAME/g" -e "s/QBone/$DISPLAY/g" -e "s/Qbus/$BUS/g"
-}
+# Board identity, the rebrand filter that carries it into the emulator's unit
+# and the web assets, and the staging of the web root. Everything else is
+# installed as it is in the repository.
+. packaging/board.sh
 
 BINARY=10.03_app_demo/4_deploy$SUFFIX/qbone-web
 BINARY_DEMO=10.03_app_demo/4_deploy$SUFFIX/demo
@@ -134,33 +120,8 @@ install -m 755 $BINARY $STAGE/usr/bin/$NAME
 install -m 755 $BINARY_DEMO $STAGE/usr/bin/$NAME-demo
 # its unit, the one that names the binary
 rebrand < packaging/debian/qbone.service > $STAGE/lib/systemd/system/$NAME.service
-# the web root: the Vite build output. index.html, the hashed JS/CSS bundles and
-# the manifest carry the display brand, so rebrand those text assets; the
-# favicons and other binaries copy as-is. The bundle hash is not recomputed, but
-# index.html references the assets by their built names, so this stays coherent.
-DIST=10.05_web/3_frontend/dist
-for f in "$DIST"/*; do
-    [ -f "$f" ] || continue
-    b=$(basename "$f")
-    case "$b" in
-        index.html|site.webmanifest)
-            rebrand < "$f" > $STAGE/usr/share/qunilator/frontend/"$b"
-            chmod 644 $STAGE/usr/share/qunilator/frontend/"$b" ;;
-        *)
-            install -m 644 "$f" $STAGE/usr/share/qunilator/frontend/"$b" ;;
-    esac
-done
-for f in "$DIST"/assets/*; do
-    [ -f "$f" ] || continue
-    b=$(basename "$f")
-    case "$b" in
-        *.js|*.css)
-            rebrand < "$f" > $STAGE/usr/share/qunilator/frontend/assets/"$b"
-            chmod 644 $STAGE/usr/share/qunilator/frontend/assets/"$b" ;;
-        *)
-            install -m 644 "$f" $STAGE/usr/share/qunilator/frontend/assets/"$b" ;;
-    esac
-done
+# the web root, branded for this board
+stage_frontend $STAGE/usr/share/qunilator/frontend
 
 # Everything below manages a BeagleBone carrying a cape and does the same job
 # whichever bus it bridges, so it installs exactly as it is in the repository.
