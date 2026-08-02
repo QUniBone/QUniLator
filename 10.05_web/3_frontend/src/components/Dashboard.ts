@@ -363,14 +363,19 @@ function DashGrid() {
   // Every card takes the size it was measured at; before that it stands at the
   // shared placeholder. A hidden card shrinks to a compact tile in edit mode, and
   // every width is clamped so a card never exceeds the grid.
+  // The console reads the machine's line and is as wide as its terminal, so with
+  // no stored position it takes the row under the panels rather than the gap
+  // beside them.
   const sized = (key: string): GridItem => {
+    const newRow = key === 'console';
     if (edit && isHidden(key))
-      return { key, w: Math.min(HIDDEN_CELLS.w, cols), h: HIDDEN_CELLS.h };
+      return { key, w: Math.min(HIDDEN_CELLS.w, cols), h: HIDDEN_CELLS.h, newRow };
     const m = measured[key];
     return {
       key,
       w: Math.min(m ? m.w : cellsFor(PLACEHOLDER_PX.w), cols),
       h: m ? m.h : cellsFor(PLACEHOLDER_PX.h),
+      newRow,
     };
   };
   const allItems: GridItem[] = [...FIXED, ...devs.map((d) => d.name)].map(sized);

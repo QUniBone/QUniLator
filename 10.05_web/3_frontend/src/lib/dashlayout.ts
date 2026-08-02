@@ -8,6 +8,10 @@ export interface GridItem {
   key: string;
   w: number;
   h: number;
+  // Start a fresh row: the item flows below everything placed before it rather
+  // than into a gap beside them. The console card takes this, so a machine with
+  // no stored arrangement reads panels first, console under them.
+  newRow?: boolean;
 }
 export interface Placed extends GridItem {
   x: number;
@@ -36,14 +40,15 @@ function mark(occ: Set<string>, x: number, y: number, w: number, h: number): voi
 }
 
 // The first free cell (scanning rows top-to-bottom, left-to-right) where a w×h
-// block fits.
+// block fits, starting at row `fromY`.
 export function firstFree(
   occ: Set<string>,
   w: number,
   h: number,
-  cols: number
+  cols: number,
+  fromY = 0
 ): { x: number; y: number } {
-  for (let y = 0; ; y++)
+  for (let y = fromY; ; y++)
     for (let x = 0; x + w <= cols; x++) if (fits(occ, x, y, w, h, cols)) return { x, y };
 }
 
@@ -53,16 +58,19 @@ export function placeItems(items: GridItem[], layout: DashLayout, cols: number):
   const occ = new Set<string>();
   const placed: Placed[] = [];
   const pending: GridItem[] = [];
+  let bottom = 0; // the row below everything placed so far
   for (const it of items) {
     const p = layout[it.key];
     if (p && Number.isFinite(p.x) && Number.isFinite(p.y) && fits(occ, p.x, p.y, it.w, it.h, cols)) {
       mark(occ, p.x, p.y, it.w, it.h);
+      bottom = Math.max(bottom, p.y + it.h);
       placed.push({ ...it, x: p.x, y: p.y });
     } else pending.push(it);
   }
   for (const it of pending) {
-    const { x, y } = firstFree(occ, it.w, it.h, cols);
+    const { x, y } = firstFree(occ, it.w, it.h, cols, it.newRow ? bottom : 0);
     mark(occ, x, y, it.w, it.h);
+    bottom = Math.max(bottom, y + it.h);
     placed.push({ ...it, x, y });
   }
   return placed;

@@ -1,1 +1,8 @@
-{"devices":[]}
+{
+  "devices": [],
+  "layout": {
+    "controlpanel": { "x": 0, "y": 0 },
+    "frontpanel": { "x": 12, "y": 0 },
+    "console": { "x": 0, "y": 3 }
+  }
+}

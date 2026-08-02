@@ -164,9 +164,9 @@ install -m 644 packaging/debian/default-config.json $STAGE/usr/share/qunilator/d
 # own. The pack is read-only and belongs to the package: a drive takes its
 # writes into a copy-on-write overlay, so the shipped file stays as it was.
 # Stored compressed in git, where it is the one binary that is not a build
-# product.
-xz -dc packaging/images/xxdp25.rl02.xz > $STAGE/var/lib/qunilator/images/xxdp25.rl02
-chmod 444 $STAGE/var/lib/qunilator/images/xxdp25.rl02
+# product. It is an RL02 pack, so it goes in dl/ like every other one.
+xz -dc packaging/images/xxdp25.rl02.xz > $STAGE/var/lib/qunilator/images/dl/xxdp25.rl02
+chmod 444 $STAGE/var/lib/qunilator/images/dl/xxdp25.rl02
 # and the machine that boots it, as a template postinst copies in when the
 # board has no configuration of that name. Only a UNIBUS build carries the
 # processors, so that one is a whole PDP-11/20 with the ROMs to boot the pack;
@@ -339,6 +339,35 @@ if [ "$1" = configure ]; then
     for d in dk dl du mu rx roms; do
         install -d -m 2775 /var/lib/qunilator/images/$d || true
     done
+    # The sample pack sits in dl/ with the tree's other RL packs. A board that
+    # carries it at the root of the tree follows it there: the overlay holding
+    # what was written to the pack moves with it, and a configuration naming the
+    # old path is pointed at the new one. Both spellings of the path are
+    # rewritten - a saved configuration escapes the separator as \/ - and the
+    # dot file holding the running configuration counts as one.
+    #
+    # The emulator is stopped for the move: one still running holds the pack and
+    # writes the overlay's bitmap back to the old path as it stops. It is started
+    # again with the rest of the units below.
+    imgs=/var/lib/qunilator/images
+    cfgs=/var/lib/qunilator/configs
+    pack_re='images\\\{0,1\}/xxdp25\.rl02'
+    emulator_was_active=
+    if [ -e "$imgs/xxdp25.rl02.ovl" ] || [ -e "$imgs/xxdp25.rl02.ovl.map" ] \
+            || grep -qs "$pack_re" $cfgs/*.json $cfgs/.*.json; then
+        if [ -d /run/systemd/system ] && systemctl is-active --quiet qbone.service; then
+            emulator_was_active=yes
+            systemctl stop qbone.service || true
+        fi
+        for f in xxdp25.rl02.ovl xxdp25.rl02.ovl.map; do
+            if [ -e "$imgs/$f" ]; then
+                mv -f "$imgs/$f" "$imgs/dl/$f" || true
+            fi
+        done
+        sed -i -e 's|images/xxdp25\.rl02|images/dl/xxdp25.rl02|g' \
+               -e 's|images\\/xxdp25\.rl02|images\\/dl\\/xxdp25.rl02|g' \
+            $cfgs/*.json $cfgs/.*.json 2>/dev/null || true
+    fi
     # The tree belongs to the qunilator group and every member of it may write:
     # the service account owns the files, and the operator account the web
     # interface creates for the file shares reaches them through the group.
@@ -385,6 +414,10 @@ if [ "$1" = configure ]; then
                     systemctl restart $unit || true
                 fi
             done
+            # the emulator stopped for the media-tree move, above
+            if [ -n "$emulator_was_active" ]; then
+                systemctl start qbone.service || true
+            fi
         fi
     fi
     echo "qbone: run 'sudo qunilator-setup' to configure the boot settings, the"
