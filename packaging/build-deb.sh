@@ -142,6 +142,11 @@ install -m 644 packaging/debian/qunilator-network.service \
 install -m 644 packaging/debian/apt-unattended-qunilator.conf \
     $STAGE/etc/apt/apt.conf.d/51qunilator-unattended
 install -m 644 packaging/debian/network.conf $STAGE/etc/qunilator/network.conf
+# Shell access to the board, granted to a group rather than to an account.
+# sudo refuses a file it can write or that anyone but root owns, so 0440.
+install -d -m 750 $STAGE/etc/sudoers.d
+install -m 440 packaging/debian/sudoers-qunilator-admin \
+    $STAGE/etc/sudoers.d/qunilator-admin
 # The bundled empty configuration. The service adopts it as the default on a
 # board that has never had one set, so a valid startup configuration always
 # exists. Shipped as a template and copied into place by postinst only when
@@ -228,6 +233,7 @@ INSTALLED_KB=$(du -sk $STAGE | cut -f1)
     echo "/etc/modprobe.d/bone.conf"
     echo "/etc/modules-load.d/bone.conf"
     echo "/etc/apt/apt.conf.d/51qunilator-unattended"
+    echo "/etc/sudoers.d/qunilator-admin"
 } > $STAGE/DEBIAN/conffiles
 
 cat > $STAGE/DEBIAN/preinst <<'PREINST'
@@ -288,6 +294,12 @@ if [ "$1" = configure ]; then
     if ! getent passwd qunilator >/dev/null; then
         adduser --system --ingroup qunilator --home /var/lib/qunilator \
             --no-create-home --shell /usr/sbin/nologin qunilator || true
+    fi
+    # Membership of this group is what carries the right to sudo, and sshd
+    # leaves a member of it a shell rather than the SFTP session the qunilator
+    # group otherwise gets. The web interface puts the operator's account in it.
+    if ! getent group qunilator-admin >/dev/null; then
+        addgroup --system qunilator-admin || true
     fi
     install -d -m 2775 /var/lib/qunilator/images
     # the seeded media folders, re-asserted on an upgrade so a board that

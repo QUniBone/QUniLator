@@ -26,4 +26,13 @@ bool webshares_name_acceptable(const std::string &name, std::string *error);
 void webshares_apply(const std::string &previous, const std::string &name,
 		const std::string &password);
 
+// Make key the ssh public key the operator's account answers to, replacing any
+// it held. On refusal, false with the reason in *error: a key OpenSSH would not
+// accept, or a board with no operator account yet.
+bool webshares_set_ssh_key(const std::string &name, const std::string &key,
+		std::string *error);
+
+// True when the operator's account holds an ssh key.
+bool webshares_has_ssh_key(const std::string &name);
+
 #endif // _WEBSHARES_HPP_

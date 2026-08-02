@@ -11,7 +11,12 @@
    webserver.cpp).
 
      GET /api/auth   {configured, source, user, min_length}
-     PUT /api/auth   {user?, password?, current?}
+     PUT /api/auth   {user?, password?, current?, hostname?, ssh_key?}
+
+   The first-run dialog settles the board's name and the operator's ssh key at
+   the same time as the credentials, so those two travel with this request and
+   are applied once the account exists; websystem.cpp serves each on its own for
+   a board already set up.
 
    The user name is what the file shares answer to as well, so setting it
    creates the matching OS account through webshares.cpp. A board that carries
@@ -44,6 +49,7 @@
 #include "webauth.hpp"
 #include "websettings.hpp"
 #include "webshares.hpp"
+#include "websystem.hpp"
 
 /*** SHA-256 (FIPS 180-4) ***/
 
@@ -516,9 +522,30 @@ static void auth_put(struct mg_connection *conn) {
 		send_error(conn, 422, error);
 		return;
 	}
+	// The first-run dialog asks for the board's name and an ssh public key
+	// beside the credentials and sends all of it in this one request: the key
+	// belongs to the operator account, which the credentials are what create,
+	// and this is the last request the browser makes before it has to
+	// authenticate. Neither is required, and a refusal of either is reported
+	// without taking the credentials back - those are set, and the rest can be
+	// tried again from the System page.
+	picojson::array warnings;
+	if (body.get("hostname").is<std::string>()) {
+		std::string name = body.get("hostname").get<std::string>();
+		std::string why;
+		if (!name.empty() && !websystem_set_hostname(name, &why))
+			warnings.push_back(picojson::value("the board was not renamed: " + why));
+	}
+	if (body.get("ssh_key").is<std::string>()) {
+		std::string key = body.get("ssh_key").get<std::string>();
+		std::string why;
+		if (!key.empty() && !webshares_set_ssh_key(webauth_user(), key, &why))
+			warnings.push_back(picojson::value("the ssh key was not installed: " + why));
+	}
 	picojson::object o;
 	o["ok"] = picojson::value(true);
 	o["user"] = picojson::value(webauth_user());
+	o["warnings"] = picojson::value(warnings);
 	send_json(conn, 200, picojson::value(o));
 }
 

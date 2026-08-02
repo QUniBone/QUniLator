@@ -1,0 +1,11 @@
+# Shell access to the board, carried by group membership.
+#
+# The operator's account - the one the web interface creates when a user name is
+# set - is a member of qunilator-admin, and that is the whole of what grants it
+# root. Nothing here names an account, so a change of operator name is a change
+# of who is in the group and nothing else.
+#
+# No password is asked for: the account reaches this board over ssh with a key,
+# and a board whose shell someone already holds is a board they can power-cycle
+# from the front panel anyway.
+%qunilator-admin ALL=(ALL) NOPASSWD:ALL

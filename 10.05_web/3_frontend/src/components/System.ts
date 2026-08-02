@@ -12,7 +12,16 @@ import { html } from '../html';
 import { useEffect, useState } from 'preact/hooks';
 import { useStore } from '../store';
 import { apiJSON, liveControl, listRecordings, deleteRecording, type Recording } from '../api';
-import { confirmModal, USER_NAME_HELP, USER_NAME_REFUSAL, USER_NAME_RULE } from '../lib/modals';
+import {
+  confirmModal,
+  HOST_NAME_REFUSAL,
+  HOST_NAME_RULE,
+  SSH_KEY_REFUSAL,
+  SSH_KEY_RULE,
+  USER_NAME_HELP,
+  USER_NAME_REFUSAL,
+  USER_NAME_RULE,
+} from '../lib/modals';
 import { toast } from '../lib/toast';
 import { bundleVersion } from '../lib/version';
 import {
@@ -295,6 +304,117 @@ function AccessCard() {
     </div></div>`;
 }
 
+// The board's own name and the ssh key that reaches its shell — the two the
+// first-run dialog asks for beside the credentials, offered again here for a
+// board that is already set up. The key goes on the operator's account, so a
+// board with no user name set has nowhere to put one and says so.
+function BoardCard() {
+  const [hostname, setHostname] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [key, setKey] = useState('');
+  const [keyUser, setKeyUser] = useState('');
+  const [hasKey, setHasKey] = useState(false);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    apiJSON<{ hostname: string }>('/api/hostname')
+      .then((r) => {
+        if (!r.ok) return;
+        setHostname(r.data.hostname || '');
+        setName(r.data.hostname || '');
+      })
+      .catch(() => {});
+    apiJSON<{ user: string; configured: boolean }>('/api/sshkey')
+      .then((r) => {
+        if (!r.ok) return;
+        setKeyUser(r.data.user || '');
+        setHasKey(!!r.data.configured);
+      })
+      .catch(() => {});
+  };
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (hostname === null) return null;
+
+  async function rename() {
+    const wanted = name.trim();
+    if (!HOST_NAME_RULE.test(wanted)) return setError(HOST_NAME_REFUSAL);
+    setError('');
+    setBusy(true);
+    const res = await apiJSON<{ error?: string; hostname?: string }>('/api/hostname', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hostname: wanted }),
+    }).catch(() => ({ ok: false, data: { error: 'The board did not answer.' } }));
+    setBusy(false);
+    if (!res.ok) return setError(res.data.error || 'The board could not be renamed.');
+    toast('hostname', 'The board is now named ' + wanted);
+    load();
+  }
+
+  async function saveKey() {
+    const k = key.trim();
+    if (!SSH_KEY_RULE.test(k)) return setError(SSH_KEY_REFUSAL);
+    setError('');
+    setBusy(true);
+    const res = await apiJSON<{ error?: string }>('/api/sshkey', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: k }),
+    }).catch(() => ({ ok: false, data: { error: 'The board did not answer.' } }));
+    setBusy(false);
+    if (!res.ok) return setError(res.data.error || 'The key could not be installed.');
+    setKey('');
+    toast('sshkey', 'The board answers that key');
+    load();
+  }
+
+  return html`<div class="card" style="max-width:720px; margin-bottom:14px">
+    <div class="card-head"><h3>Board</h3>
+      <span class="chip ok mono">${hostname || '—'}</span>
+    </div>
+    <div class="card-body">
+      <div class="set-grid">
+        <div class="set-name">Name</div>
+        <div class="set-val" style="display:flex; gap:8px">
+          <input type="text" autocapitalize="off" spellcheck="false" value=${name}
+            disabled=${busy}
+            onInput=${(e: Event) => setName((e.target as HTMLInputElement).value)} />
+          <button class="btn small" disabled=${busy || name.trim() === hostname}
+            onClick=${rename}>Rename</button>
+        </div>
+        <div class="set-info">What the board answers to on the network —
+          <span class="mono">${(name.trim() || hostname) + '.local'}</span>, the DNS-SD entry, the
+          DHCP lease and the login banner all follow it. ${HOST_NAME_REFUSAL}</div>
+
+        <div class="set-name">SSH key</div>
+        <div class="set-val">
+          <textarea class="mono" rows="3" autocapitalize="off" spellcheck="false"
+            placeholder="ssh-ed25519 AAAA… you@workstation" value=${key} disabled=${busy || !keyUser}
+            onInput=${(e: Event) => setKey((e.target as HTMLTextAreaElement).value)}></textarea>
+        </div>
+        <div class="set-info">${
+          keyUser
+            ? html`A public key pasted here is what
+                <span class="mono">${keyUser}</span> reaches a shell on this board with, and sudo
+                once there. ${hasKey
+                  ? 'A key is installed; a new one replaces it.'
+                  : 'No key is installed, so the account has no shell login yet.'}`
+            : html`Set a user name under Access first — the key goes on that account.`
+        }</div>
+      </div>
+      ${error ? html`<p class="upd-warn">${error}</p>` : null}
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px">
+        <button class="btn primary" disabled=${busy || key.trim() === ''}
+          onClick=${saveKey}>Install key</button>
+      </div>
+    </div></div>`;
+}
+
 // What the board has recorded. A recording is downloaded and read with
 // `qcon render`, which turns it into a page with the typing marked off from
 // what the machine printed; the file itself is standard asciicast, so an
@@ -355,6 +475,7 @@ export function SystemPage() {
     return html`<section class="page active" data-page="system">
       <p class="lede">Who reaches this board, what it runs, and updating it.</p>
       <${AccessCard} />
+      <${BoardCard} />
       <p class="muted">Reading the update status…</p></section>`;
 
   const busy = updateRunning(u);
@@ -363,6 +484,8 @@ export function SystemPage() {
     <p class="lede">Who reaches this board, what it runs, and updating it.</p>
 
     <${AccessCard} />
+
+    <${BoardCard} />
 
     <${RecordingsCard} />
 

@@ -49,12 +49,14 @@ the WebSocket handshakes included. A board with no password answers everything,
 which is how a new one is reached in order to set some.
 
 The user name is an account on the board as well: setting one creates it beside
-the `qunilator` service account, in the `qunilator` group with the image tree as
-its home, and gives it the web password, so the same pair reaches the image
-library over SMB, FTP and SFTP. Changing the name creates the new account and
-removes the old one. While no name is set, any user name is accepted and the
-shares answer to `qunilator` - which is what an installation made before the
-name existed keeps doing until one is set.
+the `qunilator` service account, with a home under `/home` and a login shell, and
+gives it the web password, so the same pair reaches the image library over SMB,
+FTP and SFTP. What it may do follows two group memberships - `qunilator` carries
+the image tree, `qunilator-admin` carries sudo and the shell sshd would otherwise
+confine to an SFTP session. Changing the name creates the new account and removes
+the old one. While no name is set, any user name is accepted and the shares
+answer to `qunilator` - which is what an installation made before the name
+existed keeps doing until one is set.
 
 ### `GET /api/auth`
 
@@ -69,7 +71,8 @@ name, empty when any name is accepted.
 ### `PUT /api/auth`
 
 ```json
-{"user": "operators", "password": "...", "current": "..."}
+{"user": "operators", "password": "...", "current": "...",
+ "hostname": "shed-11", "ssh_key": "ssh-ed25519 AAAA… you@workstation"}
 ```
 
 At least one of `user` and `password` is required. A body without `user` leaves
@@ -84,6 +87,64 @@ one (1 to 32 characters: a lower case letter or underscore, then lower case
 letters, digits, underscores and hyphens), one the board reserves, or one that
 already belongs to an account the service did not create. Credentials that came
 from the environment refuse both halves with 422.
+
+`hostname` and `ssh_key` are what the first-run dialog asks for beside the
+credentials, and are applied after the account exists - the key has nowhere to go
+until then. Both are optional, and neither takes the credentials back if it
+fails: the refusal is reported as a warning and the same settings are offered
+again by their own endpoints below.
+
+Answers `{"ok": true, "user": "operators", "warnings": []}`.
+
+## The board itself
+
+The appliance around the emulator: what the board is called on the network, and
+the key that reaches its shell.
+
+### `GET /api/hostname`
+
+```json
+{"hostname": "shed-11"}
+```
+
+The first label of the board's name. `<name>.local`, the DNS-SD entry, the DHCP
+lease and the login banner all follow it, so several boards on one network are
+told apart by it rather than by the mDNS suffix boot order hands out.
+
+### `PUT /api/hostname`
+
+```json
+{"hostname": "shed-11"}
+```
+
+Runs `qunilator-rename`, which sets the system hostname, fixes `/etc/hosts` and
+restarts avahi and networkd so the new name is published. A name that is not one
+DNS label - letters, digits and inner hyphens, at most 63 characters - is refused
+with 422, as is one the tool will not take. A board that carries no such tool
+answers 503.
+
+Answers `{"ok": true, "hostname": "shed-11"}`.
+
+### `GET /api/sshkey`
+
+```json
+{"user": "operators", "configured": true}
+```
+
+`user` is the account the key belongs to, empty while no user name is set.
+`configured` says whether that account holds one.
+
+### `PUT /api/sshkey`
+
+```json
+{"key": "ssh-ed25519 AAAA… you@workstation"}
+```
+
+Writes the key as the operator account's only `authorized_keys` line, so what the
+interface offers and what the board answers to are the same thing. The line is
+one an OpenSSH `.pub` file carries - a type, a base64 key and an optional
+comment; options before the type are refused, as is a type OpenSSH does not
+offer, both with 422. A board with no user name set answers 409.
 
 Answers `{"ok": true, "user": "operators"}`.
 
@@ -315,14 +376,18 @@ probe found.
 
 ```json
 {"addr_width": 22, "iopage_start": 4186112, "addr_space_bytes": 4194304,
- "emulated": [{"slot": "memory", "start": 2097152, "end": 4186110}],
- "physical_end": 2097150, "probed_at": 1785408000}
+ "emulated": [{"slot": "memory", "start": 2097152, "end": 4186110,
+              "reads": 7482735, "writes": 391044}],
+ "physical_end": 2097150, "probed_at": 1785408000, "rom_accesses": 0}
 ```
 
 `slot` is `memory` for the memory card and `device` for a window a device serves
-out of the board's memory (the VCB01 framebuffer). `physical_end` and
-`probed_at` are `null` until a probe has run, and `physical_end` is `null` on a
-machine whose own memory answers nothing at all.
+out of the board's memory (the VCB01 framebuffer). `reads` and `writes` count
+the cycles the board has answered out of the range, and `rom_accesses` the
+reads of I/O-page ROM cells; the counts wrap, so a reader compares against what
+it saw last. `physical_end` and `probed_at` are `null` until a probe has run,
+and `physical_end` is `null` on a machine whose own memory answers nothing at
+all.
 
 ### `POST /api/memory/probe`
 

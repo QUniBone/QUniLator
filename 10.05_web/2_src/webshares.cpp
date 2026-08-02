@@ -10,17 +10,25 @@
    set and removed again when it changes.
 
    The service account keeps owning the tree and running the emulator. The
-   operator's account is a login only: its primary group is qunilator, its home
-   is the image tree, and its shell is the nologin that /etc/shells lists so
-   vsftpd's PAM stack accepts it. Samba's "force user" keeps every file the
-   share writes owned by qunilator, so a name change costs one account and no
-   walk over the tree.
+   operator's account is the one account a board has: the web interface, the
+   file shares and an ssh login all answer to it. It has a home of its own under
+   /home and a login shell, and every right it holds comes from a group - the
+   image tree from qunilator, its primary group, and sudo from qunilator-admin,
+   whose sudoers rule and group the package ships. Samba's "force user" keeps
+   every file the share writes owned by qunilator, so a name change costs one
+   account and no walk over the tree.
 
    The three share configurations name the qunilator *group*, which both
    accounts belong to, so a name change touches accounts rather than
-   configuration. A board installed before this rewrites its files once, on the
-   first name that is set, and checks its ssh configuration with sshd -t before
-   asking sshd to read it.
+   configuration. sshd confines an account that is in that group and not in
+   qunilator-admin to an SFTP session in the image tree, which is what keeps a
+   share-only account out of a shell. A board installed before this rewrites its
+   files once, on the first name that is set, and checks its ssh configuration
+   with sshd -t before asking sshd to read it.
+
+   An ssh public key set through the interface is what makes the login usable
+   from a workstation; the account holds nothing else that a share login does
+   not already have.
 
    Everything here is root-only and best effort. A development host has no
    useradd to run and no shares to serve, and does nothing.
@@ -34,6 +42,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <pwd.h>
 #include <stdio.h>
 #include <string.h>
@@ -49,7 +58,12 @@
 #include "webshares.hpp"
 
 static const char *IMAGES_DIR = "/var/lib/qunilator/images";
-static const char *OPERATOR_SHELL = "/usr/sbin/nologin";
+static const char *OPERATOR_SHELL = "/bin/bash";
+static const char *HOME_BASE = "/home";
+
+// Membership carries the right to sudo: the package ships the group and the
+// sudoers rule that names it, and the operator's account is put in it.
+#define WEBSHARES_ADMIN_GROUP "qunilator-admin"
 
 // Written into the account's GECOS field, and the only thing that makes an
 // account ours: a name is refused when it belongs to an account without this
@@ -58,6 +72,8 @@ static const char *OPERATOR_MARK = "QUniLator operator";
 
 static const char *USERADD = "/usr/sbin/useradd";
 static const char *USERDEL = "/usr/sbin/userdel";
+static const char *USERMOD = "/usr/sbin/usermod";
+static const char *GROUPADD = "/usr/sbin/groupadd";
 static const char *CHPASSWD = "/usr/sbin/chpasswd";
 static const char *SMBPASSWD = "/usr/bin/smbpasswd";
 static const char *SYSTEMCTL = "/usr/bin/systemctl";
@@ -270,9 +286,20 @@ static void point_smb_at_the_group(void) {
 	}
 }
 
-// sshd confines the SFTP session of every member of the qunilator group to the
-// image tree. A configuration sshd refuses to parse would take the board off
-// ssh at the next restart, so the change is checked and dropped if it fails.
+// The Match line sshd confines an SFTP session with, and the earlier forms a
+// board may still carry. Applied in order, so a board at any of them arrives at
+// the last: the session of a qunilator-group member is confined to the image
+// tree unless the account is also an admin, which is what leaves the operator
+// a shell while a share-only account keeps none.
+static const char *SFTP_MATCH_STEPS[][2] = {
+	{ "Match User " WEBSHARES_SERVICE_USER,
+	  "Match Group " WEBSHARES_SERVICE_USER },
+	{ "Match Group " WEBSHARES_SERVICE_USER,
+	  "Match Group " WEBSHARES_SERVICE_USER ",!" WEBSHARES_ADMIN_GROUP },
+};
+
+// A configuration sshd refuses to parse would take the board off ssh at the
+// next restart, so the change is checked and dropped if it fails.
 static void point_sftp_at_the_group(void) {
 	DIR *dir = opendir(SSHD_CONF_DIR);
 	if (dir == nullptr)
@@ -285,12 +312,17 @@ static void point_sftp_at_the_group(void) {
 			files.push_back(std::string(SSHD_CONF_DIR) + "/" + name);
 	}
 	closedir(dir);
+	const size_t steps = sizeof(SFTP_MATCH_STEPS) / sizeof(SFTP_MATCH_STEPS[0]);
 	for (size_t i = 0; i < files.size(); i++) {
 		std::string before;
 		if (!read_file(files[i].c_str(), &before))
 			continue;
-		if (!rewrite_lines(files[i].c_str(), "Match User " WEBSHARES_SERVICE_USER,
-				"Match Group " WEBSHARES_SERVICE_USER))
+		bool changed = false;
+		for (size_t s = 0; s < steps; s++)
+			if (rewrite_lines(files[i].c_str(), SFTP_MATCH_STEPS[s][0],
+					SFTP_MATCH_STEPS[s][1]))
+				changed = true;
+		if (!changed)
 			continue;
 		const char *argv[] = { SSHD, "-t", nullptr };
 		if (have(SSHD) && run(argv) != 0) {
@@ -301,7 +333,7 @@ static void point_sftp_at_the_group(void) {
 			continue;
 		}
 		WEB_INFO("SFTP now confines the " WEBSHARES_SERVICE_USER
-				" group to the image tree");
+				" group to the image tree, admins excepted");
 		reload_unit("reload", "ssh");
 	}
 }
@@ -338,19 +370,100 @@ static void set_samba_password(const std::string &name, const std::string &passw
 	run_fed(argv, password + "\n" + password + "\n");
 }
 
+// The group whose members may sudo. The package creates it; a board whose
+// package predates it gets it here, so the account is never put in a group that
+// is not there.
+static void ensure_admin_group(void) {
+	if (getgrnam(WEBSHARES_ADMIN_GROUP) != nullptr || !have(GROUPADD))
+		return;
+	const char *argv[] = { GROUPADD, "--system", WEBSHARES_ADMIN_GROUP, nullptr };
+	if (run(argv) == 0)
+		WEB_INFO("created the " WEBSHARES_ADMIN_GROUP " group");
+}
+
+// The image tree, reachable from the account's own home. The share protocols
+// open there by themselves; this is for the shell session, which starts in the
+// home directory.
+static void link_images_into(const std::string &home, const struct passwd *pw) {
+	std::string link = home + "/images";
+	struct stat st;
+	if (lstat(link.c_str(), &st) == 0)
+		return;
+	if (symlink(IMAGES_DIR, link.c_str()) != 0) {
+		WEB_WARNING("could not link %s to the image tree: %s", link.c_str(),
+				strerror(errno));
+		return;
+	}
+	// everything in the home belongs to the account, this link included
+	if (lchown(link.c_str(), pw->pw_uid, pw->pw_gid) != 0)
+		WEB_WARNING("could not give %s to %s", link.c_str(), pw->pw_name);
+}
+
+// Bring an account created before the operator had a shell to the shape
+// described at the top of this file: a home of its own, a login shell and
+// membership of the admin group.
+static void adopt_account(const struct passwd *pw, const std::string &name,
+		const std::string &home) {
+	bool wrong_home = pw->pw_dir == nullptr || home != pw->pw_dir;
+	bool wrong_shell = pw->pw_shell == nullptr || strcmp(pw->pw_shell, OPERATOR_SHELL) != 0;
+	if (!have(USERMOD))
+		return;
+	if (wrong_home || wrong_shell) {
+		// --home without --move: the home this account had is the image tree,
+		// which stays where it is and belongs to the service account.
+		const char *argv[] = { USERMOD, "--home", home.c_str(),
+				"--shell", OPERATOR_SHELL, name.c_str(), nullptr };
+		if (run(argv) != 0) {
+			WEB_WARNING("could not give %s a home and a shell", name.c_str());
+			return;
+		}
+		WEB_INFO("%s now has a login shell and a home of its own", name.c_str());
+	}
+	const char *argv[] = { USERMOD, "--append", "--groups",
+			WEBSHARES_ADMIN_GROUP, name.c_str(), nullptr };
+	run(argv);
+}
+
+// The account's home, created when useradd did not make it - which is the case
+// for an account adopted from the share-only shape.
+static void ensure_home(const std::string &name, const std::string &home) {
+	struct passwd *pw = getpwnam(name.c_str());
+	if (pw == nullptr)
+		return;
+	struct stat st;
+	if (stat(home.c_str(), &st) != 0) {
+		// 0700, which is what useradd gives a home it creates here, so an
+		// adopted account's ssh key is no more readable than a new one's
+		if (mkdir(home.c_str(), 0700) != 0) {
+			WEB_WARNING("could not create %s: %s", home.c_str(), strerror(errno));
+			return;
+		}
+	}
+	if (chown(home.c_str(), pw->pw_uid, pw->pw_gid) != 0)
+		WEB_WARNING("could not give %s to %s", home.c_str(), name.c_str());
+	link_images_into(home, pw);
+}
+
 // Create the operator's account when it is not there yet. Result is true when
-// an account by that name exists afterwards.
+// an account by that name exists afterwards, in the shape this file describes.
 static bool ensure_account(const std::string &name) {
-	if (getpwnam(name.c_str()) != nullptr)
+	ensure_admin_group();
+	std::string home = std::string(HOME_BASE) + "/" + name;
+	struct passwd *pw = getpwnam(name.c_str());
+	if (pw != nullptr) {
+		adopt_account(pw, name, home);
+		ensure_home(name, home);
 		return true;
+	}
 	if (!have(USERADD)) {
 		WEB_WARNING("no useradd on this host: the file shares keep answering "
 				"only " WEBSHARES_SERVICE_USER);
 		return false;
 	}
 	const char *argv[] = {
-		USERADD, "--no-create-home", "--home-dir", IMAGES_DIR,
-		"--gid", WEBSHARES_SERVICE_USER, "--shell", OPERATOR_SHELL,
+		USERADD, "--create-home", "--home-dir", home.c_str(),
+		"--gid", WEBSHARES_SERVICE_USER, "--groups", WEBSHARES_ADMIN_GROUP,
+		"--shell", OPERATOR_SHELL,
 		"--comment", OPERATOR_MARK, name.c_str(), nullptr
 	};
 	int status = run(argv);
@@ -359,7 +472,8 @@ static bool ensure_account(const std::string &name) {
 				"answering only " WEBSHARES_SERVICE_USER, name.c_str(), status);
 		return false;
 	}
-	WEB_INFO("created the file-share account %s", name.c_str());
+	ensure_home(name, home);
+	WEB_INFO("created the operator account %s", name.c_str());
 	return true;
 }
 
@@ -377,14 +491,149 @@ static void retire_account(const std::string &name, const std::string &keep) {
 		run(argv);
 	}
 	if (have(USERDEL)) {
-		const char *argv[] = { USERDEL, name.c_str(), nullptr };
+		// The home goes with the account only when it is the account's own,
+		// below /home. An account made before the operator had a shell has the
+		// image tree as its home, and that tree is the point of the board.
+		std::string own_home = std::string(HOME_BASE) + "/" + name;
+		bool remove_home = pw->pw_dir != nullptr && own_home == pw->pw_dir;
+		const char *argv[] = { USERDEL, remove_home ? "--remove" : name.c_str(),
+				remove_home ? name.c_str() : nullptr, nullptr };
 		int status = run(argv);
 		if (status != 0) {
 			WEB_WARNING("userdel %s failed with status %d", name.c_str(), status);
 			return;
 		}
 	}
-	WEB_INFO("removed the file-share account %s", name.c_str());
+	WEB_INFO("removed the operator account %s", name.c_str());
+}
+
+/*** the ssh key ***/
+
+// The key types OpenSSH offers, which is what an authorized_keys line may open
+// with. A line naming anything else is refused here rather than written and
+// ignored by sshd.
+static const char *KEY_TYPES[] = {
+	"ssh-ed25519", "sk-ssh-ed25519@openssh.com", "ssh-rsa",
+	"ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521",
+	"sk-ecdsa-sha2-nistp256@openssh.com", nullptr
+};
+
+// One authorized_keys line: a type, a base64 blob and an optional comment.
+// Options before the type are not accepted - a key from a workstation's
+// .pub file carries none, and what they can express (command=, tunnel=) is not
+// something an operator should be pasting into a board unseen.
+static bool acceptable_ssh_key(const std::string &key, std::string *cleaned,
+		std::string *error) {
+	std::string k = key;
+	while (!k.empty() && (k[k.size() - 1] == '\n' || k[k.size() - 1] == '\r'
+			|| k[k.size() - 1] == ' ' || k[k.size() - 1] == '\t'))
+		k.erase(k.size() - 1);
+	size_t start = k.find_first_not_of(" \t");
+	if (start == std::string::npos) {
+		*error = "the key is empty";
+		return false;
+	}
+	k = k.substr(start);
+	if (k.find('\n') != std::string::npos || k.find('\r') != std::string::npos) {
+		*error = "an ssh public key is a single line";
+		return false;
+	}
+	size_t sp = k.find(' ');
+	if (sp == std::string::npos) {
+		*error = "an ssh public key is a type and a key, separated by a space";
+		return false;
+	}
+	std::string type = k.substr(0, sp);
+	bool known = false;
+	for (int i = 0; KEY_TYPES[i] != nullptr; i++)
+		if (type == KEY_TYPES[i])
+			known = true;
+	if (!known) {
+		*error = "\"" + type + "\" is not an ssh public key type; paste the "
+				"contents of a .pub file";
+		return false;
+	}
+	std::string body = k.substr(sp + 1);
+	size_t body_end = body.find(' ');
+	if (body_end == std::string::npos)
+		body_end = body.size();
+	if (body_end < 16) {
+		*error = "the key itself is missing";
+		return false;
+	}
+	for (size_t i = 0; i < body_end; i++) {
+		char c = body[i];
+		if (!(isalnum((unsigned char) c) || c == '+' || c == '/' || c == '=')) {
+			*error = "the key is not base64; paste the contents of a .pub file";
+			return false;
+		}
+	}
+	*cleaned = k;
+	return true;
+}
+
+bool webshares_set_ssh_key(const std::string &name, const std::string &key,
+		std::string *error) {
+	if (getuid() != 0) {
+		*error = "only a board can be given an ssh key";
+		return false;
+	}
+	struct passwd *pw = getpwnam(name.c_str());
+	if (pw == nullptr || !is_operator_account(pw)) {
+		*error = "there is no operator account to give a key to; set a user "
+				"name first";
+		return false;
+	}
+	std::string cleaned;
+	if (!acceptable_ssh_key(key, &cleaned, error))
+		return false;
+
+	std::string home = pw->pw_dir != nullptr ? pw->pw_dir : "";
+	if (home.empty() || home == IMAGES_DIR) {
+		*error = "the operator account has no home directory of its own";
+		return false;
+	}
+	std::string dir = home + "/.ssh";
+	if (mkdir(dir.c_str(), 0700) != 0 && errno != EEXIST) {
+		*error = std::string("could not create ") + dir + ": " + strerror(errno);
+		return false;
+	}
+	if (chown(dir.c_str(), pw->pw_uid, pw->pw_gid) != 0)
+		WEB_WARNING("could not give %s to %s", dir.c_str(), name.c_str());
+
+	// The key replaces whatever was there: the interface offers one key, so
+	// what it shows and what the board answers to are the same thing.
+	std::string path = dir + "/authorized_keys";
+	std::string tmp = path + ".qunilator-new";
+	FILE *f = fopen(tmp.c_str(), "wb");
+	if (f == nullptr) {
+		*error = std::string("could not write ") + path + ": " + strerror(errno);
+		return false;
+	}
+	std::string line = cleaned + "\n";
+	bool ok = fwrite(line.data(), 1, line.size(), f) == line.size();
+	if (fclose(f) != 0)
+		ok = false;
+	if (ok)
+		ok = chmod(tmp.c_str(), 0600) == 0
+				&& chown(tmp.c_str(), pw->pw_uid, pw->pw_gid) == 0
+				&& rename(tmp.c_str(), path.c_str()) == 0;
+	if (!ok) {
+		unlink(tmp.c_str());
+		*error = std::string("could not write ") + path;
+		return false;
+	}
+	WEB_INFO("%s answers an ssh key", name.c_str());
+	return true;
+}
+
+bool webshares_has_ssh_key(const std::string &name) {
+	struct passwd *pw = getpwnam(name.c_str());
+	if (pw == nullptr || pw->pw_dir == nullptr)
+		return false;
+	std::string path = std::string(pw->pw_dir) + "/.ssh/authorized_keys";
+	struct stat st;
+	return stat(path.c_str(), &st) == 0 && st.st_size > 0;
 }
 
 void webshares_apply(const std::string &previous, const std::string &name,

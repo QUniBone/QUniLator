@@ -232,12 +232,14 @@ chmod 644 /etc/vsftpd.userlist
 # that serve the shares have a nologin shell (no interactive login), so allow it
 # there for FTP.
 grep -qx /usr/sbin/nologin /etc/shells || echo /usr/sbin/nologin >> /etc/shells
-# Confine the SSH login of every account in the qunilator group to an SFTP
-# session in the image tree. sshd requires the chroot root to be root-owned and
-# unwritable, which /var/lib/qunilator is; the writable images/ subdir inside it
-# is where uploads land, so the session opens there.
+# Confine the SSH login of an account in the qunilator group to an SFTP session
+# in the image tree, unless it is also in qunilator-admin - the group that
+# carries shell access and sudo, and that the web interface puts the operator's
+# account in. sshd requires the chroot root to be root-owned and unwritable,
+# which /var/lib/qunilator is; the writable images/ subdir inside it is where
+# uploads land, so the session opens there.
 cat >> /etc/ssh/sshd_config.d/10-${NAME}.conf <<'EOF'
-Match Group qunilator
+Match Group qunilator,!qunilator-admin
     ChrootDirectory /var/lib/qunilator
     ForceCommand internal-sftp -d /images -u 0002
     AllowTcpForwarding no

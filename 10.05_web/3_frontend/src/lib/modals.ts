@@ -527,6 +527,19 @@ export function pickDevice(
   });
 }
 
+// One DNS label: letters, digits and inner hyphens, at most 63 characters.
+// <name>.local, the DNS-SD entry, the DHCP lease and the login banner all
+// follow it, so several boards on a network are told apart by it.
+export const HOST_NAME_RULE = /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
+export const HOST_NAME_REFUSAL =
+  'A board name is letters, digits and inner hyphens, up to 63 characters.';
+
+// The types OpenSSH offers, which is what a .pub file opens with.
+export const SSH_KEY_RULE =
+  /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) +[A-Za-z0-9+/=]{16,}( .*)?$/;
+export const SSH_KEY_REFUSAL =
+  'That is not an ssh public key — paste one line, the contents of a .pub file.';
+
 // The one pair of credentials this board answers to: the browser's basic-auth
 // prompt and the SMB, FTP and SFTP shares all take it.
 export const USER_NAME_RULE = /^[a-z_][a-z0-9_-]{0,31}$/;
@@ -536,12 +549,12 @@ export const USER_NAME_HELP =
 // said where the rule is already on the page, so it points at it rather than repeating it
 export const USER_NAME_REFUSAL = 'The user name does not follow that rule.';
 
-function setCredentialsModal(minLength: number): Promise<boolean> {
+function setCredentialsModal(minLength: number, hostname: string): Promise<boolean> {
   return new Promise((resolve) => {
     const host = document.createElement('div');
     host.className = 'modal-overlay';
     host.innerHTML =
-      '<div class="card modal-card"><div class="card-head"><h3>Set the credentials</h3></div>' +
+      '<div class="card modal-card"><div class="card-head"><h3>Set this board up</h3></div>' +
       '<div class="card-body"><p class="muted" style="margin:0 0 16px; font-size:var(--fs-1)">' +
       'This interface controls the machine and is open to anyone who can reach it until ' +
       'credentials are set. The name and password chosen here are what the browser asks for, ' +
@@ -555,13 +568,24 @@ function setCredentialsModal(minLength: number): Promise<boolean> {
       '<label class="set-name" for="pw1">Password</label>' +
       '<input class="set-val" id="pw1" type="password" autocomplete="new-password">' +
       '<label class="set-name" for="pw2">Repeat</label>' +
-      '<input class="set-val" id="pw2" type="password" autocomplete="new-password"></div>' +
+      '<input class="set-val" id="pw2" type="password" autocomplete="new-password">' +
+      '<label class="set-name" for="pw-host">Board name</label>' +
+      '<input class="set-val" id="pw-host" type="text" autocapitalize="off" ' +
+      'spellcheck="false" value="' +
+      esc(hostname) +
+      '">' +
+      '<label class="set-name" for="pw-key">SSH key</label>' +
+      '<textarea class="set-val mono" id="pw-key" rows="3" autocapitalize="off" ' +
+      'spellcheck="false" placeholder="ssh-ed25519 AAAA… you@workstation"></textarea>' +
+      '</div>' +
       '<p class="muted" style="margin:12px 0 0; font-size:var(--fs-1)">' +
       esc(USER_NAME_HELP) +
-      '</p>' +
+      ' The board name is what it answers to on the network, as ' +
+      '<span class="mono">&lt;name&gt;.local</span>. An ssh public key is optional: give one and ' +
+      'the same account reaches a shell on the board, with sudo.</p>' +
       '<p id="pw-err" class="muted" style="margin:12px 0 0; font-size:var(--fs-1); color:var(--err); min-height:1.2em"></p>' +
       '<div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">' +
-      '<button class="btn primary" data-pw-set>Set credentials</button></div></div></div>';
+      '<button class="btn primary" data-pw-set>Set up</button></div></div></div>';
     const err = (msg: string) => {
       (host.querySelector('#pw-err') as HTMLElement).textContent = msg || '';
     };
@@ -569,18 +593,26 @@ function setCredentialsModal(minLength: number): Promise<boolean> {
       const user = (host.querySelector('#pw-user') as HTMLInputElement).value.trim();
       const p1 = (host.querySelector('#pw1') as HTMLInputElement).value;
       const p2 = (host.querySelector('#pw2') as HTMLInputElement).value;
+      const board = (host.querySelector('#pw-host') as HTMLInputElement).value.trim();
+      const key = (host.querySelector('#pw-key') as HTMLTextAreaElement).value.trim();
       if (!USER_NAME_RULE.test(user)) return err(USER_NAME_REFUSAL);
       if (p1.length < minLength) return err('At least ' + minLength + ' characters.');
       if (p1 !== p2) return err('The two entries do not match.');
+      if (board && !HOST_NAME_RULE.test(board)) return err(HOST_NAME_REFUSAL);
+      if (key && !SSH_KEY_RULE.test(key)) return err(SSH_KEY_REFUSAL);
       err('');
-      const res = await apiJSON<{ error?: string }>('/api/auth', {
+      // One request: the key belongs to the account these credentials create,
+      // and this is the last call the browser makes before it has to
+      // authenticate.
+      const res = await apiJSON<{ error?: string; warnings?: string[] }>('/api/auth', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user, password: p1 }),
-      }).catch(() => ({ ok: false, data: {} as { error?: string } }));
+        body: JSON.stringify({ user, password: p1, hostname: board, ssh_key: key }),
+      }).catch(() => ({ ok: false, data: {} as { error?: string; warnings?: string[] } }));
       if (!res.ok) return err(res.data.error || 'The credentials could not be set.');
       host.remove();
-      toast('auth', 'Credentials set for ' + user);
+      const warns = (res.data.warnings || []).join('; ');
+      toast('auth', warns || 'Credentials set for ' + user);
       resolve(true);
     }
     host.addEventListener('click', (ev) => {
@@ -599,5 +631,9 @@ export async function checkAuth(): Promise<void> {
   if (!r.ok) return;
   const auth = await r.json();
   if (auth.configured) return;
-  await setCredentialsModal(auth.min_length || 8);
+  // the name the board carries now, offered as what to keep or change
+  const board = await fetch('/api/hostname')
+    .then((h) => (h.ok ? h.json() : { hostname: '' }))
+    .catch(() => ({ hostname: '' }));
+  await setCredentialsModal(auth.min_length || 8, board.hostname || '');
 }

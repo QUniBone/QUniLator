@@ -63,6 +63,7 @@
 #include "weblogging.hpp"
 #include "webversion.hpp"
 #include "webupdate.hpp"
+#include "websystem.hpp"
 
 static void send_json(struct mg_connection *conn, int status, const picojson::value &val) {
 	std::string body = val.serialize();
@@ -1214,6 +1215,8 @@ void webapi_register(struct mg_context *ctx) {
 	// the state directory that call resolves, and the dismissed version is read
 	// from the same settings file
 	webupdate_register(ctx);
+	// the board's own name and the operator's ssh key
+	websystem_register(ctx);
 	webevents_register(ctx);
 	webconsole_register(ctx);
 	webconsole_ext_register(ctx);
