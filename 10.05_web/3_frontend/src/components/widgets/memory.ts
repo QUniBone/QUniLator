@@ -21,6 +21,7 @@ interface MemoryMap {
   emulated: MemoryRange[];
   physical_end: number | null;
   probed_at: number | null;
+  cpu_reserved_start: number | null;
 }
 
 // One band of the address space, as the rows read it.
@@ -38,6 +39,10 @@ function sizeStr(bytes: number): string {
 // The bands the map implies, in address order: what the machine's own memory
 // answers and what the board serves out of its DDR. The I/O page sits at the
 // top of every machine and never moves, so it is not a band to be read.
+//
+// The CPU module's own memory is a band like the others even though no bus
+// cycle ever reaches it: it is the part of the space a card may not have, and
+// an operator reading the rows to find room needs to see it there.
 function bands(m: MemoryMap): Band[] {
   const out: Band[] = [];
   if (m.physical_end !== null && m.physical_end > 0)
@@ -47,6 +52,12 @@ function bands(m: MemoryMap): Band[] {
       from: r.start,
       to: r.end,
       label: r.slot === 'memory' ? 'emulated' : 'device window',
+    });
+  if (m.cpu_reserved_start)
+    out.push({
+      from: m.cpu_reserved_start,
+      to: m.iopage_start - 2,
+      label: 'CPU module',
     });
   return out.sort((a, b) => a.from - b.from);
 }

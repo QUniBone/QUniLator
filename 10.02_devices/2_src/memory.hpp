@@ -100,6 +100,8 @@ private:
 	// the last address a start address and a size reach, or a refusal saying
 	// what a card cannot answer about the span
 	bool range_of(uint32_t start, uint32_t bytes, uint32_t *end);
+	// true when the range clears the memory the CPU module answers itself
+	bool reaches_no_further_than_the_cpu_allows(uint32_t start, uint32_t end);
 	// move the card, re-claiming out of DDR when it is in the machine
 	bool place(uint32_t start, uint32_t bytes);
 	// have the PRU answer the range out of DDR, or refuse and say why

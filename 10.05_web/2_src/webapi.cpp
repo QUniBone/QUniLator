@@ -946,6 +946,11 @@ static void memory_map(struct mg_connection *conn) {
 	res["addr_width"] = picojson::value((double) qunibus->addr_width);
 	res["iopage_start"] = picojson::value((double) qunibus->iopage_start_addr);
 	res["addr_space_bytes"] = picojson::value((double) qunibus->addr_space_byte_count);
+	// where the CPU module's own memory begins, and so the address a card has
+	// to stay below; null when the whole space up to the I/O page is free
+	res["cpu_reserved_start"] = qunibus->cpu_reserved_start ?
+			picojson::value((double) qunibus->cpu_reserved_start) : picojson::value();
+	res["memory_limit"] = picojson::value((double) qunibus->memory_limit_addr());
 
 	// the emulated ranges, by slot: "memory" is the memory card, "device" a
 	// window a device serves out of DDR (the VCB01 framebuffer)

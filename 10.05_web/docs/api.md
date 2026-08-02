@@ -407,9 +407,10 @@ probe found.
 
 ```json
 {"addr_width": 22, "iopage_start": 4186112, "addr_space_bytes": 4194304,
- "emulated": [{"slot": "memory", "start": 2097152, "end": 4186110,
+ "cpu_reserved_start": 4055040, "memory_limit": 4055040,
+ "emulated": [{"slot": "memory", "start": 1572864, "end": 4055038,
               "reads": 7482735, "writes": 391044}],
- "physical_end": 2097150, "probed_at": 1785408000, "rom_accesses": 0}
+ "physical_end": 1572862, "probed_at": 1785408000, "rom_accesses": 0}
 ```
 
 `slot` is `memory` for the memory card and `device` for a window a device serves
@@ -419,6 +420,15 @@ reads of I/O-page ROM cells; the counts wrap, so a reader compares against what
 it saw last. `physical_end` and `probed_at` are `null` until a probe has run,
 and `physical_end` is `null` on a machine whose own memory answers nothing at
 all.
+
+`cpu_reserved_start` is where the CPU module's own memory begins — on a 22-bit
+machine the top 128 KB below the I/O page, which is where a KDJ11 answers its
+boot ROM. The module answers it without a bus cycle, so a card placed there
+takes the board's write by DMA and the CPU reads its own ROM back; the failure
+appears as the ROM's RAM test stopping on a word it did not write. A card is
+held below it, and `memory_limit` is the address a placement has to stay under:
+`cpu_reserved_start` where there is one, `iopage_start` otherwise.
+`cpu_reserved_start` is `null` on a machine that reserves nothing.
 
 ### `POST /api/memory/probe`
 
@@ -442,8 +452,9 @@ from one range to another passes through placements it refuses, such as a start
 address that carries the old size past the I/O page.
 
 A card that is in the machine gives up its range and takes the new one. A
-placement the machine refuses — a range something already answers, or one
-reaching into the I/O page — answers `409` with the reason and leaves the card
+placement the machine refuses — a range something already answers, one reaching
+into the I/O page, or one reaching into `cpu_reserved_start` — answers `409`
+with the reason and leaves the card
 where it was. Answers
 `{"ok": true, "startaddr": …, "endaddr": …, "size": "…", "enabled": …}`.
 

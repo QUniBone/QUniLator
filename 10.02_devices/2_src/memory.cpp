@@ -39,9 +39,9 @@ memory_c::memory_c() :
 
 	placing = false;
 	startaddr.value = 0;
-	// everything below the I/O page: the whole machine, on a backplane that
-	// carries no memory of its own
-	range_bytes = qunibus->iopage_start_addr;
+	// everything the CPU leaves to the bus: the whole machine, on a backplane
+	// that carries no memory of its own
+	range_bytes = qunibus->memory_limit_addr();
 	endaddr.value = range_bytes ? range_bytes - 2 : 0;
 	size.value = size_text(range_bytes);
 	probe.value = true;
@@ -128,8 +128,31 @@ bool memory_c::range_of(uint32_t start, uint32_t bytes, uint32_t *end)
 				qunibus->addr2text(qunibus->iopage_start_addr));
 		return false;
 	}
+	if (!reaches_no_further_than_the_cpu_allows(start, start + bytes - 2))
+		return false;
 	*end = start + bytes - 2;
 	return true;
+}
+
+// The CPU module answers the top of the address space itself, and does it
+// without a bus cycle, so nothing the board can ask the bus reports the
+// collision: a card placed there takes the operator's write by DMA and the CPU
+// reads its own ROM back. The card is held below the reservation instead, and
+// says so in the terms the failure appears in - a ROM RAM test that stops on a
+// word it did not write.
+bool memory_c::reaches_no_further_than_the_cpu_allows(uint32_t start, uint32_t end)
+{
+	uint32_t reserved = qunibus->cpu_reserved_start;
+	if (reserved == 0 || end < reserved)
+		return true;
+	ERROR("%s..%s reaches %s, which the CPU module answers on-module; a card "
+			"placed there is written over the bus and read back as ROM. Keep it "
+			"below %s - at most %s from %s",
+			qunibus->addr2text(start), qunibus->addr2text(end),
+			qunibus->addr2text(reserved), qunibus->addr2text(reserved),
+			size_text(start < reserved ? reserved - start : 0).c_str(),
+			qunibus->addr2text(start));
+	return false;
 }
 
 // claim(): have the PRU answer [start, end] out of DDR.
@@ -137,6 +160,12 @@ bool memory_c::range_of(uint32_t start, uint32_t bytes, uint32_t *end)
 // installed against memory the machine already answers.
 bool memory_c::claim(uint32_t start, uint32_t end)
 {
+	// Checked again here, not only where the card is placed: a configuration
+	// saved before the reservation was known reaches power-up with its range
+	// already computed, and this is where the machine would be started on it.
+	if (!reaches_no_further_than_the_cpu_allows(start, end))
+		return false;
+
 	if (probe.value) {
 		uint32_t answered = qunibus->probe_range(start, end);
 		if (answered != QUNIBUS_PROBE_NONE) {

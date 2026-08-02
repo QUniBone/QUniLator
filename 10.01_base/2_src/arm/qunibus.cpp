@@ -54,6 +54,7 @@ qunibus_c::qunibus_c()
     addr_space_word_count = 0;
     addr_space_byte_count = 0;
     iopage_start_addr = 0;
+    cpu_reserved_start = 0;
 #if defined(UNIBUS)
     set_addr_width(18); // const
 #endif
@@ -72,6 +73,8 @@ qunibus_c::~qunibus_c()
 // recalc memory and iopage limits
 void qunibus_c::set_addr_width(unsigned _addr_width)
 {
+    // a 16- or 18-bit machine fills its space up to the I/O page
+    cpu_reserved_start = 0;
     switch (_addr_width) {
     case 18:
         addr_space_word_count = 0x20000; // 128 KWord = 256 KByte
@@ -85,6 +88,12 @@ void qunibus_c::set_addr_width(unsigned _addr_width)
     case 22:
         addr_space_word_count = 0x200000;// 2 MWord = 4 MByte
         iopage_start_addr = 017760000;
+        // The top 128 KB below the I/O page belong to the CPU module: that is
+        // where a KDJ11 answers its own boot ROM, and a card reaching into it
+        // is written by DMA and read back as ROM. A CPU that claims nothing
+        // there loses those 128 KB, which is the price of a machine that
+        // starts on any of them.
+        cpu_reserved_start = 017760000 - 0x20000;
         break;
 #endif
     default:

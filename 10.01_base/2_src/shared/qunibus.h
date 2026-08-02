@@ -125,6 +125,21 @@ public:
 		unsigned addr_space_byte_count ; // redundant = 2x bytecount
 		unsigned iopage_start_addr ; // start addr of IOpage
 
+		// First address of the memory a CPU module may answer on-module, and so
+		// the ceiling for a card the board places. A KDJ11 carries its boot ROM
+		// at 17370000..17757777 and answers that range without a bus cycle: a
+		// card placed over it takes the write by DMA and the CPU reads its own
+		// ROM back, which fails the ROM's RAM test at power-up. The reservation
+		// covers that window and the block below it, which the ROM's memory
+		// sizer walks into. 0 leaves the whole space up to the I/O page free.
+		unsigned cpu_reserved_start ;
+
+		// The address a card must stay below: the reservation when there is
+		// one, the I/O page otherwise.
+		unsigned memory_limit_addr(void) const {
+			return cpu_reserved_start ? cpu_reserved_start : iopage_start_addr ;
+		}
+
 private:
 
 	timeout_c timeout;

@@ -206,6 +206,8 @@ export function pickPlacement(
     const readMap = (m: {
       addr_width: number;
       iopage_start: number;
+      memory_limit: number;
+      cpu_reserved_start: number | null;
       physical_end: number | null;
     }) => {
       if (m.physical_end === null) {
@@ -213,20 +215,32 @@ export function pickPlacement(
         return;
       }
       const free = m.physical_end + 2;
+      // The card stops below the memory the CPU module answers on-module, not
+      // at the I/O page: the board cannot see that claim over the bus, so a
+      // placement filling the space to the page is written by DMA and read
+      // back as ROM, and the CPU's own RAM test is what reports it.
+      const limit = m.memory_limit || m.iopage_start;
       carries.textContent =
         'the machine answers ' +
         octalStr(0, m.addr_width) +
         '..' +
         octalStr(m.physical_end, m.addr_width) +
         ' — ' +
-        cardSize(free);
+        cardSize(free) +
+        (m.cpu_reserved_start
+          ? '; the CPU answers ' + octalStr(m.cpu_reserved_start, m.addr_width) + ' up itself'
+          : '');
       startEl.value = octalStr(free, m.addr_width);
-      sizeEl.value = free < m.iopage_start ? cardSize(m.iopage_start - free) : '0 bytes';
+      sizeEl.value = free < limit ? cardSize(limit - free) : '0 bytes';
     };
 
-    apiJSON<{ addr_width: number; iopage_start: number; physical_end: number | null }>(
-      '/api/memory/map'
-    )
+    apiJSON<{
+      addr_width: number;
+      iopage_start: number;
+      memory_limit: number;
+      cpu_reserved_start: number | null;
+      physical_end: number | null;
+    }>('/api/memory/map')
       .then((r) => {
         if (r.ok) readMap(r.data);
       })
@@ -244,6 +258,8 @@ export function pickPlacement(
       const m = await apiJSON<{
         addr_width: number;
         iopage_start: number;
+        memory_limit: number;
+        cpu_reserved_start: number | null;
         physical_end: number | null;
       }>('/api/memory/map');
       if (m.ok) readMap(m.data);
