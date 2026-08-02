@@ -3,7 +3,8 @@
 #
 # Produces a bootable microSD image: the rcn-ee Debian base, customised into an
 # appliance - the emulator installed, eth0 moved to the legacy Ethernet driver,
-# boot settings applied, the operator toolset added and nginx/cockpit removed.
+# boot settings applied, the operator toolset added, and nginx/cockpit and the
+# firewall removed.
 # The machines a board can run come from its package, which carries the XXDP
 # sample, and from configurations an operator imports. NAME picks the board:
 # qbone (QBUS, the default) or unibone (UNIBUS); it sets the package installed,
@@ -114,6 +115,14 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get -qq purge -y nginx nginx-common libnginx-mod-http-fancyindex \
     cockpit-ws cockpit-system cockpit-packagekit 2>/dev/null || true
 rm -f /var/www/html/Cockpit.html
+
+# The appliance serves a web interface and a console on a local network and
+# filters nothing itself, so the firewall the base image carries has no part to
+# play. It is taken out rather than left inactive: its maintainer scripts probe
+# iptables, which cannot run under the qemu-user chroot this image is built in,
+# so leaving it installed means a package that fails to configure every time
+# anything touches it.
+apt-get -qq purge -y ufw 2>/dev/null || true
 
 apt-get -qq update >/dev/null
 # the operator toolset the appliance is run and debugged with
