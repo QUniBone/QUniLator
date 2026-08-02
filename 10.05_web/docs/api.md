@@ -433,8 +433,16 @@ held below it, and `memory_limit` is the address a placement has to stay under:
 ### `POST /api/memory/probe`
 
 Sizes the memory the machine carries: DATI ascending from 0 until the bus times
-out. Answers `{"ok": true, "first_invalid": …, "physical_end": …}` and updates
-what `/api/memory/map` reports.
+out, or until the first address the board answers out of its own DDR. Answers
+`{"ok": true, "first_invalid": …, "physical_end": …}` and updates what
+`/api/memory/map` reports.
+
+The board's own ranges bound the sweep because a bus probe cannot tell them from
+memory the machine carries: a card placed directly above the machine's own
+memory answers continuously with it, and an unbounded sweep would report the sum
+— a machine that appears to fill the space already, leaving nowhere to put a
+card. So `physical_end` is the machine's own memory whether or not a card is
+placed over the rest.
 
 This sweeps the whole address space and holds the bus for the length of the
 sweep, so run it with the CPU halted.

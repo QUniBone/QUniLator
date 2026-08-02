@@ -1008,6 +1008,16 @@ static void memory_probe(struct mg_connection *conn) {
 		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
 		std::lock_guard<std::mutex> mlock(memory_mutex);
 		first_invalid = qunibus->test_sizer();
+
+		// The board answers its own ranges, and a sweep cannot tell those from
+		// memory the machine carries: with a card placed above the machine's own
+		// memory the two run together and the probe reports the sum, which reads
+		// as a machine that already fills the space and leaves nowhere to put a
+		// card. What the board serves is known, so the answer stops below it and
+		// reports the machine's own.
+		for (unsigned slot = 0; slot < DDRMEM_RANGE_COUNT; slot++)
+			if (ddrmem->range_enabled(slot) && ddrmem->range_start(slot) < first_invalid)
+				first_invalid = ddrmem->range_start(slot);
 	}
 	{
 		std::lock_guard<std::mutex> lock(probe_mutex);
