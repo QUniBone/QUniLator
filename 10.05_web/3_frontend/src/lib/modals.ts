@@ -601,11 +601,35 @@ function setCredentialsModal(minLength: number, hostname: string): Promise<boole
       'the same account reaches a shell on the board, with sudo.</p>' +
       '<p id="pw-err" class="muted" style="margin:12px 0 0; font-size:var(--fs-1); color:var(--err); min-height:1.2em"></p>' +
       '<div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">' +
-      '<button class="btn primary" data-pw-set>Set up</button></div></div></div>';
+      '<button class="btn primary" data-pw-set><span data-pw-label>Set up</span></button>' +
+      '</div></div></div>';
     const err = (msg: string) => {
       (host.querySelector('#pw-err') as HTMLElement).textContent = msg || '';
     };
+    // Creating the account, renaming the board and installing the key take a
+    // few seconds on the board, so the button says the work is under way and
+    // the dialog takes no second submission while it runs.
+    let busy = false;
+    const setBusy = (on: boolean) => {
+      busy = on;
+      const btn = host.querySelector('[data-pw-set]') as HTMLButtonElement;
+      btn.disabled = on;
+      (host.querySelector('[data-pw-label]') as HTMLElement).textContent = on
+        ? 'Setting up…'
+        : 'Set up';
+      btn.querySelector('.btn-spinner')?.remove();
+      if (on) {
+        const s = document.createElement('span');
+        s.className = 'btn-spinner';
+        s.setAttribute('aria-hidden', 'true');
+        btn.prepend(s);
+      }
+      host.querySelectorAll('input, textarea').forEach((el) => {
+        (el as HTMLInputElement).disabled = on;
+      });
+    };
     async function submit() {
+      if (busy) return;
       const user = (host.querySelector('#pw-user') as HTMLInputElement).value.trim();
       const p1 = (host.querySelector('#pw1') as HTMLInputElement).value;
       const p2 = (host.querySelector('#pw2') as HTMLInputElement).value;
@@ -617,6 +641,7 @@ function setCredentialsModal(minLength: number, hostname: string): Promise<boole
       if (board && !HOST_NAME_RULE.test(board)) return err(HOST_NAME_REFUSAL);
       if (key && !SSH_KEY_RULE.test(key)) return err(SSH_KEY_REFUSAL);
       err('');
+      setBusy(true);
       // One request: the key belongs to the account these credentials create,
       // and this is the last call the browser makes before it has to
       // authenticate.
@@ -625,7 +650,10 @@ function setCredentialsModal(minLength: number, hostname: string): Promise<boole
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user, password: p1, hostname: board, ssh_key: key }),
       }).catch(() => ({ ok: false, data: {} as { error?: string; warnings?: string[] } }));
-      if (!res.ok) return err(res.data.error || 'The credentials could not be set.');
+      if (!res.ok) {
+        setBusy(false);
+        return err(res.data.error || 'The credentials could not be set.');
+      }
       host.remove();
       const warns = (res.data.warnings || []).join('; ');
       toast('auth', warns || 'Credentials set for ' + user);

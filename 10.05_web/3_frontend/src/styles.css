@@ -1293,3 +1293,15 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) {
   .held-spinner { animation-duration: 3s; }
 }
+
+/* Inside a button whose work takes long enough to notice, next to its label. */
+.btn-spinner {
+  display: inline-block; vertical-align: -2px; margin-right: 7px;
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid currentColor; border-top-color: transparent;
+  opacity: .85;
+  animation: held-spin 700ms linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn-spinner { animation-duration: 3s; }
+}
