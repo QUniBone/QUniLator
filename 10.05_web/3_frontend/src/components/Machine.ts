@@ -56,8 +56,8 @@ export function MachinePage() {
           <div class="set-val">
             ${(
               [
-                ['webserial', html`Mac (Web Serial)`],
                 ['ttys2', html`BBB <span class="mono">/dev/ttyS2</span>`],
+                ['webserial', html`Web Serial`],
                 ['off', 'Off'],
               ] as const
             ).map(
@@ -66,7 +66,7 @@ export function MachinePage() {
                 onChange=${() => putSettings({ external_console: { source: v } }, 'console source set')} /> ${lbl}</label>`
             )}
           </div>
-          <div class="set-info">Web Serial reads a USB serial port on the browser's own machine; ttyS2 reads a UART on the BeagleBone.</div>
+          <div class="set-info">ttyS2 reads a UART on the BeagleBone; Web Serial reads a USB serial port on the browser's own machine.</div>
           <div class="set-name">Baud</div>
           <div class="set-val"><select class="mono" value=${String(ec.baud || 38400)}
             onChange=${(e: Event) =>

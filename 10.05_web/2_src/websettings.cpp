@@ -13,8 +13,9 @@
        only applied when the bus is (soft-)halted; otherwise the request is
        accepted with a warning and left unchanged.
      - external_console: which physical port, if any, backs the real
-       machine's console (Mac Web Serial in the browser, or the BeagleBone's
-       /dev/ttyS2 via /ws/console/ext). This is persisted in settings.json.
+       machine's console (the BeagleBone's /dev/ttyS2 via /ws/console/ext,
+       which is the default, or Web Serial in the browser). This is
+       persisted in settings.json.
 
        GET /api/settings   {platform, address_width, external_console:{...}}
        PUT /api/settings   {address_width?, external_console?:{...}}
@@ -53,7 +54,7 @@ static const char *platform_name = "HOST";
 
 static std::mutex settings_mutex; // guards ext_console
 // port is a bare tty name (rs232_c prepends /dev/), matching the SLU convention
-static external_console_c ext_console = { "webserial", "ttyS2", 38400 };
+static external_console_c ext_console = { "ttys2", "ttyS2", 38400 };
 static std::string settings_path;
 static std::string state_dir;
 // The update version the operator dismissed. On the board rather than in one

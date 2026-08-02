@@ -44,7 +44,7 @@
 static std::mutex port_mutex; // guards port_io + cur_* + port_open
 static rs232_c port_io;
 static bool port_open = false;
-static std::string cur_source = "webserial";
+static std::string cur_source = "ttys2";
 static std::string cur_port = "ttyS2";
 static unsigned cur_baud = 38400;
 
