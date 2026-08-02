@@ -57,6 +57,13 @@ bool webpower_devices_on(std::string *error);
 // True while the machine is dark.
 bool webpower_devices_are_off(void);
 
+// Drop the record of the dark machine, for a caller about to destroy the device
+// set it names. The record holds each card by address, and an address is only
+// meaningful while the object behind it lives: a set built again over freed
+// memory could hand one card's medium to another. The machine is left dark, and
+// what it carries is established again from the configuration.
+void webpower_forget(void);
+
 // What the machine carries, whatever its power state. Losing power does not
 // unplug a card or eject a pack, so everything that describes the machine — the
 // device list, a configuration snapshot, the modified comparison — reads the

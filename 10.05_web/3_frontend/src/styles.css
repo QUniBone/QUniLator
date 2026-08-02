@@ -1271,3 +1271,25 @@ button.tree-name:hover .mono { color: var(--accent); }
 .export-item:hover { background: var(--hover, #f0f0ea); }
 .export-item .muted { font-size: .75rem; }
 label.btn.disabled { opacity: .6; pointer-events: none; }
+
+/* The board held for work no page may act during. It sits above every other
+   overlay: a modal open when the hold arrives is still a modal onto a machine
+   that is being rebuilt underneath it. */
+.held-overlay { z-index: 90; }
+.held-card {
+  width: 380px; padding: 26px 28px;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  text-align: center;
+}
+.held-reason { margin: 0; font-size: var(--fs-2); font-weight: 600; line-height: 1.4; }
+/* A power-up check has no measurable progress, so this says work is under way
+   rather than how much of it is left. */
+.held-spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 3px solid var(--surface-2); border-top-color: var(--accent);
+  animation: held-spin 900ms linear infinite;
+}
+@keyframes held-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .held-spinner { animation-duration: 3s; }
+}

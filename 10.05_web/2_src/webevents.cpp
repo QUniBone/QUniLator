@@ -74,6 +74,10 @@ static int cur_leds = 0, cur_switches = 0;
 static bool cur_init = false, cur_dcok = false, cur_pok = false;
 // logical power flag: runtime only, comes up powered on
 static bool cur_powered = true;
+// What holds the board, "" when nothing does. Part of the state frame, so a
+// page that connects while the board is held is locked as soon as it arrives
+// rather than only on the next change.
+static std::string cur_held_by;
 
 // serialized {"t":"state",...} of the current values; caller holds state_mutex
 static std::string state_json(void) {
@@ -91,6 +95,8 @@ static std::string state_json(void) {
 	event["init"] = picojson::value(cur_init);
 	event["dcok"] = picojson::value(cur_dcok);
 	event["pok"] = picojson::value(cur_pok);
+	event["held_by"] = cur_held_by.empty() ?
+			picojson::value() : picojson::value(cur_held_by);
 	return picojson::value(event).serialize();
 }
 
@@ -411,6 +417,36 @@ void webevents_note_powered(bool powered) {
 bool webevents_is_powered(void) {
 	std::lock_guard<std::mutex> lock(state_mutex);
 	return cur_powered;
+}
+
+// Taking the board for work the interfaces must not act during: the checks a
+// power-up runs before the bus edges are driven, and the interactive menu
+// holding the hardware. The reason travels in the state frame, so every page
+// connected says the same thing about why it cannot be used, and a page that
+// arrives mid-operation is locked by the snapshot it starts from.
+void webevents_hold_board(const std::string &reason) {
+	std::lock_guard<std::mutex> lock(state_mutex);
+	cur_held_by = reason;
+	picojson::object event;
+	event["t"] = picojson::value("state");
+	event["held_by"] = picojson::value(reason);
+	enqueue(event);
+}
+
+void webevents_release_board(void) {
+	std::lock_guard<std::mutex> lock(state_mutex);
+	if (cur_held_by.empty())
+		return;
+	cur_held_by.clear();
+	picojson::object event;
+	event["t"] = picojson::value("state");
+	event["held_by"] = picojson::value();
+	enqueue(event);
+}
+
+std::string webevents_board_held_by(void) {
+	std::lock_guard<std::mutex> lock(state_mutex);
+	return cur_held_by;
 }
 
 // Status parameters carry what the machine itself drives - the panel lamps, a

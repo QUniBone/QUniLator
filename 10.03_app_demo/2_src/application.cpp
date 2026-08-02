@@ -57,6 +57,7 @@
 #if defined(WEBUI)
 #include "webserver.hpp"
 #include "websettings.hpp"
+#include "boardclaim.hpp"
 #endif
 #include "timeout.hpp"
 #include "getopt2.hpp"
@@ -386,6 +387,22 @@ int application_c::run(int argc, char *argv[])
 
     std::cout << version << "\n";
 
+    // The board is one set of hardware and this program is about to take it:
+    // the GPIOs below and the PRU behind them are held by whatever is driving
+    // the board now. Claimed after the options are read, so asking for --help
+    // does not take a machine away from anyone, and before the first pin is
+    // touched. A service holding it puts its machine down and locks its web
+    // interface for the length of this session; a second menu is turned away.
+#if defined(WEBUI)
+    {
+        std::string claim_error;
+        if (!boardclaim_take(&claim_error)) {
+            printf("Cannot take the board: %s\n", claim_error.c_str());
+            return -1;
+        }
+    }
+#endif
+
     // Multiplex latches are initialized by PRU code after each code download
     INFO("Registering Non-PRU GPIO pins.");
     gpios->init();
@@ -426,6 +443,13 @@ int application_c::run(int argc, char *argv[])
 #endif
 
 //	hardware_shutdown();
+
+#if defined(WEBUI)
+    // Hands the board back, which is what lets a waiting service rebuild its
+    // machine. The claim ends with the process either way; this is the orderly
+    // way out of it.
+    boardclaim_release();
+#endif
 
     return 0;
 }

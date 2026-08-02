@@ -965,9 +965,36 @@ Text frames, one JSON event each, pushed to every connected client:
 | `{"t":"param","dev":…,"param":…,"value":…}` | committed parameter change (includes enable/disable, image attach, panel lamps) |
 | `{"t":"status","dev":…,"status":…}` | a disk drive's verbal state — the same word [`GET /api/devices`](#get-apidevices) reports as `status`, published on change (10 Hz poll) so a state the machine reaches by itself (a pack spinning down, a transfer starting) reaches the client without a refetch |
 | `{"t":"log","id":n,"time":…,"level":n,"label":…,"text":…}` | log message; levels 1 FATAL … 5 DEBUG. `id` and `time` (server clock) match the journal ([`GET /api/log`](#get-apilogbeforeidlimitn)), so a client merges live lines with a fetched page by `id` |
-| `{"t":"state","halt":…,"powered":…,"leds":[…],"switches":[…],"init":…,"dcok":…,"pok":…}` | activity LEDs, DIP switches, HALT, the logical power flag, bus INIT/DCOK/POK — published on change (10 Hz poll); a full snapshot opens every connection. `powered` is the runtime power flag driven by `dc_on`/`dc_off`; the dashboard derives RUN from `!halt && powered` and PWR OK from `powered`. Transitions may arrive as partial `state` frames (e.g. `{"t":"state","powered":false}`), which the client merges onto the last snapshot |
+| `{"t":"state","halt":…,"powered":…,"leds":[…],"switches":[…],"init":…,"dcok":…,"pok":…,"held_by":…}` | activity LEDs, DIP switches, HALT, the logical power flag, bus INIT/DCOK/POK, and what holds the board — published on change (10 Hz poll); a full snapshot opens every connection. `powered` is the runtime power flag driven by `dc_on`/`dc_off`; the dashboard derives RUN from `!halt && powered` and PWR OK from `powered`. Transitions may arrive as partial `state` frames (e.g. `{"t":"state","powered":false}`), which the client merges onto the last snapshot. `held_by` is described below |
 | `{"t":"config","current":…,"modified":…}` | current configuration and the live modified flag — published on apply, save, rename, and whenever the modified flag flips (10 Hz poll); a snapshot opens every connection |
 | `{"t":"update", …}` | the update status, the same object [`GET /api/update`](#get-apiupdate) answers. Published whenever the updater's status file changes (the service stats it once a second), and as a snapshot on every new connection — so a second tab, and a tab opened during an install, both know what is going on |
+
+#### The board held
+
+`held_by` names what has the board, and is `null` when nothing does. Two things
+take it:
+
+- a power-up, for the length of its checks — `validating configuration for power
+  on`. Bringing the cards back checks each against the machine before it goes
+  in, and the probing runs on the bus.
+- the interactive program, for the length of a session — `<name>-cli is running;
+  the web interface is unavailable until it is exited`. `<name>-cli` asks the
+  service for the hardware; the service puts its machine down, hands the board
+  over, and rebuilds the machine from the configuration that was current when
+  the session ends.
+
+While it is set, every request other than `GET` and `HEAD` answers `409` with
+`{"error": …, "held_by": …}` naming the holder, and the state frame carries the
+same string, so every connected page says the same thing about why it cannot be
+used. Reads keep working. There is nothing to acknowledge: the hold clears with
+a `state` frame carrying `"held_by": null`.
+
+The reason is the whole message a page shows: it names what holds the board and
+what ends the wait, which differs by holder, so a client displays it as given
+rather than adding a line of its own.
+
+Only one interactive session runs at a time, whether or not a service is there
+to yield to it — a second one is refused, naming the pid that holds the board.
 
 ### `/ws/console/0`, `/ws/console/1`
 

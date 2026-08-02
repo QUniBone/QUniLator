@@ -66,6 +66,12 @@ bool webpower_devices_are_off(void) {
 	return machine_dark;
 }
 
+void webpower_forget(void) {
+	std::lock_guard<std::mutex> lock(carried_mutex);
+	carried.clear();
+	machine_dark = true;
+}
+
 // This device's entry in the dark machine, or nullptr. Caller holds
 // carried_mutex.
 static carried_device_t *carried_entry_locked(device_c *dev) {

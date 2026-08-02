@@ -817,6 +817,14 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	}
 
 	{
+		// Bringing the cards back checks each one against the machine before it
+		// is put in - a memory card against the addresses the CPU answers
+		// itself, a device against what already answers its registers - and the
+		// probing that takes runs on the bus. The interfaces are held for the
+		// length of it: a page must not act on a machine that is half assembled,
+		// and every page connected says the same thing about why.
+		board_hold_c hold("validating configuration for power on", dec.devices_on);
+
 		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
 #if defined(QBUS)
 		// Release the HALT line before any power-up so a machine brought up by

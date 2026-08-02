@@ -34,6 +34,12 @@ export interface Store {
   // null until the first one arrives
   update: UpdateStatus | null;
   connected: boolean;
+  // What holds the board, from the state frame's `held_by`: the checks a
+  // power-up runs, or the interactive menu having the hardware. Empty when
+  // nothing does. The board answers 409 to anything that would change the
+  // machine while it is set, so the page locks rather than letting an operator
+  // press buttons that will be refused.
+  heldBy: string;
   bus: BusState;
   hw: HwState;
   log: LogLine[]; // ascending by id; newest appended, older pages prepended
@@ -66,6 +72,7 @@ export const store: Store = {
   serverBuilt: '',
   update: null,
   connected: false,
+  heldBy: '',
   bus: { halted: false, init: false },
   hw: {
     dcok: true,

@@ -38,6 +38,34 @@ void webevents_note_powered(bool powered);
 // current logical power state
 bool webevents_is_powered(void);
 
+// Hold the board for work no interface may act during, naming what holds it:
+// the checks a power-up runs before it drives the bus, or the interactive menu
+// having the hardware. The reason reaches every connected page in the state
+// frame, and the API answers 409 to the requests that would change the machine
+// while it is held. Prefer board_hold_c, which releases on every path out.
+void webevents_hold_board(const std::string &reason);
+void webevents_release_board(void);
+// what holds the board, "" when nothing does
+std::string webevents_board_held_by(void);
+
+// Holds the board for as long as it is in scope. `take` false leaves the board
+// free, so a caller whose work only sometimes needs the hold writes one object
+// rather than a pointer to one.
+class board_hold_c {
+	bool held;
+public:
+	board_hold_c(const std::string &reason, bool take = true) : held(take) {
+		if (held)
+			webevents_hold_board(reason);
+	}
+	~board_hold_c() {
+		if (held)
+			webevents_release_board();
+	}
+	board_hold_c(const board_hold_c &) = delete;
+	board_hold_c &operator=(const board_hold_c &) = delete;
+};
+
 // Publish a config event now: the current/default configuration changed, or a
 // caller wants the modified flag re-evaluated. Call this on the explicit
 // transitions (apply, save, default change, rename).

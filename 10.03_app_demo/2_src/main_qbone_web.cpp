@@ -21,7 +21,9 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <mutex>
 #include <string>
+#include <vector>
 
 #include "logger.hpp"
 #include "gpios.hpp"
@@ -33,7 +35,13 @@
 #include "webserver.hpp"
 #include "weblog.hpp"
 #include "webconfigs.hpp"
+#include "webevents.hpp"
 #include "websettings.hpp"
+#include "webconsole.hpp"
+#include "webpower.hpp"
+#include "webconsole_ext.hpp"
+#include "boardclaim.hpp"
+#include "device_configuration.hpp"
 
 static volatile sig_atomic_t terminate_requested = 0;
 
@@ -207,6 +215,87 @@ int main(int argc, char *argv[])
 	// default for bring-up and testing.
 	webconfigs_startup(startup_config);
 
+	// The interactive menu drives the same hardware this service does, so it
+	// asks for it rather than fighting for it: the machine is put down, the
+	// board handed over for the length of the session, and rebuilt afterwards
+	// as the configuration says. The web interface keeps serving throughout,
+	// locked, so an operator looking at it is told where the board went.
+	boardclaim_handlers_c handlers;
+	// The machine to rebuild is the one that was running, named while it still
+	// is. The DIP switches choose a configuration once, when the backend starts;
+	// a session at the menu is not a start, so re-reading them here would hand
+	// back a different machine than the one the operator gave up - or none at
+	// all, when the switches name nothing.
+	std::string held_config;
+	handlers.yield = [&]() {
+		held_config = webconfigs_current();
+		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
+
+		// Switch the machine off first, the way the panel switch does. Taking
+		// the hardware from a running machine means pulling its cards out from
+		// under a guest mid-transfer; switching it off stops the CPU and takes
+		// the cards out through the path every power-down uses, leaving nothing
+		// of the emulation running to be surprised by what follows.
+#if defined(QBUS)
+		qunibus->set_halt(1);
+#endif
+		webevents_note_halt(true);
+		webpower_devices_off();
+		webevents_note_powered(false);
+		// The record of the dark machine holds each card by address, and those
+		// cards are about to be freed.
+		webpower_forget();
+
+		webconsole_shutdown();
+		webconsole_ext_shutdown();
+		app->devices_shutdown();
+	};
+	handlers.resume = [&]() {
+		{
+			std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
+			app->devices_startup(emulated_cpu, internal_bus);
+			webconsole_register(web_server.context());
+			webconsole_ext_register(web_server.context());
+			// Registering starts the bridge's threads; the tty it carries is
+			// opened by the setting, the same way bringing the API up does it.
+			// Without this the board comes back with a dead console.
+			external_console_c ec = websettings_external_console();
+			webconsole_ext_configure(ec.source, ec.port, ec.baud);
+
+			// The board comes back with the machine switched off. Whoever took
+			// the hardware was driving bus latches and exercisers with it, and
+			// starting a machine on what they left behind is not the service's
+			// decision to make: the configuration is loaded into a dark machine
+			// and the panel switch is the operator's.
+			webpower_devices_off();
+			webevents_note_powered(false);
+#if defined(QBUS)
+			qunibus->set_halt(1);
+#endif
+			webevents_note_halt(true);
+		}
+		// What the dark machine carries is its configuration, loaded into it
+		// without reaching the emulation. Applying it takes the operations lock
+		// itself, so it is done outside the one above.
+		std::vector<std::string> rejections;
+		std::string apply_error;
+		if (held_config.empty())
+			WEB_WARNING("No configuration was current; the board comes back with "
+					"an empty machine.");
+		else if (webconfigs_apply(held_config, &rejections, &apply_error))
+			WEB_INFO("Configuration \"%s\" applied again, %u rejections.",
+					held_config.c_str(), (unsigned) rejections.size());
+		else
+			WEB_ERROR("Configuration \"%s\" not applied after the menu session: %s",
+					held_config.c_str(), apply_error.c_str());
+		for (const std::string &r : rejections)
+			WEB_WARNING("Configuration \"%s\": %s", held_config.c_str(), r.c_str());
+	};
+	std::string claim_error;
+	if (!boardclaim_serve(handlers, &claim_error))
+		WEB_WARNING("The interactive menu cannot ask for the board: %s.",
+				claim_error.c_str());
+
 	WEB_INFO(QUNILATOR_NAME " ready. Every operator action arrives through the web interface.");
 
 	// Nothing to do here: the web server serves on its own threads and the
@@ -215,6 +304,7 @@ int main(int argc, char *argv[])
 		pause();
 
 	WEB_INFO("Signal %d received, shutting down.", (int) terminate_requested);
+	boardclaim_stop_serving();
 	web_server.stop();
 	app->devices_shutdown();
 	WEB_INFO(QUNILATOR_NAME " web service stopped.");

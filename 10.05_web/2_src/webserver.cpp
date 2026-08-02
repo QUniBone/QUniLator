@@ -33,6 +33,7 @@
 
 #include "logger.hpp"
 #include "webauth.hpp"
+#include "webevents.hpp"
 #include "webserver.hpp"
 #include "webstorage.hpp"
 #include "qunibusadapter.hpp"
@@ -112,6 +113,32 @@ static int spa_shell_fallback(struct mg_connection *conn) {
 	return 1;
 }
 
+// While something holds the board - a power-up running its checks, the
+// interactive menu having the hardware - a request that would change the
+// machine is answered rather than queued behind it, and says what holds it.
+// Reads go through: a locked page still shows the state that put it there, and
+// the event stream is how it learns the hold is over.
+//
+// result 1: answered here, 0: the request continues
+static int refuse_while_board_held(struct mg_connection *conn) {
+	const struct mg_request_info *ri = mg_get_request_info(conn);
+	const char *method = ri->request_method;
+	if (method == nullptr || !strcmp(method, "GET") || !strcmp(method, "HEAD"))
+		return 0;
+	std::string held = webevents_board_held_by();
+	if (held.empty())
+		return 0;
+	std::string body = picojson::value(picojson::object {
+			{ "error", picojson::value(held) },
+			{ "held_by", picojson::value(held) } }).serialize();
+	mg_printf(conn,
+			"HTTP/1.1 409 Conflict\r\n"
+			"Content-Type: application/json\r\n"
+			"Content-Length: %u\r\n\r\n%s",
+			(unsigned) body.size(), body.c_str());
+	return 1;
+}
+
 // result 0: request continues (authorized or auth disabled), 1: handled here
 static int begin_request_handler(struct mg_connection *conn) {
 	if (webauth_configured()) {
@@ -135,6 +162,8 @@ static int begin_request_handler(struct mg_connection *conn) {
 			return 1;
 		}
 	}
+	if (refuse_while_board_held(conn))
+		return 1;
 	return spa_shell_fallback(conn);
 }
 

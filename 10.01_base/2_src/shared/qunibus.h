@@ -36,10 +36,13 @@
   #define QUNIBONE_NAME  "UniBone"
   #define QUNIBUS_NAME	"UNIBUS"
   #define QUNIBUS_PROBE_NAME "UniProbe"
+  // the interactive program as it is installed and as an operator types it
+  #define QUNILATOR_CLI_NAME "unibone-cli"
 #elif defined(QBUS)
   #define QUNIBONE_NAME  "QBone"
   #define QUNIBUS_NAME	"QBUS"
   #define QUNIBUS_PROBE_NAME "QProbe"
+  #define QUNILATOR_CLI_NAME "qbone-cli"
 #else
   #error "Define UNIBUS or QBUS !"
 #endif

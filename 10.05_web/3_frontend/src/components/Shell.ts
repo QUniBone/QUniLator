@@ -88,6 +88,32 @@ function Topbar({
     }</span></header>`;
 }
 
+/**
+ * The board taken for work no page may act during: the checks a power-up runs
+ * before it drives the bus, or the interactive menu having the hardware.
+ *
+ * Every connected page raises this at once, because the reason travels in the
+ * state frame and a page that connects mid-operation starts from a snapshot
+ * carrying it. The board refuses anything that would change the machine while
+ * it is held, so the lock is what the operator sees instead of a screenful of
+ * buttons that answer 409. It clears when the board says it is free — there is
+ * nothing to dismiss, and a stuck one is a board that never let go.
+ *
+ * The reason is the whole message: the board names what holds it and what ends
+ * the wait, which differs by holder — a power-up finishes on its own, an
+ * interactive session ends when whoever started it exits. A line of our own
+ * here could only be true for one of them.
+ */
+function BoardHeld({ reason }: { reason: string }) {
+  if (!reason) return null;
+  return html`<div class="modal-overlay held-overlay" role="alertdialog" aria-live="assertive">
+    <div class="card modal-card held-card">
+      <div class="held-spinner" aria-hidden="true"></div>
+      <p class="held-reason">${reason}</p>
+    </div>
+  </div>`;
+}
+
 function Redirect({ to }: { to: string }) {
   const loc = useLocation();
   useEffect(() => {
@@ -119,5 +145,7 @@ export function App() {
           <${Redirect} default to="/dashboard" />
         </${Router}>
       </main>
-    </div></div>`;
+    </div>
+    <${BoardHeld} reason=${s.heldBy} />
+  </div>`;
 }

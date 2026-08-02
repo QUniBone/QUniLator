@@ -294,6 +294,7 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/webcontrol.o	\
 	$(OBJDIR)/webpower.o	\
 	$(OBJDIR)/webevents.o	\
+	$(OBJDIR)/boardclaim.o	\
 	$(OBJDIR)/webconsole.o	\
 	$(OBJDIR)/webconsole_ext.o	\
 	$(OBJDIR)/webconsole_channel.o	\
@@ -695,6 +696,9 @@ $(OBJDIR)/webpower.o :  $(WEB_SRC_DIR)/webpower.cpp $(WEB_SRC_DIR)/webpower.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webevents.o :  $(WEB_SRC_DIR)/webevents.cpp $(WEB_SRC_DIR)/webevents.hpp $(WEB_SRC_DIR)/webupdate.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/boardclaim.o :  $(WEB_SRC_DIR)/boardclaim.cpp $(WEB_SRC_DIR)/boardclaim.hpp $(WEB_SRC_DIR)/webevents.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webconsole.o :  $(WEB_SRC_DIR)/webconsole.cpp $(WEB_SRC_DIR)/webconsole.hpp $(WEB_SRC_DIR)/webconsole_channel.hpp device_configuration.hpp

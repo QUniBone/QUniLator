@@ -54,6 +54,11 @@ public:
 	bool is_running(void) {
 		return ctx != nullptr;
 	}
+	// The civetweb context the handlers are registered against, for a component
+	// that is registered again after having been shut down mid-run.
+	struct mg_context *context(void) {
+		return ctx;
+	}
 };
 
 extern webserver_c *webserver; // singleton, created by application on --web

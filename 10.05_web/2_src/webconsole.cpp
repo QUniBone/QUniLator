@@ -210,4 +210,12 @@ void webconsole_shutdown(void) {
 	flusher.join();
 	for (console_c &console : consoles)
 		console.channel.clear_clients();
+	// The taps point into the device set, and the caller may be taking it down:
+	// a channel left holding them would hand freed memory to the next frame that
+	// arrives. Registering again re-reads them from the machine that is there.
+	for (console_c &console : consoles) {
+		console.adapter = nullptr;
+		console.rcv_stream = nullptr;
+		console.slu = nullptr;
+	}
 }
