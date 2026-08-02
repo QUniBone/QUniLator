@@ -1,6 +1,9 @@
 # object/binary output of the demo application build
 10.03_app_demo/4_deploy_q/
 10.03_app_demo/4_deploy_u/
+# the same, for a debug build ("crossbuild.sh -g")
+10.03_app_demo/4_deploy_q_dbg/
+10.03_app_demo/4_deploy_u_dbg/
 # host-built CPU core test binary, objects and per-run stamps
 10.06_cputest/4_deploy/
 # host-built VAX simulators, objects and test run output
@@ -14,6 +17,14 @@
 # deploy settings of one person's board, read by crossbuild.sh -d
 # (build.env.example documents them)
 build.env
+
+# staging directory and output of packaging/build-release.sh: the downloaded
+# Debian base image, the package, the sample OS images and the built card image
+dist/
+*-dist.img
+# the compressed image, its checksum, and the partly-written file a run leaves
+# behind when it is interrupted
+*-dist.img.*
 
 # reMarkable pull-annotations local watermark (per-checkout)
 .claude/.rm-*.json

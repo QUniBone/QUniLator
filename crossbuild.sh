@@ -9,13 +9,22 @@
 # a build needs nothing but this repository and Docker. See PRU_CGT_VERSION
 # below for what pins the compiler.
 #
-# usage:
-#   ./crossbuild.sh            build for the bus build.env records
-#   ./crossbuild.sh -u         build for UNIBUS instead
-#   ./crossbuild.sh -q         build for QBUS instead
-#   ./crossbuild.sh -d         build and deploy to the board build.env names
-#   ./crossbuild.sh -c         clean object directory first
-#   ./crossbuild.sh -p         rebuild the PRU firmware even if it is present
+# "./crossbuild.sh -h" summarises the options; usage() below is what it prints,
+# so that summary is the one place they are listed. Plain "./crossbuild.sh"
+# builds for the bus build.env records, which is the board that is going to run
+# the result; -u and -q build the other one for a run.
+#
+# "-g" builds the emulator unoptimised and with debug symbols, into an object
+# directory of its own, so a debug and an optimised tree never share objects and
+# switching between them costs no rebuild. It changes only the C++ emulator: the
+# PRU firmware, whose timing is the product, is always built the one way.
+#
+# A UNIBUS build tests the emulated CPU cores before it builds the binary: the
+# MAINDEC diagnostics of 10.06_cputest run with the host compiler in the same
+# container, so a core defect stops the build (and any deploy) rather than
+# reaching the board. Only the (core, tape) pairs whose sources changed are
+# re-run, so an unrelated build pays nothing. A QBUS build does not run them -
+# a QBone drives a real CPU board and has no emulated CPU.
 #
 # Both PRU firmwares are built: the one that drives a backplane and the one that
 # keeps the bus inside the PRU. The emulator carries both and loads whichever the
@@ -28,32 +37,15 @@
 set -e
 cd "$(dirname "$0")"
 
-# Deploy settings. Every build reads them, so a build.env that is missing or
-# incomplete is reported by any run rather than only by one that deploys — the
-# answer is the same either way, and finding out before the build beats finding
-# out after it.
-if [ ! -f build.env ]; then
-    cp build.env.example build.env
-    echo "build.env did not exist; build.env.example has been copied to it." >&2
-    echo "Edit build.env to name your board, then run this again." >&2
-    exit 1
-fi
-. ./build.env
+# Deploy settings, read before the options so that -h can show what they
+# currently say. What they have to contain is checked after the options are
+# parsed, since asking for the summary is not a build and needs no board.
+[ -f build.env ] && . ./build.env
 
 # The example's placeholder host counts as no value: it is the one thing every
 # copy of build.env carries and no board answers to.
 if [ "$QUNILATOR_HOST" = "you@yourboard.local" ]; then
     QUNILATOR_HOST=
-fi
-
-missing=
-for var in QUNILATOR_HOST QUNILATOR_BUS QUNILATOR_DEPLOY_MODE QUNILATOR_REMOTE_DIR; do
-    [ -n "${!var}" ] || missing="$missing $var"
-done
-if [ -n "$missing" ]; then
-    echo "build.env sets no value for:$missing." >&2
-    echo "Edit build.env and give each of them one, then run this again." >&2
-    exit 1
 fi
 
 IMAGE=qunibone-crossbuild
@@ -72,34 +64,107 @@ PRU_CGT_VERSION=2.3.1
 # header-stamp write that follow the build.
 DOCKER_USER="$(id -u):$(id -g)"
 
+usage() {
+    cat <<EOF
+usage: $(basename "$0") [-u|-q] [-g] [-d] [-c] [-p] [-t] [-h]
+
+Cross-compile the emulator and its PRU firmware for the BeagleBone in a Docker
+container, leaving them in the tree. Without options it builds the optimised
+binary for the bus QUNILATOR_BUS names; -d then copies it to the board
+build.env names.
+
+  -u  build for UNIBUS for this run, whatever QUNILATOR_BUS says
+  -q  build for QBUS for this run, whatever QUNILATOR_BUS says
+  -g  build unoptimised and with debug symbols (-O0 -ggdb3), into its own
+      object directory 10.03_app_demo/4_deploy<suffix>_dbg
+  -d  deploy to the board after a successful build, as QUNILATOR_DEPLOY_MODE
+      says: appliance replaces /usr/bin and restarts the service, checkout
+      lands the binary in the source tree the board runs from
+  -c  remove the object directories first, forcing a full rebuild - and, on a
+      UNIBUS build, a full re-run of the CPU core tests
+  -p  rebuild the PRU firmware even when it is already present
+  -t  skip the CPU core tests of a UNIBUS build
+  -h  show this summary (-? does the same)
+
+A UNIBUS build runs the emulated CPU cores against the MAINDEC diagnostics
+before it builds, whether the bus came from build.env or from -u.
+
+environment (set in build.env; see build.env.example):
+  QUNILATOR_HOST         ssh destination of the board${QUNILATOR_HOST:+ (now $QUNILATOR_HOST)}
+  QUNILATOR_BUS          qbus or unibus, the bus that board carries${QUNILATOR_BUS:+ (now $QUNILATOR_BUS)}
+  QUNILATOR_DEPLOY_MODE  appliance or checkout${QUNILATOR_DEPLOY_MODE:+ (now $QUNILATOR_DEPLOY_MODE)}
+  QUNILATOR_REMOTE_DIR   checkout directory on the board${QUNILATOR_REMOTE_DIR:+ (now $QUNILATOR_REMOTE_DIR)}
+EOF
+}
+
+# The bus an option asks for, empty when none did: resolved against
+# QUNILATOR_BUS once the options are in, so that neither setting has to be
+# read before the other.
+BUS_OPT=
+DEPLOY=0
+CLEAN=0
+PRU_CLEAN=0
+SKIP_TESTS=0
+DEBUG=0
+# The leading colon silences getopts' own message, so an unknown option is
+# reported here instead. "?" is both an option letter and the marker getopts
+# uses for a bad one, so the case below asks OPTARG - silent mode sets it to the
+# offending letter - which letter it really was.
+while getopts ":uqdcpgth" opt; do
+    case $opt in
+        u) BUS_OPT=unibus;;
+        q) BUS_OPT=qbus;;
+        g) DEBUG=1;;
+        d) DEPLOY=1;;
+        c) CLEAN=1;;
+        p) PRU_CLEAN=1;;
+        t) SKIP_TESTS=1;;
+        h) usage; exit 0;;
+        ?) case $OPTARG in
+               ''|'?') usage; exit 0;;
+           esac
+           echo "$(basename "$0"): unknown option -$OPTARG" >&2
+           usage >&2
+           exit 1;;
+    esac
+done
+
+JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
+# From here on the run is a build, so build.env has to say what it is a build
+# for. A first run has no file at all: write it from the example and stop with
+# the one instruction that follows.
+if [ ! -f build.env ]; then
+    cp build.env.example build.env
+    echo "build.env did not exist; build.env.example has been copied to it." >&2
+    echo "Edit build.env to name your board, then run this again." >&2
+    exit 1
+fi
+
+missing=
+for var in QUNILATOR_HOST QUNILATOR_BUS QUNILATOR_DEPLOY_MODE QUNILATOR_REMOTE_DIR; do
+    [ -n "${!var}" ] || missing="$missing $var"
+done
+if [ -n "$missing" ]; then
+    echo "build.env sets no value for:$missing." >&2
+    echo "Edit build.env and give each of them one, then run this again." >&2
+    exit 1
+fi
+
 # Which bus to build for. The board carries one, and build.env is what names
 # that board, so the bus belongs there too: a build with no option is the build
-# for the board that is going to run it. -u and -q override, for the run that
-# builds the other one.
+# for the board that is going to run it, and -u or -q builds the other one.
 #
 # The emulator is compiled for its bus, and an appliance deploy installs it as
 # /usr/bin/<name> whatever bus it was built for — so a default of "qbus" for a
 # board running unibone would replace that binary with one for the wrong bus and
 # restart the service onto it. The value is required for exactly that reason.
-case "$QUNILATOR_BUS" in
+case "${BUS_OPT:-$QUNILATOR_BUS}" in
     qbus)   SUFFIX=_q; PLATFORM=QBUS ;;
     unibus) SUFFIX=_u; PLATFORM=UNIBUS ;;
     *) echo "QUNILATOR_BUS is \"$QUNILATOR_BUS\"; it is qbus or unibus." \
             "Fix build.env." >&2; exit 1 ;;
 esac
-DEPLOY=0
-CLEAN=0
-PRU_CLEAN=0
-while getopts "uqdcp" opt; do
-    case $opt in
-        u) SUFFIX=_u; PLATFORM=UNIBUS;;
-        q) SUFFIX=_q; PLATFORM=QBUS;;
-        d) DEPLOY=1;;
-        c) CLEAN=1;;
-        p) PRU_CLEAN=1;;
-        *) exit 1;;
-    esac
-done
 
 # The board's own name: the emulator is installed as /usr/bin/<name> and run by
 # <name>.service, so an appliance deploy needs to know which board this is.
@@ -123,9 +188,12 @@ CROSSBUILD_RECIPE=$(cat <<'EOF'
 FROM debian:trixie-slim
 # armhf as a foreign architecture: the target's libraries are linked into the
 # emulator, not run on the builder
+# g++ is the native compiler, for the CPU core tests of 10.06_cputest: those run
+# on the build machine against a fake bus, so they need a host compiler, not the
+# cross one.
 RUN dpkg --add-architecture armhf && apt-get update \
     && apt-get install -y --no-install-recommends \
-        gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf make file \
+        gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf g++ make file \
         curl ca-certificates bzip2 \
         libx11-dev:armhf libxcb1-dev:armhf libxau-dev:armhf libxdmcp-dev:armhf \
     && rm -rf /var/lib/apt/lists/*
@@ -225,7 +293,38 @@ fi
 # make must see them as newer than the PRU sources, or it tries to run clpru
 touch "$PRU_DEPLOY_DIR"/*_array.c
 
-OBJDIR="10.03_app_demo/4_deploy$SUFFIX"
+# The emulated CPU cores against the DEC MAINDEC diagnostics. Host compiler,
+# host binary, a bus made of a word array. UNIBUS only: a QBone carries a real
+# CPU board and ships no emulated CPU, so the cores are none of its build's
+# business. Stamps under 10.06_cputest/4_deploy keep this to the pairs whose
+# sources actually changed.
+if [ $SKIP_TESTS = 0 ] && [ $PLATFORM = UNIBUS ]; then
+    # -c means "build everything again", so it throws away the harness objects
+    # and the stamps too and every (core, tape) pair runs afresh. Serially: the
+    # clean would otherwise race the compiles of the run that follows.
+    if [ $CLEAN = 1 ]; then
+        docker run --rm --user "$DOCKER_USER" -v "$PWD:/qunibone" \
+            -w /qunibone/10.06_cputest/2_src $IMAGE \
+            make QUNIBONE_DIR=/qunibone clean
+    fi
+    echo "Running the CPU core tests ..."
+    docker run --rm --user "$DOCKER_USER" -v "$PWD:/qunibone" \
+        -w /qunibone/10.06_cputest/2_src $IMAGE \
+        make -j"$JOBS" QUNIBONE_DIR=/qunibone test
+fi
+
+# A debug build is a different set of objects from an optimised one, so it gets
+# an object directory of its own: the two can then live side by side and neither
+# invalidates the other's incremental state. The makefile fixes OBJDIR at
+# 4_deploy<suffix>, but a variable given on make's command line wins over the
+# makefile's own assignment, so passing it is all that is needed.
+if [ $DEBUG = 1 ]; then
+    CONFIGURATION=DBG
+    OBJDIR="10.03_app_demo/4_deploy${SUFFIX}_dbg"
+else
+    CONFIGURATION=RELEASE
+    OBJDIR="10.03_app_demo/4_deploy$SUFFIX"
+fi
 HEADER_STAMP="$OBJDIR/.headers.sha"
 
 # Adding or removing a virtual method, or changing a struct layout, in a
@@ -252,9 +351,10 @@ fi
 
 docker run --rm --user "$DOCKER_USER" -v "$PWD:/qunibone" \
     -w /qunibone/10.03_app_demo/2_src $IMAGE \
-    make -f makefile$SUFFIX -j"$(sysctl -n hw.ncpu 2>/dev/null || echo 4)" \
+    make -f makefile$SUFFIX -j"$JOBS" \
         QUNILATOR_DIR=/qunibone \
-        MAKE_CONFIGURATION=RELEASE \
+        OBJDIR="/qunibone/$OBJDIR" \
+        MAKE_CONFIGURATION=$CONFIGURATION \
         MAKE_TARGET_ARCH=BBB \
         BBB_CC=arm-linux-gnueabihf-gcc \
         CCDEFS=-I/usr/local/tirpc-armhf/include/tirpc \
@@ -308,6 +408,9 @@ deploy_appliance() {
 # same place the build wrote it.
 deploy_checkout() {
     echo "Deploying to $QUNILATOR_HOST:$QUNILATOR_REMOTE_DIR/$BINARY ..."
+    # the debug object directory has no counterpart in the checkout on the board
+    ssh "$QUNILATOR_HOST" "mkdir -p '$QUNILATOR_REMOTE_DIR/$OBJDIR'"
+    # upload beside the binary, then rename: replaces it even while it runs
     scp "$BINARY" "$QUNILATOR_HOST:$QUNILATOR_REMOTE_DIR/$BINARY.new"
     ssh "$QUNILATOR_HOST" "mv '$QUNILATOR_REMOTE_DIR/$BINARY.new' '$QUNILATOR_REMOTE_DIR/$BINARY'"
 }

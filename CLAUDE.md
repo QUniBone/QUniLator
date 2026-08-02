@@ -113,12 +113,17 @@ the bridge fail to open with "Another process has locked the comport".
 
 ## Building
 
-`./crossbuild.sh` builds for the board in Docker; `-d` deploys the binary.
+`./crossbuild.sh` builds for the board in Docker; `-d` deploys the binary, and
+`-g` builds unoptimised with debug symbols into its own object directory
+(`4_deploy<suffix>_dbg`), so a debug and a release tree can live side by side.
+`-h` lists every option.
+
 Which bus it builds for comes from `QUNILATOR_BUS` in `build.env` — the board
 that is going to run it — and `-u`/`-q` override that for one run. An appliance
 deploy installs the result as `/usr/bin/<name>` whatever bus it was built for,
 so building for the wrong one and deploying is a bad afternoon; that is why the
 setting is required rather than defaulted.
+
 The builder image is Debian trixie, the same distribution the appliance image
 carries, and its tag is a hash of the recipe in the script, so editing the
 recipe builds a new image rather than reusing the old one.
@@ -149,6 +154,14 @@ that matters is asked about first.
 ssh and scp go on the key; nothing prompts for a password. An appliance deploy
 writes below `/usr` and restarts a unit, so the account needs sudo there.
 
+## Building a release image
+
+`packaging/build-release.sh` builds a whole card-ready release image on an
+x86_64 Linux workstation: it stages the pinned Debian base image (downloading
+and checksum-checking it into `dist/` when it is not there), the package, and
+the sample disk images, then runs `packaging/build-image.sh`. See
+`DISTRIBUTION.md` for the options and the environment it reads.
+
 Two linker settings that have to stay:
 
 - **Dynamic, never `-static`.** glibc loads its name service backends with
@@ -169,7 +182,10 @@ KT11-D memory management). It builds with the **host** compiler and runs on the
 build machine: the cores reach the world only through the `unibone_*()` functions
 of `cpu_bus_adapter.h`, and `10.06_cputest/2_src/testbus.cpp` implements those on
 a word array with KL11 and KW11 stubs, so no board and no bus hardware take part.
-CI runs the same command.
+CI runs the same command, and so does `./crossbuild.sh -u` before it builds the
+binary — a failing core stops the build and any deploy. A QBUS build does not
+run them: a QBone drives a real CPU board and ships no emulated CPU.
+`./crossbuild.sh -t` skips them when iterating on something else.
 
 Change a core and the tapes for it re-run; a stamp per (core, tape) pair keeps an
 unrelated build from re-running anything. Drop a tape into `3_tapes/both`,

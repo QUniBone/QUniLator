@@ -138,7 +138,11 @@ jobs:
           EOF
 
       - name: Cross-compile ${{ matrix.platform }}
-        run: ./crossbuild.sh ${{ matrix.flag }}
+        # -t leaves the CPU core tests to the cpu-test job above, which runs
+        # them on every push and reports as a check of its own. A UNIBUS
+        # crossbuild runs them for the benefit of a workstation build, where
+        # nothing else would.
+        run: ./crossbuild.sh ${{ matrix.flag }} -t
 
       - name: Check the PRU firmware is reproducible
         # A second build from clean must land on the same instruction words.
@@ -147,7 +151,7 @@ jobs:
         run: |
           mkdir -p /tmp/fw1
           cp 10.01_base/4_deploy${{ matrix.suffix }}/*_array.c /tmp/fw1/
-          ./crossbuild.sh ${{ matrix.flag }} -p
+          ./crossbuild.sh ${{ matrix.flag }} -p -t
           for f in /tmp/fw1/*_array.c; do
             cmp "$f" "10.01_base/4_deploy${{ matrix.suffix }}/$(basename "$f")"
           done
