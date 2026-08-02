@@ -1,0 +1,82 @@
+# Boot XXDP on qbone and run CVTSD (VTSDE0) against the emulated TSV05.
+#
+# CVTSD is the first of the TS tapes that issues tape commands rather than
+# checking registers, so it is the one that says whether tape data operations
+# work at all:
+#
+#   node dist/src/cli.js run scripts/qbone-xxdp-vtsde0.yaml
+#
+# The kdj11-a-ts configuration is the KDJ11-A rig with `ts` (TSV05) and `ts0`
+# (TS05) added, the drive loaded with a scratch mu/ts-scratch.tap.
+#
+# What it currently reports, on the model as it stands:
+#
+#   TSSR Not Correct After WRITE TAPE MARK RETRY DATA Command
+#   TSSR = 104212   SC,NXM,SSR   Recoverable Error - Tape Was Not Moved
+#
+# and, in the service log, the DMA that fetched the command packet timing out
+# and the adapter asserting on the slot it left behind:
+#
+#   DMA did not complete within 2000 ms: dev ts, DATI @ 00026370, wordcount 4
+#   Assertion `prl->slot_request[dma_request.priority_slot] == NULL' failed.
+#
+# The assertion aborts the service, so a run of this script normally ends with
+# the console transport dropping rather than with a diagnostic verdict. That is
+# the finding, not a fault in the script.
+console: auto
+host: qbone
+title: XXDP CVTSD against the emulated TSV05
+timeout: 60s
+machine:
+  config: kdj11-a-ts
+  # dc_on, not restart: the KDJ11-A has no boot ROM of its own and the MRV11-D
+  # bootstrap runs from the power-up vector, so a restart leaves the CPU in
+  # micro-ODT with nothing to boot it.
+  start: dc_on
+deviations:
+  - event: halt
+    fail: the CPU halted during the run
+steps:
+  - name: boot
+    expect:
+      - match: "ENTER DATE"
+        send: ""
+      - match: /RESTART ADDR|\n\./
+        goto: load
+    timeout: 90s
+  - name: prompt
+    expect: /\n\./
+  - name: load
+    wait: 2s
+    send: R VTSDE0
+  - name: supervisor
+    expect: "DR>"
+    send: START
+    timeout: 90s
+  - name: change-hw
+    # answering N here gives "NO UNIT": the default hardware table is empty,
+    # so the unit has to be declared
+    expect: /CHANGE HW.*\?/i
+    send: Y
+  - name: dialog
+    expect:
+      - match: /UNITS.*\?/i
+        send: "1"
+        goto: dialog
+      # a logical prompt has no default: a bare CR is re-asked forever
+      - match: /CHANGE SW.*\?/i
+        send: "N"
+        goto: dialog
+      - match: /\(L\)\s*\?/
+        send: "N"
+        goto: dialog
+      # the device address and vector defaults are the model's own
+      - match: /\?[\x00-\x20]*$/
+        send: ""
+        goto: dialog
+      # EOP prints on failing runs too; a pass is the zero error count
+      - match: /END PASS|\b0 CUMULATIVE ERRORS/i
+        done: true
+      - match: /DVC FTL|FTL ERR|HRD ERR|FATAL|[1-9]\d* CUMULATIVE ERRORS/i
+        fail: the diagnostic reported errors
+    timeout: 300s

@@ -1,8 +1,12 @@
 /* board.ts: reaching a QUniLator board — auth and console-channel resolution.
  *
- * Auth is HTTP basic with any user name and the board password; the
- * workstation convention keeps that password in ~/.qbone-pw. A board running
- * without a password needs no header.
+ * Auth is HTTP basic, and the user name is part of it: a board provisioned
+ * through the first-run dialog carries one identity that is both the
+ * operator's account and the web login, and answers 401 to the right password
+ * under the wrong name. The workstation convention keeps the password in
+ * ~/.qbone-pw and the name in ~/.qbone-user (QBONE_USER overrides). A board
+ * set up before that dialog takes any name, which is what an unset name still
+ * serves; a board running without a password needs no header at all.
  *
  * `console: auto` resolves which channel is the machine's console from the
  * board's configuration, so a script names the machine, not the wiring:
@@ -28,13 +32,27 @@ export function loadPassword(pwFile?: string): string | undefined {
   }
 }
 
-export function basicAuth(password: string): string {
-  return "Basic " + Buffer.from(":" + password).toString("base64");
+/** The board account's name: QBONE_USER, else ~/.qbone-user, else empty. */
+export function loadUser(userFile?: string): string {
+  const fromEnv = process.env.QBONE_USER?.trim();
+  if (fromEnv) return fromEnv;
+  try {
+    return readFileSync(userFile ?? join(homedir(), ".qbone-user"), "utf8").trim();
+  } catch {
+    return "";
+  }
 }
 
-export function makeTarget(host: string, pwFile?: string): BoardTarget {
+export function basicAuth(password: string, user = ""): string {
+  return "Basic " + Buffer.from(user + ":" + password).toString("base64");
+}
+
+export function makeTarget(host: string, pwFile?: string, userFile?: string): BoardTarget {
   const pw = loadPassword(pwFile);
-  return { host, authHeader: pw !== undefined ? basicAuth(pw) : undefined };
+  return {
+    host,
+    authHeader: pw !== undefined ? basicAuth(pw, loadUser(userFile)) : undefined,
+  };
 }
 
 async function apiGet(target: BoardTarget, path: string): Promise<unknown> {
