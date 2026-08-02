@@ -212,6 +212,7 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/mscp_drive.o \
 	$(OBJDIR)/tqk50.o        \
 	$(OBJDIR)/mscp_tape.o   \
+	$(OBJDIR)/ts11.o        \
 	$(OBJDIR)/simh_tape.o   \
 	$(OBJDIR)/rx0102drive.o	\
 	$(OBJDIR)/rx0102ucpu.o	\
@@ -493,6 +494,9 @@ $(OBJDIR)/tqk50.o :   $(DEVICE_SRC_DIR)/tqk50.cpp $(DEVICE_SRC_DIR)/tqk50.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/mscp_tape.o :   $(DEVICE_SRC_DIR)/mscp_tape.cpp $(DEVICE_SRC_DIR)/mscp_tape.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/ts11.o :   $(DEVICE_SRC_DIR)/ts11.cpp $(DEVICE_SRC_DIR)/ts11.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/simh_tape.o :   $(DEVICE_SRC_DIR)/simh_tape.cpp $(DEVICE_SRC_DIR)/simh_tape.hpp
