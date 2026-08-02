@@ -45,6 +45,14 @@ RX0102uCPU_c::RX0102uCPU_c(RX11211_c *_controller): device_c(), controller(_cont
 
     signal_function_density	= false ; // const for RX01
 
+    // Which drive is selected indexes drives[], and init() reads it through
+    // selected_drive() before assigning it. A microcontroller comes up on
+    // drive 0; without saying so here the index is whatever the memory held,
+    // and the read lands wherever that points. It survives on a board that
+    // builds its device set once, because a fresh heap reads zero - and fails
+    // on one that builds a second set over memory that has been used.
+    signal_selected_drive_unitno = 0 ;
+
     // init
     power_switch.set(0) ;
     set_powerless() ;
