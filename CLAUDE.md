@@ -84,32 +84,45 @@ external bridge alike) and for every program driving it (ODT, boot blocks, the
 OS). Pace each character on the echo; where nothing echoes (a password prompt),
 fall back to a delay per character.
 
-The rest of this section, and the hardware notes at the end, describe the QBUS
-board in the 11/73. A different board is a different machine: check what it
-carries rather than assuming these.
+**Which WebSocket carries the console depends on the CPU in the box**, and the
+CPU is swapped from time to time. Read `GET /api/devices` and
+`GET /api/settings` before assuming either channel — a silent channel usually
+means the console is on the other one, not that the machine is dead.
 
-**The 11/73 has an on-board console SLU, wired to the bone's `/dev/ttyS2`.**
-The console is therefore real hardware, and the WebSocket that carries it is
-`/ws/console/ext` — the raw tty bridge, with no emulated device behind it. Read
-it with `websocat`:
+### The KDJ11-A, which is what `qbone` carries now
+
+The KDJ11-A has **no on-board console SLU**, so `/dev/ttyS2` reaches nothing
+and `/ws/console/ext` stays silent. The console is QBone's **emulated `DL11`**
+at 777560, and the WebSocket that carries it is **`/ws/console/0`**:
+
+    node -e 'const w=new (require("ws"))("ws://qbone/ws/console/0",
+      {headers:{Authorization:AUTH}}); w.on("message",d=>process.stdout.write(d))'
+
+So on this rig `DL11` is **enabled**, with `serialport=ttyS2` (an empty
+serialport refuses to enable), and `external_console.source` is **`off`** in
+`PUT /api/settings` so the bridge releases the port for it. The card carries no
+memory and no boot ROM either, so `MEM` and `MRV11D` are enabled beside it; see
+the hardware notes at the end.
+
+### A CPU with its own SLU, such as the 11/73
+
+There the console is real hardware on `/dev/ttyS2`, carried by `/ws/console/ext`
+— the raw tty bridge, with no emulated device behind it:
 
     AUTH=$(printf "%s:%s" "$BOARD_USER" "$(cat ~/.qbone-pw)" | base64)
     websocat --binary -H="Authorization: Basic $AUTH" ws://$BOARD_HOST/ws/console/ext
 
-The bridge is enabled by `external_console` in `PUT /api/settings`, whose
-`source` is `ttys2`, `webserial` or `off`. It must stay `ttys2` on this board.
+`external_console.source` is `ttys2` (its other values are `webserial` and
+`off`), and **`DL11` stays disabled**: its `serialport` is `ttyS2` too, so
+enabling it both duplicates the CPU's own SLU at 777560 and fights the bridge
+for the port. `211bsd.json` lists DL11 as enabled, but applying it silently
+leaves the device off because the bridge already holds `ttyS2` — which is the
+only reason that configuration works.
 
-`/ws/console/0` and `/ws/console/1` tap QBone's *emulated* DL11s at 777560 and
-776500 instead, which this machine does not use for its console.
+Either way, nothing else may hold `/dev/ttyS2`: a stray reader steals the bytes
+and makes the bridge fail to open with "Another process has locked the comport".
 
-**Leave DL11 disabled.** Its `serialport` parameter is `ttyS2`, so enabling it
-both duplicates the CPU's own SLU at 777560 and fights the external-console
-bridge for the port. `211bsd.json` lists DL11 as enabled, but applying it
-silently leaves the device off because the bridge already holds `ttyS2` —
-which is the only reason that configuration works.
-
-Nothing else may hold `/dev/ttyS2`: a stray reader steals the bytes and makes
-the bridge fail to open with "Another process has locked the comport".
+`/ws/console/1` taps the second emulated DL11 at 776500.
 
 ## Building
 
@@ -243,17 +256,30 @@ compiler warnings or spurious language-server errors behind.
 
 ## Hardware notes
 
-The 11/73 CPU board carries no memory; a Q-bus memory card supplies it, and the
-test rig uses a **2 MB card**. So the low 2 MB of the 22-bit space is backed by
-that card, and the range from 2 MB up to the I/O page answers with a bus timeout
-until something claims it. A different-sized card moves that boundary.
+**What answers on the bus is a property of the backplane, not of QUniLator.**
+`POST /api/memory/probe` sizes what the machine carries and `GET /api/memory/map`
+shows the address space; ask them rather than working from this section, which
+records what the rig held when it was written.
+
+`qbone` currently holds a **KDJ11-A** and no other Q-bus cards. That card carries
+no memory, so the probe answers `first_invalid: 0` and nothing runs until the
+**`MEM`** device supplies it. It carries no boot ROM either — it answers neither
+17773000 nor 17777520 — which is what the emulated **`MRV11-D`** bootstrap card
+is for; its power-up mode jumps to 173000, so a `restart` with that card enabled
+runs the bootstrap with no console input.
+
+A CPU board with a Q-bus memory card beside it behaves the other way round: with
+a **2 MB card** the low 2 MB of the 22-bit space is backed by it and the range
+from 2 MB up to the I/O page answers with a bus timeout until something claims
+it. A different-sized card moves that boundary.
 
 The board can supply memory itself: the **`MEM` device** (type `MSV11`) has the
-PRU answer one address range out of the board's DDR, with `startaddr`/`endaddr`
-naming the range. It ships disabled, and enabling it probes the range first and
-refuses when anything already answers there — a range claimed over the card
-would put two slaves on one cycle. `GET /api/memory/map` shows the address space
-and `POST /api/memory/probe` sizes what the machine carries.
+PRU answer one address range out of the board's DDR, with `startaddr`/`size`
+naming the range and `endaddr` following from the two. It ships disabled, and
+enabling it probes the range first and refuses when anything already answers
+there — a range claimed over a card would put two slaves on one cycle. On a
+backplane with no memory of its own, probing the empty space is slow enough to
+look like a hang, which is what `probe=false` is for.
 
 The PRU holds two such ranges. `MEM` takes one and a device that needs a window
 in bus address space (the VCB01 framebuffer) takes the other, so a machine can
