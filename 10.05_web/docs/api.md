@@ -593,8 +593,15 @@ likewise not part of a snapshot; it belongs to the board's logging settings (see
 
 At **power-on** the configuration is chosen by the board's four DIP switches
 (read as a value 0..15): the one whose `dip_value` matches the switches is
-applied. When no configuration claims that value the bundled empty configuration
-is applied, leaving the machine passive on the bus. The selection runs at
+applied. **Setting 0 is not a slot** — it is what the switches read when nobody
+has chosen a machine — and brings back *the machine that was last running*,
+unsaved changes and all, from a mirror the board keeps of the live setup. The
+mirror records the configuration it was derived from, so the current pointer is
+restored with it: the modified flag reads as it did, and a save updates that
+configuration rather than inventing a new one. A configuration therefore binds
+to 1..15. When no configuration claims the setting, and when setting 0 finds no
+mirror, the bundled empty configuration is applied, leaving the machine passive
+on the bus. The selection runs at
 service startup and nowhere else: a power cycle or `dc_on` (see
 [`POST /api/control`](#post-apicontrol)) keeps whatever configuration is loaded,
 so switching machines means changing the switches and restarting the service. A
@@ -612,7 +619,7 @@ given value.
 
 Each entry's `title` is the operator label; it falls back to the `name` when the
 configuration stores none. `dip_value` is the DIP setting that selects the
-configuration at power-on, or `-1` when it binds to none.
+configuration at power-on (1..15), or `-1` when it binds to none.
 
 `modified` is the live dirty state of the current configuration. It is omitted
 (the list still returns `200`) when the busy machine blocks the comparison.
@@ -744,11 +751,12 @@ configuration.
 {"value": 3}
 ```
 
-Binds `<name>` to a DIP-switch value (`0`..`15`), so the board loads it at
+Binds `<name>` to a DIP-switch value (`1`..`15`), so the board loads it at
 power-on when the switches read that value. `null` clears the binding. It is
 file metadata: the current pointer and the running machine are untouched. At
 most one configuration may claim a value — one another configuration already
-holds is refused with `409`; a value outside `0`..`15` with `422`. Answers
+holds is refused with `409`; a value outside `1`..`15` with `422`. Setting 0
+brings back the machine that was last running and cannot be claimed. Answers
 `{"ok": true, "dip_value": <value or -1>}`; `404` for an unknown configuration.
 
 ### `PUT /api/configs/<name>/layout`

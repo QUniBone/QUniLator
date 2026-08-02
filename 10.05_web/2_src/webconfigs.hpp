@@ -28,6 +28,11 @@ void webconfigs_init(const std::string &dir);
 // that value. Sets the current pointer. Call after the web server is registered.
 void webconfigs_startup(const std::string &override_config);
 
+// Mirror the live machine to disk, so a board can come back up as it stands
+// rather than as the last thing anyone saved. Cheap and idempotent: it writes
+// only when the machine has changed, and skips a busy registry.
+void webconfigs_mirror_current(void);
+
 // Re-select and apply the DIP-matched configuration, as a power-on does. The
 // the configuration the running machine currently represents
 std::string webconfigs_current(void);

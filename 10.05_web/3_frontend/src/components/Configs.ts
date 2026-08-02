@@ -428,7 +428,9 @@ function DipField({ name, dip }: { name: string; dip: number }) {
     <span class="muted">Power-on DIP</span>
     <select onChange=${onPick}>
       <option value="-1" selected=${dip < 0}>none</option>
-      ${Array.from({ length: 16 }, (_, v) => {
+      ${/* 0 is not a slot: it selects whatever was saved last */ ''}
+      ${Array.from({ length: 15 }, (_, i) => {
+        const v = i + 1;
         const h = holderOf(v);
         return html`<option value=${v} selected=${dip === v} disabled=${!!h}>${
           v + (h ? ' — ' + (h.title || h.name) : '')
@@ -436,7 +438,11 @@ function DipField({ name, dip }: { name: string; dip: number }) {
       })}
     </select>
     <span class="cfg-dip-live muted">switches read ${liveDip}${
-      liveDip === dip && dip >= 0 ? ' — this one' : ''
+      liveDip === 0
+        ? ' — the machine as it last stood'
+        : liveDip === dip && dip > 0
+          ? ' — this one'
+          : ''
     }</span>
   </label>`;
 }

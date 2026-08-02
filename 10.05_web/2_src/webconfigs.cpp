@@ -22,11 +22,14 @@
    write time.
 
    The board's 4 DIP switches choose the configuration once, when the backend
-   starts: the one whose stored *dip_value* (0..15) matches the switches is
-   applied. When no configuration claims that value the bundled empty
-   configuration is applied, leaving the machine passive on the bus. A power
-   cycle keeps the configuration that is loaded, so switching machines means
-   changing the switches and restarting the backend.
+   starts: the one whose stored *dip_value* (1..15) matches the switches is
+   applied. Setting 0 is not a slot - it is what the switches read when nobody
+   has chosen a machine - and brings back the machine that was last running,
+   unsaved changes and all, from the mirror the board keeps of the live setup.
+   When no configuration claims the setting, and when setting 0 finds no mirror,
+   the bundled empty configuration is applied, leaving the machine passive on
+   the bus. A power cycle keeps the configuration that is loaded, so
+   switching machines means changing the switches and restarting the backend.
 
      GET    /api/configs               {current, modified, configs[]}
      GET    /api/configs?current=1     the live setup in snapshot form, for
@@ -117,6 +120,17 @@ static bool valid_config_name(const std::string &name) {
 		if (!isalnum(c) && c != '-' && c != '_' && c != '.' && c != ' ')
 			return false;
 	return name[0] != '.';
+}
+
+// The configuration a directory entry names, or "" when it names none. The
+// board keeps state of its own beside the configurations - the mirror of the
+// live machine among it - and a name an operator could not have chosen is how
+// those stay out of the list.
+static std::string config_name_of_file(const std::string &fname) {
+	if (fname.size() < 6 || fname.compare(fname.size() - 5, 5, ".json") != 0)
+		return "";
+	std::string name = fname.substr(0, fname.size() - 5);
+	return valid_config_name(name) ? name : "";
 }
 
 static std::string config_path(const std::string &name) {
@@ -455,10 +469,17 @@ static int config_dip_value(const picojson::value &content) {
 	return -1;
 }
 
-// The saved configuration whose dip_value matches this DIP setting, or empty
-// when none claims it. A negative dip (no switch hardware) matches nothing.
+// The saved configuration this DIP setting selects, or empty when none claims
+// it. A negative dip (no switch hardware) matches nothing.
+//
+// Setting 0 is not a slot. It is what the switches read when nobody has chosen
+// a machine - a board straight out of the box, or one whose switches were never
+// touched - so rather than naming nothing it names the configuration saved most
+// recently: a board left alone comes back up as the machine last worked on. A
+// configuration is therefore bound to a switch setting of 1 or above, and one
+// carrying 0 claims no setting at all.
 static std::string config_for_dip(int dip) {
-	if (dip < 0)
+	if (dip <= 0)
 		return "";
 	DIR *dir = opendir(configs_dir.c_str());
 	if (dir == nullptr)
@@ -466,10 +487,9 @@ static std::string config_for_dip(int dip) {
 	std::string match;
 	struct dirent *entry;
 	while ((entry = readdir(dir)) != nullptr) {
-		std::string fname = entry->d_name;
-		if (fname.size() < 6 || fname.compare(fname.size() - 5, 5, ".json") != 0)
+		std::string name = config_name_of_file(entry->d_name);
+		if (name.empty())
 			continue;
-		std::string name = fname.substr(0, fname.size() - 5);
 		picojson::value content;
 		std::string err;
 		if (read_config(name, &content, &err) && config_dip_value(content) == dip) {
@@ -637,6 +657,59 @@ static bool write_config_file(const std::string &name, const std::string &body,
 	return true;
 }
 
+// ---- the machine as it stands ------------------------------------------
+//
+// A configuration is a machine an operator named and saved. What the board is
+// actually running is usually that machine plus whatever has been changed
+// since, and losing those changes to a restart - or to a power-down that
+// rebuilds the emulation - would make every edit provisional until someone
+// remembered to save.
+//
+// So the live machine is mirrored to a file of its own, beside the
+// configurations but not one of them, and carries the name it was derived
+// from. Coming back up from the mirror restores the machine as it stood
+// *including* what was never saved, and keeps it pointed at that name, so the
+// modified flag still reads true and a save updates the configuration the
+// operator has been editing rather than inventing a new one.
+static const char *current_mirror_name = ".current";
+
+// serialized form last written, so an unchanged machine is not rewritten
+static std::mutex mirror_mutex;
+static std::string last_mirrored;
+
+// Write the live machine to the mirror, if it has changed and the registry is
+// free. A busy machine is skipped rather than waited for: the mirror is a
+// record of a state that is still there to be recorded on the next pass.
+static void mirror_current_machine(void) {
+	if (configs_dir.empty())
+		return;
+	picojson::value snapshot;
+	if (!snapshot_devices_now(&snapshot, 20)
+			|| !snapshot.is<picojson::object>())
+		return;
+	// the snapshot is already the document a configuration is stored as; the
+	// mirror is that plus the name it came from
+	picojson::object doc = snapshot.get<picojson::object>();
+	{
+		std::lock_guard<std::mutex> lock(current_mutex);
+		doc["derived_from"] = picojson::value(current_config_name);
+	}
+	std::string body = picojson::value(doc).serialize();
+	{
+		std::lock_guard<std::mutex> lock(mirror_mutex);
+		if (body == last_mirrored)
+			return;
+		last_mirrored = body;
+	}
+	std::string err;
+	if (!write_config_file(current_mirror_name, body, &err))
+		WEB_WARNING("The machine could not be mirrored: %s", err.c_str());
+}
+
+void webconfigs_mirror_current(void) {
+	mirror_current_machine();
+}
+
 // The backplane slots a device occupies, as offsets from its "slot" parameter.
 // A device whose receive and transmit interrupts arbitrate separately sits in
 // two adjacent slots, so the second one is taken as much as the first. The
@@ -790,7 +863,7 @@ std::vector<config_image_use_t> webconfigs_image_uses(const std::string &image_n
 		if (!read_config(name, &content, &err)
 				|| !content.get("devices").is<picojson::array>())
 			continue;
-		for (picojson::value &d : content.get("devices").get<picojson::array>()) {
+		for (const picojson::value &d : content.get("devices").get<picojson::array>()) {
 			std::string path = device_image(d);
 			// image_name is the canonical images-root-relative subpath; compare
 			// on that so two same-named files in different folders don't collide
@@ -822,10 +895,9 @@ static picojson::value configs_list_value(void) {
 	if (dir != nullptr) {
 		struct dirent *entry;
 		while ((entry = readdir(dir)) != nullptr) {
-			std::string fname = entry->d_name;
-			if (fname.size() < 6 || fname.compare(fname.size() - 5, 5, ".json") != 0)
+			std::string name = config_name_of_file(entry->d_name);
+			if (name.empty())
 				continue;
-			std::string name = fname.substr(0, fname.size() - 5);
 			struct stat st;
 			if (stat(config_path(name).c_str(), &st) != 0)
 				continue;
@@ -841,7 +913,7 @@ static picojson::value configs_list_value(void) {
 			picojson::array enabled;
 			bool read = read_config(name, &content, &err);
 			if (read && content.get("devices").is<picojson::array>())
-				for (picojson::value &d : content.get("devices").get<picojson::array>())
+				for (const picojson::value &d : content.get("devices").get<picojson::array>())
 					if (d.get("enabled").is<bool>() && d.get("enabled").get<bool>())
 						enabled.push_back(d.get("name"));
 			// the operator title, falling back to the name
@@ -1109,13 +1181,16 @@ static void config_set_title(struct mg_connection *conn, const std::string &name
 	send_json(conn, 200, picojson::value(res));
 }
 
-// PUT /api/configs/<name>/dip  {"value": <0..15> | null}
+// PUT /api/configs/<name>/dip  {"value": <1..15> | null}
 //
 // Binds the configuration to a DIP-switch setting, so the board loads it at
 // power-on when the switches read that value. It is file metadata, disturbing
 // neither the current pointer nor the running machine. At most one
 // configuration may claim a value: one another configuration already holds is
 // refused with 409. A null value clears the binding.
+//
+// Setting 0 is not a slot to be claimed - it selects the configuration saved
+// most recently - so the settings a configuration may bind to start at 1.
 static void config_set_dip(struct mg_connection *conn, const std::string &name) {
 	picojson::value req;
 	if (!read_json_body(conn, &req)) {
@@ -1126,12 +1201,15 @@ static void config_set_dip(struct mg_connection *conn, const std::string &name) 
 	const picojson::value &v = req.get("value");
 	if (v.is<double>()) {
 		dip = (int) v.get<double>();
-		if (dip < 0 || dip > 15) {
-			send_error(conn, 422, "dip value must be 0..15 or null");
+		if (dip < 1 || dip > 15) {
+			send_error(conn, 422, dip == 0
+					? "switch setting 0 selects the configuration saved most "
+						"recently; it cannot be bound to one"
+					: "dip value must be 1..15 or null");
 			return;
 		}
 	} else if (!v.is<picojson::null>()) {
-		send_error(conn, 400, "value must be a number 0..15 or null");
+		send_error(conn, 400, "value must be a number 1..15 or null");
 		return;
 	}
 	// no two configurations may claim the same DIP value
@@ -1218,6 +1296,10 @@ static void config_set_layout(struct mg_connection *conn, const std::string &nam
 // POST /api/configs/<name>/apply and the --config option of the service.
 // Returns false when the configuration cannot be read; parameters the devices
 // reject are collected in "errors" and do not fail the call.
+static bool apply_document(const picojson::value &content, const std::string &name,
+		picojson::array *errors, std::string *error, int *status);
+
+// Apply a saved configuration, by name.
 static bool apply_config(const std::string &name, picojson::array *errors,
 		std::string *error, int *status) {
 	picojson::value content;
@@ -1226,6 +1308,11 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 			*status = 404;
 		return false;
 	}
+	return apply_document(content, name, errors, error, status);
+}
+
+static bool apply_document(const picojson::value &content, const std::string &name,
+		picojson::array *errors, std::string *error, int *status) {
 	if (!content.get("devices").is<picojson::array>()) {
 		*error = "configuration \"" + name + "\" has no devices";
 		if (status != nullptr)
@@ -1268,7 +1355,7 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 		// switched off and back at its defaults. Work backwards through the
 		// registry so drives go before the controllers they hang off.
 		std::set<std::string> mentioned;
-		for (picojson::value &d : content.get("devices").get<picojson::array>())
+		for (const picojson::value &d : content.get("devices").get<picojson::array>())
 			if (d.get("name").is<std::string>())
 				mentioned.insert(d.get("name").get<std::string>());
 		{
@@ -1294,7 +1381,7 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 			}
 		}
 
-		for (picojson::value &d : content.get("devices").get<picojson::array>()) {
+		for (const picojson::value &d : content.get("devices").get<picojson::array>()) {
 			if (!d.get("name").is<std::string>())
 				continue;
 			std::string devname = d.get("name").get<std::string>();
@@ -1544,6 +1631,52 @@ static std::string apply_named_or_fallback(const std::string &selected,
 	return name;
 }
 
+// Bring the machine back up as it last stood, from the mirror. The
+// configuration it was derived from becomes the current one again, so the
+// modified flag reads as it did and a save updates that configuration; a
+// mirror naming one that has since been deleted comes up as an unnamed
+// machine rather than pointing at nothing. False when there is no mirror to
+// come up from, which is a board that has not run since this was introduced.
+static bool apply_current_mirror(void) {
+	picojson::value content;
+	std::string err;
+	if (!read_config(current_mirror_name, &content, &err)
+			|| !content.get("devices").is<picojson::array>())
+		return false;
+
+	std::string derived_from;
+	if (content.get("derived_from").is<std::string>())
+		derived_from = content.get("derived_from").get<std::string>();
+	if (!derived_from.empty()) {
+		picojson::value named;
+		std::string named_err;
+		if (!read_config(derived_from, &named, &named_err)) {
+			WEB_WARNING("The machine was derived from configuration \"%s\", "
+					"which is gone; coming up unnamed.", derived_from.c_str());
+			derived_from.clear();
+		}
+	}
+
+	picojson::array errors;
+	std::string apply_error;
+	if (!apply_document(content, "the machine as it last stood", &errors,
+			&apply_error, nullptr)) {
+		WEB_ERROR("The machine as it last stood was not restored: %s",
+				apply_error.c_str());
+		return false;
+	}
+	for (const picojson::value &e : errors)
+		WEB_WARNING("Restoring the machine: %s",
+				e.is<std::string>() ? e.get<std::string>().c_str() : "device refused");
+	set_current(derived_from);
+	if (derived_from.empty())
+		WEB_INFO("Came up as the machine last running, which no configuration names.");
+	else
+		WEB_INFO("Came up as the machine last running, an edit of configuration \"%s\".",
+				derived_from.c_str());
+	return true;
+}
+
 void webconfigs_startup(const std::string &override_config) {
 	// --config is an explicit override for bring-up and testing; otherwise the
 	// machine comes up as the configuration the DIP switches select.
@@ -1552,6 +1685,11 @@ void webconfigs_startup(const std::string &override_config) {
 		return;
 	}
 	int dip = webevents_dip_value();
+	// Switch setting 0 is not a slot: it is what the switches read when nobody
+	// has chosen a machine, and it brings back the one that was running,
+	// unsaved changes and all.
+	if (dip == 0 && apply_current_mirror())
+		return;
 	apply_named_or_fallback(config_for_dip(dip), dip);
 }
 

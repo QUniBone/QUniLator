@@ -149,6 +149,11 @@ static void publish_config(bool force) {
 	webconfigs_status(&current, &modified, &busy);
 	if (busy)
 		config_dirty = true;
+	else
+		// Something moved the machine, which is exactly when the mirror of it
+		// is worth rewriting. It writes only on a real change, so the common
+		// case of this poll finding nothing new costs a comparison.
+		webconfigs_mirror_current();
 	std::string msg;
 	{
 		std::lock_guard<std::mutex> lock(config_mutex);
