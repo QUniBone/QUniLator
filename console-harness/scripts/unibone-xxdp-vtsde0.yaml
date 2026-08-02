@@ -1,0 +1,62 @@
+# CVTSD against the emulated TS11, on the emulated PDP-11/34 of unibone.
+#
+#   node dist/src/cli.js run scripts/unibone-xxdp-vtsde0.yaml
+#
+# The companion to scripts/qbone-xxdp-vtsde0.yaml, and the reason it exists:
+# with an emulated processor the adapter answers a device DMA out of the CPU's
+# own memory (`registered_cpu->on_dma()`) and returns before the PRU is
+# involved at all. So this run exercises the TS11 model and nothing else,
+# where the qbone run exercises the model, the adapter, the PRU and a real
+# backplane together. Whichever of the two fails locates the fault.
+# channel 0, not auto: the channel is resolved before the configuration is
+# applied, so a board carrying something else at the time has no DL11 to find.
+console: "0"
+host: unibone
+title: XXDP CVTSD against the emulated TS11
+timeout: 60s
+machine:
+  config: pdp1134-ts
+  start: restart
+deviations:
+  - event: halt
+    fail: the CPU halted during the run
+steps:
+  - name: boot
+    expect:
+      - match: "ENTER DATE"
+        send: ""
+      - match: /RESTART ADDR|\n\./
+        goto: load
+    timeout: 120s
+  - name: prompt
+    expect: /\n\./
+  - name: load
+    wait: 2s
+    send: R VTSDE0
+  - name: supervisor
+    expect: "DR>"
+    send: START
+    timeout: 90s
+  - name: change-hw
+    # N here gives "NO UNIT": the default hardware table is empty
+    expect: /CHANGE HW.*\?/i
+    send: Y
+  - name: dialog
+    expect:
+      - match: /UNITS.*\?/i
+        send: "1"
+        goto: dialog
+      - match: /CHANGE SW.*\?/i
+        send: "N"
+        goto: dialog
+      - match: /\(L\)\s*\?/
+        send: "N"
+        goto: dialog
+      - match: /\?[\x00-\x20]*$/
+        send: ""
+        goto: dialog
+      - match: /END PASS|\b0 CUMULATIVE ERRORS/i
+        done: true
+      - match: /DVC FTL|FTL ERR|HRD ERR|FATAL|[1-9]\d* CUMULATIVE ERRORS/i
+        fail: the diagnostic reported errors
+    timeout: 300s
