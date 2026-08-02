@@ -697,6 +697,12 @@ function Detail({ name }: { name: string }) {
       <span class="spacer"></span>
       <button class="btn small primary" onClick=${doAdd}>+ Add device</button>
     </div>
+    ${
+      isCurrent && s.hw.powered === false
+        ? html`<div class="cfg-held">The machine is switched off. What you change here is
+            held, and configures it when the power comes on.</div>`
+        : null
+    }
     <div class="cfg-editor">
       ${
         visible.length

@@ -287,8 +287,14 @@ Actions:
 | `powercycle` | simulated DCOK/POK power-fail cycle, and every card rebuilt with it |
 | `restart` | reboot from the power-up vector: release the HALT line, then power cycle so the CPU restarts execution |
 | `halt` / `continue` | QBUS HALT line |
-| `dc_on` | logical power on: set `powered`, release HALT, bring the cards back up, then power cycle the machine up running |
+| `dc_on` | logical power on: set `powered`, release HALT, configure the machine from what it carries, then power cycle it up running |
 | `dc_off` | logical power off: halt the CPU, take the cards out of the machine and clear `powered` |
+
+A card the machine will not take — a bus address another card answers, an image
+file that will not open — stops the power-up: the bus edges are not driven, the
+machine is left dark with `powered` false, and the answer is `409` naming the
+card and the reason it gave. The configuration stands as it was, so the operator
+changes the card and switches on again.
 
 The HALT line is released before any power-up and asserted after it, so a
 machine brought up by `dc_on` or `restart` comes up **running** from the
@@ -332,8 +338,33 @@ Two consequences an operator sees:
   configuration it is loaded with (`modified` stays as it was). A drive's
   computed `status` reads `off`, because that is the drive's live state.
 
-A configuration applied to a switched-off machine leaves it switched off: the
-devices it names are what the next `dc_on` brings up.
+#### Editing a machine that is switched off
+
+What a dark machine carries is the machine: the card set and the medium in each
+drive are held on the board, and `dc_on` configures the emulation from them.
+That record is what the whole configuration surface reads and writes while
+`powered` is false, so a dark machine is edited through the endpoints a running
+one is edited through:
+
+- `PUT /api/devices/<dev>/params/enabled` puts a card in the machine or takes it
+  out. Taking a controller out takes the drives that hang off it with it.
+- `PUT /api/devices/<dev>/params/image` puts a medium in a drive or takes it
+  out, and a drive given a medium goes into the machine with it. The controller
+  it hangs off must be in the machine already, answered `409` otherwise.
+- Every other parameter is set on the device where it stands. A card out of the
+  machine is on no bus, so the value is inert until the card goes in.
+- [`POST /api/configs/<name>/apply`](#post-apiconfigsnameapply) loads the
+  configuration into what the machine carries, leaving it dark. The devices it
+  names are what the next `dc_on` brings up.
+
+None of it reaches the emulation: no device is installed, no bus address is
+claimed and no image file is opened until the machine comes up. So the checks a
+running machine makes as it takes an edit — a colliding bus address, a card that
+will not install — are made at power-up instead, where a card the machine
+refuses refuses the power-up.
+
+Edits made dark move `modified` the way edits to a running machine do, and a
+save writes the machine as it stands. Power-down itself changes neither.
 
 `dc_on`/`dc_off` drive a **runtime logical power flag**, `powered`, reported in
 the `state` event. It is runtime only — a service restart comes up powered on —
@@ -659,6 +690,10 @@ dropping any device enabled since the last save.
 ```json
 {"ok": true, "errors": []}
 ```
+
+Applied to a machine whose power is off, the snapshot becomes what that machine
+carries and the emulation is left dark (see
+[editing a machine that is switched off](#editing-a-machine-that-is-switched-off)).
 
 ### `POST /api/configs/<name>/rename`
 

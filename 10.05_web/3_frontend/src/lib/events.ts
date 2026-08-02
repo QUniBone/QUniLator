@@ -1,6 +1,6 @@
 // /ws/events: committed parameter changes, log lines and hardware state.
 import { store, setStore, emit, emitSoon } from '../store';
-import { refreshSettings } from '../api';
+import { refreshDevices, refreshSettings } from '../api';
 import { patchParam, patchStatus } from './devmodel';
 import { clearConsole, updateConsoleSource } from './terminals';
 import { wsURL } from './util';
@@ -103,6 +103,10 @@ export function initEvents(): void {
       if ('powered' in ev) {
         // switched on: the machine has printed nothing yet
         if (ev.powered && hw.powered === false) clearConsole();
+        // The board carries its machine across the power switch, and a card out
+        // of the emulation is still in it. Which cards those are, and what is in
+        // their drives, comes from the device set as the board reports it.
+        if (ev.powered !== hw.powered) refreshDevices().catch(() => {});
         hw.powered = ev.powered;
       }
       if (ev.leds) ev.leds.forEach((v: boolean, i: number) => (hw.leds[i] = v));

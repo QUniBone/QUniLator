@@ -1247,6 +1247,14 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 	{
 		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
 
+		// A configuration loaded into a machine with its power off becomes the
+		// machine it carries dark: the cards it names and the media they hold
+		// are what the panel switch brings up, and the emulation is left as it
+		// stands until then. The parameters beneath travel with the card and are
+		// set where they stand — a device out of the machine is on no bus, so a
+		// value set on it is inert until the card goes in.
+		bool dark = webpower_devices_are_off();
+
 		// Skip modeled mechanics for the span of the apply, so a timed device
 		// (a disk drive's spin-up/-down) settles at once and does not stretch the
 		// reconfiguration over physical delays. Restored at the end.
@@ -1278,7 +1286,9 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 					}
 				if (named)
 					continue;
-				if (dev->enabled.value)
+				if (dark)
+					webpower_set_in_machine(dev, false, nullptr);
+				else if (dev->enabled.value)
 					dev->enabled.set(false);
 				reset_to_defaults(dev, nullptr, errors);
 			}
@@ -1348,6 +1358,8 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 					if (mem != nullptr
 							&& (kv.first == "startaddr" || kv.first == "size"))
 						continue; // placed below, as one range
+					if (dark && kv.first == "image")
+						continue; // put in the drive of the dark machine below
 					parameter_c *param = dev->param_by_name(kv.first);
 					if (param == nullptr || param->readonly)
 						continue;
@@ -1369,8 +1381,25 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 						? d.get("params").get<picojson::object>() : picojson::object(),
 						errors);
 
-			if (d.get("enabled").is<bool>())
-				dev->enabled.set(d.get("enabled").get<bool>());
+			// The pack the configuration names goes in the drive of the dark
+			// machine, and a drive it gives no medium comes up empty. Whether
+			// the drive is in the machine at all is the enabled flag below.
+			if (dark && dev->param_by_name("image") != nullptr) {
+				std::string image;
+				if (d.get("params").is<picojson::object>())
+					config_param_text(d.get("params").get<picojson::object>(),
+							"image", &image);
+				std::string why;
+				if (!webpower_set_image(dev, image, &why))
+					errors->push_back(picojson::value(devname + ": " + why));
+			}
+
+			if (d.get("enabled").is<bool>()) {
+				if (dark)
+					webpower_set_in_machine(dev, d.get("enabled").get<bool>(), nullptr);
+				else
+					dev->enabled.set(d.get("enabled").get<bool>());
+			}
 		}
 
 		// The machine has settled; restore the normal timed simulation.
@@ -1380,9 +1409,6 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 				dev->config_apply_immediate = false;
 		}
 
-		// A configuration loaded into a switched-off machine leaves it switched
-		// off: the devices it names are what the panel switch will bring up.
-		webpower_recapture_if_off();
 	}
 	// An apply resets every device's verbosity to its construction default, so
 	// re-assert the persisted log levels: the stored overrides win, the rest

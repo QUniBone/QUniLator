@@ -41,8 +41,25 @@ public:
 			false, "", "%d", "backplane slot #", 16, 10);
 	uint8_t default_priority_slot = 0;
 
+	// where the card answers in the I/O page, which is what says whether two
+	// cards of one machine would answer the same address
+	parameter_unsigned_c base_addr = parameter_unsigned_c(this, "base_addr",
+			"addr", true, "", "%06o", "base address", 22, 8);
+	unsigned register_count = 0;
+
 	std::vector<dma_request_c *> dma_requests;
 	std::vector<intr_request_c *> intr_requests;
+
+	struct iopage_range_t {
+		uint32_t addr_first;
+		uint32_t addr_beyond;
+	};
+	iopage_range_t iopage_range(void) const {
+		iopage_range_t r;
+		r.addr_first = base_addr.value;
+		r.addr_beyond = base_addr.value + 2 * register_count;
+		return r;
+	}
 };
 
 #endif // _QUNIBUSDEVICE_HPP_

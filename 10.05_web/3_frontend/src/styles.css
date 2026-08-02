@@ -890,6 +890,12 @@ button.tree-name:hover .mono { color: var(--accent); }
 .cfg-dip select { font-size: var(--fs-1); }
 .cfg-dip-live { font-size: var(--fs-0); }
 
+/* the machine is dark: what the editor changes is held for the power-up */
+.cfg-held {
+  padding: 8px 14px; border-top: 1px solid var(--line-soft);
+  font-size: var(--fs-1); color: var(--warn); background: var(--warn-soft);
+}
+
 .cfg-editor { border-top: 1px solid var(--line-soft); }
 .cfg-editor .dev-sub { border-top: 1px solid var(--line-soft); }
 .cfg-editor > .cfg-dev:first-child > .dev-sub { border-top: 0; }

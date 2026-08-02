@@ -1,4 +1,4 @@
-/* webpower.hpp: the device half of a power cycle
+/* webpower.hpp: the machine the board carries while its power is off
 
    Copyright (c) 2026, Hans Huebner
    hans@huebner.org
@@ -16,16 +16,22 @@
    device unregistered from the bus and re-installed, and install()'s own DCLO
    cycle over the fresh state.
 
-   A drive's pack stays in the drive: the medium it holds is remembered while
-   the drive is out of the machine and put back as it comes up, so the image
-   file is closed and read afresh rather than lost.
+   What the machine *is* survives that, and is held here: the cards it carries
+   and the medium in each drive. A drive's pack stays in the drive — the image
+   file is closed and read afresh rather than lost — so a dark machine still
+   describes the configuration it holds.
+
+   While the power is off that record is the machine. An operator edits it
+   through the same endpoints a running machine is edited through, nothing they
+   change reaches the emulation, and power-up configures the machine from it. A
+   card the machine will not take refuses the power-up and leaves it dark.
 
    The two halves are separate so the panel's AUX OFF/ON reads as it should:
    dc_off runs webpower_devices_off() and leaves the machine dark, dc_on runs
    webpower_devices_on() and brings it up from cold. A power cycle is the two
    in sequence.
 
-   Both calls expect the caller to hold device_configuration_c::operations_mutex,
+   Every call expects the caller to hold device_configuration_c::operations_mutex,
    the same serialization every other device operation runs under.
 */
 #ifndef _WEBPOWER_HPP_
@@ -36,24 +42,20 @@
 class device_c;
 class parameter_c;
 
-// Take every enabled device out of the machine, remembering what to bring back
-// and what medium each drive held. Switching an already-dark machine off again
-// changes nothing.
+// Take every enabled device out of the machine, holding its card set and media
+// as the machine the board carries dark. Switching an already-dark machine off
+// again changes nothing.
 void webpower_devices_off(void);
 
-// Put back what webpower_devices_off() took out: each device's medium first,
-// then the device itself, in registry order so a controller is in the machine
-// before the drives that hang off it. A device the machine refuses is logged
-// with the reason it gave and left out.
-void webpower_devices_on(void);
+// Configure the machine from what it carries: each device's medium first, then
+// the device itself, in registry order so a controller is in the machine before
+// the drives that hang off it. A device the machine refuses puts back out what
+// had come up, leaves the machine dark with what it carries untouched, and
+// answers false with the reason the device gave in *error.
+bool webpower_devices_on(std::string *error);
 
-// True while the devices are out of the machine.
+// True while the machine is dark.
 bool webpower_devices_are_off(void);
-
-// A configuration applied to a switched-off machine leaves it switched off. The
-// devices the new configuration names are what power-up will bring in, so they
-// are taken back out and remembered in place of what the last one held.
-void webpower_recapture_if_off(void);
 
 // What the machine carries, whatever its power state. Losing power does not
 // unplug a card or eject a pack, so everything that describes the machine — the
@@ -63,5 +65,20 @@ void webpower_recapture_if_off(void);
 // status and the lamps are built from.
 bool webpower_is_in_machine(device_c *dev);
 std::string webpower_param_value(device_c *dev, parameter_c *p);
+
+// Put a card into the dark machine or take it out; taking a controller out
+// takes the drives that hang off it too. Answers false with the reason in
+// *error, the machine's power being on among them.
+bool webpower_set_in_machine(device_c *dev, bool on, std::string *error);
+
+// Put a medium in a drive of the dark machine, or take it out with an empty
+// path. A drive given a medium is put in the machine, which needs its
+// controller in the machine already.
+bool webpower_set_image(device_c *dev, const std::string &path, std::string *error);
+
+// The drive of the dark machine holding this image file, disregarding the drive
+// named in "except"; "" when none does. Two drives holding one file would open
+// the image twice and both write it.
+std::string webpower_image_held_by(const std::string &path, const std::string &except);
 
 #endif // _WEBPOWER_HPP_

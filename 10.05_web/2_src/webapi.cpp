@@ -117,7 +117,9 @@ static picojson::value param_to_json(device_c *dev, parameter_c *p) {
 		o["value"] = picojson::value(webpower_param_value(dev, ps));
 	} else if (parameter_bool_c *pb = dynamic_cast<parameter_bool_c *>(p)) {
 		o["type"] = picojson::value("bool");
-		o["value"] = picojson::value(pb->value);
+		// a card the power-down took out is still in the machine
+		o["value"] = picojson::value(dev != nullptr && p == &dev->enabled
+				? webpower_is_in_machine(dev) : pb->value);
 	} else if (parameter_unsigned_c *pu = dynamic_cast<parameter_unsigned_c *>(p)) {
 		o["type"] = picojson::value("unsigned");
 		o["value"] = picojson::value((double) pu->value);
@@ -304,9 +306,11 @@ static bool is_bus_placement_param(const std::string &n) {
 	return n == "base_addr" || n == "intr_vector" || n == "intr_level" || n == "slot";
 }
 
-// The enabled device whose register window overlaps [addr, addr + 2*count), or
-// "" when the range is free. register_device() aborts the emulator on an I/O
-// page collision, so a re-address is checked against this first.
+// The device in the machine whose register window overlaps [addr, addr +
+// 2*count), or "" when the range is free. register_device() aborts the emulator
+// on an I/O page collision, so a re-address is checked against this first — the
+// cards of a machine with its power off among them, since those are the cards
+// the power-up will install.
 // Caller holds device_c::mydevices_mutex.
 static std::string address_range_owner(qunibusdevice_c *self, uint32_t addr,
 		unsigned count) {
@@ -315,13 +319,34 @@ static std::string address_range_owner(qunibusdevice_c *self, uint32_t addr,
 		if (d == self || device_is_infrastructure(d))
 			continue;
 		qunibusdevice_c *qd = dynamic_cast<qunibusdevice_c *>(d);
-		if (qd == nullptr || !qd->enabled.value)
+		if (qd == nullptr || !webpower_is_in_machine(qd))
 			continue;
 		uint32_t o = qd->base_addr.value, oend = o + 2 * qd->register_count;
 		if (addr < oend && o < end)
 			return qd->name.value;
 	}
 	return "";
+}
+
+// Publish what a device now carries: whether it is in the machine and the
+// medium it holds. A controller takes its drives with it, so they are published
+// with it. Caller holds operations_mutex.
+static void notify_carried(device_c *dev) {
+	std::vector<device_c *> devs;
+	devs.push_back(dev);
+	{
+		std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
+		for (device_c *d : device_c::mydevices)
+			if (d->parent == dev)
+				devs.push_back(d);
+	}
+	for (device_c *d : devs) {
+		webevents_note_param(d->name.value, d->enabled.name,
+				picojson::value(webpower_is_in_machine(d)));
+		if (parameter_c *img = d->param_by_name("image"))
+			webevents_note_param(d->name.value, img->name,
+					picojson::value(webpower_param_value(d, img)));
+	}
 }
 
 // PUT /api/devices/<device>/params/<param> {"value": ...} — set a parameter
@@ -368,6 +393,54 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 		// same serialization as one command in the devices menu
 		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
 		try {
+			// A machine with its power off is edited as the machine it is:
+			// which cards it carries and what is in its drives are held for the
+			// power-up that configures it from them, and nothing an operator
+			// changes reaches the emulation until then. The parameters beneath
+			// travel with the card and are set where they stand — a device out
+			// of the machine is on no bus, so a value set on it is inert until
+			// the card goes in.
+			if (webpower_devices_are_off()
+					&& (param == &dev->enabled || param->name == "image")) {
+				std::string err;
+				bool ok;
+				if (param == &dev->enabled) {
+					bool on;
+					if (value == "1" || !strcasecmp(value.c_str(), "true"))
+						on = true;
+					else if (value == "0" || !strcasecmp(value.c_str(), "false"))
+						on = false;
+					else {
+						send_error(conn, 400, "\"enabled\" must be 1/0 or true/false");
+						return;
+					}
+					ok = webpower_set_in_machine(dev, on, &err);
+				} else {
+					// the web interface keeps images in one directory, so a bare
+					// name names the file it manages by that name
+					value = webstorage_image_path(value);
+					std::string other = webpower_image_held_by(value, dev->name.value);
+					if (other.empty())
+						other = webstorage_image_held_by(value, dev->name.value);
+					if (!other.empty()) {
+						send_error(conn, 409, "that image is mounted on " + other);
+						return;
+					}
+					ok = webpower_set_image(dev, value, &err);
+				}
+				if (!ok) {
+					send_error(conn, 409, err);
+					return;
+				}
+				WEB_INFO("%s.%s = %s, held until the machine is switched on",
+						dev->name.value.c_str(), param->name.c_str(), value.c_str());
+				// The device parameters publish themselves as they are set; an
+				// edit to a dark machine sets none, so it is published here —
+				// for the card, and for the drives a controller takes with it.
+				notify_carried(dev);
+				send_json(conn, 200, param_to_json(dev, param));
+				return;
+			}
 			if (param == &dev->enabled) {
 				// "enabled" is a readonly parameter; the menu switches it
 				// with the en/dis commands via set(), and so does the web
@@ -453,6 +526,21 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 					return;
 				}
 			} else {
+				// A card of a machine with its power off takes a new placement
+				// where it stands, being on no bus to be unplugged from. Two
+				// cards at one address would still meet at power-up, so the
+				// window is checked as it is on a running machine.
+				if (param->name == "base_addr" && webpower_is_in_machine(dev)) {
+					qunibusdevice_c *qd = dynamic_cast<qunibusdevice_c *>(dev);
+					uint32_t newaddr = (uint32_t) strtoul(value.c_str(), nullptr, 8);
+					std::string owner = qd == nullptr ? std::string()
+							: address_range_owner(qd, newaddr, qd->register_count);
+					if (!owner.empty()) {
+						send_error(conn, 409, "address " + value
+								+ " overlaps device \"" + owner + "\"");
+						return;
+					}
+				}
 				if (param->name == "image") {
 					// the web interface keeps images in one directory, so a
 					// bare name attaches the file it manages by that name
@@ -704,6 +792,12 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		return 409;
 	}
 
+	// A card the machine will not take stops the power-up where it stands: the
+	// bus edges are not driven, the machine is left dark and the answer names
+	// the card and the reason it gave.
+	bool powered_up = true;
+	std::string power_up_error;
+
 	// An emulated CPU has no HALT line to pull: its switches are the front
 	// panel, and the run controls belong on them. A board serving a physical
 	// PDP-11 keeps driving the bus signals below.
@@ -760,14 +854,24 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		// machine coming up finds the whole configuration present.
 		if (dec.devices_off)
 			webpower_devices_off();
-		if (dec.devices_on)
-			webpower_devices_on();
-		if (dec.do_init)
+		if (dec.devices_on && !webpower_devices_on(&power_up_error)) {
+			// A card the machine will not take leaves it standing dark: the CPU
+			// keeps the HALT line it was stopped with, the power flag reads off,
+			// and the configuration is there to be changed before the operator
+			// tries again.
+#if defined(QBUS)
+			qunibus->set_halt(1);
+#endif
+			webevents_note_halt(true);
+			webevents_note_powered(false);
+			powered_up = false;
+		}
+		if (powered_up && dec.do_init)
 			qunibus->init();
-		if (dec.do_powercycle)
+		if (powered_up && dec.do_powercycle)
 			qunibus->powercycle();
 #if defined(UNIBUS)
-		if (ecpu != nullptr && dec.set_powered == 1) {
+		if (powered_up && ecpu != nullptr && dec.set_powered == 1) {
 			// the START switch rebuilds the machine and runs it, which is what
 			// the power switch means on a processor that is emulated
 			ecpu->panel_halt_switch()->set(false);
@@ -776,7 +880,7 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 			WEB_INFO("control %s: emulated CPU started", action.c_str());
 		}
 #endif
-		if (dec.set_powered >= 0)
+		if (powered_up && dec.set_powered >= 0)
 			webevents_note_powered(dec.set_powered != 0);
 		control_note_timing(action);
 	}
@@ -785,6 +889,10 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	// medium, so the files it had open are the operator's again.
 	if (dec.devices_off || dec.devices_on)
 		webstorage_refresh_readonly(webevents_is_powered() && !webevents_is_halted());
+	if (!powered_up) {
+		send_error(conn, 409, power_up_error);
+		return 409;
+	}
 	picojson::object res;
 	res["ok"] = picojson::value(true);
 	send_json(conn, 200, picojson::value(res));
