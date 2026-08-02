@@ -150,9 +150,14 @@ KIMG=$(dpkg-query -W -f='${Package}\n' 'linux-image-*' 2>/dev/null | grep bone |
 # password logins (the base image's debian account) still work, for onboarding.
 passwd -d root
 install -d -m 755 /etc/ssh/sshd_config.d
+#
+# Banner none withdraws the pre-login text sshd sends: the base image's
+# /etc/issue.net names its own distribution, support address and onboarding
+# account, none of which describe this appliance. The file goes with it, below.
 cat > /etc/ssh/sshd_config.d/10-${NAME}.conf <<'EOF'
 PermitRootLogin no
 PermitEmptyPasswords no
+Banner none
 EOF
 chmod 644 /etc/ssh/sshd_config.d/10-${NAME}.conf
 
@@ -291,6 +296,12 @@ Debian GNU/Linux \r on \m
 
 ISSUE
 chmod 644 /etc/issue
+
+# The banner over a network login comes from the same base image and describes
+# that image: another distribution's name, its support address and an
+# onboarding account this appliance does not carry. Remove it, so a login sees
+# only what the board itself says.
+rm -f /etc/issue.net
 
 rm -rf /tmp/in
 CHROOT
