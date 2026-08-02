@@ -54,10 +54,12 @@ static void *webserver_init_thread(const struct mg_context *ctx, int thread_type
 	return nullptr;
 }
 
-/*** HTTP basic auth. Any user name is accepted, the password must match the
-     one webauth.cpp holds - set through the web interface, or given as
-     WEBUI_PASSWORD in the environment. A board with no password yet is open,
-     which is how the frontend reaches /api/auth to set one.
+/*** HTTP basic auth against the credentials webauth.cpp holds - set through
+     the web interface, or a password given as WEBUI_PASSWORD in the
+     environment. Any user name is accepted while none is configured, which is
+     what an installation made before the name existed keeps doing. A board
+     with no password yet is open, which is how the frontend reaches /api/auth
+     to set one.
      Browsers replay the credentials on the WebSocket handshakes, so /ws/
      is covered as well. ***/
 
@@ -116,11 +118,12 @@ static int begin_request_handler(struct mg_connection *conn) {
 		const char *auth = mg_get_header(conn, "Authorization");
 		bool ok = false;
 		if (auth != nullptr && strncmp(auth, "Basic ", 6) == 0) {
-			std::string credentials; // "user:password", any user accepted
+			std::string credentials; // "user:password"
 			if (base64_decode(auth + 6, &credentials)) {
 				size_t colon = credentials.find(':');
 				if (colon != std::string::npos
-						&& webauth_verify(credentials.substr(colon + 1)))
+						&& webauth_verify(credentials.substr(0, colon),
+								credentials.substr(colon + 1)))
 					ok = true;
 			}
 		}

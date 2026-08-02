@@ -24,6 +24,7 @@
 #include <map>
 #include <set>
 #include <vector>
+#include <chrono>
 #include <mutex>
 
 #include "civetweb.h"
@@ -35,9 +36,11 @@
 #include "storagecontroller.hpp"
 #include "timeout.hpp"     // timeout_c, used by rl0102.hpp
 #include "rl0102.hpp"
+#include "memory.hpp"
 #include "parameter.hpp"
 #include "qunibus.h"
 #include "ddrmem.h"
+#include "iopageregister.h"
 #include "qunibusadapter.hpp"
 #include "panel.hpp"
 #include "mscp_server.hpp"
@@ -45,12 +48,14 @@
 #include "device_label.hpp"
 #include "device_status.hpp"
 #include "webcontrol.hpp"
+#include "webpower.hpp"
 
 #include "weblog.hpp"
 #include "webevents.hpp"
 #include "webconsole.hpp"
 #include "webserial.hpp"
 #include "webconsole_ext.hpp"
+#include "webrecordings.hpp"
 #include "webvcb01.hpp"
 #include "webstorage.hpp"
 #include "webconfigs.hpp"
@@ -58,6 +63,7 @@
 #include "weblogging.hpp"
 #include "webversion.hpp"
 #include "webupdate.hpp"
+#include "websystem.hpp"
 
 static void send_json(struct mg_connection *conn, int status, const picojson::value &val) {
 	std::string body = val.serialize();
@@ -95,7 +101,7 @@ static bool read_json_body(struct mg_connection *conn, picojson::value *out) {
 
 // one parameter with metadata, typed values serialized from the value
 // members (render() mutates shared state and is left to the menu thread)
-static picojson::value param_to_json(parameter_c *p) {
+static picojson::value param_to_json(device_c *dev, parameter_c *p) {
 	picojson::object o;
 	o["name"] = picojson::value(p->name);
 	o["shortname"] = picojson::value(p->shortname);
@@ -107,10 +113,13 @@ static picojson::value param_to_json(parameter_c *p) {
 
 	if (parameter_string_c *ps = dynamic_cast<parameter_string_c *>(p)) {
 		o["type"] = picojson::value("string");
-		o["value"] = picojson::value(ps->value);
+		// the medium a switched-off drive holds is the one it comes back with
+		o["value"] = picojson::value(webpower_param_value(dev, ps));
 	} else if (parameter_bool_c *pb = dynamic_cast<parameter_bool_c *>(p)) {
 		o["type"] = picojson::value("bool");
-		o["value"] = picojson::value(pb->value);
+		// a card the power-down took out is still in the machine
+		o["value"] = picojson::value(dev != nullptr && p == &dev->enabled
+				? webpower_is_in_machine(dev) : pb->value);
 	} else if (parameter_unsigned_c *pu = dynamic_cast<parameter_unsigned_c *>(p)) {
 		o["type"] = picojson::value("unsigned");
 		o["value"] = picojson::value((double) pu->value);
@@ -258,10 +267,14 @@ static void devices_list(struct mg_connection *conn) {
 			if (drv != nullptr) {
 				o["removable"] = picojson::value(drv->removable());
 				o["locked"] = picojson::value(drv->locked());
-				// computed verbal status, shared with the dashboard and MCP
+				// computed verbal status, shared with the dashboard and MCP. It
+				// reads the live device, so a drive with no power reads "off"
+				// while the card it sits behind is still in the machine.
 				o["status"] = picojson::value(device_status_for(d));
 			}
-			o["enabled"] = picojson::value(d->enabled.value);
+			// A card the power-down took out is still in the machine: losing the
+			// supply does not unplug it, and power-up puts it back.
+			o["enabled"] = picojson::value(webpower_is_in_machine(d));
 			o["parent"] = d->parent ?
 					picojson::value(d->parent->name.value) : picojson::value();
 			// two collections split by parameter kind: "params" is the
@@ -274,9 +287,9 @@ static void devices_list(struct mg_connection *conn) {
 			picojson::array params, statusparams;
 			for (parameter_c *p : d->parameter) {
 				if (p->kind == parameter_c::PARAM_STATUS)
-					statusparams.push_back(param_to_json(p));
+					statusparams.push_back(param_to_json(d, p));
 				else
-					params.push_back(param_to_json(p));
+					params.push_back(param_to_json(d, p));
 			}
 			o["params"] = picojson::value(params);
 			o["statusparams"] = picojson::value(statusparams);
@@ -293,9 +306,11 @@ static bool is_bus_placement_param(const std::string &n) {
 	return n == "base_addr" || n == "intr_vector" || n == "intr_level" || n == "slot";
 }
 
-// The enabled device whose register window overlaps [addr, addr + 2*count), or
-// "" when the range is free. register_device() aborts the emulator on an I/O
-// page collision, so a re-address is checked against this first.
+// The device in the machine whose register window overlaps [addr, addr +
+// 2*count), or "" when the range is free. register_device() aborts the emulator
+// on an I/O page collision, so a re-address is checked against this first — the
+// cards of a machine with its power off among them, since those are the cards
+// the power-up will install.
 // Caller holds device_c::mydevices_mutex.
 static std::string address_range_owner(qunibusdevice_c *self, uint32_t addr,
 		unsigned count) {
@@ -304,13 +319,34 @@ static std::string address_range_owner(qunibusdevice_c *self, uint32_t addr,
 		if (d == self || device_is_infrastructure(d))
 			continue;
 		qunibusdevice_c *qd = dynamic_cast<qunibusdevice_c *>(d);
-		if (qd == nullptr || !qd->enabled.value)
+		if (qd == nullptr || !webpower_is_in_machine(qd))
 			continue;
 		uint32_t o = qd->base_addr.value, oend = o + 2 * qd->register_count;
 		if (addr < oend && o < end)
 			return qd->name.value;
 	}
 	return "";
+}
+
+// Publish what a device now carries: whether it is in the machine and the
+// medium it holds. A controller takes its drives with it, so they are published
+// with it. Caller holds operations_mutex.
+static void notify_carried(device_c *dev) {
+	std::vector<device_c *> devs;
+	devs.push_back(dev);
+	{
+		std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
+		for (device_c *d : device_c::mydevices)
+			if (d->parent == dev)
+				devs.push_back(d);
+	}
+	for (device_c *d : devs) {
+		webevents_note_param(d->name.value, d->enabled.name,
+				picojson::value(webpower_is_in_machine(d)));
+		if (parameter_c *img = d->param_by_name("image"))
+			webevents_note_param(d->name.value, img->name,
+					picojson::value(webpower_param_value(d, img)));
+	}
 }
 
 // PUT /api/devices/<device>/params/<param> {"value": ...} — set a parameter
@@ -357,6 +393,54 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 		// same serialization as one command in the devices menu
 		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
 		try {
+			// A machine with its power off is edited as the machine it is:
+			// which cards it carries and what is in its drives are held for the
+			// power-up that configures it from them, and nothing an operator
+			// changes reaches the emulation until then. The parameters beneath
+			// travel with the card and are set where they stand — a device out
+			// of the machine is on no bus, so a value set on it is inert until
+			// the card goes in.
+			if (webpower_devices_are_off()
+					&& (param == &dev->enabled || param->name == "image")) {
+				std::string err;
+				bool ok;
+				if (param == &dev->enabled) {
+					bool on;
+					if (value == "1" || !strcasecmp(value.c_str(), "true"))
+						on = true;
+					else if (value == "0" || !strcasecmp(value.c_str(), "false"))
+						on = false;
+					else {
+						send_error(conn, 400, "\"enabled\" must be 1/0 or true/false");
+						return;
+					}
+					ok = webpower_set_in_machine(dev, on, &err);
+				} else {
+					// the web interface keeps images in one directory, so a bare
+					// name names the file it manages by that name
+					value = webstorage_image_path(value);
+					std::string other = webpower_image_held_by(value, dev->name.value);
+					if (other.empty())
+						other = webstorage_image_held_by(value, dev->name.value);
+					if (!other.empty()) {
+						send_error(conn, 409, "that image is mounted on " + other);
+						return;
+					}
+					ok = webpower_set_image(dev, value, &err);
+				}
+				if (!ok) {
+					send_error(conn, 409, err);
+					return;
+				}
+				WEB_INFO("%s.%s = %s, held until the machine is switched on",
+						dev->name.value.c_str(), param->name.c_str(), value.c_str());
+				// The device parameters publish themselves as they are set; an
+				// edit to a dark machine sets none, so it is published here —
+				// for the card, and for the drives a controller takes with it.
+				notify_carried(dev);
+				send_json(conn, 200, param_to_json(dev, param));
+				return;
+			}
 			if (param == &dev->enabled) {
 				// "enabled" is a readonly parameter; the menu switches it
 				// with the en/dis commands via set(), and so does the web
@@ -442,6 +526,21 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 					return;
 				}
 			} else {
+				// A card of a machine with its power off takes a new placement
+				// where it stands, being on no bus to be unplugged from. Two
+				// cards at one address would still meet at power-up, so the
+				// window is checked as it is on a running machine.
+				if (param->name == "base_addr" && webpower_is_in_machine(dev)) {
+					qunibusdevice_c *qd = dynamic_cast<qunibusdevice_c *>(dev);
+					uint32_t newaddr = (uint32_t) strtoul(value.c_str(), nullptr, 8);
+					std::string owner = qd == nullptr ? std::string()
+							: address_range_owner(qd, newaddr, qd->register_count);
+					if (!owner.empty()) {
+						send_error(conn, 409, "address " + value
+								+ " overlaps device \"" + owner + "\"");
+						return;
+					}
+				}
 				if (param->name == "image") {
 					// the web interface keeps images in one directory, so a
 					// bare name attaches the file it manages by that name
@@ -473,7 +572,7 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 						WEB_INFO("%s enabled with its medium", dev->name.value.c_str());
 						webstorage_refresh_readonly(webevents_is_powered()
 								&& !webevents_is_halted());
-						send_json(conn, 200, param_to_json(param));
+						send_json(conn, 200, param_to_json(dev, param));
 						return;
 					}
 				} else if (param->name == "romfile") {
@@ -482,7 +581,20 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 					// so nothing holds it.
 					value = webstorage_image_path(value);
 				}
+				// A device may refuse a value — a memory card whose new range
+				// the machine already answers keeps the range it had. The set
+				// leaves the old value in place, so the answer is the reason
+				// the device logged rather than a 200 quoting a value that
+				// never took. A device that normalizes what it stores writes
+				// the value it settled on and logs nothing, and that stands.
+				dev->last_error.clear();
 				param->parse(value);
+				if (*param->render() != value && !dev->last_error.empty()) {
+					send_error(conn, 409, dev->name.value + "." + param->name
+							+ " could not be set to \"" + value + "\": "
+							+ dev->last_error);
+					return;
+				}
 			}
 			// keep the terminal user informed, like an echoed command
 			WEB_INFO("%s.%s = %s", dev->name.value.c_str(),
@@ -499,7 +611,7 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 			return;
 		}
 	}
-	send_json(conn, 200, param_to_json(param));
+	send_json(conn, 200, param_to_json(dev, param));
 }
 
 // /api/devices and /api/devices/<device>/params/<param>
@@ -612,6 +724,51 @@ static bool control_apply_to_emulated_cpu(const std::string &action) {
 
 // POST /api/control
 // {"action": "init"|"powercycle"|"restart"|"halt"|"continue"|"dc_on"|"dc_off"}
+
+/* What a control action cost and how soon it followed the last one.
+ *
+ * Power cycles already serialize: this handler holds operations_mutex for the
+ * whole sequence, so one cannot start while another is mid-flight. What is not
+ * bounded is how soon the next may begin once the previous returns, and a
+ * cycle arriving while the bus is still settling from the last one is the
+ * shape #49 points at - the CPU there failed its own self-test, which is what
+ * a machine still being driven when DCLO/ACLO come round again would do.
+ *
+ * The ordinary cadence is an info line. A cycle following its predecessor
+ * closely enough to be suspicious says so at warning, where it will be in the
+ * journal without anyone having raised a log level first - which is the whole
+ * point, since the wedge is not reproducible on demand.
+ */
+static void control_note_timing(const std::string &action) {
+	static std::mutex timing_mutex;
+	static std::chrono::steady_clock::time_point last_end;
+	static std::string last_action;
+	static bool have_last = false;
+	// Below this the previous cycle's bus activity may not have finished.
+	static const long CLOSE_MS = 2000;
+
+	std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+	std::lock_guard<std::mutex> lock(timing_mutex);
+	if (have_last) {
+		long gap_ms = (long) std::chrono::duration_cast<std::chrono::milliseconds>(
+				now - last_end).count();
+		bool disruptive = action == "powercycle" || action == "dc_on"
+				|| action == "dc_off" || action == "restart";
+		if (disruptive && gap_ms < CLOSE_MS)
+			WEB_WARNING("control %s came %ld ms after %s: a bus still settling "
+					"from the previous cycle is what #49 looks like",
+					action.c_str(), gap_ms, last_action.c_str());
+		else
+			WEB_INFO("control %s, %ld ms after %s", action.c_str(), gap_ms,
+					last_action.c_str());
+	} else {
+		WEB_INFO("control %s", action.c_str());
+	}
+	last_end = std::chrono::steady_clock::now();
+	last_action = action;
+	have_last = true;
+}
+
 static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	const struct mg_request_info *ri = mg_get_request_info(conn);
 	if (strcmp(ri->request_method, "POST") != 0) {
@@ -634,6 +791,12 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		send_error(conn, 409, "machine is powered off");
 		return 409;
 	}
+
+	// A card the machine will not take stops the power-up where it stands: the
+	// bus edges are not driven, the machine is left dark and the answer names
+	// the card and the reason it gave.
+	bool powered_up = true;
+	std::string power_up_error;
 
 	// An emulated CPU has no HALT line to pull: its switches are the front
 	// panel, and the run controls belong on them. A board serving a physical
@@ -678,18 +841,37 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 			webevents_note_halt(true);
 		}
 #endif
-		if (dec.do_init)
-			qunibus->init();
-		if (dec.do_powercycle)
-			qunibus->powercycle();
 #if defined(QBUS)
+		// Stop the CPU before the cards come out, so no guest transfer is in
+		// flight while a device is torn down and the bus can still complete the
+		// cycles already started.
 		if (dec.do_halt) {
 			qunibus->set_halt(1);
 			webevents_note_halt(true);
 		}
 #endif
+		// The cards are rebuilt before the CPU is given its power-up edge, so a
+		// machine coming up finds the whole configuration present.
+		if (dec.devices_off)
+			webpower_devices_off();
+		if (dec.devices_on && !webpower_devices_on(&power_up_error)) {
+			// A card the machine will not take leaves it standing dark: the CPU
+			// keeps the HALT line it was stopped with, the power flag reads off,
+			// and the configuration is there to be changed before the operator
+			// tries again.
+#if defined(QBUS)
+			qunibus->set_halt(1);
+#endif
+			webevents_note_halt(true);
+			webevents_note_powered(false);
+			powered_up = false;
+		}
+		if (powered_up && dec.do_init)
+			qunibus->init();
+		if (powered_up && dec.do_powercycle)
+			qunibus->powercycle();
 #if defined(UNIBUS)
-		if (ecpu != nullptr && dec.set_powered == 1) {
+		if (powered_up && ecpu != nullptr && dec.set_powered == 1) {
 			// the START switch rebuilds the machine and runs it, which is what
 			// the power switch means on a processor that is emulated
 			ecpu->panel_halt_switch()->set(false);
@@ -698,9 +880,18 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 			WEB_INFO("control %s: emulated CPU started", action.c_str());
 		}
 #endif
-		if (dec.set_powered >= 0)
+		if (powered_up && dec.set_powered >= 0)
 			webevents_note_powered(dec.set_powered != 0);
-		WEB_INFO("control %s", action.c_str());
+		control_note_timing(action);
+	}
+	// The shares hold an attached image read-only while the machine runs, and a
+	// power cycle changes what is attached: a machine switched off holds no
+	// medium, so the files it had open are the operator's again.
+	if (dec.devices_off || dec.devices_on)
+		webstorage_refresh_readonly(webevents_is_powered() && !webevents_is_halted());
+	if (!powered_up) {
+		send_error(conn, 409, power_up_error);
+		return 409;
 	}
 	picojson::object res;
 	res["ok"] = picojson::value(true);
@@ -767,9 +958,23 @@ static void memory_map(struct mg_connection *conn) {
 		r["slot"] = picojson::value(std::string(slot_names[slot]));
 		r["start"] = picojson::value((double) ddrmem->range_start(slot));
 		r["end"] = picojson::value((double) ddrmem->range_end(slot));
+		// How many cycles the board has answered out of this range, reads and
+		// writes apart. The PRU serves them without telling the ARM, so these
+		// counts are the only evidence a range is being used at all - which is
+		// what an operator looking at a card placed over the wrong addresses
+		// needs to see.
+		if (pru_iopage_registers != nullptr) {
+			r["reads"] = picojson::value(
+					(double) pru_iopage_registers->memory_read_count[slot]);
+			r["writes"] = picojson::value(
+					(double) pru_iopage_registers->memory_write_count[slot]);
+		}
 		ranges.push_back(picojson::value(r));
 	}
 	res["emulated"] = picojson::value(ranges);
+	if (pru_iopage_registers != nullptr)
+		res["rom_accesses"] = picojson::value(
+				(double) pru_iopage_registers->rom_access_count);
 
 	{
 		std::lock_guard<std::mutex> lock(probe_mutex);
@@ -870,6 +1075,79 @@ static void memory_fill(struct mg_connection *conn, const picojson::value &req) 
 	send_json(conn, 200, picojson::value(res));
 }
 
+// The machine's memory card, or nullptr on a build that carries none.
+// Caller holds device_c::mydevices_mutex.
+static memory_c *memory_card_locked(void) {
+	for (device_c *d : device_c::mydevices) {
+		memory_c *mem = dynamic_cast<memory_c *>(d);
+		if (mem != nullptr)
+			return mem;
+	}
+	return nullptr;
+}
+
+// What the card answers, as the interfaces read it back.
+static picojson::value memory_placement_json(memory_c *mem) {
+	picojson::object res;
+	res["ok"] = picojson::value(true);
+	res["startaddr"] = picojson::value((double) mem->startaddr.value);
+	res["endaddr"] = picojson::value((double) mem->endaddr.value);
+	res["size"] = picojson::value(mem->size.value);
+	res["enabled"] = picojson::value(mem->enabled.value);
+	return picojson::value(res);
+}
+
+// POST /api/memory/place {"startaddr":…, "size":…} — place the card.
+//
+// A start address and a size describe one range, and a card set one parameter
+// at a time passes through the placements between the old range and the new
+// one: moving the start of a card that fills the machine runs it into the I/O
+// page, which the card refuses. So the two arrive together and the card is
+// placed once, which is also how a configuration file applies them.
+//
+// A card in the machine gives up its range and takes the new one, so this is
+// the operator re-strapping it where it stands; a range the machine already
+// answers is refused and the card stays where it was.
+static void memory_place(struct mg_connection *conn, const picojson::value &req) {
+	unsigned start = 0;
+	const picojson::value &sv = req.get("startaddr");
+	if (sv.is<double>())
+		start = (unsigned) sv.get<double>();
+	else if (!sv.is<std::string>() || !parse_octal(sv.get<std::string>(), &start)) {
+		send_error(conn, 400, "\"startaddr\" must be a number or octal string");
+		return;
+	}
+	if (!req.get("size").is<std::string>()) {
+		send_error(conn, 400,
+				"\"size\" must be text: a count of bytes, or one followed by KB or MB");
+		return;
+	}
+	std::string sizespec = req.get("size").get<std::string>();
+
+	std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
+	memory_c *mem;
+	{
+		std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
+		mem = memory_card_locked();
+	}
+	if (mem == nullptr) {
+		send_error(conn, 404, "this machine carries no memory card");
+		return;
+	}
+	mem->last_error.clear();
+	if (!mem->place_at(start, sizespec)) {
+		std::string why = mem->last_error;
+		send_error(conn, 409, mem->name.value + ": " + sizespec + " at "
+				+ qunibus->addr2text(start)
+				+ (why.empty() ? " is not a placement the machine takes" : ": " + why));
+		return;
+	}
+	WEB_INFO("memory: %s at %s..%s", mem->size.value.c_str(),
+			qunibus->addr2text(mem->startaddr.value),
+			qunibus->addr2text(mem->endaddr.value));
+	send_json(conn, 200, memory_placement_json(mem));
+}
+
 static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	const struct mg_request_info *ri = mg_get_request_info(conn);
 	std::string uri = ri->local_uri ? ri->local_uri : "";
@@ -883,7 +1161,7 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		memory_map(conn);
 		return 200;
 	}
-	if (rest == "/probe" || rest == "/fill") {
+	if (rest == "/probe" || rest == "/fill" || rest == "/place") {
 		if (strcmp(ri->request_method, "POST") != 0) {
 			send_error(conn, 405, "POST required");
 			return 405;
@@ -897,7 +1175,10 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 			send_error(conn, 400, "body must be a JSON object");
 			return 400;
 		}
-		memory_fill(conn, req);
+		if (rest == "/place")
+			memory_place(conn, req);
+		else
+			memory_fill(conn, req);
 		return 200;
 	}
 	if (!rest.empty() && rest != "/") {
@@ -1046,9 +1327,13 @@ void webapi_register(struct mg_context *ctx) {
 	// the state directory that call resolves, and the dismissed version is read
 	// from the same settings file
 	webupdate_register(ctx);
+	// the board's own name and the operator's ssh key
+	websystem_register(ctx);
 	webevents_register(ctx);
 	webconsole_register(ctx);
 	webconsole_ext_register(ctx);
+	// after both console backends: the recordings API reaches their recorders
+	webrecordings_register(ctx);
 	webserial_register(ctx);
 	webvcb01_register(ctx);
 	// apply the persisted external-console setting (loaded by

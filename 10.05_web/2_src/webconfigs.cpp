@@ -21,11 +21,12 @@
    of the current configuration; this is computed by comparison, not tracked at
    write time.
 
-   At power-on the configuration is chosen by the board's 4 DIP switches: the
-   one whose stored *dip_value* (0..15) matches the switches is applied. When no
-   configuration claims that value the bundled empty configuration is applied,
-   leaving the machine passive on the bus. The control API re-selects on a power
-   cycle or dc_on, so changing the switches and cycling power switches machines.
+   The board's 4 DIP switches choose the configuration once, when the backend
+   starts: the one whose stored *dip_value* (0..15) matches the switches is
+   applied. When no configuration claims that value the bundled empty
+   configuration is applied, leaving the machine passive on the bus. A power
+   cycle keeps the configuration that is loaded, so switching machines means
+   changing the switches and restarting the backend.
 
      GET    /api/configs               {current, modified, configs[]}
      GET    /api/configs?current=1     the live setup in snapshot form, for
@@ -90,6 +91,7 @@
 
 #include "weblog.hpp"
 #include "webconfigs.hpp"
+#include "webpower.hpp"
 #include "webstorage.hpp"
 #include "websettings.hpp"
 #include "weblogging.hpp"
@@ -138,10 +140,14 @@ static void send_error(struct mg_connection *conn, int status, const std::string
 	send_json(conn, status, picojson::value(err));
 }
 
+// infrastructure: part of the bridge or of a controller's implementation, not
+// of the emulated configuration. mscp_server_base covers both protocol
+// engines, the MSCP disk server and the TMSCP tape server; each is a device_c
+// only so the logging macros work, and each is permanently enabled.
 static bool device_is_infrastructure(device_c *d) {
 	return dynamic_cast<qunibusadapter_c *>(d) != nullptr
 			|| dynamic_cast<paneldriver_c *>(d) != nullptr
-			|| dynamic_cast<mscp_server *>(d) != nullptr;
+			|| dynamic_cast<mscp_server_base *>(d) != nullptr;
 }
 
 // Parameter values as the devices were constructed. Captured once at
@@ -173,6 +179,12 @@ static void capture_parameter_defaults(void) {
 static bool is_default(parameter_c *p) {
 	std::map<parameter_c *, param_default_t>::iterator it = parameter_defaults.find(p);
 	return it != parameter_defaults.end() && it->second.value == *p->render();
+}
+
+// the same question about a value the caller already has in hand
+static bool is_default_value(parameter_c *p, const std::string &value) {
+	std::map<parameter_c *, param_default_t>::iterator it = parameter_defaults.find(p);
+	return it != parameter_defaults.end() && it->second.value == value;
 }
 
 // The bus-placement parameters an operator sets in a configuration: where the
@@ -269,15 +281,63 @@ static void reset_to_defaults(device_c *dev, const std::set<std::string> *keep,
 	}
 }
 
+// A parameter a configuration names, as text.
+static bool config_param_text(const picojson::object &po, const char *key,
+		std::string *out) {
+	picojson::object::const_iterator it = po.find(key);
+	if (it == po.end() || !it->second.is<std::string>())
+		return false;
+	*out = it->second.get<std::string>();
+	return true;
+}
+
+// Place the memory card as a configuration names it. Its start address and its
+// size describe one range, so they are applied together: taken one at a time
+// they can pass through a placement that runs into the I/O page, which the card
+// refuses. What the file does not name is the value the card was constructed
+// with.
+//
+// The size may be given as an end address: a configuration written when the
+// card was placed by its last address names an endaddr, and that address at the
+// start address it names gives the size the card carries.
+static void apply_memory_placement(memory_c *mem, const picojson::object &po,
+		picojson::array *errors) {
+	std::string text;
+	uint32_t start = 0;
+	if (config_param_text(po, "startaddr", &text)
+			|| param_default_value(mem->name.value, "startaddr", &text))
+		start = (uint32_t) strtoul(text.c_str(), nullptr, 8);
+
+	mem->last_error.clear();
+	bool placed;
+	if (config_param_text(po, "size", &text))
+		placed = mem->place_at(start, text);
+	else {
+		uint32_t end = 0;
+		if (config_param_text(po, "endaddr", &text)
+				|| param_default_value(mem->name.value, "endaddr", &text))
+			end = (uint32_t) strtoul(text.c_str(), nullptr, 8);
+		placed = end >= start && mem->place_at(start, end - start + 2);
+	}
+	if (!placed && errors != nullptr)
+		errors->push_back(picojson::value(mem->name.value + ": the card is not placed"
+				+ (mem->last_error.empty() ? "" : ": " + mem->last_error)));
+}
+
 // A configuration describes the whole machine: it carries the devices that are
 // switched on and, of those, only the parameters that differ from the
 // construction defaults. Everything it does not mention is off and default.
+//
+// What the machine carries is read through webpower, so a machine switched off
+// at the panel still describes the configuration it holds: its cards are out of
+// the emulation for the duration, and losing power neither unplugs a card nor
+// ejects a pack.
 //
 // Caller holds operations_mutex and mydevices_mutex.
 static picojson::value snapshot_devices_locked(void) {
 	picojson::array devices;
 	for (device_c *dev : device_c::mydevices) {
-		if (device_is_infrastructure(dev) || !dev->enabled.value)
+		if (device_is_infrastructure(dev) || !webpower_is_in_machine(dev))
 			continue;
 		picojson::object o;
 		o["name"] = picojson::value(dev->name.value);
@@ -295,9 +355,10 @@ static picojson::value snapshot_devices_locked(void) {
 			// machine from reading modified
 			if (p->kind == parameter_c::PARAM_STATUS)
 				continue;
-			if (!is_settable(p) || is_default(p))
+			std::string value = webpower_param_value(dev, p);
+			if (!is_settable(p) || is_default_value(p, value))
 				continue;
-			params[p->name] = picojson::value(*p->render());
+			params[p->name] = picojson::value(value);
 		}
 		o["params"] = picojson::value(params);
 		devices.push_back(picojson::value(o));
@@ -1186,6 +1247,14 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 	{
 		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
 
+		// A configuration loaded into a machine with its power off becomes the
+		// machine it carries dark: the cards it names and the media they hold
+		// are what the panel switch brings up, and the emulation is left as it
+		// stands until then. The parameters beneath travel with the card and are
+		// set where they stand — a device out of the machine is on no bus, so a
+		// value set on it is inert until the card goes in.
+		bool dark = webpower_devices_are_off();
+
 		// Skip modeled mechanics for the span of the apply, so a timed device
 		// (a disk drive's spin-up/-down) settles at once and does not stretch the
 		// reconfiguration over physical delays. Restored at the end.
@@ -1217,7 +1286,9 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 					}
 				if (named)
 					continue;
-				if (dev->enabled.value)
+				if (dark)
+					webpower_set_in_machine(dev, false, nullptr);
+				else if (dev->enabled.value)
 					dev->enabled.set(false);
 				reset_to_defaults(dev, nullptr, errors);
 			}
@@ -1268,6 +1339,15 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 				}
 			}
 
+			// The memory card is placed in one step, from parameters that
+			// describe one range together; reset_to_defaults() would apply
+			// them one at a time.
+			memory_c *mem = dynamic_cast<memory_c *>(dev);
+			if (mem != nullptr) {
+				listed.insert("startaddr");
+				listed.insert("size");
+			}
+
 			reset_to_defaults(dev, &listed, errors);
 
 			if (d.get("params").is<picojson::object>())
@@ -1275,6 +1355,11 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 						d.get("params").get<picojson::object>()) {
 					if (!kv.second.is<std::string>())
 						continue;
+					if (mem != nullptr
+							&& (kv.first == "startaddr" || kv.first == "size"))
+						continue; // placed below, as one range
+					if (dark && kv.first == "image")
+						continue; // put in the drive of the dark machine below
 					parameter_c *param = dev->param_by_name(kv.first);
 					if (param == nullptr || param->readonly)
 						continue;
@@ -1287,8 +1372,34 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 								devname + "." + kv.first + ": " + e.what()));
 					}
 				}
-			if (d.get("enabled").is<bool>())
-				dev->enabled.set(d.get("enabled").get<bool>());
+
+			// The card takes its range once the parameters that qualify the
+			// claim are in place: the probe reads the file's setting, not the
+			// default it was reset to.
+			if (mem != nullptr)
+				apply_memory_placement(mem, d.get("params").is<picojson::object>()
+						? d.get("params").get<picojson::object>() : picojson::object(),
+						errors);
+
+			// The pack the configuration names goes in the drive of the dark
+			// machine, and a drive it gives no medium comes up empty. Whether
+			// the drive is in the machine at all is the enabled flag below.
+			if (dark && dev->param_by_name("image") != nullptr) {
+				std::string image;
+				if (d.get("params").is<picojson::object>())
+					config_param_text(d.get("params").get<picojson::object>(),
+							"image", &image);
+				std::string why;
+				if (!webpower_set_image(dev, image, &why))
+					errors->push_back(picojson::value(devname + ": " + why));
+			}
+
+			if (d.get("enabled").is<bool>()) {
+				if (dark)
+					webpower_set_in_machine(dev, d.get("enabled").get<bool>(), nullptr);
+				else
+					dev->enabled.set(d.get("enabled").get<bool>());
+			}
 		}
 
 		// The machine has settled; restore the normal timed simulation.
@@ -1297,6 +1408,7 @@ static bool apply_config(const std::string &name, picojson::array *errors,
 			for (device_c *dev : device_c::mydevices)
 				dev->config_apply_immediate = false;
 		}
+
 	}
 	// An apply resets every device's verbosity to its construction default, so
 	// re-assert the persisted log levels: the stored overrides win, the rest
@@ -1444,6 +1556,124 @@ void webconfigs_startup(const std::string &override_config) {
 }
 
 // /api/configs, /api/configs/<name>, /api/configs/<name>/apply
+
+// ---- export and import ---------------------------------------------------
+//
+// A configuration is a machine setup, and a setup an operator has arrived at is
+// worth keeping off the board it was built on. Two forms travel:
+//
+//  - the JSON document, which is what this module already stores and what an
+//    import reads back; and
+//  - a command script in the interactive menu's own format, for a board driven
+//    from the menu rather than through the API.
+//
+// The document carries the title, the DIP binding and the dashboard layout
+// alongside the device set, so an export is the whole configuration. What an
+// import does with the first two differs, because they say something about the
+// board rather than about the machine: the layout is restored as it stands, and
+// the DIP binding only when no configuration on this board already claims that
+// value -- two configurations answering one switch setting is exactly the
+// ambiguity the binding exists to prevent.
+
+// Render the device set as menu commands: select a device, set its parameters,
+// enable it. Order matters -- a parameter is set while the device is out of the
+// machine, then the enable installs it, which is the order the API takes too.
+static std::string config_as_script(const std::string &name,
+		const picojson::value &content) {
+	std::string out;
+	out += "# " + name;
+	if (content.get("title").is<std::string>())
+		out += " - " + content.get("title").get<std::string>();
+	out += "\n";
+	out += "# QUniLator configuration, as commands for the interactive menu.\n";
+	out += "# Paste at the device menu prompt, or feed with the menu's script\n";
+	out += "# facility. Devices are set up first and enabled afterwards, which\n";
+	out += "# is the order a parameter change requires.\n\n";
+	if (!content.get("devices").is<picojson::array>())
+		return out;
+	const picojson::array &devs = content.get("devices").get<picojson::array>();
+	std::string enables;
+	for (const picojson::value &dv : devs) {
+		if (!dv.is<picojson::object>())
+			continue;
+		const picojson::object &d = dv.get<picojson::object>();
+		if (d.find("name") == d.end() || !d.at("name").is<std::string>())
+			continue;
+		std::string dname = d.at("name").get<std::string>();
+		out += "sd " + dname + "\n";
+		if (d.find("params") != d.end() && d.at("params").is<picojson::object>()) {
+			const picojson::object &ps = d.at("params").get<picojson::object>();
+			for (picojson::object::const_iterator it = ps.begin(); it != ps.end(); ++it) {
+				std::string v = it->second.is<std::string>()
+						? it->second.get<std::string>() : it->second.to_str();
+				out += "p " + it->first + " " + v + "\n";
+			}
+		}
+		out += "\n";
+		if (d.find("enabled") != d.end() && d.at("enabled").is<bool>()
+				&& d.at("enabled").get<bool>())
+			enables += "en " + dname + "\n";
+	}
+	if (!enables.empty())
+		out += "# the cards go into the machine\n" + enables;
+	return out;
+}
+
+// Send a document as a file the browser saves rather than renders.
+static void send_attachment(struct mg_connection *conn, const std::string &body,
+		const std::string &filename, const char *type) {
+	mg_printf(conn,
+			"HTTP/1.1 200 OK\r\nContent-Type: %s\r\n"
+			"Content-Disposition: attachment; filename=\"%s\"\r\n"
+			"Content-Length: %u\r\nConnection: close\r\n\r\n",
+			type, filename.c_str(), (unsigned) body.size());
+	mg_write(conn, body.data(), body.size());
+}
+
+// POST /api/configs/<name>/import  — the body is a configuration document.
+//
+// The name is the operator's choice and must be free: an import brings in a
+// machine that was not here, and writing over one that was is what PUT is for.
+static void config_import(struct mg_connection *conn, const std::string &name) {
+	picojson::value doc;
+	if (!read_json_body_full(conn, &doc) || !doc.is<picojson::object>()) {
+		send_error(conn, 400, "body must be a configuration document");
+		return;
+	}
+	picojson::value existing;
+	std::string err;
+	if (read_config(name, &existing, &err)) {
+		send_error(conn, 409, "a configuration named \"" + name
+				+ "\" is already here; import under another name");
+		return;
+	}
+	picojson::object &o = doc.get<picojson::object>();
+	// The DIP binding belongs to the board, not to the machine: keep it only
+	// when this board has the switch value free, and say so when it does not.
+	std::string dip_note;
+	int dip = config_dip_value(doc);
+	if (dip >= 0) {
+		std::string holder = config_for_dip(dip);
+		if (!holder.empty() && holder != name) {
+			o.erase("dip_value");
+			dip_note = "the DIP value " + std::to_string(dip)
+					+ " is claimed by \"" + holder + "\", so the import is unbound";
+		}
+	}
+	std::string error;
+	int status = 422;
+	if (!webconfigs_write(name, doc, /*from_live*/false, &error, &status)) {
+		send_error(conn, status, error);
+		return;
+	}
+	picojson::object res;
+	res["ok"] = picojson::value(true);
+	res["name"] = picojson::value(name);
+	if (!dip_note.empty())
+		res["note"] = picojson::value(dip_note);
+	send_json(conn, 200, picojson::value(res));
+}
+
 static int api_configs_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	const struct mg_request_info *ri = mg_get_request_info(conn);
 	std::string uri = ri->local_uri ? ri->local_uri : "";
@@ -1492,7 +1722,7 @@ static int api_configs_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		if (sep != std::string::npos) {
 			std::string tail = name.substr(sep + 1);
 			if (tail == "apply" || tail == "rename" || tail == "title"
-					|| tail == "dip" || tail == "layout") {
+					|| tail == "dip" || tail == "layout" || tail == "import") {
 				action = tail;
 				name = name.substr(0, sep);
 			}
@@ -1532,6 +1762,8 @@ static int api_configs_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		config_set_dip(conn, name);
 	} else if (action == "layout" && method == "PUT") {
 		config_set_layout(conn, name);
+	} else if (action == "import" && method == "POST") {
+		config_import(conn, name);
 	} else if (action.empty() && method == "PUT") {
 		const char *query = ri->query_string;
 		bool from_live = query != nullptr && strstr(query, "from=live") != nullptr;
@@ -1539,8 +1771,28 @@ static int api_configs_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	} else if (action.empty() && method == "GET") {
 		picojson::value content;
 		std::string err;
-		if (!read_config(name, &content, &err))
+		if (!read_config(name, &content, &err)) {
 			send_error(conn, 404, err);
+			return 404;
+		}
+		// ?export=json hands the same document back as a file to save;
+		// ?export=script renders it as menu commands.
+		const char *query = ri->query_string;
+		std::string ex;
+		if (query != nullptr) {
+			const char *p = strstr(query, "export=");
+			if (p != nullptr) {
+				p += 7;
+				while (*p != '\0' && *p != '&')
+					ex.push_back(*p++);
+			}
+		}
+		if (ex == "script")
+			send_attachment(conn, config_as_script(name, content), name + ".cmd",
+					"text/plain; charset=utf-8");
+		else if (ex == "json")
+			send_attachment(conn, content.serialize(true), name + ".qcfg.json",
+					"application/json");
 		else
 			send_json(conn, 200, content);
 	} else if (action.empty() && method == "DELETE") {

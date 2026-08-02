@@ -4,9 +4,9 @@ The `demo` application serves this API when started with `--web [port]`
 (default port 80). All request and response bodies are JSON unless noted.
 Errors use HTTP status codes with a body of `{"error": "message"}`.
 
-With `WEBUI_PASSWORD` set in the environment, every request requires HTTP
-basic auth: any user name, the password must match. Browsers replay the
-credentials on the WebSocket handshakes. Unset, access is open.
+With credentials set - through `PUT /api/auth` or as `WEBUI_PASSWORD` in the
+environment - every request requires HTTP basic auth. Browsers replay the
+credentials on the WebSocket handshakes. With none set, access is open.
 
 ## State
 
@@ -42,31 +42,111 @@ A page compares the version it was built from with what this reports and reloads
 when they differ, so an upgrade — through the interface or a hand-run
 `apt upgrade` — carries every open page onto the matching bundle.
 
-## Admin password
+## Admin credentials
 
 Every request needs HTTP basic auth once a password is set - static files and
-the WebSocket handshakes included. Any user name is accepted. A board with no
-password answers everything, which is how a new one is reached in order to set
-one.
+the WebSocket handshakes included. A board with no password answers everything,
+which is how a new one is reached in order to set some.
+
+The user name is an account on the board as well: setting one creates it beside
+the `qunilator` service account, with a home under `/home` and a login shell, and
+gives it the web password, so the same pair reaches the image library over SMB,
+FTP and SFTP. What it may do follows two group memberships - `qunilator` carries
+the image tree, `qunilator-admin` carries sudo and the shell sshd would otherwise
+confine to an SFTP session. Changing the name creates the new account and removes
+the old one. While no name is set, any user name is accepted and the shares
+answer to `qunilator` - which is what an installation made before the name
+existed keeps doing until one is set.
 
 ### `GET /api/auth`
 
 ```json
-{"configured": false, "source": "none", "min_length": 8}
+{"configured": true, "source": "settings", "user": "operators", "min_length": 8}
 ```
 
-`source` is `none`, `settings` for a password set through this endpoint, or
-`environment` for one given as `WEBUI_PASSWORD`.
+`source` is `none`, `settings` for credentials set through this endpoint, or
+`environment` for a password given as `WEBUI_PASSWORD`. `user` is the configured
+name, empty when any name is accepted.
 
 ### `PUT /api/auth`
 
 ```json
-{"password": "...", "current": "..."}
+{"user": "operators", "password": "...", "current": "...",
+ "hostname": "shed-11", "ssh_key": "ssh-ed25519 AAAA… you@workstation"}
 ```
 
+At least one of `user` and `password` is required. A body without `user` leaves
+the name in force; `"user": ""` clears it, which puts the shares back on
+`qunilator` and removes the operator's account. A body without `password` keeps
+the password, so a name changes on its own.
+
 `current` is required once a password exists, and refused with 403 if it does
-not match. A password shorter than `min_length` is refused with 422, as is any
-attempt to change one that came from the environment. Answers `{"ok": true}`.
+not match - changing either half takes the password in force. A password shorter
+than `min_length` is refused with 422, as is a user name that is not a portable
+one (1 to 32 characters: a lower case letter or underscore, then lower case
+letters, digits, underscores and hyphens), one the board reserves, or one that
+already belongs to an account the service did not create. Credentials that came
+from the environment refuse both halves with 422.
+
+`hostname` and `ssh_key` are what the first-run dialog asks for beside the
+credentials, and are applied after the account exists - the key has nowhere to go
+until then. Both are optional, and neither takes the credentials back if it
+fails: the refusal is reported as a warning and the same settings are offered
+again by their own endpoints below.
+
+Answers `{"ok": true, "user": "operators", "warnings": []}`.
+
+## The board itself
+
+The appliance around the emulator: what the board is called on the network, and
+the key that reaches its shell.
+
+### `GET /api/hostname`
+
+```json
+{"hostname": "shed-11"}
+```
+
+The first label of the board's name. `<name>.local`, the DNS-SD entry, the DHCP
+lease and the login banner all follow it, so several boards on one network are
+told apart by it rather than by the mDNS suffix boot order hands out.
+
+### `PUT /api/hostname`
+
+```json
+{"hostname": "shed-11"}
+```
+
+Runs `qunilator-rename`, which sets the system hostname, fixes `/etc/hosts` and
+restarts avahi and networkd so the new name is published. A name that is not one
+DNS label - letters, digits and inner hyphens, at most 63 characters - is refused
+with 422, as is one the tool will not take. A board that carries no such tool
+answers 503.
+
+Answers `{"ok": true, "hostname": "shed-11"}`.
+
+### `GET /api/sshkey`
+
+```json
+{"user": "operators", "configured": true}
+```
+
+`user` is the account the key belongs to, empty while no user name is set.
+`configured` says whether that account holds one.
+
+### `PUT /api/sshkey`
+
+```json
+{"key": "ssh-ed25519 AAAA… you@workstation"}
+```
+
+Writes the key as the operator account's only `authorized_keys` line, so what the
+interface offers and what the board answers to are the same thing. The line is
+one an OpenSSH `.pub` file carries - a type, a base64 key and an optional
+comment; options before the type are refused, as is a type OpenSSH does not
+offer, both with 422. A board with no user name set answers 409.
+
+Answers `{"ok": true, "user": "operators"}`.
 
 ## Devices and parameters
 
@@ -108,6 +188,11 @@ into the configuration. Both collections use the same entry shape. Parameter
 `type` is one of `string`, `bool`, `unsigned`, `unsigned64`, `double`. Unsigned
 parameters carry `base` (usually 8) and `bitwidth`. Drives reference their
 controller through `parent`.
+
+`enabled` says the card is **in the machine**, not that it is answering the bus
+this instant: a machine switched off at the panel still carries its cards, and
+each drive still names the medium it holds (see
+[what a power cycle resets](#what-a-power-cycle-resets)).
 
 Disk drives (category `disk`) additionally carry `removable`, `locked`, and a
 computed, read-only `status` string — the drive's verbal runtime state (distinct
@@ -199,16 +284,87 @@ Actions:
 | action | effect |
 |---|---|
 | `init` | pulse bus INIT |
-| `powercycle` | simulated DCOK/POK power-fail cycle |
+| `powercycle` | simulated DCOK/POK power-fail cycle, and every card rebuilt with it |
 | `restart` | reboot from the power-up vector: release the HALT line, then power cycle so the CPU restarts execution |
 | `halt` / `continue` | QBUS HALT line |
-| `dc_on` | logical power on: set `powered`, release HALT, then power cycle the machine up running |
-| `dc_off` | logical power off: halt the CPU and clear `powered` |
+| `dc_on` | logical power on: set `powered`, release HALT, configure the machine from what it carries, then power cycle it up running |
+| `dc_off` | logical power off: halt the CPU, take the cards out of the machine and clear `powered` |
+
+A card the machine will not take — a bus address another card answers, an image
+file that will not open — stops the power-up: the bus edges are not driven, the
+machine is left dark with `powered` false, and the answer is `409` naming the
+card and the reason it gave. The configuration stands as it was, so the operator
+changes the card and switches on again.
 
 The HALT line is released before any power-up and asserted after it, so a
 machine brought up by `dc_on` or `restart` comes up **running** from the
 power-up vector rather than halted into micro-ODT. A `dc_off` leaves the CPU
 halted; the following `dc_on` clears that HALT as part of the power-up.
+
+#### What a power cycle resets
+
+`powercycle`, `restart` and the `dc_off`/`dc_on` pair rebuild every enabled
+device: each is taken out of the emulation and put back, the same teardown a
+device gets when its `enabled` parameter is switched off and on again. So the
+cycle drops everything a card loses when it loses its supply —
+
+- the device's worker threads, stopped and started fresh;
+- its registration on the bus, redone, with the DCLO cycle `install()` drives
+  over it;
+- its controller state machine, including a latched MSCP/TMSCP initialization
+  step, controller flags and credits;
+- a drive's mechanics: media at load point (tape) or track 0 (disk), latched
+  exceptions and software write locks cleared, and the unit offline so the host
+  brings it up again;
+- the image file, closed and reopened, so a partially written medium is read
+  afresh from disk.
+
+The pack stays in the drive and the card stays in the machine: a drive comes
+back holding the medium it held, and no route through a second configuration is
+needed. `init` is not a power event — it pulses BINIT and resets registers,
+leaving all of the above standing.
+
+Two consequences an operator sees:
+
+- **A serial mux's TCP sessions end.** A DZV11, DHV11 or DL11 line serving
+  telnet or RFC2217 closes its client connection and releases its listening
+  port with the rest of the teardown, and binds again as the card comes back.
+  A session open across an AUX OFF/ON has to be reconnected.
+- **A machine switched off reads as switched off.** While `powered` is false
+  the cards are out of the emulation: lamps are dark, drives are spun down and
+  units are offline. What the machine *carries* is unchanged, so
+  [`GET /api/devices`](#get-apidevices) still reports each card as `enabled`
+  with the medium its drive holds, and the machine still matches the
+  configuration it is loaded with (`modified` stays as it was). A drive's
+  computed `status` reads `off`, because that is the drive's live state.
+
+#### Editing a machine that is switched off
+
+What a dark machine carries is the machine: the card set and the medium in each
+drive are held on the board, and `dc_on` configures the emulation from them.
+That record is what the whole configuration surface reads and writes while
+`powered` is false, so a dark machine is edited through the endpoints a running
+one is edited through:
+
+- `PUT /api/devices/<dev>/params/enabled` puts a card in the machine or takes it
+  out. Taking a controller out takes the drives that hang off it with it.
+- `PUT /api/devices/<dev>/params/image` puts a medium in a drive or takes it
+  out, and a drive given a medium goes into the machine with it. The controller
+  it hangs off must be in the machine already, answered `409` otherwise.
+- Every other parameter is set on the device where it stands. A card out of the
+  machine is on no bus, so the value is inert until the card goes in.
+- [`POST /api/configs/<name>/apply`](#post-apiconfigsnameapply) loads the
+  configuration into what the machine carries, leaving it dark. The devices it
+  names are what the next `dc_on` brings up.
+
+None of it reaches the emulation: no device is installed, no bus address is
+claimed and no image file is opened until the machine comes up. So the checks a
+running machine makes as it takes an edit — a colliding bus address, a card that
+will not install — are made at power-up instead, where a card the machine
+refuses refuses the power-up.
+
+Edits made dark move `modified` the way edits to a running machine do, and a
+save writes the machine as it stands. Power-down itself changes neither.
 
 `dc_on`/`dc_off` drive a **runtime logical power flag**, `powered`, reported in
 the `state` event. It is runtime only — a service restart comes up powered on —
@@ -251,14 +407,18 @@ probe found.
 
 ```json
 {"addr_width": 22, "iopage_start": 4186112, "addr_space_bytes": 4194304,
- "emulated": [{"slot": "memory", "start": 2097152, "end": 4186110}],
- "physical_end": 2097150, "probed_at": 1785408000}
+ "emulated": [{"slot": "memory", "start": 2097152, "end": 4186110,
+              "reads": 7482735, "writes": 391044}],
+ "physical_end": 2097150, "probed_at": 1785408000, "rom_accesses": 0}
 ```
 
 `slot` is `memory` for the memory card and `device` for a window a device serves
-out of the board's memory (the VCB01 framebuffer). `physical_end` and
-`probed_at` are `null` until a probe has run, and `physical_end` is `null` on a
-machine whose own memory answers nothing at all.
+out of the board's memory (the VCB01 framebuffer). `reads` and `writes` count
+the cycles the board has answered out of the range, and `rom_accesses` the
+reads of I/O-page ROM cells; the counts wrap, so a reader compares against what
+it saw last. `physical_end` and `probed_at` are `null` until a probe has run,
+and `physical_end` is `null` on a machine whose own memory answers nothing at
+all.
 
 ### `POST /api/memory/probe`
 
@@ -268,6 +428,24 @@ what `/api/memory/map` reports.
 
 This sweeps the whole address space and holds the bus for the length of the
 sweep, so run it with the CPU halted.
+
+### `POST /api/memory/place`
+
+```json
+{"startaddr": "10000000", "size": "2040 KB"}
+```
+
+Places the memory card: `startaddr` is a number or an octal string, `size` a
+count of bytes or a count followed by `KB` or `MB`. The two describe one card
+and are applied as one placement — set one parameter at a time, a card moving
+from one range to another passes through placements it refuses, such as a start
+address that carries the old size past the I/O page.
+
+A card that is in the machine gives up its range and takes the new one. A
+placement the machine refuses — a range something already answers, or one
+reaching into the I/O page — answers `409` with the reason and leaves the card
+where it was. Answers
+`{"ok": true, "startaddr": …, "endaddr": …, "size": "…", "enabled": …}`.
 
 ### `POST /api/memory/fill`
 
@@ -398,9 +576,10 @@ At **power-on** the configuration is chosen by the board's four DIP switches
 (read as a value 0..15): the one whose `dip_value` matches the switches is
 applied. When no configuration claims that value the bundled empty configuration
 is applied, leaving the machine passive on the bus. The selection runs at
-service startup and again on a power cycle or `dc_on` (see
-[`POST /api/control`](#post-apicontrol)), so changing the switches and cycling
-power switches machines. A configuration binds itself to a value with
+service startup and nowhere else: a power cycle or `dc_on` (see
+[`POST /api/control`](#post-apicontrol)) keeps whatever configuration is loaded,
+so switching machines means changing the switches and restarting the service. A
+configuration binds itself to a value with
 [`PUT /api/configs/<name>/dip`](#put-apiconfigsnamedip); at most one may claim a
 given value.
 
@@ -436,6 +615,41 @@ configuration stores them:
  "layout": {"console": {"x": 0, "y": 6}},
  "devices": [{"name": "RL11", "enabled": true,
               "params": {"address": "174400", ...}}, ...]}
+```
+
+### `GET /api/configs/<name>?export=<form>`
+
+The same document the plain `GET` returns, as a file to keep, or the setup as
+commands. `Content-Disposition` names it, so a browser saves rather than
+renders it.
+
+| `export=` | | |
+|---|---|---|
+| `json` | `<name>.qcfg.json` | the configuration document, which is what an import reads |
+| `script` | `<name>.cmd` | the device set as commands for the interactive menu: `sd <dev>`, `p <param> <val>`, then `en <dev>` for each card that is in the machine |
+
+Carrying the media is the web interface's business, not the board's: it holds
+the document and every image the configuration names in one zip, built in the
+browser from this endpoint and `GET /api/images/<subpath>`.
+
+### `POST /api/configs/<name>/import`
+
+The body is a configuration document. `<name>` must be free — an import brings
+in a machine the board did not have, and writing over one it did is what
+[`PUT /api/configs/<name>`](#put-apiconfigsname) is for; an existing name is
+refused `409`. The document is validated the way `PUT` validates one, so a
+device the machine does not have, a parameter a device does not have, or one an
+operator may not set is refused by name and nothing is written.
+
+The **DIP binding travels but does not displace**: a `dip_value` another
+configuration on this board already claims is dropped, and the answer says so —
+two configurations answering one switch setting is the ambiguity the binding
+exists to prevent. The title and the dashboard layout are restored as they
+stand.
+
+```json
+{"ok": true, "name": "rsx-from-elsewhere",
+ "note": "the DIP value 1 is claimed by \"211bsd\", so the import is unbound"}
 ```
 
 ### `PUT /api/configs/<name>`
@@ -476,6 +690,10 @@ dropping any device enabled since the last save.
 ```json
 {"ok": true, "errors": []}
 ```
+
+Applied to a machine whose power is off, the snapshot becomes what that machine
+carries and the emulation is left dark (see
+[editing a machine that is switched off](#editing-a-machine-that-is-switched-off)).
 
 ### `POST /api/configs/<name>/rename`
 
@@ -737,6 +955,82 @@ binary frames, then continues with the live stream. A client that opens
 mid-session reconstructs the current screen from the replay; xterm.js repaints
 from the raw bytes with no server-side screen model. The ring is per channel and
 does not persist across a service restart; it is unrelated to the log journal.
+
+#### Control frames
+
+Anything that is not a byte on the line travels as a **TEXT** frame holding one
+small JSON object, so it can never be mistaken for terminal data. Binary frames
+are always the byte stream.
+
+Server to client:
+
+| | |
+|---|---|
+| `{"live":true}` | the replayed history ends here; everything after is live |
+| `{"answerer":true}` | you are the one client that answers the guest's terminal queries |
+
+The `live` marker is sent after the replay and before the client joins the live
+set, so the boundary is exact. A program driving the console anchors its pattern
+matching there and never mistakes a prompt that scrolled past for the one it is
+waiting for. Every channel sends it; only a console channel designates an
+answerer.
+
+Client to server:
+
+| | |
+|---|---|
+| `{"break":true}` | assert a line BREAK |
+
+BREAK is a line condition rather than a character, which is why it cannot ride
+in the byte stream. On `/ws/console/ext` it holds the real tty spacing for
+300 ms, ordered among the bytes already queued for the line. On an emulated DL11
+(`/ws/console/0`, `/1`) the SLU reports a null data byte with a framing error,
+which is what a UART gives its driver for a received BREAK. The VAX console
+ignores it. A client that ignores TEXT frames is unaffected by any of this.
+
+### Console recordings
+
+A session someone drives by hand is recorded **on the board**, because that is
+the only place both directions pass: output reaches every client, but each
+client's input goes straight to the line, so no client can see what another
+typed. The file is
+[asciicast v3](https://docs.asciinema.org/manual/asciicast/v3/), which `qcon
+render` turns into a page and an asciinema player replays.
+
+Recording is off until asked for, and stops itself at 16 MB. Input events carry
+whatever was typed, passwords included, so a recording is something an operator
+starts deliberately rather than a file the board always keeps.
+
+#### `GET /api/console/<channel>/recording`
+
+```json
+{"recording": true, "name": "console-ext-20260801-194245.cast", "bytes": 4197}
+```
+
+#### `POST /api/console/<channel>/recording`
+
+```json
+{"action": "start", "name": "install"}
+```
+
+`action` is `start` or `stop`. `name` is optional and gains a `.cast` suffix;
+without one the board names the file after the channel and the time. Answers
+`{"ok": true, "recording": …, "name": …}`. `404` for an unknown channel.
+
+#### `GET /api/recordings`
+
+```json
+{"recordings": [{"name": "install.cast", "bytes": 4197,
+                 "mtime": "2026-08-01 19:37"}]}
+```
+
+#### `GET /api/recordings/<name>`
+
+The cast itself, as `text/plain`.
+
+#### `DELETE /api/recordings/<name>`
+
+Removes it. Answers `{"ok": true}`; `404` when there is no such recording.
 
 ### `/ws/console/ext`
 

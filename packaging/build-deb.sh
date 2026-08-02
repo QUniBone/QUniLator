@@ -66,24 +66,10 @@ while getopts "u" opt; do
     esac
 done
 
-# Board identity. The emulator is compiled for one bus, so the binary, the unit
-# that runs it and the package carry the board's name: QBUS is qbone/QBone,
-# UNIBUS is unibone/UniBone. The web interface shows the software's own product
-# name, QUniLator, which is the same on both buses. The appliance's own files -
-# the provisioning tools, their units, and the paths under /etc, /var/lib and
-# /usr/share - are named "qunilator" whichever bus the cape bridges.
-if [ "$SUFFIX" = _u ]; then
-    NAME=unibone; DISPLAY=UniBone; OTHER=qbone; BUS=Unibus
-else
-    NAME=qbone;   DISPLAY=QBone;   OTHER=unibone; BUS=Qbus
-fi
-
-# Carry the board brand and its bus into the emulator's unit, which names its
-# binary, and rewrite any board-brand token that lingers in a web asset.
-# Everything else is installed as it is in the repository.
-rebrand() {
-    sed -e "s/qbone/$NAME/g" -e "s/QBone/$DISPLAY/g" -e "s/Qbus/$BUS/g"
-}
+# Board identity, the rebrand filter that carries it into the emulator's unit
+# and the web assets, and the staging of the web root. Everything else is
+# installed as it is in the repository.
+. packaging/board.sh
 
 BINARY=10.03_app_demo/4_deploy$SUFFIX/qbone-web
 BINARY_DEMO=10.03_app_demo/4_deploy$SUFFIX/demo
@@ -134,33 +120,8 @@ install -m 755 $BINARY $STAGE/usr/bin/$NAME
 install -m 755 $BINARY_DEMO $STAGE/usr/bin/$NAME-demo
 # its unit, the one that names the binary
 rebrand < packaging/debian/qbone.service > $STAGE/lib/systemd/system/$NAME.service
-# the web root: the Vite build output. index.html, the hashed JS/CSS bundles and
-# the manifest carry the display brand, so rebrand those text assets; the
-# favicons and other binaries copy as-is. The bundle hash is not recomputed, but
-# index.html references the assets by their built names, so this stays coherent.
-DIST=10.05_web/3_frontend/dist
-for f in "$DIST"/*; do
-    [ -f "$f" ] || continue
-    b=$(basename "$f")
-    case "$b" in
-        index.html|site.webmanifest)
-            rebrand < "$f" > $STAGE/usr/share/qunilator/frontend/"$b"
-            chmod 644 $STAGE/usr/share/qunilator/frontend/"$b" ;;
-        *)
-            install -m 644 "$f" $STAGE/usr/share/qunilator/frontend/"$b" ;;
-    esac
-done
-for f in "$DIST"/assets/*; do
-    [ -f "$f" ] || continue
-    b=$(basename "$f")
-    case "$b" in
-        *.js|*.css)
-            rebrand < "$f" > $STAGE/usr/share/qunilator/frontend/assets/"$b"
-            chmod 644 $STAGE/usr/share/qunilator/frontend/assets/"$b" ;;
-        *)
-            install -m 644 "$f" $STAGE/usr/share/qunilator/frontend/assets/"$b" ;;
-    esac
-done
+# the web root, branded for this board
+stage_frontend $STAGE/usr/share/qunilator/frontend
 
 # Everything below manages a BeagleBone carrying a cape and does the same job
 # whichever bus it bridges, so it installs exactly as it is in the repository.
@@ -181,11 +142,31 @@ install -m 644 packaging/debian/qunilator-network.service \
 install -m 644 packaging/debian/apt-unattended-qunilator.conf \
     $STAGE/etc/apt/apt.conf.d/51qunilator-unattended
 install -m 644 packaging/debian/network.conf $STAGE/etc/qunilator/network.conf
+# Shell access to the board, granted to a group rather than to an account.
+# sudo refuses a file it can write or that anyone but root owns, so 0440.
+install -d -m 750 $STAGE/etc/sudoers.d
+install -m 440 packaging/debian/sudoers-qunilator-admin \
+    $STAGE/etc/sudoers.d/qunilator-admin
 # The bundled empty configuration. The service adopts it as the default on a
 # board that has never had one set, so a valid startup configuration always
 # exists. Shipped as a template and copied into place by postinst only when
 # absent, so an operator's own default.json is never overwritten.
 install -m 644 packaging/debian/default-config.json $STAGE/usr/share/qunilator/default-config.json
+# The sample machine. XXDP is the DEC diagnostic monitor, small enough to ship
+# and the one pack that says whether a board works at all, so a freshly flashed
+# board has something to run before its operator has found anything of their
+# own. The pack is read-only and belongs to the package: a drive takes its
+# writes into a copy-on-write overlay, so the shipped file stays as it was.
+# Stored compressed in git, where it is the one binary that is not a build
+# product.
+xz -dc packaging/images/xxdp25.rl02.xz > $STAGE/var/lib/qunilator/images/xxdp25.rl02
+chmod 444 $STAGE/var/lib/qunilator/images/xxdp25.rl02
+# and the machine that boots it, as a template postinst copies in when the
+# board has no configuration of that name. Only a UNIBUS build carries the
+# processors, so that one is a whole PDP-11/20 with the ROMs to boot the pack;
+# a QBUS board is a peripheral of a real machine, which brings its own.
+install -m 644 packaging/debian/sample-config$SUFFIX.json \
+    $STAGE/usr/share/qunilator/sample-config.json
 # the image-introspection decoders: the web interface shells out to introspect.py
 # to list the files inside an RT-11 / Files-11 image
 install -d -m 755 $STAGE/usr/share/qunilator/decoders
@@ -267,6 +248,7 @@ INSTALLED_KB=$(du -sk $STAGE | cut -f1)
     echo "/etc/modprobe.d/bone.conf"
     echo "/etc/modules-load.d/bone.conf"
     echo "/etc/apt/apt.conf.d/51qunilator-unattended"
+    echo "/etc/sudoers.d/qunilator-admin"
 } > $STAGE/DEBIAN/conffiles
 
 cat > $STAGE/DEBIAN/preinst <<'PREINST'
@@ -328,13 +310,26 @@ if [ "$1" = configure ]; then
         adduser --system --ingroup qunilator --home /var/lib/qunilator \
             --no-create-home --shell /usr/sbin/nologin qunilator || true
     fi
-    install -d -m 755 /var/lib/qunilator/images
+    # Membership of this group is what carries the right to sudo, and sshd
+    # leaves a member of it a shell rather than the SFTP session the qunilator
+    # group otherwise gets. The web interface puts the operator's account in it.
+    if ! getent group qunilator-admin >/dev/null; then
+        addgroup --system qunilator-admin || true
+    fi
+    install -d -m 2775 /var/lib/qunilator/images
     # the seeded media folders, re-asserted on an upgrade so a board that
     # predates one of them gets it
     for d in dk dl du mu rx roms; do
-        install -d -m 755 /var/lib/qunilator/images/$d || true
+        install -d -m 2775 /var/lib/qunilator/images/$d || true
     done
+    # The tree belongs to the qunilator group and every member of it may write:
+    # the service account owns the files, and the operator account the web
+    # interface creates for the file shares reaches them through the group.
+    # set-group-id on the directories keeps what either of them creates in the
+    # group. Re-asserted on every upgrade, next to the ownership.
     chown -R qunilator:qunilator /var/lib/qunilator/images || true
+    chmod -R g+w /var/lib/qunilator/images || true
+    find /var/lib/qunilator/images -type d -exec chmod g+s {} + || true
     # The updater's state stays root-only: it sits inside the tree the SMB/FTP/
     # SFTP shares are chrooted to, and holds staged packages and the requested
     # version. Re-asserted on every upgrade in case a mode was widened.
@@ -345,6 +340,14 @@ if [ "$1" = configure ]; then
         install -d -m 755 /var/lib/qunilator/configs
         install -m 644 /usr/share/qunilator/default-config.json \
             /var/lib/qunilator/configs/default.json || true
+    fi
+    # The sample machine that boots the shipped XXDP pack, on the same terms:
+    # placed when the board has no configuration by that name, so an operator
+    # who has edited or deleted it keeps their decision.
+    if [ ! -e /var/lib/qunilator/configs/xxdp.json ]; then
+        install -d -m 755 /var/lib/qunilator/configs
+        install -m 644 /usr/share/qunilator/sample-config.json \
+            /var/lib/qunilator/configs/xxdp.json || true
     fi
     if [ -d /run/systemd/system ]; then
         systemctl daemon-reload || true

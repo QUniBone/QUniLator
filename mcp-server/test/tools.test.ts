@@ -11,7 +11,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { MockBoard } from "./mock-board.js";
-import { QBoneClient, pendingPrompt, matchAnswer } from "../src/qbone.js";
+import { QBoneClient } from "../src/qbone.js";
+import { xxdpScript } from "../src/xxdp.js";
+import { validateScript } from "qcon";
 import { registerTools } from "../src/tools.js";
 import { loadConfig } from "../src/config.js";
 import type { BoardConfig } from "../src/config.js";
@@ -86,31 +88,40 @@ test("tools are all registered", async () => {
   ]);
 });
 
-test("pendingPrompt detects a '?' prompt through the trailing non-printable", () => {
-  // real console: "Change HW (L)  ? " followed by \x04
-  assert.equal(
-    pendingPrompt("DR>\r\nChange HW (L)  ? \x04"),
-    "Change HW (L)  ?",
+test("the XXDP script answers a named prompt, and defaults the rest", () => {
+  const script = validateScript(
+    xxdpScript({
+      diagnostic: "ZTKAE0",
+      answers: [
+        { match: "CHANGE HW", value: "Y" },
+        { match: "# UNITS", value: "1" },
+      ],
+    }),
   );
-  assert.equal(
-    pendingPrompt("unit 0\r\nTKIP ADDRESS (O)  174500 ? \x04"),
-    "TKIP ADDRESS (O)  174500 ?",
-  );
-  // not at a prompt
-  assert.equal(pendingPrompt("TESTING UNIT 0\r\n"), null);
-  assert.equal(pendingPrompt(".\r\n"), null);
+  const dialog = script.steps.find((s) => s.name === "dialog");
+  assert.ok(dialog && Array.isArray(dialog.expect));
+  const cases = dialog.expect as { match?: string; send?: string; fail?: string }[];
+  // the caller's answers come first, so a named prompt beats the catch-all
+  assert.match(cases[0].match!, /CHANGE HW/i);
+  assert.equal(cases[0].send, "Y");
+  assert.equal(cases[1].send, "1");
+  // a logical prompt is answered explicitly: a bare CR loops on "NO DEFAULT"
+  const logical = cases.find((c) => /\\\(L\\\)/.test(c.match ?? ""));
+  assert.ok(logical, "there is a case for a logical prompt");
+  assert.equal(logical!.send, "N");
+  // EOP alone is not a pass, and a return to DR> is a failure
+  const passCase = cases.find((c) => c.match?.includes("END PASS"));
+  assert.ok(passCase, "there is a pass case");
+  assert.match(passCase!.match!, /0 \(CUMULATIVE \)\?ERRORS/,
+    "a pass is zero errors, not the bare EOP line");
+  assert.ok(cases.some((c) => c.fail?.includes("returned to the supervisor")));
 });
 
-test("matchAnswer picks the answer whose match substring is in the prompt", () => {
-  const answers = [
-    { match: "CHANGE HW", value: "Y" },
-    { match: "UNITS", value: "1" },
-    { match: "VECTOR", value: "" },
-  ];
-  assert.equal(matchAnswer("Change HW (L)  ?", answers), "Y");
-  assert.equal(matchAnswer("# UNITS (D)  ?", answers), "1");
-  assert.equal(matchAnswer("TK VECTOR (O)  260 ?", answers), ""); // accept default
-  assert.equal(matchAnswer("SOMETHING ELSE ?", answers), undefined);
+test("a diagnostic missing from the media is reported as such", () => {
+  const script = validateScript(xxdpScript({ diagnostic: "NOSUCH" }));
+  const loaded = script.steps.find((s) => s.name === "loaded");
+  const cases = loaded!.expect as { match?: string; fail?: string }[];
+  assert.ok(cases.some((c) => c.fail?.includes("not on the media")));
 });
 
 test("get_devices returns the backend body incl. label and status", async () => {

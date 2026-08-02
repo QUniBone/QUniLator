@@ -3,10 +3,11 @@
 #
 # Produces a bootable microSD image: the rcn-ee Debian base, customised into an
 # appliance - the emulator installed, eth0 moved to the legacy Ethernet driver,
-# boot settings applied, the operator toolset added, nginx/cockpit removed, and
-# the sample operating systems and their boot configurations placed under
-# /var/lib/qunilator. NAME picks the board: qbone (QBUS, the default) or unibone
-# (UNIBUS); it sets the package installed, the hostname and the image name.
+# boot settings applied, the operator toolset added and nginx/cockpit removed.
+# The machines a board can run come from its package, which carries the XXDP
+# sample, and from configurations an operator imports. NAME picks the board:
+# qbone (QBUS, the default) or unibone (UNIBUS); it sets the package installed,
+# the hostname and the image name.
 #
 # The Linux-specific work (loop-mounting ext4, an armhf chroot, resizing) runs
 # in a privileged Docker container, because macOS can do none of it. Apple
@@ -15,8 +16,6 @@
 # Inputs, under $DIST (default ./dist):
 #   base.img.xz          the rcn-ee base-v6.12 armhf image
 #   <name>_*_armhf.deb   the emulator package for this board
-#   images/              disk images to ship (*.dsk, *.rl02, ...)
-#   configs/             boot configurations (*.json) naming those images
 # and from the repository:
 #   02_bbb_config/01_cape/am335x-boneblack-bone.dts
 #   packaging/debian/network/*
@@ -48,8 +47,6 @@ MARGIN_MB=${MARGIN_MB:-400}
 ls "$DIST"/base.img.xz >/dev/null 2>&1 || { echo "missing $DIST/base.img.xz" >&2; exit 1; }
 ls "$DIST"/${NAME}_*_armhf.deb >/dev/null 2>&1 || { echo "missing $DIST/${NAME}_*_armhf.deb" >&2; exit 1; }
 [ "$(ls "$DIST"/${NAME}_*_armhf.deb | wc -l)" -eq 1 ] || { echo "expected exactly one $NAME deb in $DIST" >&2; exit 1; }
-[ -d "$DIST/images" ] || { echo "missing $DIST/images" >&2; exit 1; }
-[ -d "$DIST/configs" ] || { echo "missing $DIST/configs" >&2; exit 1; }
 DTS=$HERE/02_bbb_config/01_cape/am335x-boneblack-bone.dts
 NET=$HERE/packaging/debian/network
 [ -r "$DTS" ] || { echo "missing $DTS" >&2; exit 1; }
@@ -104,10 +101,8 @@ RESOLV_LINK=$(readlink /mnt/etc/resolv.conf 2>/dev/null || true)
 cp --remove-destination /etc/resolv.conf /mnt/etc/resolv.conf
 
 # stage the inputs inside the rootfs
-mkdir -p /mnt/tmp/in/images /mnt/tmp/in/configs
+mkdir -p /mnt/tmp/in
 cp /dist/${NAME}_*_armhf.deb /mnt/tmp/in/
-cp /dist/images/* /mnt/tmp/in/images/
-cp /dist/configs/* /mnt/tmp/in/configs/
 cp /in/board.dts /mnt/tmp/in/board.dts
 
 echo "-- customising the rootfs (armhf chroot)"
@@ -152,13 +147,31 @@ PermitEmptyPasswords no
 EOF
 chmod 644 /etc/ssh/sshd_config.d/10-${NAME}.conf
 
+# The client's locale stays on the client. The image generates en_US.UTF-8 and
+# nothing else, so a session forwarding LANG and LC_* from a desktop in another
+# language asks for a locale the board cannot set, and perl and apt-listchanges
+# say so on every apt run. AcceptEnv names accumulate across directives, so
+# withdrawing the locale ones takes an edit of the line that grants them; the
+# terminal-capability variables stay.
+sed -i 's|^AcceptEnv .*|AcceptEnv COLORTERM NO_COLOR|' /etc/ssh/sshd_config
+
 # Network file access to the disk/tape image tree: SMB (Samba), FTP (vsftpd)
 # and SFTP (over the SSH the board already runs). The image tree is owned by
-# the qunilator system user (created by the emulator package's postinst); all
-# three authenticate as that user, and the web interface sets its password when
-# the operator sets the web password. FTP is cleartext, offered for legacy
-# clients on a trusted LAN; SFTP is the encrypted path.
-DEBIAN_FRONTEND=noninteractive apt-get -qq install -y samba vsftpd >/dev/null
+# the qunilator system user (created by the emulator package's postinst), and
+# all three authenticate against the qunilator group: the service account is in
+# it, and so is the operator account the web interface creates when a user name
+# is set. The web interface gives both accounts the web password. FTP is
+# cleartext, offered for legacy clients on a trusted LAN; SFTP is the encrypted
+# path.
+#
+# Recommends are off for these two: samba recommends samba-ad-dc, which brings
+# winbind and libnss-winbind, and libnss-winbind's postinst writes winbind into
+# the passwd: and group: lines of /etc/nsswitch.conf. The board joins no domain,
+# so every first NSS lookup of a session then waits out the winbind timeout -
+# about eight seconds before the first command of a login answers. The
+# standalone file server this image runs needs nothing from the recommends.
+DEBIAN_FRONTEND=noninteractive apt-get -qq install -y --no-install-recommends \
+    samba vsftpd >/dev/null
 cat > /etc/samba/smb.conf <<'EOF'
 [global]
    workgroup = WORKGROUP
@@ -177,7 +190,7 @@ cat > /etc/samba/smb.conf <<'EOF'
 [images]
    comment = QUniLator disk and tape images
    path = /var/lib/qunilator/images
-   valid users = qunilator
+   valid users = @qunilator
    force user = qunilator
    force group = qunilator
    read only = no
@@ -191,7 +204,9 @@ listen_ipv6=NO
 anonymous_enable=NO
 local_enable=YES
 write_enable=YES
-local_umask=022
+# the image tree is shared by the qunilator group, so an upload stays writable
+# by every account that serves it
+local_umask=002
 use_localtime=YES
 xferlog_enable=YES
 pam_service_name=vsftpd
@@ -208,17 +223,20 @@ EOF
 chmod 644 /etc/vsftpd.conf
 echo qunilator > /etc/vsftpd.userlist
 chmod 644 /etc/vsftpd.userlist
-# vsftpd's PAM stack checks the login shell against /etc/shells; the qunilator
-# user has a nologin shell (no interactive login), so allow it there for FTP.
+# vsftpd's PAM stack checks the login shell against /etc/shells; the accounts
+# that serve the shares have a nologin shell (no interactive login), so allow it
+# there for FTP.
 grep -qx /usr/sbin/nologin /etc/shells || echo /usr/sbin/nologin >> /etc/shells
-# Confine the qunilator user's SSH login to an SFTP session in the image tree.
-# sshd requires the chroot root to be root-owned and unwritable, which
-# /var/lib/qunilator is; the writable images/ subdir inside it is where uploads
-# land, so the session opens there.
+# Confine the SSH login of an account in the qunilator group to an SFTP session
+# in the image tree, unless it is also in qunilator-admin - the group that
+# carries shell access and sudo, and that the web interface puts the operator's
+# account in. sshd requires the chroot root to be root-owned and unwritable,
+# which /var/lib/qunilator is; the writable images/ subdir inside it is where
+# uploads land, so the session opens there.
 cat >> /etc/ssh/sshd_config.d/10-${NAME}.conf <<'EOF'
-Match User qunilator
+Match Group qunilator,!qunilator-admin
     ChrootDirectory /var/lib/qunilator
-    ForceCommand internal-sftp -d /images
+    ForceCommand internal-sftp -d /images -u 0002
     AllowTcpForwarding no
     X11Forwarding no
     PermitTunnel no
@@ -264,11 +282,6 @@ Debian GNU/Linux \r on \m
 
 ISSUE
 chmod 644 /etc/issue
-
-# the sample operating systems and their boot configurations
-install -d -m 755 /var/lib/qunilator/images /var/lib/qunilator/configs
-cp /tmp/in/images/* /var/lib/qunilator/images/
-cp /tmp/in/configs/* /var/lib/qunilator/configs/
 
 rm -rf /tmp/in
 CHROOT

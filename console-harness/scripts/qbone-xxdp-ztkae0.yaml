@@ -1,0 +1,64 @@
+# Boot XXDP on qbone and run the TK50 diagnostic ZTKAE0 through the DRS
+# Change-HW dialog.
+#
+# The script applies the xxdp configuration (rl0 carries the XXDP 2.5 pack,
+# tqk50/tqk500 a scratch tape) and restarts the machine itself, once the
+# console is connected:
+#
+#   node dist/src/cli.js run scripts/qbone-xxdp-ztkae0.yaml
+#
+# On this board the diagnostic currently reports a real device fault at init
+# step 1 (SA register mismatch), which the run reports as a failure.
+console: auto
+host: qbone
+title: XXDP ZTKAE0 on the TK50
+timeout: 60s
+machine:
+  config: xxdp
+  start: restart
+deviations:
+  - event: halt
+    fail: the CPU halted during the run
+steps:
+  - name: boot
+    expect:
+      - match: "ENTER DATE"
+        send: ""
+      - match: /RESTART ADDR|\n\./
+        goto: load
+    timeout: 90s
+  - name: prompt
+    expect: /\n\./
+  - name: load
+    wait: 2s
+    send: R ZTKAE0
+  - name: supervisor
+    expect: "DR>"
+    send: START
+    timeout: 90s
+  - name: change-hw
+    expect: /CHANGE HW.*\?/i
+    send: Y
+  - name: dialog
+    expect:
+      - match: /UNITS.*\?/i
+        send: "1"
+        goto: dialog
+      # a logical prompt has no default: a bare CR is re-asked forever
+      - match: /CHANGE SW.*\?/i
+        send: "N"
+        goto: dialog
+      - match: /\(L\)\s*\?/
+        send: "N"
+        goto: dialog
+      # any other prompt takes its default; DRSSM ends a prompt with "? ",
+      # DRSXM with "? ^D" — both leave the '?' at the end of the window
+      - match: /\?[\x00-\x20]*$/
+        send: ""
+        goto: dialog
+      # EOP prints on failing runs too; a pass is the zero error count
+      - match: /END PASS|\b0 CUMULATIVE ERRORS/i
+        done: true
+      - match: /DVC FTL|FTL ERR|FATAL|[1-9]\d* CUMULATIVE ERRORS/i
+        fail: the diagnostic reported errors
+    timeout: 300s

@@ -143,7 +143,7 @@ bool dhv11_c::on_param_changed(parameter_c *param)
 // state_mutex so the workers stop touching the line, but the blocking socket
 // close()/open() runs outside the lock — the same "never hold state_mutex across
 // blocking I/O" rule the DMA transmit path follows.
-void dhv11_c::open_line(unsigned i, const std::string &role, const std::string &host,
+bool dhv11_c::open_line(unsigned i, const std::string &role, const std::string &host,
 		uint16_t port)
 {
 	pthread_mutex_lock(&state_mutex);
@@ -154,7 +154,7 @@ void dhv11_c::open_line(unsigned i, const std::string &role, const std::string &
 		tcp_line[i].close(); // drops any client connected under the old config
 
 	if (role.empty())
-		return; // an empty tcp_role leaves the line closed
+		return true; // an empty tcp_role leaves the line closed on purpose
 
 	serial_tcp_line_c &ln = tcp_line[i];
 	if (role == "listen")
@@ -165,7 +165,7 @@ void dhv11_c::open_line(unsigned i, const std::string &role, const std::string &
 		ln.role = serial_tcp_line_c::ROLE_WEBSOCKET;
 	else {
 		WARNING("line %u: tcp_role must be listen/connect/websocket, got \"%s\"", i, role.c_str());
-		return;
+		return false;
 	}
 	ln.host = host;
 	ln.port = port;
@@ -173,20 +173,30 @@ void dhv11_c::open_line(unsigned i, const std::string &role, const std::string &
 	snprintf(lbl, sizeof lbl, "dhv11.%u", i);
 	ln.log_label = lbl;
 	ln.verbose = true;
-	if (ln.open()) {
-		pthread_mutex_lock(&state_mutex);
-		chan[i].open = true;
-		pthread_mutex_unlock(&state_mutex);
-	} else {
+	if (!ln.open()) {
 		WARNING("line %u: cannot open TCP transport (port %u)", i, (unsigned) port);
+		return false;
 	}
+	pthread_mutex_lock(&state_mutex);
+	chan[i].open = true;
+	pthread_mutex_unlock(&state_mutex);
+	return true;
 }
 
-void dhv11_c::open_lines(void)
+// "" when every line that wants a transport got one, else which ones did not.
+std::string dhv11_c::open_lines(void)
 {
 	refresh_listen_gates();
+	std::string failed;
 	for (unsigned i = 0; i < DHV_LINE_COUNT; i++)
-		open_line(i, tcp_role[i].value, tcp_host[i].value, (uint16_t) tcp_port[i].value);
+		if (!open_line(i, tcp_role[i].value, tcp_host[i].value,
+				(uint16_t) tcp_port[i].value)) {
+			if (!failed.empty())
+				failed += ", ";
+			failed += std::to_string(i) + " (port "
+					+ std::to_string((unsigned) tcp_port[i].value) + ")";
+		}
+	return failed;
 }
 
 void dhv11_c::close_lines(void)
@@ -204,7 +214,22 @@ bool dhv11_c::on_before_install(void)
 	// role can be retuned live (see on_param_changed); they do not touch the bus
 	// registration. The base class locks the bus params (base_addr/slot/vector/
 	// level) on enable.
-	open_lines();
+	//
+	// A card whose serial side is not there must not report itself installed:
+	// the operator would be told the card is in the machine while nothing can
+	// reach its lines. A port already held -- by another process, or by this
+	// card's own listener from an incarnation that has not let go yet -- is
+	// therefore a refusal, like a memory card whose range is already answered.
+	// Whatever did come up is closed again, so a refused enable leaves no
+	// listener behind.
+	std::string failed = open_lines();
+	if (!failed.empty()) {
+		close_lines();
+		ERROR("cannot open the TCP transport of line %s; the port may be in "
+				"use, or held by a previous incarnation of this card",
+				failed.c_str());
+		return false;
+	}
 	return true;
 }
 
@@ -640,9 +665,14 @@ void dhv11_c::reset(void)
 // -------------------------------------------------------------------------
 // DMA helper (blocking, on the transmit worker thread)
 
+// A transfer the bus never completes must not park the transmit worker: a
+// device disable waits 1000 ms for that worker to stop and then cancels the
+// thread, which loses the device. The wait is bounded well past any real
+// transfer, and a timeout is reported and the buffer's contents abandoned.
 bool dhv11_c::dma_read_words(uint32_t addr, uint16_t *buffer, unsigned wordcount)
 {
-	qunibusadapter->DMA(dma_request, true, QUNIBUS_CYCLE_DATI, addr, buffer, wordcount);
+	qunibusadapter->DMA(dma_request, true, QUNIBUS_CYCLE_DATI, addr, buffer,
+			wordcount, DMA_TIMEOUT_MS);
 	return dma_request.success;
 }
 
@@ -711,7 +741,6 @@ void dhv11_c::worker_rcv(void)
 void dhv11_c::worker_xmt(void)
 {
 	worker_init_realtime_priority(rt_device);
-	uint16_t dma_buf[4096];
 
 	pthread_mutex_lock(&state_mutex);
 	while (!workers_terminate) {

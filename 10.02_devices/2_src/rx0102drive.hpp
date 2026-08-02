@@ -31,6 +31,7 @@
 
 #include <stdint.h>
 #include <string.h>
+#include <atomic>
 #include <vector>
 
 #include "storagedrive.hpp"
@@ -72,6 +73,22 @@ public:
     parameter_bool_c imagetrack0 = parameter_bool_c(this, "imagetrack0", "it0",/*readonly*/
                                    false, "true: File image contains track 0-76 (std), else only 1..76");
 
+    // The order the image file holds the medium's sectors in. "physical" is the
+    // surface as it was written, track by track with sector 1..26 in place.
+    // "logical" is the volume's blocks in order from block 0, the form an
+    // archived RT-11 distribution comes in; the drive maps every access through
+    // the 2:1 interleave with six sectors of skew per track that a handler
+    // addresses a volume through. "auto" reads the image when it is attached and
+    // takes the layout the RT-11 home block turns up in.
+    parameter_string_c layout = parameter_string_c(this, "layout", "lay", /*readonly*/
+                                false, "Sector order in the image file: physical, logical or auto");
+
+    // The layout in force, which is what "auto" settled on. Named apart from
+    // "layout" so a configuration keeps the operator's choice and the dashboard
+    // still shows what the drive is doing with the medium it holds.
+    parameter_string_c layout_in_use = parameter_string_c(this, "layoutinuse", "lyu", /*readonly*/
+                                       true, "Sector order the drive serves the mounted image in");
+
     // current head position , info only
     parameter_unsigned_c current_track = parameter_unsigned_c(this, "track", "tr", /*readonly*/
                                          true, "", "%d", "Track # of current head position", 77, 10);
@@ -94,8 +111,21 @@ private:
     // To pass the ZRX* diags, sector marks are held volatile "per drive".
     bool deleted_data_marks[cylinder_count_const][sector_count_const] ;
 
+    // the layout in force, read by the uCPU worker on every sector access
+    std::atomic<bool> logical_layout{false} ;
 
     bool check_disk_address(unsigned track, unsigned sector) ;
+
+    // Where a sector of the medium lands in the image file, or -1 for a sector
+    // the file does not carry.
+    int sector_file_offset(unsigned track, unsigned sector, bool logical) ;
+
+    // Read the volume's block 1 - the RT-11 home block, when the medium holds an
+    // RT-11 volume - as the given layout places it in the file.
+    void read_home_block(uint8_t *block, bool logical) ;
+    bool is_rt11_home_block(const uint8_t *block) ;
+
+    void resolve_layout(const std::string &choice) ;
 
 public:
     RX0102uCPU_c *uCPU ; // link to micro CPU board

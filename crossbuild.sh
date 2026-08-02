@@ -29,15 +29,19 @@
 # keeps the bus inside the PRU. The emulator carries both and loads whichever the
 # board's bus-mode setting names, so one binary serves either use.
 #
-# environment:
-#   QUNILATOR_HOST   ssh destination of the device (default hans@qbone.huebner.org)
-#   QUNILATOR_REMOTE_DIR  checkout directory on the device (default ~/QUniLator)
+# Where -d deploys to is described by build.env, which names one person's board
+# and so is not in git. build.env.example documents every setting; copy it and
+# fill it in.
 
 set -e
 cd "$(dirname "$0")"
 
-QUNILATOR_HOST=${QUNILATOR_HOST:-hans@qbone.huebner.org}
-QUNILATOR_REMOTE_DIR=${QUNILATOR_REMOTE_DIR:-QUniLator}
+# Deploy settings. Sourced whenever the file is there, so a syntax error in it
+# is reported by any build rather than only by one that deploys.
+if [ -f build.env ]; then
+    . ./build.env
+fi
+
 IMAGE=qunibone-crossbuild
 PRU_IMAGE=qunibone-pru-cgt
 
@@ -56,24 +60,28 @@ DOCKER_USER="$(id -u):$(id -g)"
 
 usage() {
     cat <<EOF
-usage: $(basename "$0") [-u] [-g] [-d] [-c] [-p] [-t]
+usage: $(basename "$0") [-u] [-g] [-d] [-c] [-p] [-t] [-h]
 
-Cross-compile the emulator for the BeagleBone in a Docker container.
-Without options it builds the optimised QBUS binary and leaves it in the tree.
+Cross-compile the emulator and its PRU firmware for the BeagleBone in a Docker
+container, leaving them in the tree. Without options it builds the optimised
+QBUS binary; -d then copies it to the board build.env names.
 
   -u  build for UNIBUS instead of QBUS; also runs the CPU core tests
   -g  build unoptimised and with debug symbols (-O0 -ggdb3), into its own
       object directory 10.03_app_demo/4_deploy<suffix>_dbg
-  -d  deploy the binary to \$QUNILATOR_HOST after a successful build
+  -d  deploy to the board after a successful build, as QUNILATOR_DEPLOY_MODE
+      says: appliance replaces /usr/bin and restarts the service, checkout
+      lands the binary in the source tree the board runs from
   -c  remove the object directories first, forcing a full rebuild - and, on a
       UNIBUS build, a full re-run of the CPU core tests
   -p  rebuild the PRU firmware even when it is already present
   -t  skip the CPU core tests of a UNIBUS build
   -h  show this summary (-? does the same)
 
-environment:
-  QUNILATOR_HOST        ssh destination of the device (default $QUNILATOR_HOST)
-  QUNILATOR_REMOTE_DIR  checkout directory on the device (default $QUNILATOR_REMOTE_DIR)
+environment (set in build.env; see build.env.example):
+  QUNILATOR_HOST         ssh destination of the board${QUNILATOR_HOST:+ (now $QUNILATOR_HOST)}
+  QUNILATOR_DEPLOY_MODE  appliance or checkout${QUNILATOR_DEPLOY_MODE:+ (now $QUNILATOR_DEPLOY_MODE)}
+  QUNILATOR_REMOTE_DIR   checkout directory on the board${QUNILATOR_REMOTE_DIR:+ (now $QUNILATOR_REMOTE_DIR)}
 EOF
 }
 
@@ -107,6 +115,30 @@ while getopts ":udcpgth" opt; do
 done
 
 JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
+# The board's own name: the emulator is installed as /usr/bin/<name> and run by
+# <name>.service, so an appliance deploy needs to know which board this is.
+. packaging/board.sh
+
+# What a deploy needs, checked before the build rather than after it.
+if [ $DEPLOY = 1 ]; then
+    missing=
+    [ -n "$QUNILATOR_HOST" ] || missing="$missing QUNILATOR_HOST"
+    case "$QUNILATOR_DEPLOY_MODE" in
+        appliance) ;;
+        checkout) [ -n "$QUNILATOR_REMOTE_DIR" ] \
+                || missing="$missing QUNILATOR_REMOTE_DIR" ;;
+        "") missing="$missing QUNILATOR_DEPLOY_MODE" ;;
+        *) echo "QUNILATOR_DEPLOY_MODE is \"$QUNILATOR_DEPLOY_MODE\";" \
+                "it is appliance or checkout" >&2; exit 1 ;;
+    esac
+    if [ -n "$missing" ]; then
+        echo "-d needs$missing." >&2
+        [ -f build.env ] && echo "Set it in build.env." >&2 \
+            || echo "Copy build.env.example to build.env and fill it in." >&2
+        exit 1
+    fi
+fi
 
 # builder image: Debian with the armhf cross toolchain.
 #
@@ -171,9 +203,27 @@ if [ $PRU_CLEAN = 1 ]; then
     rm -f "$PRU_DEPLOY_DIR"/*.out "$PRU_DEPLOY_DIR"/*_array.c \
           "$PRU_DEPLOY_DIR"/*.object "$PRU_DEPLOY_DIR"/*.pp \
           "$PRU_DEPLOY_DIR"/*.asm "$PRU_DEPLOY_DIR"/*.map "$PRU_DEPLOY_DIR"/*.nfo
+    # The internal-bus image is judged stale against its copy in internal/, so
+    # that copy goes with the rest: left standing it reads as current, the image
+    # is not rebuilt, and the copy the app build links is never put back.
+    rm -rf "$PRU_DEPLOY_DIR/internal"
 fi
+# The firmware is rebuilt when it is missing, and when any PRU source is newer
+# than the image built from it. Without the second test a change to the bus
+# state machine is compiled into nothing: the app build happily links the image
+# already lying here, the board takes a binary whose ARM half has the change
+# and whose PRU half does not, and the two disagree in ways that look like a
+# hardware fault.
+pru_sources_newer() {
+    local image=$1
+    [ -s "$image" ] || return 0
+    [ -n "$(find 10.01_base/2_src/pru0 10.01_base/2_src/pru1${SUFFIX} \
+            10.01_base/2_src/shared -newer "$image" -name '*.[ch]' -print -quit \
+            2>/dev/null)" ]
+}
 if [ -z "$(ls "$PRU_DEPLOY_DIR"/*_array.c 2>/dev/null || true)" ] \
-        || [ -z "$(ls "$PRU_DEPLOY_DIR"/*.out 2>/dev/null || true)" ]; then
+        || [ -z "$(ls "$PRU_DEPLOY_DIR"/*.out 2>/dev/null || true)" ] \
+        || pru_sources_newer "$(ls "$PRU_DEPLOY_DIR"/pru1_code_*_array.c 2>/dev/null | head -1)"; then
     echo "Building PRU firmware with clpru $PRU_CGT_VERSION ..."
     for prudir in pru0 pru1${SUFFIX}; do
         docker run --rm --platform linux/amd64 --user "$DOCKER_USER" \
@@ -187,7 +237,9 @@ fi
 # touches a bus latch. Only the image and its ELF are lifted out; the objects
 # stay behind so they never mix with the physical ones.
 INT_NAME=$([ "$SUFFIX" = _u ] && echo unibusint || echo qbusint)
-if [ ! -s "$PRU_DEPLOY_DIR/pru1_code_${INT_NAME}_array.c" ]; then
+# Staleness is judged against the copy in internal/: the lifted-out copies are
+# touched after every run for make's sake, which would hide a source edit.
+if pru_sources_newer "$PRU_DEPLOY_DIR/internal/pru1_code_${INT_NAME}_array.c"; then
     echo "Building the internal-bus PRU firmware ..."
     docker run --rm --platform linux/amd64 --user "$DOCKER_USER" \
         -v "$PWD:/qunibone" \
@@ -271,18 +323,63 @@ docker run --rm --user "$DOCKER_USER" -v "$PWD:/qunibone" \
         EXTRA_LIBS="-L/usr/local/tirpc-armhf/lib -ltirpc" \
         all
 
+# Two programs come out of the build: qbone-web, the service that serves the web
+# interface, and demo, the interactive menu.
 BINARY=$OBJDIR/demo
-file "$BINARY"
+BINARY_WEB=$OBJDIR/qbone-web
+file "$BINARY" "$BINARY_WEB"
 
 # record the header state so the next incremental build detects ABI changes
 # (the build recreated $OBJDIR); only reached on a successful build (set -e)
 echo "$HEADER_HASH" > "$HEADER_STAMP"
 
-if [ $DEPLOY = 1 ]; then
+# A board flashed from the release image carries no source tree: the package put
+# the service at /usr/bin/<name> and a unit of the same name runs it. Upload
+# beside it and rename, which replaces the file even while it is running, then
+# restart the unit onto the new one.
+deploy_appliance() {
+    echo "Deploying $BINARY_WEB to $QUNILATOR_HOST:/usr/bin/$NAME ..."
+    scp "$BINARY_WEB" "$QUNILATOR_HOST:/tmp/$NAME.new"
+    ssh "$QUNILATOR_HOST" "sudo install -m 755 /tmp/$NAME.new /usr/bin/$NAME.new \
+        && sudo mv /usr/bin/$NAME.new /usr/bin/$NAME \
+        && rm -f /tmp/$NAME.new \
+        && sudo systemctl restart $NAME.service"
+
+    # The frontend is served from disk, so swapping it needs no restart. The
+    # bundles are content-hashed, so this unpacks over what is there: index.html
+    # names the new ones and the superseded ones are simply no longer asked for.
+    if [ "$QUNILATOR_DEPLOY_FRONTEND" = 1 ]; then
+        echo "Deploying the frontend to $QUNILATOR_HOST:/usr/share/qunilator/frontend ..."
+        stage=$(mktemp -d)
+        trap 'rm -rf "$stage"' EXIT
+        stage_frontend "$stage"
+        # --no-xattrs: macOS bsdtar otherwise records a provenance attribute per
+        # file, which GNU tar on the board reports as an unknown header for each
+        COPYFILE_DISABLE=1 tar --no-xattrs -C "$stage" -czf "$stage.tgz" . \
+            2>/dev/null || tar -C "$stage" -czf "$stage.tgz" .
+        scp "$stage.tgz" "$QUNILATOR_HOST:/tmp/qunilator-frontend.tgz"
+        rm -f "$stage.tgz"
+        # --no-same-owner: the archive carries the developer's uid, which means
+        # nothing on the board; the web root belongs to root as the package left it
+        ssh "$QUNILATOR_HOST" "sudo tar --no-same-owner -C /usr/share/qunilator/frontend \
+            -xzf /tmp/qunilator-frontend.tgz && rm -f /tmp/qunilator-frontend.tgz"
+    fi
+}
+
+# A board with a checkout runs the binary out of it, so the deploy lands in the
+# same place the build wrote it.
+deploy_checkout() {
     echo "Deploying to $QUNILATOR_HOST:$QUNILATOR_REMOTE_DIR/$BINARY ..."
     # the debug object directory has no counterpart in the checkout on the board
     ssh "$QUNILATOR_HOST" "mkdir -p '$QUNILATOR_REMOTE_DIR/$OBJDIR'"
     # upload beside the binary, then rename: replaces it even while it runs
     scp "$BINARY" "$QUNILATOR_HOST:$QUNILATOR_REMOTE_DIR/$BINARY.new"
     ssh "$QUNILATOR_HOST" "mv '$QUNILATOR_REMOTE_DIR/$BINARY.new' '$QUNILATOR_REMOTE_DIR/$BINARY'"
+}
+
+if [ $DEPLOY = 1 ]; then
+    case "$QUNILATOR_DEPLOY_MODE" in
+        appliance) deploy_appliance;;
+        checkout)  deploy_checkout;;
+    esac
 fi

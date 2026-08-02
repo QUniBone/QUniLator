@@ -1,0 +1,46 @@
+# Probe the address the KDJ11-D/S RAM test fails at (17370000, expected
+# 125252, read 000122) with single ODT cycles: deposit the pattern, read it
+# back, and read the neighbours. Distinguishes bad storage from a failure
+# only fast back-to-back CPU cycles provoke.
+#
+# The CPU must already sit in micro-ODT (@) on the external console.
+console: ext
+host: qbone
+title: ODT probes the RAM-test failure address
+timeout: 8s
+machine:
+  start: none
+steps:
+  - name: prompt
+    send: ""
+    wait: 500ms
+  - name: at-odt
+    expect: "@"
+    timeout: 10s
+  # deposit the test pattern at the failing address, then read it back
+  - name: w-17370000
+    send: "17370000/125252"
+  - name: r-17370000
+    send: "17370000/"
+  # the odd word next to it
+  - name: w-17370002
+    send: "17370002/052525"
+  - name: r-17370002
+    send: "17370002/"
+  # a low address in the emulated range as a control
+  - name: w-06000000
+    send: "6000000/125252"
+  - name: r-06000000
+    send: "6000000/"
+  # the last word of the emulated range
+  - name: w-17757776
+    send: "17757776/125252"
+  - name: r-17757776
+    send: "17757776/"
+  # the PA the error report named
+  - name: r-17606626
+    send: "17606626/"
+  - name: done
+    expect: "@"
+    timeout: 8s
+    done: true

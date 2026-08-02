@@ -542,6 +542,21 @@ void slu_c::worker_rcv(void)
 	}
 }
 
+void slu_c::receive_break(void)
+{
+	pthread_mutex_lock(&on_after_rcv_register_access_mutex);
+	rcv_or_err = rcv_p_err = 0;
+	if (rcv_done) // the previous character was never read: overrun
+		rcv_or_err = 1;
+	rcv_buffer = 0;
+	rcv_fr_err = 1;
+	rcv_done = 1;
+	rcv_active = 0;
+	set_rbuf_dati_value();
+	set_rcsr_dati_value_and_INTR(); // INTR!
+	pthread_mutex_unlock(&on_after_rcv_register_access_mutex);
+}
+
 // Signal the worker so it leaves its wait and sees workers_terminate.
 // Signalling without the mutex may be missed when it races the wait;
 // workers_stop() repeats the call until the worker returns.

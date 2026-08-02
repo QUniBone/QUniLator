@@ -135,6 +135,14 @@ public:
 	void update_status_word(void);
 	void update_status_word(bool new_drive_ready_line, bool new_drive_error_line);
 
+	// the four front-panel lamps, as a function of the drive's state
+	void update_lamps(void);
+
+	// A fault that keeps the spindle from running: the cartridge's image cannot
+	// be opened, or the controller supplying the drive's system clock is gone.
+	// The drive comes to rest and stays at rest until the fault clears.
+	volatile bool drive_fault;
+
 public:
 	// 1 = drive drive_ready_line to accept commands (flase while seeking, "get status" always allowed)
 	bool drive_ready_line; // interface cable wire

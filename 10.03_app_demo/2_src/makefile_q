@@ -153,6 +153,7 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/mscp_drive.o \
 	$(OBJDIR)/tqk50.o        \
 	$(OBJDIR)/mscp_tape.o   \
+	$(OBJDIR)/ts11.o        \
 	$(OBJDIR)/simh_tape.o   \
 	$(OBJDIR)/delqa.o	\
 	$(OBJDIR)/vcb01.o	\
@@ -235,10 +236,13 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/device_label.o	\
 	$(OBJDIR)/device_status.o	\
 	$(OBJDIR)/webcontrol.o	\
+	$(OBJDIR)/webpower.o	\
 	$(OBJDIR)/webevents.o	\
 	$(OBJDIR)/webconsole.o	\
 	$(OBJDIR)/webconsole_ext.o	\
 	$(OBJDIR)/webconsole_channel.o	\
+	$(OBJDIR)/webrecording.o	\
+	$(OBJDIR)/webrecordings.o	\
 	$(OBJDIR)/webserial.o	\
 	$(OBJDIR)/webvcb01.o	\
 	$(OBJDIR)/webstorage.o	\
@@ -246,6 +250,8 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/websettings.o	\
 	$(OBJDIR)/weblogging.o	\
 	$(OBJDIR)/webauth.o	\
+	$(OBJDIR)/webshares.o	\
+	$(OBJDIR)/websystem.o	\
 	$(OBJDIR)/webversion.o	\
 	$(OBJDIR)/webupdate.o	\
 	$(OBJDIR)/civetweb.o
@@ -415,6 +421,9 @@ $(OBJDIR)/tqk50.o :   $(DEVICE_SRC_DIR)/tqk50.cpp $(DEVICE_SRC_DIR)/tqk50.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/mscp_tape.o :   $(DEVICE_SRC_DIR)/mscp_tape.cpp $(DEVICE_SRC_DIR)/mscp_tape.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/ts11.o :   $(DEVICE_SRC_DIR)/ts11.cpp $(DEVICE_SRC_DIR)/ts11.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/simh_tape.o :   $(DEVICE_SRC_DIR)/simh_tape.cpp $(DEVICE_SRC_DIR)/simh_tape.hpp
@@ -605,7 +614,7 @@ $(OBJDIR)/webserver.o :  $(WEB_SRC_DIR)/webserver.cpp $(WEB_SRC_DIR)/webserver.h
 $(OBJDIR)/weblog.o :  $(WEB_SRC_DIR)/weblog.cpp $(WEB_SRC_DIR)/weblog.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/webapi.o :  $(WEB_SRC_DIR)/webapi.cpp $(WEB_SRC_DIR)/webserver.hpp $(WEB_SRC_DIR)/webevents.hpp $(WEB_SRC_DIR)/webconsole.hpp $(WEB_SRC_DIR)/device_label.hpp $(WEB_SRC_DIR)/device_status.hpp $(WEB_SRC_DIR)/webcontrol.hpp device_configuration.hpp
+$(OBJDIR)/webapi.o :  $(WEB_SRC_DIR)/webapi.cpp $(WEB_SRC_DIR)/webserver.hpp $(WEB_SRC_DIR)/webevents.hpp $(WEB_SRC_DIR)/webconsole.hpp $(WEB_SRC_DIR)/device_label.hpp $(WEB_SRC_DIR)/device_status.hpp $(WEB_SRC_DIR)/webcontrol.hpp $(WEB_SRC_DIR)/webpower.hpp device_configuration.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/device_label.o :  $(WEB_SRC_DIR)/device_label.cpp $(WEB_SRC_DIR)/device_label.hpp
@@ -615,6 +624,9 @@ $(OBJDIR)/device_status.o :  $(WEB_SRC_DIR)/device_status.cpp $(WEB_SRC_DIR)/dev
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webcontrol.o :  $(WEB_SRC_DIR)/webcontrol.cpp $(WEB_SRC_DIR)/webcontrol.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/webpower.o :  $(WEB_SRC_DIR)/webpower.cpp $(WEB_SRC_DIR)/webpower.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webevents.o :  $(WEB_SRC_DIR)/webevents.cpp $(WEB_SRC_DIR)/webevents.hpp $(WEB_SRC_DIR)/webupdate.hpp
@@ -629,6 +641,12 @@ $(OBJDIR)/webconsole_ext.o :  $(WEB_SRC_DIR)/webconsole_ext.cpp $(WEB_SRC_DIR)/w
 $(OBJDIR)/webconsole_channel.o :  $(WEB_SRC_DIR)/webconsole_channel.cpp $(WEB_SRC_DIR)/webconsole_channel.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
+$(OBJDIR)/webrecording.o :  $(WEB_SRC_DIR)/webrecording.cpp $(WEB_SRC_DIR)/webrecording.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/webrecordings.o :  $(WEB_SRC_DIR)/webrecordings.cpp $(WEB_SRC_DIR)/webrecordings.hpp $(WEB_SRC_DIR)/webrecording.hpp $(WEB_SRC_DIR)/webconsole.hpp $(WEB_SRC_DIR)/webconsole_ext.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
 $(OBJDIR)/webserial.o :  $(WEB_SRC_DIR)/webserial.cpp $(WEB_SRC_DIR)/webserial.hpp $(WEB_SRC_DIR)/webconsole_channel.hpp device_configuration.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
@@ -638,7 +656,7 @@ $(OBJDIR)/webvcb01.o :  $(WEB_SRC_DIR)/webvcb01.cpp $(WEB_SRC_DIR)/webvcb01.hpp 
 $(OBJDIR)/webstorage.o :  $(WEB_SRC_DIR)/webstorage.cpp $(WEB_SRC_DIR)/webstorage.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/webconfigs.o :  $(WEB_SRC_DIR)/webconfigs.cpp $(WEB_SRC_DIR)/webconfigs.hpp device_configuration.hpp
+$(OBJDIR)/webconfigs.o :  $(WEB_SRC_DIR)/webconfigs.cpp $(WEB_SRC_DIR)/webconfigs.hpp $(WEB_SRC_DIR)/webpower.hpp device_configuration.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/websettings.o :  $(WEB_SRC_DIR)/websettings.cpp $(WEB_SRC_DIR)/websettings.hpp $(WEB_SRC_DIR)/webevents.hpp $(WEB_SRC_DIR)/weblogging.hpp device_configuration.hpp
@@ -647,7 +665,13 @@ $(OBJDIR)/websettings.o :  $(WEB_SRC_DIR)/websettings.cpp $(WEB_SRC_DIR)/websett
 $(OBJDIR)/weblogging.o :  $(WEB_SRC_DIR)/weblogging.cpp $(WEB_SRC_DIR)/weblogging.hpp $(WEB_SRC_DIR)/websettings.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/webauth.o :  $(WEB_SRC_DIR)/webauth.cpp $(WEB_SRC_DIR)/webauth.hpp $(WEB_SRC_DIR)/websettings.hpp
+$(OBJDIR)/webauth.o :  $(WEB_SRC_DIR)/webauth.cpp $(WEB_SRC_DIR)/webauth.hpp $(WEB_SRC_DIR)/websettings.hpp $(WEB_SRC_DIR)/webshares.hpp $(WEB_SRC_DIR)/websystem.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/webshares.o :  $(WEB_SRC_DIR)/webshares.cpp $(WEB_SRC_DIR)/webshares.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/websystem.o :  $(WEB_SRC_DIR)/websystem.cpp $(WEB_SRC_DIR)/websystem.hpp $(WEB_SRC_DIR)/webshares.hpp $(WEB_SRC_DIR)/webauth.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webversion.o :  $(WEB_SRC_DIR)/webversion.cpp $(WEB_SRC_DIR)/webversion.hpp $(QUNILATOR_ROOT)/packaging/debian/changelog

@@ -1,7 +1,7 @@
 // Promise-based imperative overlays: confirm, image picker, first-run password.
 import { apiJSON } from '../api';
 import { toast } from './toast';
-import { esc, humanSize, imageSubpath, parentDir, baseName } from './util';
+import { esc, humanSize, imageSubpath, octalStr, parentDir, baseName } from './util';
 import type { ImageInfo, ImageListing } from '../types';
 
 export function confirmModal(title: string, body: string, confirmLabel: string): Promise<boolean> {
@@ -137,6 +137,142 @@ export function promptModal(
     const dot = select === 'stem' ? initial.lastIndexOf('.') : -1;
     if (dot > 0) el.setSelectionRange(0, dot);
     else el.select();
+  });
+}
+
+// ---- placing the memory card ----
+
+export interface MemoryPlacement {
+  startaddr: string; // octal, as the card's parameter reads
+  size: string; // "2040 KB", as the card is described
+}
+
+// A byte count as the card describes itself: whole megabytes, else whole
+// kilobytes, else a count of bytes.
+function cardSize(bytes: number): string {
+  if (bytes >= 1048576 && bytes % 1048576 === 0) return bytes / 1048576 + ' MB';
+  if (bytes >= 1024 && bytes % 1024 === 0) return bytes / 1024 + ' KB';
+  return bytes + ' bytes';
+}
+
+// Where the card goes, asked before it is put in the machine. A card is placed
+// by a start address and a size, and the addresses left free are the ones above
+// whatever memory the machine carries itself — so the fields open on the first
+// free address and the rest of the space below the I/O page, and what the
+// machine answers is on the page next to them.
+//
+// Sizing the machine's own memory sweeps the address space and takes the bus
+// for the length of it, so the probe is a button the operator presses rather
+// than something opening this dialog does.
+export function pickPlacement(
+  title: string,
+  current: MemoryPlacement,
+  confirmLabel: string
+): Promise<MemoryPlacement | null> {
+  return new Promise((resolve) => {
+    const host = document.createElement('div');
+    host.className = 'modal-overlay';
+    host.innerHTML =
+      '<div class="card modal-card"><div class="card-head"><h3>' +
+      esc(title) +
+      '</h3><button class="modal-close" data-mp-no aria-label="Close" title="Close">&times;</button></div>' +
+      '<div class="card-body">' +
+      '<div class="mem-carries muted" style="display:flex; align-items:center; gap:10px; ' +
+      'margin:0 0 14px; font-size:var(--fs-1)">' +
+      '<span data-mp-carries style="flex:1">reading the map…</span>' +
+      '<button class="btn small" data-mp-probe>Probe</button></div>' +
+      '<div class="set-grid">' +
+      '<label class="set-name" for="mp-start">start</label>' +
+      '<input class="set-val mono" id="mp-start" type="text" value="' +
+      esc(current.startaddr) +
+      '">' +
+      '<label class="set-name" for="mp-size">size</label>' +
+      '<input class="set-val" id="mp-size" type="text" placeholder="256 KB" value="' +
+      esc(current.size) +
+      '"></div>' +
+      '<div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">' +
+      '<button class="btn" data-mp-no>Cancel</button>' +
+      '<button class="btn primary" data-mp-yes>' +
+      esc(confirmLabel) +
+      '</button></div></div></div>';
+
+    const startEl = host.querySelector('#mp-start') as HTMLInputElement;
+    const sizeEl = host.querySelector('#mp-size') as HTMLInputElement;
+    const carries = host.querySelector('[data-mp-carries]') as HTMLElement;
+    const probeBtn = host.querySelector('[data-mp-probe]') as HTMLButtonElement;
+
+    // What the machine answers, and the placement that follows from it: the
+    // first address its own memory leaves free, up to the I/O page.
+    const readMap = (m: {
+      addr_width: number;
+      iopage_start: number;
+      physical_end: number | null;
+    }) => {
+      if (m.physical_end === null) {
+        carries.textContent = 'the machine’s own memory has not been sized';
+        return;
+      }
+      const free = m.physical_end + 2;
+      carries.textContent =
+        'the machine answers ' +
+        octalStr(0, m.addr_width) +
+        '..' +
+        octalStr(m.physical_end, m.addr_width) +
+        ' — ' +
+        cardSize(free);
+      startEl.value = octalStr(free, m.addr_width);
+      sizeEl.value = free < m.iopage_start ? cardSize(m.iopage_start - free) : '0 bytes';
+    };
+
+    apiJSON<{ addr_width: number; iopage_start: number; physical_end: number | null }>(
+      '/api/memory/map'
+    )
+      .then((r) => {
+        if (r.ok) readMap(r.data);
+      })
+      .catch(() => {});
+
+    const probe = async () => {
+      probeBtn.disabled = true;
+      carries.textContent = 'sizing the machine’s memory…';
+      const r = await apiJSON<{ error?: string }>('/api/memory/probe', { method: 'POST' });
+      probeBtn.disabled = false;
+      if (!r.ok) {
+        carries.textContent = r.data.error || 'the probe was refused';
+        return;
+      }
+      const m = await apiJSON<{
+        addr_width: number;
+        iopage_start: number;
+        physical_end: number | null;
+      }>('/api/memory/map');
+      if (m.ok) readMap(m.data);
+    };
+
+    const done = (v: MemoryPlacement | null) => {
+      host.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve(v);
+    };
+    const submit = () => {
+      const startaddr = startEl.value.trim();
+      const size = sizeEl.value.trim();
+      if (startaddr && size) done({ startaddr, size });
+    };
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key === 'Escape') done(null);
+      else if (ev.key === 'Enter') submit();
+    }
+    host.addEventListener('click', (ev) => {
+      const target = ev.target as HTMLElement;
+      if (target === host || target.closest('[data-mp-no]')) done(null);
+      else if (target.closest('[data-mp-probe]')) probe();
+      else if (target.closest('[data-mp-yes]')) submit();
+    });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(host);
+    startEl.focus();
+    startEl.select();
   });
 }
 
@@ -391,42 +527,92 @@ export function pickDevice(
   });
 }
 
-function setPasswordModal(minLength: number): Promise<boolean> {
+// One DNS label: letters, digits and inner hyphens, at most 63 characters.
+// <name>.local, the DNS-SD entry, the DHCP lease and the login banner all
+// follow it, so several boards on a network are told apart by it.
+export const HOST_NAME_RULE = /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
+export const HOST_NAME_REFUSAL =
+  'A board name is letters, digits and inner hyphens, up to 63 characters.';
+
+// The types OpenSSH offers, which is what a .pub file opens with.
+export const SSH_KEY_RULE =
+  /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) +[A-Za-z0-9+/=]{16,}( .*)?$/;
+export const SSH_KEY_REFUSAL =
+  'That is not an ssh public key — paste one line, the contents of a .pub file.';
+
+// The one pair of credentials this board answers to: the browser's basic-auth
+// prompt and the SMB, FTP and SFTP shares all take it.
+export const USER_NAME_RULE = /^[a-z_][a-z0-9_-]{0,31}$/;
+export const USER_NAME_HELP =
+  'A user name is 1 to 32 characters: a lower case letter or underscore, then lower case ' +
+  'letters, digits, underscores and hyphens.';
+// said where the rule is already on the page, so it points at it rather than repeating it
+export const USER_NAME_REFUSAL = 'The user name does not follow that rule.';
+
+function setCredentialsModal(minLength: number, hostname: string): Promise<boolean> {
   return new Promise((resolve) => {
     const host = document.createElement('div');
     host.className = 'modal-overlay';
     host.innerHTML =
-      '<div class="card modal-card"><div class="card-head"><h3>Set an admin password</h3></div>' +
+      '<div class="card modal-card"><div class="card-head"><h3>Set this board up</h3></div>' +
       '<div class="card-body"><p class="muted" style="margin:0 0 16px; font-size:var(--fs-1)">' +
-      'This interface controls the machine and is open to anyone who can reach it until a password ' +
-      'is set. At least ' +
+      'This interface controls the machine and is open to anyone who can reach it until ' +
+      'credentials are set. The name and password chosen here are what the browser asks for, ' +
+      'and what the SMB, FTP and SFTP shares of the image library take. At least ' +
       minLength +
-      ' characters. Any user name is accepted when the browser asks.</p>' +
+      ' characters for the password.</p>' +
       '<div class="set-grid">' +
+      '<label class="set-name" for="pw-user">User name</label>' +
+      '<input class="set-val" id="pw-user" type="text" autocomplete="username" ' +
+      'autocapitalize="off" spellcheck="false">' +
       '<label class="set-name" for="pw1">Password</label>' +
       '<input class="set-val" id="pw1" type="password" autocomplete="new-password">' +
       '<label class="set-name" for="pw2">Repeat</label>' +
-      '<input class="set-val" id="pw2" type="password" autocomplete="new-password"></div>' +
+      '<input class="set-val" id="pw2" type="password" autocomplete="new-password">' +
+      '<label class="set-name" for="pw-host">Board name</label>' +
+      '<input class="set-val" id="pw-host" type="text" autocapitalize="off" ' +
+      'spellcheck="false" value="' +
+      esc(hostname) +
+      '">' +
+      '<label class="set-name" for="pw-key">SSH key</label>' +
+      '<textarea class="set-val mono" id="pw-key" rows="3" autocapitalize="off" ' +
+      'spellcheck="false" placeholder="ssh-ed25519 AAAA… you@workstation"></textarea>' +
+      '</div>' +
+      '<p class="muted" style="margin:12px 0 0; font-size:var(--fs-1)">' +
+      esc(USER_NAME_HELP) +
+      ' The board name is what it answers to on the network, as ' +
+      '<span class="mono">&lt;name&gt;.local</span>. An ssh public key is optional: give one and ' +
+      'the same account reaches a shell on the board, with sudo.</p>' +
       '<p id="pw-err" class="muted" style="margin:12px 0 0; font-size:var(--fs-1); color:var(--err); min-height:1.2em"></p>' +
       '<div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">' +
-      '<button class="btn primary" data-pw-set>Set password</button></div></div></div>';
+      '<button class="btn primary" data-pw-set>Set up</button></div></div></div>';
     const err = (msg: string) => {
       (host.querySelector('#pw-err') as HTMLElement).textContent = msg || '';
     };
     async function submit() {
+      const user = (host.querySelector('#pw-user') as HTMLInputElement).value.trim();
       const p1 = (host.querySelector('#pw1') as HTMLInputElement).value;
       const p2 = (host.querySelector('#pw2') as HTMLInputElement).value;
+      const board = (host.querySelector('#pw-host') as HTMLInputElement).value.trim();
+      const key = (host.querySelector('#pw-key') as HTMLTextAreaElement).value.trim();
+      if (!USER_NAME_RULE.test(user)) return err(USER_NAME_REFUSAL);
       if (p1.length < minLength) return err('At least ' + minLength + ' characters.');
       if (p1 !== p2) return err('The two entries do not match.');
+      if (board && !HOST_NAME_RULE.test(board)) return err(HOST_NAME_REFUSAL);
+      if (key && !SSH_KEY_RULE.test(key)) return err(SSH_KEY_REFUSAL);
       err('');
-      const res = await apiJSON<{ error?: string }>('/api/auth', {
+      // One request: the key belongs to the account these credentials create,
+      // and this is the last call the browser makes before it has to
+      // authenticate.
+      const res = await apiJSON<{ error?: string; warnings?: string[] }>('/api/auth', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: p1 }),
-      }).catch(() => ({ ok: false, data: {} as { error?: string } }));
-      if (!res.ok) return err(res.data.error || 'The password could not be set.');
+        body: JSON.stringify({ user, password: p1, hostname: board, ssh_key: key }),
+      }).catch(() => ({ ok: false, data: {} as { error?: string; warnings?: string[] } }));
+      if (!res.ok) return err(res.data.error || 'The credentials could not be set.');
       host.remove();
-      toast('auth', 'Admin password set');
+      const warns = (res.data.warnings || []).join('; ');
+      toast('auth', warns || 'Credentials set for ' + user);
       resolve(true);
     }
     host.addEventListener('click', (ev) => {
@@ -436,7 +622,7 @@ function setPasswordModal(minLength: number): Promise<boolean> {
       if (ev.key === 'Enter') submit();
     });
     document.body.appendChild(host);
-    (host.querySelector('#pw1') as HTMLElement).focus();
+    (host.querySelector('#pw-user') as HTMLElement).focus();
   });
 }
 
@@ -445,5 +631,9 @@ export async function checkAuth(): Promise<void> {
   if (!r.ok) return;
   const auth = await r.json();
   if (auth.configured) return;
-  await setPasswordModal(auth.min_length || 8);
+  // the name the board carries now, offered as what to keep or change
+  const board = await fetch('/api/hostname')
+    .then((h) => (h.ok ? h.json() : { hostname: '' }))
+    .catch(() => ({ hostname: '' }));
+  await setCredentialsModal(auth.min_length || 8, board.hostname || '');
 }

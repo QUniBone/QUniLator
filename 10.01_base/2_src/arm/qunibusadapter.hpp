@@ -128,8 +128,19 @@ public:
 	void cpu_access_profile_note(uint64_t wall_ns, uint64_t cpu_ns,
 			uint8_t qunibus_cycle, uint32_t unibus_addr);
 
+	// A blocking DMA waits for the transfer to finish. timeout_ms bounds that
+	// wait: a transfer the PRU never completes otherwise parks the calling
+	// worker for good, and everything that waits for that worker to stop waits
+	// with it. 0 keeps the unbounded wait, which is what a caller that cannot
+	// make progress without the data wants.
+	//
+	// A timed-out request is left scheduled, because the PRU may still be
+	// working on it and its buffer is where the words would land: the caller
+	// gets success=false and must leave that buffer alive. It is a report of a
+	// bus that has stopped answering, not a way to cancel a transfer.
 	void DMA(dma_request_c& dma_request, bool blocking, uint8_t qunibus_cycle,
-			uint32_t unibus_addr, uint16_t *buffer, uint32_t wordcount);
+			uint32_t unibus_addr, uint16_t *buffer, uint32_t wordcount,
+			unsigned timeout_ms = 0);
 	void INTR(intr_request_c& intr_request, qunibusdevice_register_t *interrupt_register,
 			uint16_t interrupt_register_value);
 	void cancel_INTR(intr_request_c& intr_request);

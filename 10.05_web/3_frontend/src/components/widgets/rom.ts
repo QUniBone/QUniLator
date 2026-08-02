@@ -18,7 +18,7 @@ export class RomWidget extends DeviceWidget {
     const range = st('range');
 
     return html`<div class="card romcard">
-      ${this.head()}
+      ${this.head(this.accessCap())}
       <div class="card-body rombody">
         <div class="rom-sockets">
           <span class="rom-chip"></span>

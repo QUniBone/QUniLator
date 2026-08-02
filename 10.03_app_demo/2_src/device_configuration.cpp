@@ -91,6 +91,9 @@ device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
 	// TQK50 TMSCP tape controller + 4 TK50 drives (ships disabled)
 	TQK50 = new tqk50_c();
 
+	// TS11/TSV05 tape controller + one TS05 transport (ships disabled)
+	TS11 = new ts11_c();
+
 	// 2 SLUs; 2nd UART different parameters, default for TU58 interface
 	// !!! disable Linux usage, agetty !!!
 	DL11 = new slu_c();
@@ -228,6 +231,8 @@ device_configuration_c::~device_configuration_c() {
 	delete RL11;
 	RK11->enabled.set(false);
 	delete RK11;
+	TS11->enabled.set(false);
+	delete TS11;
 	TQK50->enabled.set(false);
 	delete TQK50;
 	UDA50->enabled.set(false);

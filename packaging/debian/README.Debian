@@ -117,6 +117,27 @@ qunilator-network creates and joins to the bridge qunilator-setup builds from th
 uplink. Rename it in /etc/qunilator/network.conf and the delqa's "interface"
 parameter has to follow.
 
+Machines
+--------
+
+A machine is a saved configuration and the media its drives hold. This package
+ships one: the XXDP diagnostic pack as /var/lib/qunilator/images/xxdp25.rl02,
+and a configuration named "xxdp" that attaches it. On a UNIBUS board that
+configuration is a whole emulated PDP-11/20 with the M9312 ROMs, so it boots
+the pack by itself and is the quickest check that a board works; on a QBUS
+board it is the drive alone, for the real machine in the backplane to boot.
+
+The pack is read-only and belongs to this package. A drive keeps its guest's
+writes in a copy-on-write overlay beside the file, so the shipped pack stays as
+it was and reinstalling cannot lose any work.
+
+The configuration is placed only when the board has none by that name, so
+editing or deleting it is a decision an upgrade will not undo.
+
+Other machines are imported. The web interface exports a configuration and
+every image it names as a single <name>.qcfg.zip, and the Configurations page
+imports the same file back, so a machine travels as one file between boards.
+
 Status LEDs
 -----------
 
@@ -180,6 +201,49 @@ The board's other packages are reported by the same check and upgraded with
 rollback - apt cannot undo an upgrade - so it holds the emulator package back,
 upgrades nothing that would remove another package, and never reboots the
 board. The kernel stays held from the image build.
+
+Building on the board
+---------------------
+
+The board builds the emulator it runs, which is what debugging on the hardware
+takes: compile.sh is that build. crossbuild.sh in the same tree is the faster
+path, needing Docker on a desktop rather than the board.
+
+A flashed board carries no source, so fetch one and what it needs to compile:
+
+    sudo apt-get install -y git build-essential libtirpc-dev
+    git clone https://github.com/QUniBone/QUniLator.git
+    cd QUniLator
+
+libtirpc is Sun RPC, which the blinkenlight panel client speaks and glibc no
+longer carries. The TI PRU code generation tools are already here -- the image
+carries clpru as ti-pru-cgt-v2.3 -- so the PRU firmware builds too.
+
+Name the bus this board bridges. The example file is a UniBone; a QBone swaps
+the commented pair inside it:
+
+    cp qunibone-platform.env.example qunibone-platform.env
+
+Then build, from the top of the checkout:
+
+    ./compile.sh              # or ./compile.sh -a to start from clean
+
+It writes both programs into 10.03_app_demo/4_deploy_q (4_deploy_u on a UNIBUS
+board): qbone-web, the service the unit runs, and demo, the same emulation
+driven from a terminal menu. Expect the better part of an hour on a BeagleBone.
+
+To run what was built, put it where the unit looks. Renaming onto the file
+replaces it even while it is running, and the restart picks it up:
+
+    sudo install -m 755 10.03_app_demo/4_deploy_q/qbone-web /usr/bin/qbone.new
+    sudo mv /usr/bin/qbone.new /usr/bin/qbone
+    sudo systemctl restart qbone
+
+Only one program at a time drives the PRUs and the bus, so stop the service
+before running demo by hand:
+
+    sudo systemctl stop qbone
+    sudo ./10.03_app_demo/4_deploy_q/demo
 
 Admin password
 --------------

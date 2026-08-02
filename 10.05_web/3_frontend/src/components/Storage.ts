@@ -1,6 +1,10 @@
-// The image library as a hierarchical file manager at /storage. The current
-// folder is the path tail of the URL (/storage, /storage/du, /storage/dl/systems),
-// so navigation is shareable and the browser's back button walks the tree.
+// The image library as a hierarchical file manager at /storage. The whole tree
+// is on screen at once: a folder row expands in place and its children appear
+// indented beneath it, so an image can be dragged to a sibling folder, and a
+// breadcrumb carries it to an ancestor. The selected folder — the one uploads
+// and new images land in — is the path tail of the URL (/storage, /storage/du,
+// /storage/dl/systems), which reveals it in the tree and keeps a link to it
+// shareable.
 import { html } from '../html';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import { useRoute, useLocation } from 'preact-iso';
@@ -43,16 +47,83 @@ export function parseSize(text: string): number {
 const storageRoute = (cwd: string): string =>
   cwd ? subURL('/storage/', cwd) : '/storage';
 
-function Breadcrumbs({ cwd, go }: { cwd: string; go: (dir: string) => void }) {
+// Which folders are open and which image rows show their file listing are the
+// operator's view of the tree, so they are kept in localStorage and restored on
+// the next visit and after a reload.
+const OPEN_KEY = 'qbone.storage.open';
+const CONTENTS_KEY = 'qbone.storage.contents';
+
+type PathSet = Record<string, boolean>;
+
+function loadPaths(key: string): PathSet {
+  const out: PathSet = {};
+  try {
+    const raw = JSON.parse(localStorage.getItem(key) || '[]');
+    if (Array.isArray(raw)) raw.forEach((p) => typeof p === 'string' && (out[p] = true));
+  } catch {
+    /* a corrupt entry starts over from an empty tree */
+  }
+  return out;
+}
+
+function savePaths(key: string, set: PathSet): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(Object.keys(set).filter((k) => set[k])));
+  } catch {
+    /* storage full or blocked: the view still works, it just forgets */
+  }
+}
+
+// What holds an image where it is, in words the operator can act on. An empty
+// string means the file is free to move.
+function moveBlocker(im: ImageInfo): string {
+  const att = im.attached || [];
+  if (att.length)
+    return im.name + ' is mounted on ' + att.join(', ') + ' — detach the drive before moving it.';
+  const used = im.used || [];
+  if (used.length)
+    return (
+      im.name +
+      ' is named by ' +
+      used.map((u) => u.config + ':' + u.device).join(', ') +
+      (used.length === 1 ? ' — that configuration' : ' — those configurations') +
+      ' would lose it.'
+    );
+  return '';
+}
+
+// The drop target the pointer is over: a folder subpath, '' for the root, or
+// null when the drag is over nothing that takes it.
+type DropTarget = string | null;
+
+interface DragProps {
+  over: DropTarget;
+  canDrop: (dir: string) => boolean;
+  onOver: (e: DragEvent, dir: string) => void;
+  onDrop: (e: DragEvent, dir: string) => void;
+}
+
+// The trail of ancestors above the listing. Each crumb selects its folder, and
+// each crumb takes a dropped image, which is how a file deep in the tree
+// reaches an ancestor or the root in one gesture.
+function Breadcrumbs({ cwd, go, drag }: { cwd: string; go: (dir: string) => void; drag: DragProps }) {
   const segs = cwd ? cwd.split('/') : [];
   let acc = '';
+  const crumb = (dir: string, label: string) =>
+    html`<button
+      class=${'crumb' + (drag.over === dir ? ' drop-into' : '') + (drag.canDrop(dir) ? ' drop-open' : '')}
+      onClick=${() => go(dir)}
+      onDragOver=${(e: DragEvent) => drag.onOver(e, dir)}
+      onDrop=${(e: DragEvent) => drag.onDrop(e, dir)}
+    >
+      ${label}
+    </button>`;
   return html`<nav class="crumbs">
-    <button class="crumb" onClick=${() => go('')}>root</button>
+    ${crumb('', 'root')}
     ${segs.map((seg) => {
       acc = acc ? acc + '/' + seg : seg;
       const here = acc;
-      return html`<span class="crumb-sep">›</span>
-        <button class="crumb" onClick=${() => go(here)}>${seg}</button>`;
+      return html`<span class="crumb-sep">›</span>${crumb(here, seg)}`;
     })}
   </nav>`;
 }
@@ -211,8 +282,21 @@ export function StoragePage() {
 
   // Which image rows have their file-listing expanded, and the decoded results
   // cached by subpath (fetched once on first expand).
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [expanded, setExpanded] = useState<PathSet>(() => loadPaths(CONTENTS_KEY));
   const [contents, setContents] = useState<Record<string, ImageContents>>({});
+  // Which folder rows are open.
+  const [openDirs, setOpenDirs] = useState<PathSet>(() => loadPaths(OPEN_KEY));
+
+  useEffect(() => savePaths(OPEN_KEY, openDirs), [openDirs]);
+  useEffect(() => savePaths(CONTENTS_KEY, expanded), [expanded]);
+
+  // Rows restored as expanded need their listing read again — the decode is
+  // cached in memory only.
+  useEffect(() => {
+    Object.keys(expanded)
+      .filter((p) => expanded[p])
+      .forEach((p) => imageContents(p).then((r) => setContents((c) => ({ ...c, [p]: r }))));
+  }, []);
 
   const toggleContents = (subpath: string) => {
     const open = !expanded[subpath];
@@ -224,10 +308,108 @@ export function StoragePage() {
 
   const go = (dir: string) => loc.route(storageRoute(dir));
 
-  const folders = (s.dirs || []).filter((d) => parentDir(d) === cwd).sort();
-  const files = (s.images || [])
-    .filter((im) => im.dir === cwd)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const openPath = (dir: string) => {
+    if (!dir) return;
+    setOpenDirs((o) => {
+      const next = { ...o };
+      let acc = '';
+      dir.split('/').forEach((seg) => {
+        acc = acc ? acc + '/' + seg : seg;
+        next[acc] = true;
+      });
+      return next;
+    });
+  };
+
+  // The folder the URL names is revealed: every ancestor of it, and the folder
+  // itself, opens.
+  useEffect(() => openPath(cwd), [cwd]);
+
+  // ---- the tree ----
+  // The store holds every folder path and every image, so the listing is that
+  // flat data grouped by parent and walked depth-first, stopping at any folder
+  // the operator has closed.
+  const dirKids = new Map<string, string[]>();
+  (s.dirs || []).forEach((d) => {
+    const p = parentDir(d);
+    const list = dirKids.get(p);
+    if (list) list.push(d);
+    else dirKids.set(p, [d]);
+  });
+  const fileKids = new Map<string, ImageInfo[]>();
+  (s.images || []).forEach((im) => {
+    const list = fileKids.get(im.dir);
+    if (list) list.push(im);
+    else fileKids.set(im.dir, [im]);
+  });
+  dirKids.forEach((l) => l.sort());
+  fileKids.forEach((l) => l.sort((a, b) => a.name.localeCompare(b.name)));
+
+  type Row =
+    | { kind: 'dir'; path: string; depth: number; children: boolean }
+    | { kind: 'file'; im: ImageInfo; depth: number };
+
+  const rows: Row[] = [];
+  const walk = (dir: string, depth: number) => {
+    (dirKids.get(dir) || []).forEach((d) => {
+      const children = (dirKids.get(d) || []).length + (fileKids.get(d) || []).length > 0;
+      rows.push({ kind: 'dir', path: d, depth, children });
+      if (openDirs[d]) walk(d, depth + 1);
+    });
+    (fileKids.get(dir) || []).forEach((im) => rows.push({ kind: 'file', im, depth }));
+  };
+  walk('', 0);
+
+  // ---- dragging an image into a folder ----
+  // The image being dragged is held in a ref, because a dragover handler may
+  // not read the dataTransfer and every event of the gesture — the first
+  // dragover can arrive before the render that follows dragstart — has to see
+  // it. The state copy alongside it is what the highlighting renders from.
+  const dragRef = useRef<ImageInfo | null>(null);
+  const [dragging, setDragging] = useState<ImageInfo | null>(null);
+  const [over, setOver] = useState<DropTarget>(null);
+
+  const canDrop = (dir: string) => !!dragRef.current && dragRef.current.dir !== dir;
+
+  const endDrag = () => {
+    dragRef.current = null;
+    setDragging(null);
+    setOver(null);
+  };
+
+  const dragOver = (e: DragEvent, dir: string) => {
+    if (!canDrop(dir)) return; // no preventDefault: the pointer says "not here"
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    if (over !== dir) setOver(dir);
+  };
+
+  const dropInto = async (e: DragEvent, dir: string) => {
+    e.preventDefault();
+    const im = dragRef.current;
+    endDrag();
+    if (!im || im.dir === dir) return;
+    if (await moveImage(im.path, dir ? dir + '/' + im.name : im.name)) openPath(dir);
+  };
+
+  const startDrag = (e: DragEvent, im: ImageInfo) => {
+    // a drag begun on the Download link is the browser's own link drag
+    if ((e.target as HTMLElement | null)?.closest('a')) return;
+    const why = moveBlocker(im);
+    if (why) {
+      e.preventDefault();
+      toast('move ' + im.name, why);
+      return;
+    }
+    dragRef.current = im;
+    setDragging(im);
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', im.path);
+    }
+  };
+
+  const dragProps: DragProps = { over, canDrop, onOver: dragOver, onDrop: dropInto };
 
   const upload = (list: FileList | File[]) => {
     const arr = Array.from(list);
@@ -333,16 +515,90 @@ export function StoragePage() {
     await deleteFolder(path);
   };
 
-  return html`<section class="page active" data-page="storage">
+  // Clicking a folder selects it — uploads and new images go there — and opens
+  // it; clicking the folder already selected collapses and expands it.
+  const pickFolder = (d: string) => {
+    if (d === cwd) setOpenDirs((o) => ({ ...o, [d]: !o[d] }));
+    else {
+      openPath(d);
+      go(d);
+    }
+  };
+
+  const indent = (depth: number) => 'padding-left:' + (10 + depth * 20) + 'px';
+
+  const folderRow = (path: string, depth: number, children: boolean) => {
+    const isOpen = !!openDirs[path];
+    const target = over === path;
+    return html`<tr key=${'d:' + path}
+      class=${'row-folder' + (cwd === path ? ' row-current' : '') + (target ? ' drop-into' : '') +
+        (canDrop(path) ? ' drop-open' : '')}
+      onDragOver=${(e: DragEvent) => dragOver(e, path)}
+      onDrop=${(e: DragEvent) => dropInto(e, path)}>
+      <td style=${indent(depth)}><span class="tree-name">
+        <button class=${'contents-toggle' + (isOpen ? ' open' : '')}
+          title=${isOpen ? 'Collapse folder' : 'Expand folder'} aria-expanded=${isOpen}
+          disabled=${!children}
+          onClick=${() => setOpenDirs((o) => ({ ...o, [path]: !o[path] }))}>▸</button>
+        <button class="tree-name" onClick=${() => pickFolder(path)}>
+          <span class="pick-icon">${isOpen && children ? '📂' : '📁'}</span>
+          <span class="mono">${baseName(path)}</span></button></span></td>
+      <td class="muted">—</td>
+      <td class="muted">${target ? html`<span class="drop-hint">drop to move here</span>` : 'folder'}</td>
+      <td class="muted">—</td>
+      <td style="text-align:right; white-space:nowrap">
+        <button class="btn small" onClick=${() => renameEntry(path, true)}>Rename…</button>${' '}
+        <${DelButton} label="Delete" confirmLabel="Confirm delete" onConfirm=${() => removeFolder(path)} />
+      </td></tr>`;
+  };
+
+  const fileRow = (im: ImageInfo, depth: number) => {
+    const open = !!expanded[im.path];
+    const held = moveBlocker(im);
+    return html`<${'tr'} key=${'f:' + im.path} draggable=${true}
+      class=${'row-image' + (held ? ' held' : '') + (dragging?.path === im.path ? ' dragging' : '')}
+      title=${held || undefined}
+      onDragStart=${(e: DragEvent) => startDrag(e, im)} onDragEnd=${endDrag}>
+      <td style=${indent(depth)}><span class="tree-name">
+        <button class=${'contents-toggle' + (open ? ' open' : '')}
+          title=${open ? 'Hide file listing' : 'Show file listing'}
+          aria-expanded=${open} onClick=${() => toggleContents(im.path)}>▸</button>
+        <span class="pick-icon">💾</span>
+        <span class="mono">${im.name}</span>
+        ${im.writable === false ? html`<span class="chip off" title="read-only file">read-only</span>` : null}
+        ${im.overlay ? html`<span class="chip warn" title="a copy-on-write overlay holds unsaved writes">overlay</span>` : null}</span></td>
+      <td class="mono">${humanSize(im.size)}</td>
+      <td><${ImageUsage} im=${im} /></td>
+      <td class="muted mono" style="font-size:var(--fs-0)">${im.mtime}</td>
+      <td style="text-align:right; white-space:nowrap">
+        <button class="btn small" onClick=${() => toggleContents(im.path)}>${open ? 'Hide' : 'Contents'}</button>${' '}
+        <a class="btn small" href=${subURL('/api/images/', im.path)} download>Download</a>${' '}
+        <button class="btn small" onClick=${() => renameEntry(im.path, false)}>Rename…</button>${' '}
+        <${DelButton} label="Delete" confirmLabel="Confirm delete" onConfirm=${() => deleteImage(im.path)} />
+      </td></tr>
+      ${im.overlay
+        ? html`<tr key=${'ov:' + im.path} class="overlay-row"><td colspan="5" style=${indent(depth + 1)}>
+            <${OverlayPanel} im=${im} /></td></tr>`
+        : null}
+      ${open
+        ? html`<tr key=${'fc:' + im.path} class="contents-row"><td colspan="5" style=${indent(depth + 1)}>
+            <${ContentsPanel} data=${contents[im.path]} /></td></tr>`
+        : null}`;
+  };
+
+  return html`<section class="page active" data-page="storage" onDragEnd=${endDrag}>
     <div class="store-toolbar">
-      <${Breadcrumbs} cwd=${cwd} go=${go} />
+      <${Breadcrumbs} cwd=${cwd} go=${go} drag=${dragProps} />
       <span class="spacer"></span>
       <button class="btn small" onClick=${newFolder}>New folder</button>
       <button class="btn small primary" onClick=${newImage}>New image…</button>
     </div>
 
     <div class=${'dropzone' + (busy ? ' busy' : '')} onClick=${() => fileRef.current?.click()}
-      onDragOver=${(e: Event) => e.preventDefault()}
+      onDragOver=${(e: DragEvent) => {
+        // files from the desktop only; a row dragged within the tree passes over
+        if (e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')) e.preventDefault();
+      }}
       onDrop=${(e: DragEvent) => {
         e.preventDefault();
         if (e.dataTransfer && e.dataTransfer.files.length) upload(e.dataTransfer.files);
@@ -359,50 +615,12 @@ export function StoragePage() {
     <div class="card"><div class="table-wrap"><table class="data">
       <thead><tr><th>Name</th><th class="num">Size</th><th>Used by</th><th>Modified</th><th></th></tr></thead>
       <tbody>
-        ${folders.map(
-          (d) => html`<tr key=${'d:' + d} class="row-folder">
-          <td><button class="tree-name" onClick=${() => go(d)}><span class="pick-icon">📁</span>
-            <span class="mono">${baseName(d)}</span></button></td>
-          <td class="muted">—</td>
-          <td class="muted">folder</td>
-          <td class="muted">—</td>
-          <td style="text-align:right; white-space:nowrap">
-            <button class="btn small" onClick=${() => renameEntry(d, true)}>Rename…</button>${' '}
-            <${DelButton} label="Delete" confirmLabel="Confirm delete" onConfirm=${() => removeFolder(d)} />
-          </td></tr>`
+        ${rows.map((r) =>
+          r.kind === 'dir' ? folderRow(r.path, r.depth, r.children) : fileRow(r.im, r.depth)
         )}
-        ${files.map((im) => {
-          const open = !!expanded[im.path];
-          return html`<tr key=${'f:' + im.path}>
-          <td><span class="tree-name">
-            <button class=${'contents-toggle' + (open ? ' open' : '')}
-              title=${open ? 'Hide file listing' : 'Show file listing'}
-              aria-expanded=${open} onClick=${() => toggleContents(im.path)}>▸</button>
-            <span class="pick-icon">💾</span>
-            <span class="mono">${im.name}</span>
-            ${im.writable === false ? html`<span class="chip off" title="read-only file">read-only</span>` : null}
-            ${im.overlay ? html`<span class="chip warn" title="a copy-on-write overlay holds unsaved writes">overlay</span>` : null}</span></td>
-          <td class="mono">${humanSize(im.size)}</td>
-          <td><${ImageUsage} im=${im} /></td>
-          <td class="muted mono" style="font-size:var(--fs-0)">${im.mtime}</td>
-          <td style="text-align:right; white-space:nowrap">
-            <button class="btn small" onClick=${() => toggleContents(im.path)}>${open ? 'Hide' : 'Contents'}</button>${' '}
-            <a class="btn small" href=${subURL('/api/images/', im.path)} download>Download</a>${' '}
-            <button class="btn small" onClick=${() => renameEntry(im.path, false)}>Rename…</button>${' '}
-            <${DelButton} label="Delete" confirmLabel="Confirm delete" onConfirm=${() => deleteImage(im.path)} />
-          </td></tr>
-          ${im.overlay
-            ? html`<tr key=${'ov:' + im.path} class="overlay-row"><td colspan="5">
-                <${OverlayPanel} im=${im} /></td></tr>`
-            : null}
-          ${open
-            ? html`<tr key=${'fc:' + im.path} class="contents-row"><td colspan="5">
-                <${ContentsPanel} data=${contents[im.path]} /></td></tr>`
-            : null}`;
-        })}
         ${
-          !folders.length && !files.length
-            ? html`<tr><td colspan="5" class="muted">This folder is empty — drop a disk image above, or make a subfolder.</td></tr>`
+          !rows.length
+            ? html`<tr><td colspan="5" class="muted">The library is empty — drop a disk image above, or make a folder.</td></tr>`
             : null
         }
       </tbody></table></div></div></section>`;

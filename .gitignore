@@ -14,6 +14,10 @@
 # packages built by packaging/build-deb.sh
 *.deb
 
+# deploy settings of one person's board, read by crossbuild.sh -d
+# (build.env.example documents them)
+build.env
+
 # staging directory and output of packaging/build-release.sh: the downloaded
 # Debian base image, the package, the sample OS images and the built card image
 dist/

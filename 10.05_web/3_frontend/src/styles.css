@@ -510,19 +510,13 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
   letter-spacing: .04em; color: var(--sw-legend);
 }
 
-/* ---- memory card ---- what answers, one row per range: what the machine
-   carries and what the board answers out of its own memory. Addresses no row
-   names are the ones nothing answers at, the I/O page on top among them. */
-.membody { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px; }
-.mem-map { display: flex; flex-direction: column; gap: 9px; }
-.mem-legend { display: flex; flex-direction: column; gap: 3px; }
-.mem-legend-row {
-  display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center;
-  font-size: var(--fs-0); color: var(--ink-muted);
-}
-.mem-legend-row .mem-addr { font-family: var(--font-mono); color: var(--ink); }
-.mem-legend-row .mem-size { font-variant-numeric: tabular-nums; }
-.mem-note, .mem-empty { font-size: var(--fs-0); color: var(--ink-faint); }
+/* ---- memory card ---- READ/WRITE lamps over one fact box, a line per range:
+   what the machine's hardware carries and what the board answers out of its
+   own memory. Addresses no line names are the ones nothing answers at. A card
+   clamped narrower than a line (a narrow window caps the grid's columns) wraps
+   the line rather than clipping the address range. */
+.memcard .rl-foot { display: flex; flex-direction: column; gap: 6px; }
+.memcard .rl-info { white-space: normal; }
 
 /* ---- bootstrap PROM card ---- the sockets and what reaches the machine from
    them. A ROM chip beside the name of what it was programmed with, then the
@@ -736,6 +730,12 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
   padding: 4px 8px; border-radius: var(--r-sm);
   border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
 }
+/* a text field in the settings grid reads like the selects beside it */
+.set-val input[type="text"], .set-val input[type="password"], input.set-val {
+  font-family: var(--font-mono); font-size: var(--fs-1);
+  padding: 4px 8px; border-radius: var(--r-sm); min-width: 220px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+}
 .set-info { grid-column: 2; font-size: var(--fs-0); color: var(--ink-faint); margin: -2px 0 12px; }
 .set-val .radio { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-1); cursor: pointer; }
 .set-val .radio input { margin: 0; }
@@ -819,6 +819,26 @@ button.tree-name:hover .mono { color: var(--accent); }
 .row-folder td { background: color-mix(in srgb, var(--accent-soft) 30%, transparent); }
 .pick-row.folder .mono { flex: 1; }
 
+/* a folder with nothing in it keeps the twisty's width so the names line up */
+.contents-toggle:disabled { opacity: 0; cursor: default; }
+
+/* the selected folder — where an upload or a new image lands */
+.row-current td:first-child { box-shadow: inset 3px 0 0 var(--line); }
+.row-current .tree-name .mono { font-weight: 650; }
+
+/* moving an image by dragging its row onto a folder or a breadcrumb */
+.row-image .tree-name { cursor: grab; }
+.row-image.held .tree-name { cursor: not-allowed; }
+.row-image.dragging td { opacity: .45; }
+/* while a drag is live, every folder that would take the file lifts a little */
+.row-folder.drop-open td { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.crumb.drop-open { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+/* the one under the pointer says so */
+.row-folder.drop-into td { background: var(--accent-soft); }
+.row-folder.drop-into td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.crumb.drop-into { background: var(--accent); color: var(--on-accent); box-shadow: none; }
+.drop-hint { color: var(--accent); font-weight: 600; }
+
 /* ============================ configurations ============================ */
 /* master (list) beside detail (the selected config's editor) */
 .cfg-layout { display: flex; gap: 16px; align-items: flex-start; }
@@ -869,6 +889,12 @@ button.tree-name:hover .mono { color: var(--accent); }
 .cfg-dip { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-1); }
 .cfg-dip select { font-size: var(--fs-1); }
 .cfg-dip-live { font-size: var(--fs-0); }
+
+/* the machine is dark: what the editor changes is held for the power-up */
+.cfg-held {
+  padding: 8px 14px; border-top: 1px solid var(--line-soft);
+  font-size: var(--fs-1); color: var(--warn); background: var(--warn-soft);
+}
 
 .cfg-editor { border-top: 1px solid var(--line-soft); }
 .cfg-editor .dev-sub { border-top: 1px solid var(--line-soft); }
@@ -1024,6 +1050,21 @@ button.tree-name:hover .mono { color: var(--accent); }
 .disk-status.load { background: var(--accent-soft); color: var(--accent); }
 .disk-status.idle { opacity: .7; }
 .diskface .rl-foot .imgfield { flex: 1 1 auto; min-width: 0; }
+
+/* the floppy's sector-order control: a silkscreened legend and a selector,
+   on their own line under the medium */
+.diskface .rl-foot .layoutrow {
+  flex: 1 1 100%; display: flex; align-items: center; gap: 8px;
+}
+.layoutlegend {
+  flex: 0 0 auto; font-size: var(--fs-0); font-weight: 600; letter-spacing: .06em;
+  color: var(--rl-ink); opacity: .75;
+}
+.layoutsel {
+  flex: 1 1 auto; min-width: 0; padding: 4px 6px; border-radius: var(--r-sm);
+  font-size: var(--fs-0); color: var(--rl-ink);
+  background: var(--rl-inset); border: 1px solid var(--rl-panel-edge);
+}
 
 /* image-picker modal */
 .modal-overlay { position: fixed; inset: 0; background: rgba(10,14,18,.5); display: flex; align-items: center; justify-content: center; z-index: 60; }
@@ -1196,3 +1237,37 @@ button.tree-name:hover .mono { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .upd-bar-fill { animation: none; width: 100%; opacity: .5; }
 }
+
+/* The console record control and the recordings list. A running recording is
+   marked with the pulsing dot the rest of the world uses for one, so it is
+   visible at a glance that a session is being written to the board. */
+.btn.recording { color: #b4231d; border-color: #b4231d; }
+.rec-dot { display: inline-block; width: .5em; height: .5em; margin-right: .4em;
+  border-radius: 50%; background: #b4231d; vertical-align: baseline;
+  animation: rec-pulse 1.6s ease-in-out infinite; }
+@keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; } }
+.rec-table { width: 100%; border-collapse: collapse; }
+.rec-table td { padding: .35rem .5rem .35rem 0; vertical-align: middle;
+  border-bottom: 1px solid var(--line, #e4e4de); }
+.rec-table tr:last-child td { border-bottom: 0; }
+.rec-table td:last-child { text-align: right; white-space: nowrap; }
+
+/* The ACCESS cap on a card whose traffic the PRU answers (the memory card, the
+   PROM module). It sits in the card head beside the status chip rather than in
+   a lamp row, since neither card has one. */
+.lampbtn.cap-mini { font-size: .5rem; padding: .12rem .3rem; min-width: 0;
+  letter-spacing: .04em; margin-left: auto; }
+
+/* Export menu on a configuration, and the import control beside the list. */
+.export-wrap { position: relative; display: inline-block; }
+.export-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 40;
+  min-width: 17rem; padding: .25rem; border-radius: 7px;
+  background: var(--card, #fff); border: 1px solid var(--line, #e4e4de);
+  box-shadow: 0 8px 24px rgba(0,0,0,.14); }
+.export-item { display: flex; flex-direction: column; gap: .1rem; width: 100%;
+  text-align: left; padding: .4rem .55rem; border: 0; border-radius: 5px;
+  background: none; cursor: pointer; font: inherit; color: inherit; }
+.export-item:hover { background: var(--hover, #f0f0ea); }
+.export-item .muted { font-size: .75rem; }
+label.btn.disabled { opacity: .6; pointer-events: none; }

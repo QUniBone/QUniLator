@@ -4,7 +4,13 @@ import type { ComponentChildren } from 'preact';
 import type { LiveDev } from '../../types';
 import { DeviceWidget } from './base';
 import type { WidgetOption, WidgetOpts } from './base';
-import { DiskWidget, Ra81Widget, RemovableDriveWidget, RlWidget } from './drives';
+import {
+  DiskWidget,
+  FloppyDriveWidget,
+  Ra81Widget,
+  RemovableDriveWidget,
+  RlWidget,
+} from './drives';
 import { CpuWidget } from './cpu';
 import { MemoryWidget } from './memory';
 import { RomWidget } from './rom';
@@ -28,8 +34,8 @@ const WIDGET_MODELS: Record<string, WidgetClass> = {
   RL01: RlWidget,
   RA81: Ra81Widget,
   VCB01: Vcb01Widget,
-  RX01: RemovableDriveWidget,
-  RX02: RemovableDriveWidget,
+  RX01: FloppyDriveWidget,
+  RX02: FloppyDriveWidget,
   dzv11_c: DzWidget,
   dhv11_c: DhWidget,
   'MRV11-D': RomWidget,

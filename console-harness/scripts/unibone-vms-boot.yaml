@@ -1,0 +1,44 @@
+# Boot VMS on the emulated VAX-11/780 and reach the DCL prompt.
+#
+# The VAX console is the processor's own, not a device on the bus, so the
+# channel is `vax`. VMS stops for the date on every boot, which is why this
+# needs driving rather than waiting out.
+#
+#   node dist/src/cli.js run scripts/unibone-vms-boot.yaml \
+#        --var VMS_DATE="1-AUG-2026 20:00"
+console: vax
+host: unibone
+title: VMS on the emulated VAX
+timeout: 120s
+machine:
+  config: vax
+  start: restart
+  settle: 3s
+deviations:
+  - match: "?I/O device not ready"
+    fail: the boot device did not answer
+steps:
+  # The machine boots VMS by itself on a restart; there is no ROM prompt to
+  # answer. It stops for the date, which is where a boot always ends up.
+  - name: banner
+    expect: /VAX\/VMS Version/
+    timeout: 240s
+  - name: date
+    expect: /ENTER DATE AND TIME/i
+    send: ${VMS_DATE}
+    timeout: 120s
+  - name: startup
+    expect:
+      - match: /Username:/
+        send: SYSTEM
+      - match: "$ "
+        done: true
+    timeout: 420s
+  - name: password
+    expect: /Password:/
+    send: MANAGER
+    mode: no-echo
+  - name: dcl
+    expect: "$ "
+    timeout: 180s
+    done: true

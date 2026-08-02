@@ -11,10 +11,12 @@
 #include <vector>
 
 #include "webconsole_channel.hpp"
+#include "webrecording.hpp"
 
 console_channel_c::console_channel_c(send_fn_t send, send_text_fn_t send_text,
-		size_t cap)
-	: cap_(cap), send_(send), send_text_(send_text) {
+		bool designate_answerer, size_t cap)
+	: cap_(cap), send_(send), send_text_(send_text),
+	  designate_answerer_(designate_answerer) {
 }
 
 // caller holds mutex_: make client the answerer, but only once it has actually
@@ -22,7 +24,9 @@ console_channel_c::console_channel_c(send_fn_t send, send_text_fn_t send_text,
 // role never lands on a client that will not hear about it).
 void console_channel_c::set_answerer_locked(void *client) {
 	static const char msg[] = "{\"answerer\":true}";
-	if (send_text_ != nullptr && send_text_(client, msg, sizeof(msg) - 1) == 1)
+	if (!designate_answerer_ || send_text_ == nullptr)
+		return;
+	if (send_text_(client, msg, sizeof(msg) - 1) == 1)
 		answerer_ = client;
 }
 
@@ -74,6 +78,8 @@ void console_channel_c::append(const char *data, size_t len) {
 	if (len == 0)
 		return;
 	std::lock_guard<std::mutex> lock(mutex_);
+	if (recorder_ != nullptr)
+		recorder_->output(data, len);
 	ring_.append(data, len);
 	trim_locked();
 	std::vector<void *> dead;
@@ -97,6 +103,16 @@ void console_channel_c::add_client(void *client) {
 	if (!ring_.empty()) {
 		std::string replay = strip_query_escapes(ring_);
 		if (!replay.empty() && send_(client, replay.data(), replay.size()) < 0) {
+			if (answerer_ == client)
+				answerer_ = nullptr;
+			return;
+		}
+	}
+	// Mark the end of the replay: everything after this frame is live. Sent
+	// under the same lock, so no live byte can precede it.
+	if (send_text_ != nullptr) {
+		static const char live[] = "{\"live\":true}";
+		if (send_text_(client, live, sizeof(live) - 1) < 0) {
 			if (answerer_ == client)
 				answerer_ = nullptr;
 			return;
@@ -127,6 +143,16 @@ void console_channel_c::clear_ring(void) {
 void console_channel_c::clear_clients(void) {
 	std::lock_guard<std::mutex> lock(mutex_);
 	clients_.clear();
+}
+
+void console_channel_c::set_recorder(console_recorder_c *rec) {
+	std::lock_guard<std::mutex> lock(mutex_);
+	recorder_ = rec;
+}
+
+console_recorder_c *console_channel_c::recorder(void) {
+	std::lock_guard<std::mutex> lock(mutex_);
+	return recorder_;
 }
 
 size_t console_channel_c::ring_size(void) {

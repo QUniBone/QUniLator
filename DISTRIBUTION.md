@@ -357,6 +357,46 @@ each named for its board and mutually exclusive with the other through a
 `Conflicts`/`Replaces` pair, so they share one repository and a board is only
 ever offered the brand it has.
 
+## Where machines come from
+
+A machine is a saved configuration and the media its drives hold, and the two
+travel together: the web interface exports `<name>.qcfg.zip`, holding the
+configuration document and every image it names, and imports the same zip back.
+So a machine is a file an operator can be handed, and a board acquires one
+without anything having been baked into its image.
+
+The appliance image therefore carries no operating systems. What a freshly
+flashed board has is what its package ships: the **XXDP diagnostic pack**
+(`xxdp25.rl02`, stored compressed in `packaging/images/` and the one binary in
+this repository that is not a build product) and a configuration that attaches
+it. XXDP earns the space by being the pack that says whether a board works at
+all. On a UNIBUS build that configuration is a whole emulated PDP-11/20 with the
+M9312 ROMs to boot the pack; a QBUS board is a peripheral of a real machine,
+which brings its own processor and console, so there it is the drive alone.
+
+The pack is read-only and belongs to the package. A drive takes its guest's
+writes into a copy-on-write overlay, so the shipped file stays as it was and a
+reinstall cannot lose an operator's work.
+
+Everything else is imported. [Issue #64](https://github.com/QUniBone/QUniLator/issues/64)
+covers doing that from the interface: a board subscribes to several catalogues -
+the project's, a user group's, an operator's own - and imports what one lists.
+Until then an operator is handed a zip and feeds it to the import dialog.
+
+### What this settles about the licensing
+
+Decision 3 asked which sample operating systems ship and under what licence. The
+answer is that the distributed image ships one, and it is the same DEC
+diagnostic pack the boards have always carried. Everything with a less certain
+standing - RT-11, RSX-11M+, and VAX/VMS most of all, which VSI licenses today
+and runs its own community programme for - is no longer something a download
+carries whether or not it was wanted. It becomes a configuration an operator
+goes and gets, which is a materially better position than serving it to
+everyone who flashes a card.
+
+What a published catalogue may carry is the same question in a smaller place,
+and it is still open.
+
 ## Self-update, done
 
 The web interface tells the operator when a newer package is published, shows the

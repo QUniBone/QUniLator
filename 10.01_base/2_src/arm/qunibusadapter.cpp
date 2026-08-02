@@ -50,6 +50,7 @@
 //#include <fstream>
 #include <ios>
 #include <string.h>
+#include <errno.h>
 #include <pthread.h>
 #include <assert.h>
 #include <queue>
@@ -687,7 +688,8 @@ void qunibusadapter_c::cpu_access_profile_note(uint64_t wall_ns, uint64_t cpu_ns
 }
 
 void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qunibus_cycle,
-                           uint32_t unibus_addr, uint16_t *buffer, uint32_t wordcount)
+                           uint32_t unibus_addr, uint16_t *buffer, uint32_t wordcount,
+                           unsigned timeout_ms)
 {
     assert(dma_request.priority_slot < PRIORITY_SLOT_COUNT);
     assert(dma_request.level_index == PRIORITY_LEVEL_INDEX_NPR);
@@ -815,10 +817,41 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
         pthread_mutex_lock(&dma_request.complete_mutex);
         // DMA() is blocking: Wait for request to finish.
         //	pthread_mutex_lock(&dma_request.mutex);
-        while (!dma_request.complete) {
-            int res = pthread_cond_wait(&dma_request.complete_cond,
-                                        &dma_request.complete_mutex);
-            assert(!res);
+        if (timeout_ms == 0) {
+            while (!dma_request.complete) {
+                int res = pthread_cond_wait(&dma_request.complete_cond,
+                                            &dma_request.complete_mutex);
+                assert(!res);
+            }
+        } else {
+            // Bounded wait: a transfer the PRU never completes would otherwise
+            // park this worker for good, and a device disable that waits for
+            // the worker to stop would then cancel the thread and lose the
+            // device. The caller is told the transfer did not happen.
+            struct timespec deadline;
+            clock_gettime(CLOCK_REALTIME, &deadline);
+            deadline.tv_sec += timeout_ms / 1000;
+            deadline.tv_nsec += (long) (timeout_ms % 1000) * 1000000L;
+            if (deadline.tv_nsec >= 1000000000L) {
+                deadline.tv_sec++;
+                deadline.tv_nsec -= 1000000000L;
+            }
+            while (!dma_request.complete) {
+                int res = pthread_cond_timedwait(&dma_request.complete_cond,
+                                                 &dma_request.complete_mutex,
+                                                 &deadline);
+                if (res == ETIMEDOUT) {
+                    dma_request.success = false;
+                    ERROR("DMA did not complete within %u ms: dev %s, %s @ %s, "
+                          "wordcount %u", timeout_ms,
+                          dma_request.device ? dma_request.device->name.value.c_str()
+                                             : "none",
+                          qunibus_c::control2text(qunibus_cycle),
+                          qunibus->addr2text(unibus_addr), wordcount);
+                    break;
+                }
+                assert(!res);
+            }
         }
         pthread_mutex_unlock(&dma_request.complete_mutex);
     }
@@ -1171,16 +1204,30 @@ void qunibusadapter_c::worker_device_dma_chunk_complete_event()
                2 * mailbox->dma.wordcount);
     }
     if (mailbox->dma.cur_status != DMA_STATE_READY) {
-        // failure: abort remaining chunks. Rare and consequential (an MSCP
-        // port that cannot read its rings resets itself and strands the
-        // guest's I/O), so name the transfer and the PRU's end state here,
-        // while the mailbox still holds this transfer.
-        WARNING("device DMA failed: dev %s, %s @ %s, %u words, stopped at %s, PRU status %u",
-                dmareq->device ? dmareq->device->name.value.c_str() : "none",
-                qunibus->control2text(dmareq->qunibus_control),
-                qunibus->addr2text(dmareq->qunibus_start_addr), dmareq->wordcount,
-                qunibus->addr2text(mailbox->dma.cur_addr),
-                (unsigned) mailbox->dma.cur_status);
+        // failure: abort remaining chunks. Named here, while the mailbox still
+        // holds this transfer, at the level the failure deserves.
+        //
+        // A processor reading an address nothing answers at is the bus saying
+        // so, and a CPU is built on it: an operating system finds its hardware
+        // by probing every address a card could live at and noting which ones
+        // time out. VMS walking the floating CSR space alone accounts for a
+        // couple of hundred of these on every boot. The processor takes its
+        // machine check and carries on, so this is traffic rather than news.
+        //
+        // A device losing a transfer is the other thing entirely: an MSCP port
+        // that cannot read its rings resets itself and strands the guest's I/O.
+        if (dmareq->is_cpu_access)
+            DEBUG("CPU access timed out: %s @ %s, PRU status %u",
+                    qunibus->control2text(dmareq->qunibus_control),
+                    qunibus->addr2text(dmareq->qunibus_start_addr),
+                    (unsigned) mailbox->dma.cur_status);
+        else
+            WARNING("device DMA failed: dev %s, %s @ %s, %u words, stopped at %s, PRU status %u",
+                    dmareq->device ? dmareq->device->name.value.c_str() : "none",
+                    qunibus->control2text(dmareq->qunibus_control),
+                    qunibus->addr2text(dmareq->qunibus_start_addr), dmareq->wordcount,
+                    qunibus->addr2text(mailbox->dma.cur_addr),
+                    (unsigned) mailbox->dma.cur_status);
         dmareq->success = false;
         more_chunks = false;
     } else if (wordcount_transferred == dmareq->wordcount) {

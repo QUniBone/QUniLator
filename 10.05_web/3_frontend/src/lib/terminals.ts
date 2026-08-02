@@ -231,6 +231,14 @@ function connectConsole(): void {
         try {
           const msg = JSON.parse(e.data);
           if (typeof msg.answerer === 'boolean') answerer = msg.answerer;
+          // The server marks where the replayed history ends. That is the
+          // exact moment answerbacks become safe again, so take it in
+          // preference to the write-callback and the timeout below, both of
+          // which only approximate it.
+          if (msg.live === true) {
+            replayPending = false;
+            replaying = false;
+          }
         } catch {
           /* ignore malformed control frame */
         }

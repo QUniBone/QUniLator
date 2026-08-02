@@ -51,7 +51,9 @@ pru_iopage_registers_t pru_iopage_registers;
  * for post processing. SSYN must remain asserted until ARM is complete
  */
 uint8_t emulated_addr_read(uint32_t addr, uint16_t *val) {
-	if (DDRMEM_ADDR_EMULATED(addr)) {
+	uint32_t in0 = DDRMEM_ADDR_IN_SLOT(addr, 0);
+	uint32_t in1 = DDRMEM_ADDR_IN_SLOT(addr, 1);
+	if (in0 | in1) {
 		// speed priority on memory access: test for end_addr first
 		// addr in an emulated memory range, not in I/O page
 		// behind an adapter the map says where the page really is
@@ -66,6 +68,7 @@ uint8_t emulated_addr_read(uint32_t addr, uint16_t *val) {
 			phys = DDRMEM_MAP_APPLY(entry, addr);
 		}
 		*val = DDRMEM_MEMGET_W(phys);
+		DDRMEM_COUNT_READ(in0, in1);
 		return 1;
 	} else if (addr >= pru_iopage_registers.iopage_start_addr) {
 		uint8_t reghandle;
@@ -74,6 +77,9 @@ uint8_t emulated_addr_read(uint32_t addr, uint16_t *val) {
 			return 0; // register not implemented as "active"
 		} else if (reghandle == IOPAGE_REGISTER_HANDLE_ROM) {
 			*val = DDRMEM_MEMGET_W(addr);
+			// A PROM module is read the same way a memory card is, so it needs
+			// the same count to show a bootstrap running out of it.
+			pru_iopage_registers.rom_access_count++;
 			return 1;
 		} else {
 			// return register value. remove "volatile" attribute
@@ -97,7 +103,9 @@ uint8_t emulated_addr_read(uint32_t addr, uint16_t *val) {
  * may set mailbox event to ARM, then SSYN must remain asserted until ARM is complete
  */
 uint8_t emulated_addr_write_w(uint32_t addr, uint16_t w) {
-	if (DDRMEM_ADDR_EMULATED(addr)) {
+	uint32_t in0 = DDRMEM_ADDR_IN_SLOT(addr, 0);
+	uint32_t in1 = DDRMEM_ADDR_IN_SLOT(addr, 1);
+	if (in0 | in1) {
 		// speed priority on memory access: test for end_addr first
 		// addr in an emulated memory range, not in I/O page
    		// no check wether addr is even (A00=0)
@@ -113,6 +121,7 @@ uint8_t emulated_addr_write_w(uint32_t addr, uint16_t w) {
 			phys = DDRMEM_MAP_APPLY(entry, addr);
 		}
 		DDRMEM_MEMSET_W(phys, w);
+		DDRMEM_COUNT_WRITE(in0, in1);
 		return 1;
 	} else if (addr >= pru_iopage_registers.iopage_start_addr) {
 		uint8_t reghandle = IOPAGE_REGISTER_ENTRY(pru_iopage_registers, addr);
@@ -134,7 +143,9 @@ uint8_t emulated_addr_write_w(uint32_t addr, uint16_t w) {
 }
 
 uint8_t emulated_addr_write_b(uint32_t addr, uint8_t b) {
-	if (DDRMEM_ADDR_EMULATED(addr)) {
+	uint32_t in0 = DDRMEM_ADDR_IN_SLOT(addr, 0);
+	uint32_t in1 = DDRMEM_ADDR_IN_SLOT(addr, 1);
+	if (in0 | in1) {
 		// speed priority on memory access: test for end_addr first
 		// addr in an emulated memory range, not in I/O page
 		// behind an adapter the map says where the page really is
@@ -149,6 +160,7 @@ uint8_t emulated_addr_write_b(uint32_t addr, uint8_t b) {
 			phys = DDRMEM_MAP_APPLY(entry, addr);
 		}
 		DDRMEM_MEMSET_B(phys, b);
+		DDRMEM_COUNT_WRITE(in0, in1);
 		return 1;
 	} else if (addr >= pru_iopage_registers.iopage_start_addr) {
 		uint8_t reghandle = IOPAGE_REGISTER_ENTRY(pru_iopage_registers, addr);

@@ -49,6 +49,7 @@
 
 #include "webevents.hpp"
 #include "webconfigs.hpp"
+#include "webpower.hpp"
 #include "webstorage.hpp"
 #include "webupdate.hpp"
 
@@ -206,18 +207,37 @@ static picojson::value param_value_json(parameter_c *p) {
 	return picojson::value();
 }
 
+// A parameter as the machine carries it, which is what the REST device list and
+// a configuration snapshot report. The two differ while the board's power is
+// off: the emulation holds no card and no drive holds a pack, and the machine
+// still carries both. A page reads the device set from these values, so they
+// are the ones the stream publishes — the "enabled" flag and the medium of a
+// dark machine describe the configuration it will come up with.
+static picojson::value param_value_carried(device_c *dev, parameter_c *p) {
+	if (p == &dev->enabled)
+		return picojson::value(webpower_is_in_machine(dev));
+	if (dynamic_cast<parameter_string_c *>(p) != nullptr)
+		return picojson::value(webpower_param_value(dev, p));
+	return param_value_json(p);
+}
+
+void webevents_note_param(const std::string &devname, const std::string &param,
+		const picojson::value &value) {
+	config_dirty = true;
+	picojson::object event;
+	event["t"] = picojson::value("param");
+	event["dev"] = picojson::value(devname);
+	event["param"] = picojson::value(param);
+	event["value"] = value;
+	enqueue(event);
+}
+
 static void on_param_changed(parameter_c *param) {
 	device_c *dev = dynamic_cast<device_c *>(param->parameterized);
 	if (dev == nullptr)
 		return;
 	// a committed edit is what makes the live setup differ from the saved one
-	config_dirty = true;
-	picojson::object event;
-	event["t"] = picojson::value("param");
-	event["dev"] = picojson::value(dev->name.value);
-	event["param"] = picojson::value(param->name);
-	event["value"] = param_value_json(param);
-	enqueue(event);
+	webevents_note_param(dev->name.value, param->name, param_value_carried(dev, param));
 }
 
 // ---- log journal: a persisted, paginated history of log lines ----

@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <string>
 
+#include "picojson.h"
+
 struct mg_context;
 
 // register /ws/events, install the parameter/logger observers,
@@ -20,6 +22,13 @@ void webevents_shutdown(void);
 
 // record a bus control action (init/powercycle/halt) for the state event
 void webevents_note_halt(bool halted);
+
+// Publish a committed parameter change. The device parameters publish
+// themselves through the change hook; this is for a value an endpoint commits
+// somewhere other than the parameter — an edit to the machine the board carries
+// while its power is off, which reaches no device until the machine comes up.
+void webevents_note_param(const std::string &dev, const std::string &param,
+		const picojson::value &value);
 
 // set the logical power flag and publish it in the state event. Runtime only:
 // a service restart comes up powered on. While powered off the dashboard shows

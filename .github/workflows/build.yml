@@ -33,6 +33,23 @@ jobs:
       - name: Run the MAINDEC diagnostics against both CPU cores
         run: make -C 10.06_cputest/2_src -j"$(nproc)" test
 
+  console-harness:
+    # The console scripting harness (qcon) against its mock guest: echo
+    # pacing, drop recovery, anchoring, deviations, step branching and the
+    # asciicast recording — the console faults it exists to survive, staged
+    # in memory with no board.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Build and test the console harness
+        run: |
+          cd console-harness
+          npm ci
+          npm test
+
   appliance-scripts:
     # The appliance's shell tools and units, checked without a board: the
     # updater drives apt and systemd on a live machine, so a syntax error or a

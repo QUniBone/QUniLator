@@ -23,6 +23,8 @@ struct control_decision_c {
 	bool do_powercycle = false; // simulated DCOK/POK power cycle
 	bool do_halt = false;    // assert the HALT line
 	bool do_resume = false;  // release the HALT line (run)
+	bool devices_off = false; // take every device out of the machine
+	bool devices_on = false;  // put back what the power-down took out
 	int set_powered = -1;    // -1 leave, 0 clear, 1 set the power flag
 };
 
@@ -33,9 +35,12 @@ struct control_decision_c {
 // restart/halt/continue are refused (allowed=false); dc_on is the only
 // transition back up.
 //
-// The handler releases HALT (do_resume) before any power-up (do_init /
-// do_powercycle) and asserts HALT (do_halt) after it, so a machine brought up
-// by dc_on or restart comes up running rather than halted into ODT.
+// The handler runs the effects in this order: release HALT (do_resume), assert
+// HALT (do_halt), take the devices out (devices_off), put them back
+// (devices_on), drive the bus edges (do_init / do_powercycle). The CPU is
+// stopped before any card comes out, the cards are rebuilt before the CPU is
+// given its power-up edge, and a machine brought up by dc_on or restart comes
+// up running rather than halted into ODT.
 control_decision_c control_decide(const std::string &action, bool powered);
 
 #endif // _WEBCONTROL_HPP_

@@ -34,6 +34,7 @@
 #define _STORAGEIMAGE_HPP_
 
 #include <stdint.h>
+#include <unistd.h>
 #include <string>
 #include <fstream>
 #include <vector>
@@ -80,6 +81,7 @@ private:
 public:
     storageimage_binfile_c(std::string _image_fname) {
         image_fname = _image_fname ;
+        readonly = false ;
     }
 
     // nothing to free
@@ -88,8 +90,15 @@ public:
         close() ;
     }
 
+    // Write protection belongs to the medium, so a drive holding a cartridge it
+    // has not opened - a pack at rest - reports it too: an existing file the
+    // process may not write is a protected cartridge. A file yet to be created
+    // is writable, and open() settles it for the mounted medium.
     virtual bool is_readonly() override {
-        return readonly ;
+        if (is_open())
+            return readonly ;
+        return !image_fname.empty() && access(image_fname.c_str(), F_OK) == 0
+               && access(image_fname.c_str(), W_OK) != 0 ;
     }
     virtual bool open(storagedrive_c *drive, bool create) override;
     virtual bool is_open(	void) override;

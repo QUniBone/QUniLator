@@ -37,6 +37,8 @@ RL0102_c::RL0102_c(storagecontroller_c *_controller) :    storagedrive_c(_contro
     log_label = "RL0102"; // to be overwritten by RL11 on create
     status_word = 0;
     seek_settle_pending = false;
+    drive_fault = false;
+    error_wge = false;
     set_type(drive_type_e::RL02); // default
     runstop_button.value = false; // force user to load file assume drive is LOAD
     fault_lamp.value = false;
@@ -255,10 +257,6 @@ void RL0102_c::state_power_off()
     volume_check = true; // starts with volume check?
     cover_open.readonly = true;
     update_status_word(/*drive_ready_line*/false, /*drive_error_line*/true);
-    ready_lamp.value = false;
-    load_lamp.value = false;
-    fault_lamp.value = false;
-    writeprotect_lamp.value = false;
 //	image_filepath.readonly = true ; // "door locked", disk can not be changed
     image_params_readonly(false) ;// don't be so complicated
     if (power_switch.value == true)
@@ -273,9 +271,6 @@ void RL0102_c::state_load_cartridge()
     // drive_ready_line = false; // verified
     type_name.readonly = true; // must be powered of to changed between RL01/RL02
     update_status_word(/*drive_ready_line*/false, drive_error_line);
-    load_lamp.value = 1;
-    ready_lamp.value = 0;
-    writeprotect_lamp.value = writeprotect_button.value;
     cover_open.readonly = false; // can be changed ("opened") only in LOAD state
     // The pack is at rest and the new medium is in: press LOAD for it, the way
     // the drive would have been loaded by hand.
@@ -283,27 +278,28 @@ void RL0102_c::state_load_cartridge()
         media_change_pending = false;
         runstop_button.value = true;
     }
-    // Path to FAULT: try to load illegal file
-    // Path out of FAULT: File OK, or RUN runstop_button released
-    // FAULT => state is "load cartridge"
+    // Path into the fault: try to load an illegal file
+    // Path out of it: file OK, or RUN runstop_button released
+    // a faulted drive stays in "load cartridge"
     if (runstop_button.value == true && cover_open.value == false) {
         // LOAD released: start spinning, if file image OK
         // this test is repeated endlessly if button pressed and filename illegal
         if (image_open(/*create*/true)) {
-            fault_lamp.value = false;
+            drive_fault = false;
             change_state(RL0102_STATE_spin_up);
             return; // no wait
         } else {
-            if (!fault_lamp.value) // error message only once
+            if (!drive_fault) // error message only once
                 ERROR("Could not open/create file \"%s\".", image_filepath.value.c_str());
-            fault_lamp.value = true; // disables effect of runstop button
+            drive_fault = true; // disables effect of runstop button
         }
     } else {
         // load cartridge: unlock file
-        fault_lamp.value = false;
+        drive_fault = false;
         if (image_is_open())
             image_close();
     }
+    update_lamps(); // the fault decided here reaches the panel at once
     state_timeout.wait_ms(100);
 }
 
@@ -319,7 +315,7 @@ void RL0102_c::state_spin_up()
     // drive_ready_line = false; // verified
     update_status_word(/*drive_ready_line*/false, drive_error_line);
 
-    if (runstop_button.value == false || fault_lamp.value == true) { // stop spinning
+    if (runstop_button.value == false || drive_fault) { // stop spinning
         change_state(RL0102_STATE_spin_down);
         return;
     }
@@ -341,10 +337,6 @@ void RL0102_c::state_spin_up()
         change_state(RL0102_STATE_brush_cycle);
         return;
     }
-
-    load_lamp.value = 0;
-    ready_lamp.value = 0;
-    writeprotect_lamp.value = writeprotect_button.value || image_is_readonly();
 
     state_timeout.wait_ms(calcperiod_ms);
 }
@@ -388,14 +380,10 @@ void RL0102_c::state_seek()
 {
     update_status_word(/*drive_ready_line*/false, drive_error_line); // reports state 4
 
-    if (runstop_button.value == false || fault_lamp.value == true) { // stop spinning
+    if (runstop_button.value == false || drive_fault) { // stop spinning
         change_state(RL0102_STATE_spin_down);
         return;
     }
-
-    load_lamp.value = 0;
-    ready_lamp.value = 0;
-    writeprotect_lamp.value = writeprotect_button.value || image_is_readonly();
 
     // cylinder distance for the requested seek
     unsigned dist = (seek_destination_cylinder > cylinder)
@@ -430,7 +418,7 @@ void RL0102_c::state_seek()
 
 void RL0102_c::state_lock_on()
 {
-    if (runstop_button.value == false || fault_lamp.value == true) { // stop spinning
+    if (runstop_button.value == false || drive_fault) { // stop spinning
         change_state(RL0102_STATE_unload_heads);
         return;
     }
@@ -441,9 +429,6 @@ void RL0102_c::state_lock_on()
         // is asserted. The drive stays in Lock On (state 5) throughout, including
         // a zero-difference seek. Hold not-ready for the settle, then re-assert.
         update_status_word(/*drive_ready_line*/false, drive_error_line);
-        load_lamp.value = 0;
-        ready_lamp.value = 0;
-        writeprotect_lamp.value = writeprotect_button.value || image_is_readonly();
         state_timeout.wait_us(time_seek_settle_us);
         seek_settle_pending = false;
         return;
@@ -451,10 +436,6 @@ void RL0102_c::state_lock_on()
 
     // drive_ready_line = true;
     update_status_word(/*drive_ready_line*/true, drive_error_line);
-
-    load_lamp.value = 0;
-    ready_lamp.value = 1;
-    writeprotect_lamp.value = writeprotect_button.value || image_is_readonly();
 
     // fast polling, if ZRLI tests time of 0 cly seek with head switch
     state_timeout.wait_ms(1);
@@ -493,15 +474,43 @@ void RL0102_c::state_spin_down()
     } else
         rotation_umin.value -= rpm_increment;
 
-    load_lamp.value = 0;
-    ready_lamp.value = 0;
-    writeprotect_lamp.value = writeprotect_button.value || image_is_readonly();
-
     state_timeout.wait_ms(calcperiod_ms);
 }
 
+/* The front panel, EK-RL012-UG-005 §3.2 / EK-RL012-TM-PRE §1.3.
+ *
+ * LOAD is lit with the spindle stopped, the heads home and the brushes home -
+ * the drive at rest, where the cover may be raised and a cartridge changed.
+ * READY (the UNIT SELECT lamp) is lit with the heads loaded and detented on a
+ * track, so it follows the 6.5 ms positioner settle that every seek ends with.
+ * WRITE PROTect is lit while the mounted cartridge is protected, by the
+ * operator's switch or by the medium itself. FAULT is lit by a drive error
+ * condition; Volume Check is excepted by name and lights DRIVE ERROR alone.
+ * An unpowered panel is dark.
+ *
+ * The lamps are a function of the drive's state, evaluated here on every status
+ * update, so each state reports the panel the manual gives it.
+ */
+void RL0102_c::update_lamps(void)
+{
+    if (state.value == RL0102_STATE_power_off) {
+        load_lamp.value = false;
+        ready_lamp.value = false;
+        fault_lamp.value = false;
+        writeprotect_lamp.value = false;
+        return;
+    }
+    load_lamp.value = (state.value == RL0102_STATE_load_cartridge);
+    ready_lamp.value = (state.value == RL0102_STATE_lock_on) && !seek_settle_pending;
+    // TM-PRE §1.3.5 lists Write Protect Error among the conditions that light
+    // FAULT, and §1.3.6 has the lamp come on when the switch goes in under a
+    // write. The controller's Get Status with reset clears it.
+    fault_lamp.value = drive_fault || error_wge;
+    writeprotect_lamp.value = writeprotect_button.value || image_is_readonly();
+}
+
 // clear volatile error conditions in status word
-void RL0102_c::clear_error_register(void) 
+void RL0102_c::clear_error_register(void)
 {
     error_wge = false;
     volume_check = false;
@@ -539,10 +548,10 @@ void RL0102_c::update_status_word(bool new_drive_ready_line, bool new_drive_erro
         tmp |= RL0102_STATUS_WGE; // write not possible
         new_drive_error_line = true;
     }
-    if (image_is_readonly() || writeprotect_button.value == true) {
-        // writeprotect_lamp.value = true ; not here!!
+    if (image_is_readonly() || writeprotect_button.value == true)
         tmp |= RL0102_STATUS_WL;
-    }
+
+    update_lamps();
 
     // notify the RL11 CSR?
     if (new_drive_ready_line != drive_ready_line || new_drive_error_line != drive_error_line
@@ -732,8 +741,8 @@ void RL0102_c::worker(unsigned instance)
 
         // global stuff for all states
         if (enabled.value && (!controller || !controller->enabled.value))
-            // RL drive powered, but no controller: no clock -> FAULT
-            fault_lamp.value = true;
+            // RL drive powered, but no controller: loss of system clock
+            drive_fault = true;
 
         if (power_switch.value == false)
             change_state(RL0102_STATE_power_off);

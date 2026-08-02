@@ -6,6 +6,9 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { QBoneClient, QBoneError, LOG_LEVELS } from "./qbone.js";
 import type { ConsoleChannel, LogLevelName } from "./qbone.js";
+import { SessionManager } from "./sessions.js";
+import { runXxdpDiagnostic } from "./xxdp.js";
+import type { BoardConfig } from "./config.js";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,6 +57,9 @@ function ok(value: unknown): ToolResult {
 }
 
 function fail(err: unknown): ToolResult {
+  // A SessionError already carries what it waited for and what the console
+  // printed instead; that is the whole value of the failure, so pass its
+  // message through rather than summarizing it away.
   const msg =
     err instanceof QBoneError
       ? `QBone error ${err.status}: ${err.message}`
@@ -108,7 +114,12 @@ const channelSchema = z
       "vax = the emulated VAX-11/780's own console",
   );
 
-export function registerTools(server: McpServer, qbone: QBoneClient): void {
+export function registerTools(
+  server: McpServer,
+  qbone: QBoneClient,
+  sessions?: SessionManager,
+  cfg?: BoardConfig,
+): void {
   // ---- Observation ------------------------------------------------------
 
   server.registerTool(
@@ -219,6 +230,173 @@ export function registerTools(server: McpServer, qbone: QBoneClient): void {
         return { channel, sent: payload.length };
       }),
   );
+
+  // ---- Console sessions --------------------------------------------------
+
+  if (sessions !== undefined) {
+    server.registerTool(
+      "console_session_open",
+      {
+        description:
+          "Open a console session and keep it open: ONE connection held for " +
+          "the whole dialog, with matching anchored where the channel's " +
+          "replayed history ends. Use this — not console_read/console_send — " +
+          "for anything with more than one prompt. Returns a session id the " +
+          "other session tools take. Optionally records the session to a " +
+          "file (asciicast v3, renderable with `qcon render`). Close it when " +
+          "done; an idle session is closed after 15 minutes.",
+        inputSchema: {
+          channel: channelSchema,
+          record_path: z
+            .string()
+            .optional()
+            .describe("write the session to this .cast file"),
+          deviations: z
+            .array(
+              z.object({
+                match: z.string().optional().describe("pattern that means trouble"),
+                event: z.enum(["halt", "power-loss"]).optional(),
+                fail: z.string().describe("what to report when it fires"),
+              }),
+            )
+            .optional()
+            .describe(
+              "conditions that fail any step the moment they appear, instead " +
+                "of waiting out its timeout: an error marker the guest prints, " +
+                "or the CPU halting",
+            ),
+          timeout_ms: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("default per-step timeout (default 30000)"),
+        },
+      },
+      async ({ channel, record_path, deviations, timeout_ms }) =>
+        run(() =>
+          sessions.open({
+            channel: channel as ConsoleChannel,
+            recordPath: record_path,
+            deviations,
+            timeoutMs: timeout_ms,
+          }),
+        ),
+    );
+
+    server.registerTool(
+      "console_expect",
+      {
+        description:
+          "Wait, within one session, for one of several patterns in what the " +
+          "guest has printed SINCE THE LAST STEP, and report which matched. " +
+          "A pattern is fixed text, or a regular expression written /like " +
+          "this/i. Fails early and usefully rather than at the timeout: when " +
+          "a declared deviation appears, when the CPU halts, and when the " +
+          "console falls quiet at a prompt none of the patterns match — that " +
+          "last one names the prompt, which is the line to add a pattern for.",
+        inputSchema: {
+          session: z.string(),
+          patterns: z
+            .array(z.string())
+            .min(1)
+            .describe("fixed text, or /regex/flags"),
+          timeout_ms: z.number().int().positive().optional(),
+          stall_ms: z
+            .number()
+            .int()
+            .min(0)
+            .optional()
+            .describe(
+              "how long the console may sit quiet at an unmatched prompt " +
+                "before the step is called stuck; 0 disables (default 15000)",
+            ),
+        },
+      },
+      async ({ session, patterns, timeout_ms, stall_ms }) =>
+        run(async () => {
+          const s = sessions.get(session);
+          const outcome = await s.expect(patterns, {
+            timeoutMs: timeout_ms,
+            stallMs: stall_ms,
+          });
+          return {
+            matched: patterns[outcome.index],
+            index: outcome.index,
+            before: outcome.before.slice(-2000),
+          };
+        }),
+    );
+
+    server.registerTool(
+      "console_send_line",
+      {
+        description:
+          "Type a line into a session and terminate it with CR. The default " +
+          "mode paces each character on the guest's echo, which is what makes " +
+          "input reliable on an SLU with no receive FIFO — a burst loses " +
+          "characters. Use mode 'no-echo' for a prompt that deliberately does " +
+          "not echo (a password): it sends on a fixed delay and never resends, " +
+          "since a resend would type the password twice, and its bytes are " +
+          "recorded redacted. Use 'raw' to write bytes unpaced.",
+        inputSchema: {
+          session: z.string(),
+          text: z.string(),
+          mode: z
+            .enum(["echo", "no-echo", "raw"])
+            .optional()
+            .describe("default echo"),
+          append_cr: z.boolean().optional().describe("default true"),
+        },
+      },
+      async ({ session, text, mode, append_cr }) =>
+        run(async () => {
+          const s = sessions.get(session);
+          await s.sendLine(text, {
+            mode: mode as "echo" | "no-echo" | "raw" | undefined,
+            appendCr: append_cr,
+          });
+          return { sent: text.length, mode: mode ?? "echo" };
+        }),
+    );
+
+    server.registerTool(
+      "console_send_break",
+      {
+        description:
+          "Assert a line BREAK on the session's console. BREAK is a line " +
+          "condition rather than a character, so it cannot be sent as text: " +
+          "it reaches the real SLU as a spacing condition, and an emulated " +
+          "DL11 as a framing error. Used to interrupt a guest that takes it.",
+        inputSchema: { session: z.string() },
+      },
+      async ({ session }) =>
+        run(async () => {
+          await sessions.get(session).sendBreak();
+          return { ok: true };
+        }),
+    );
+
+    server.registerTool(
+      "console_session_close",
+      {
+        description:
+          "Close a console session, releasing its connection and finishing " +
+          "its recording. Returns the recording path when one was requested.",
+        inputSchema: { session: z.string() },
+      },
+      async ({ session }) => run(() => sessions.close(session)),
+    );
+
+    server.registerTool(
+      "console_sessions",
+      {
+        description: "List the open console sessions.",
+        inputSchema: {},
+      },
+      async () => run(async () => ({ sessions: sessions.list() })),
+    );
+  }
 
   server.registerTool(
     "get_devices",
@@ -411,7 +589,10 @@ export function registerTools(server: McpServer, qbone: QBoneClient): void {
           .array(z.object({ match: z.string(), value: z.string() }))
           .optional()
           .describe("DRS dialog: send value when a prompt contains match"),
-        pass_pattern: z.string().optional().describe("default 'END PASS'"),
+        record_path: z
+          .string()
+          .optional()
+          .describe("record the run to this .cast file"),
         run_timeout_ms: z.number().int().positive().optional(),
       },
     },
@@ -421,20 +602,22 @@ export function registerTools(server: McpServer, qbone: QBoneClient): void {
       console: channel,
       setup,
       answers,
-      pass_pattern,
+      record_path,
       run_timeout_ms,
     }) =>
-      run(() =>
-        qbone.runXxdpDiagnostic({
+      run(() => {
+        if (cfg === undefined)
+          throw new Error("run_xxdp_diagnostic needs the board configuration");
+        return runXxdpDiagnostic(cfg, qbone, {
           diagnostic,
           config,
           console: channel as ConsoleChannel | undefined,
           setup,
           answers,
-          passPattern: pass_pattern,
+          recordPath: record_path,
           runTimeoutMs: run_timeout_ms,
-        }),
-      ),
+        });
+      }),
   );
 
   server.registerTool(

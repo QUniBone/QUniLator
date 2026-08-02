@@ -50,6 +50,18 @@
 
 class mrv11d_c: public qunibusdevice_c {
 public:
+	// Sampled by the status poll: lit while the machine is reading the module.
+	// The PRU answers both of the module's forms on its own -- the windows in
+	// the I/O page shadow and the direct-mode array in a DDR range -- so the
+	// counts it keeps are the only trace a read leaves on the ARM side.
+	void refresh_activity(void) override;
+
+private:
+	uint32_t last_rom_count = 0;      // PRU I/O-page ROM count at the last sample
+	uint32_t last_array_count = 0;    // and its DDR range's
+	uint64_t access_lamp_until_ms = 0; // the lamp stays lit until then
+public:
+
 	const char *category(void) const override { return "memory"; }
 
 	mrv11d_c();
@@ -72,6 +84,10 @@ public:
 			"ROM image or MACRO-11 listing from roms/; empty = MXV11-B2 set");
 
 	// The bootstrap windows and the page control register at 777520.
+	// Lit while the machine is reading the module: the ROM running, live.
+	parameter_bool_c access_lamp = parameter_bool_c(this, "accesslamp", "acl",
+			/*readonly*/true, "machine is reading the module");
+
 	parameter_bool_c bootstrap = parameter_bool_c(this, "bootstrap", "bs", /*readonly*/false,
 			"answer the bootstrap windows at 773000 and 765000");
 
