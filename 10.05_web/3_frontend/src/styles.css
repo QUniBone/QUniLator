@@ -1264,3 +1264,9 @@ button.tree-name:hover .mono { color: var(--accent); }
   border-bottom: 1px solid var(--line, #e4e4de); }
 .rec-table tr:last-child td { border-bottom: 0; }
 .rec-table td:last-child { text-align: right; white-space: nowrap; }
+
+/* The ACCESS cap on a card whose traffic the PRU answers (the memory card, the
+   PROM module). It sits in the card head beside the status chip rather than in
+   a lamp row, since neither card has one. */
+.lampbtn.cap-mini { font-size: .5rem; padding: .12rem .3rem; min-width: 0;
+  letter-spacing: .04em; margin-left: auto; }

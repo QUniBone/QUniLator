@@ -126,7 +126,7 @@ export class MemoryWidget extends DeviceWidget {
     }, [range]);
 
     return html`<div class="card diskcard memcard">
-      ${this.head()}
+      ${this.head(this.accessCap())}
       <div class="card-body membody">
         ${map ? this.ranges(map) : html`<div class="mem-empty">reading the map…</div>`}
         ${html`<${Placement} d=${this.d} />`}

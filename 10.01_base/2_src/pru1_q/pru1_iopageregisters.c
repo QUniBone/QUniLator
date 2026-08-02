@@ -52,10 +52,13 @@ pru_iopage_registers_t pru_iopage_registers;
  * addr: with encoded BS7 bit
  */
 uint8_t emulated_addr_read(uint32_t addr, uint16_t *val) {
-	if (DDRMEM_ADDR_EMULATED(addr)) {
+	uint32_t in0 = DDRMEM_ADDR_IN_SLOT(addr, 0);
+	uint32_t in1 = DDRMEM_ADDR_IN_SLOT(addr, 1);
+	if (in0 | in1) {
 		// speed priority on memory access: test for end_addr first
 			// addr in an emulated memory range, not in I/O page
 			*val = DDRMEM_MEMGET_W(addr);
+			DDRMEM_COUNT_ACCESS(in0, in1);
 			return 1;
 	} else if (addr & QUNIBUS_IOPAGE_ADDR_BITMASK) {
 		// high "iopage" bit set in addr: only addr<11:0> relevant
@@ -69,6 +72,9 @@ uint8_t emulated_addr_read(uint32_t addr, uint16_t *val) {
 			// as an address bit above the twenty-two the DAL carries, so the
 			// I/O page offset and the start of the page give that address back.
 			*val = DDRMEM_MEMGET_W(pru_iopage_registers.iopage_start_addr + (addr & 017777));
+			// A PROM module is read the same way a memory card is, so it needs
+			// the same count to show a bootstrap running out of it.
+			pru_iopage_registers.rom_access_count++;
 			return 1;
 		} else {
 			// return register value. remove "volatile" attribute
@@ -93,12 +99,15 @@ uint8_t emulated_addr_read(uint32_t addr, uint16_t *val) {
  * addr: with encoded BS7 bit
  */
 uint8_t emulated_addr_write_w(uint32_t addr, uint16_t w) {
-	if (DDRMEM_ADDR_EMULATED(addr)) {
+	uint32_t in0 = DDRMEM_ADDR_IN_SLOT(addr, 0);
+	uint32_t in1 = DDRMEM_ADDR_IN_SLOT(addr, 1);
+	if (in0 | in1) {
 		// speed priority on memory access: test for end_addr first
 		// addr in an emulated memory range, not in I/O page
    		// no check wether addr is even (A00=0)
 		// write 16 bits
 		DDRMEM_MEMSET_W(addr, w);
+		DDRMEM_COUNT_ACCESS(in0, in1);
 		return 1;
 	} else if (addr & QUNIBUS_IOPAGE_ADDR_BITMASK) {
 		// high "iopage" bit set in addr: only addr<11:0> relevant
@@ -123,10 +132,13 @@ uint8_t emulated_addr_write_w(uint32_t addr, uint16_t w) {
 
 //  addr: with encoded BS7 bit
 uint8_t emulated_addr_write_b(uint32_t addr, uint8_t b) {
-	if (DDRMEM_ADDR_EMULATED(addr)) {
+	uint32_t in0 = DDRMEM_ADDR_IN_SLOT(addr, 0);
+	uint32_t in1 = DDRMEM_ADDR_IN_SLOT(addr, 1);
+	if (in0 | in1) {
 		// speed priority on memory access: test for end_addr first
 		// addr in an emulated memory range, not in I/O page
 		DDRMEM_MEMSET_B(addr, b);
+		DDRMEM_COUNT_ACCESS(in0, in1);
 		return 1;
 	} else if (addr & QUNIBUS_IOPAGE_ADDR_BITMASK) {
 		// high "iopage" bit set in addr: only addr<11:0> relevant

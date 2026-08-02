@@ -1,0 +1,37 @@
+# Read the board's memory card from the CPU's own console, so the card is
+# touched by a real bus cycle. Used to show the access lamp of #32: the PRU
+# answers this range out of DDR without telling the ARM, so the lamp is the
+# only thing that says the machine is using the card.
+#
+# The addresses are octal and inside the range MEM claims.
+console: auto
+host: qbone
+title: ODT reads the memory card
+timeout: 8s
+machine:
+  start: none
+steps:
+  - name: prompt
+    send: ""
+    wait: 500ms
+  - name: at-odt
+    expect: "@"
+    timeout: 10s
+  # Each "<addr>/" is one DATI the card answers. Enough of them, close
+  # enough together, that a sampler looking every few hundred ms sees it.
+  - name: r1
+    send: "10000000/"
+  - name: r2
+    send: "10000002/"
+  - name: r3
+    send: "10000004/"
+  - name: r4
+    send: "10000006/"
+  - name: r5
+    send: "10000010/"
+  - name: r6
+    send: "10000012/"
+  - name: done
+    expect: "@"
+    timeout: 8s
+    done: true

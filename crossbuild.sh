@@ -121,8 +121,23 @@ if [ $PRU_CLEAN = 1 ]; then
           "$PRU_DEPLOY_DIR"/*.object "$PRU_DEPLOY_DIR"/*.pp \
           "$PRU_DEPLOY_DIR"/*.asm "$PRU_DEPLOY_DIR"/*.map "$PRU_DEPLOY_DIR"/*.nfo
 fi
+# The firmware is rebuilt when it is missing, and when any PRU source is newer
+# than the image built from it. Without the second test a change to the bus
+# state machine is compiled into nothing: the app build happily links the image
+# already lying here, the board takes a binary whose ARM half has the change
+# and whose PRU half does not, and the two disagree in ways that look like a
+# hardware fault.
+pru_sources_newer() {
+    local image
+    image=$(ls "$PRU_DEPLOY_DIR"/pru1_code_*_array.c 2>/dev/null | head -1)
+    [ -n "$image" ] || return 0
+    [ -n "$(find 10.01_base/2_src/pru0 10.01_base/2_src/pru1${SUFFIX} \
+            10.01_base/2_src/shared -newer "$image" -name '*.[ch]' -print -quit \
+            2>/dev/null)" ]
+}
 if [ -z "$(ls "$PRU_DEPLOY_DIR"/*_array.c 2>/dev/null || true)" ] \
-        || [ -z "$(ls "$PRU_DEPLOY_DIR"/*.out 2>/dev/null || true)" ]; then
+        || [ -z "$(ls "$PRU_DEPLOY_DIR"/*.out 2>/dev/null || true)" ] \
+        || pru_sources_newer; then
     echo "Building PRU firmware with clpru $PRU_CGT_VERSION ..."
     for prudir in pru0 pru1${SUFFIX}; do
         docker run --rm --platform linux/amd64 --user "$DOCKER_USER" \

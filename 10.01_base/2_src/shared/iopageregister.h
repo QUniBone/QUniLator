@@ -171,6 +171,16 @@ typedef struct {
 	uint32_t	memory_start_addr[DDRMEM_RANGE_COUNT] ; // start of emulated memory
 	uint32_t	memory_limit_addr[DDRMEM_RANGE_COUNT] ; // first address after emulated memory, 0 = range unused
 
+	/* How often the board has answered a cycle out of each DDR range, and out
+	 * of an I/O-page ROM cell. The PRU serves all three on its own, so a card
+	 * backed by them sees no traffic of its own and can say nothing about
+	 * whether the machine is using it. A counter is what the ARM can sample on
+	 * its own clock: a lamp needs to know the card was touched since it last
+	 * looked, not when. Wrapping is harmless -- a reader compares against what
+	 * it saw last. */
+	uint32_t	memory_access_count[DDRMEM_RANGE_COUNT] ;
+	uint32_t	rom_access_count ;
+
 	uint32_t	iopage_start_addr ; // 0160000, 0760000, 017760000
 	
 	// iopage address table:

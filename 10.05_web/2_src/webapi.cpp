@@ -39,6 +39,7 @@
 #include "parameter.hpp"
 #include "qunibus.h"
 #include "ddrmem.h"
+#include "iopageregister.h"
 #include "qunibusadapter.hpp"
 #include "panel.hpp"
 #include "mscp_server.hpp"
@@ -847,9 +848,19 @@ static void memory_map(struct mg_connection *conn) {
 		r["slot"] = picojson::value(std::string(slot_names[slot]));
 		r["start"] = picojson::value((double) ddrmem->range_start(slot));
 		r["end"] = picojson::value((double) ddrmem->range_end(slot));
+		// How many cycles the board has answered out of this range. The PRU
+		// serves them without telling the ARM, so this count is the only
+		// evidence a range is being used at all - which is what an operator
+		// looking at a card placed over the wrong addresses needs to see.
+		if (pru_iopage_registers != nullptr)
+			r["accesses"] = picojson::value(
+					(double) pru_iopage_registers->memory_access_count[slot]);
 		ranges.push_back(picojson::value(r));
 	}
 	res["emulated"] = picojson::value(ranges);
+	if (pru_iopage_registers != nullptr)
+		res["rom_accesses"] = picojson::value(
+				(double) pru_iopage_registers->rom_access_count);
 
 	{
 		std::lock_guard<std::mutex> lock(probe_mutex);

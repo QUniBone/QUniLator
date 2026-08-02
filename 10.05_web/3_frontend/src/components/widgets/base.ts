@@ -84,10 +84,22 @@ export abstract class DeviceWidget {
     return paramVal(this.d, n);
   }
 
+  // A card the PRU answers for -- a memory card, a PROM module -- shows no
+  // traffic of its own, so the one question its readout cannot otherwise
+  // answer is whether the machine is touching it. The lamp is the drives'
+  // ACCESS cap, lit from the device's accesslamp status parameter; a device
+  // without one draws nothing.
+  protected accessCap(): ComponentChildren {
+    if (!statusParam(this.d, 'accesslamp')) return null;
+    return html`<${Cap} cls="cap-yellow cap-mini" lit=${this.lit(this.lamp('accesslamp'))}
+      >ACCESS</${Cap}>`;
+  }
+
   // The card head: the device's friendly name, and the chip naming its state.
-  protected head(): ComponentChildren {
+  protected head(extra?: ComponentChildren): ComponentChildren {
     return html`<div class="card-head">
       <h3>${this.d.label || this.d.type}</h3>
+      ${extra}
       ${this.statusChip()}
     </div>`;
   }

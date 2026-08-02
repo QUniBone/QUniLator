@@ -14,6 +14,7 @@
 #include "qunibusadapter.hpp"
 #include "ddrmem.h"
 #include "memoryimage.hpp"
+#include "iopageregister.h"
 #include "mrv11d.hpp"
 #include "mxv11b2_bootrom.h"
 
@@ -33,6 +34,8 @@ static const uint16_t unprogrammed = 0177777;
 mrv11d_c::mrv11d_c() :
 		qunibusdevice_c()
 {
+	// a lamp is live state, not part of a saved configuration
+	access_lamp.kind = parameter_c::PARAM_STATUS;
 	name.value = "MRV11D";
 	type_name.value = "MRV11-D";
 	log_label = "mrv11d";
@@ -427,4 +430,28 @@ void mrv11d_c::on_init_changed(void)
 		return;
 	set_register_dati_value(reg_bpcr, 0, __func__);
 	map_windows(0);
+}
+
+
+// The dwell the memory card's lamp uses, for the same reason: a read is over
+// in microseconds and the sampler comes round every few hundred.
+static const uint64_t ACCESS_LAMP_MS = 250;
+
+void mrv11d_c::refresh_activity(void)
+{
+	if (pru_iopage_registers == nullptr)
+		return;
+	// Either form of the module counts: the windows the bootstrap pages
+	// through sit in the I/O page shadow, and the direct-mode array answers
+	// out of the device DDR range.
+	uint32_t rom = pru_iopage_registers->rom_access_count;
+	uint32_t direct = pru_iopage_registers->memory_access_count[DDRMEM_RANGE_DEVICE];
+	uint64_t now = now_ms();
+	if (rom != last_rom_count || direct != last_array_count) {
+		last_rom_count = rom;
+		last_array_count = direct;
+		access_lamp_until_ms = now + ACCESS_LAMP_MS;
+		access_lamp.value = true;
+	} else if (access_lamp.value && now >= access_lamp_until_ms)
+		access_lamp.value = false;
 }
