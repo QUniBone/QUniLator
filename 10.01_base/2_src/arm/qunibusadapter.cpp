@@ -731,7 +731,29 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
     // must not be ignored (different DATA situation) and are an device implementation error.
     // If a device indeed has multiple DMA channels, it must use different pseudo-slots.
     priority_request_level_c *prl = &request_levels[PRIORITY_LEVEL_INDEX_NPR];
-    assert(prl->slot_request[dma_request.priority_slot] == NULL); // not scheduled or prev completed
+
+    // The slot still carries a request. Either the device has two transfers in
+    // flight on one slot - its own error - or the previous one timed out and is
+    // still scheduled, which is this adapter's contract: a timed-out request
+    // stays put because the PRU may yet finish it, and the buffer is where its
+    // words land. Either way the transfer cannot be started, and the caller is
+    // told so rather than the process being aborted: a device driving the bus
+    // badly must not take the emulator down with it. The slot frees itself when
+    // the PRU completes the request that holds it.
+    if (prl->slot_request[dma_request.priority_slot] != NULL) {
+        priority_request_c *held = prl->slot_request[dma_request.priority_slot];
+        ERROR("DMA slot %u still holds a request of %s: %s @ %s refused",
+              dma_request.priority_slot,
+              held->device ? held->device->name.value.c_str() : "none",
+              qunibus_c::control2text(qunibus_cycle),
+              qunibus->addr2text(unibus_addr));
+        pthread_mutex_unlock(&requests_mutex);
+        dma_request.success = false;
+        dma_request.complete = true;
+        dma_request.qunibus_start_addr = unibus_addr;
+        dma_request.qunibus_end_addr = unibus_addr;
+        return;
+    }
 
     // 	dma_request.level-index, priority_slot in constructor
     dma_request.complete = false;
