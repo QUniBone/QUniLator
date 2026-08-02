@@ -1,0 +1,52 @@
+# Map which upper addresses the KDJ11-D/S answers on-module. MEM is disabled,
+# so an examine that prints a value is claimed inside the CPU module and never
+# reaches the bus; one that prints ? went to the bus and timed out.
+console: ext
+host: qbone
+title: ODT maps the module-internal address claim
+timeout: 8s
+machine:
+  start: none
+steps:
+  - name: prompt
+    send: ""
+    wait: 500ms
+  - name: at-odt
+    expect: "@"
+    timeout: 10s
+  - name: a06000000
+    send: "6000000/"
+  - name: a10000000
+    send: "10000000/"
+  - name: a14000000
+    send: "14000000/"
+  - name: a16000000
+    send: "16000000/"
+  - name: a17000000
+    send: "17000000/"
+  - name: a17200000
+    send: "17200000/"
+  - name: a17300000
+    send: "17300000/"
+  - name: a17340000
+    send: "17340000/"
+  - name: a17360000
+    send: "17360000/"
+  - name: a17370000
+    send: "17370000/"
+  - name: a17400000
+    send: "17400000/"
+  - name: a17500000
+    send: "17500000/"
+  - name: a17600000
+    send: "17600000/"
+  - name: a17700000
+    send: "17700000/"
+  - name: a17740000
+    send: "17740000/"
+  - name: a17757776
+    send: "17757776/"
+  - name: done
+    expect: "@"
+    timeout: 8s
+    done: true

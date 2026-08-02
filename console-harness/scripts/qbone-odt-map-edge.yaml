@@ -1,0 +1,29 @@
+# Refine the lower edge of the KDJ11-D/S module-internal claim, between
+# 17360000 (bus) and 17370000 (internal).
+console: ext
+host: qbone
+title: ODT refines the internal-claim edge
+timeout: 8s
+machine:
+  start: none
+steps:
+  - name: prompt
+    send: ""
+    wait: 500ms
+  - name: at-odt
+    expect: "@"
+    timeout: 10s
+  - name: a17361000
+    send: "17361000/"
+  - name: a17362000
+    send: "17362000/"
+  - name: a17364000
+    send: "17364000/"
+  - name: a17366000
+    send: "17366000/"
+  - name: a17367776
+    send: "17367776/"
+  - name: done
+    expect: "@"
+    timeout: 8s
+    done: true
