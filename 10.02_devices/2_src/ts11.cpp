@@ -265,7 +265,9 @@ void ts11_c::reset_subsystem(void)
     _sce = false;
     _fc = 0;
     _tc = TC_NORMAL;
-    _tsba = 0;
+    // TSBA keeps what it held: "not cleared on power up, subsystem INIT, or
+    // bus initialize" (EK-OTS11-TM-003 5.1.1; TSV05 UG 3.3.2.1 item 5), which
+    // is what the maintenance wraparound tests read back.
     _tsdbx = 0;
     _maintenance = false;
 
@@ -286,9 +288,15 @@ void ts11_c::reset_subsystem(void)
 
     clear_command_status();
 
-    if (drivecount > 0 && drive()->is_online())
-        drive()->tape().rewind();
+    // "if the ON-LINE switch is on, the drive performs an auto-load sequence
+    // and positions the tape at BOT" (EK-OTS11-TM-003 5.3.4). The worker owns
+    // the transport, so it performs that; a reset arrives on the thread
+    // serving the register write, and two threads in one image file is not a
+    // thing to do.
+    _pending_autoload = (drivecount > 0) && drive()->is_online();
     _last_online = (drivecount > 0) && drive()->is_online();
+    // A command the worker is finishing belongs to the subsystem as it was.
+    _reset_generation++;
 
     update_tssr();
 }
@@ -407,6 +415,10 @@ void ts11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
     // (TSV05 UG 3.3.2.1). A word write is the command pointer.
     if (access == DATO_BYTEH) {
         uint16_t hi = (uint16_t) (value >> 8);
+        // "If SSR is clear, an error (RMR) occurs, but the transfer is still
+        // executed and completed" (EK-OTS11-TM-003 5.1.2.2).
+        if (!_ssr)
+            _rmr = true;
         _tsba = (uint32_t) ((hi << 8) | hi) | ((uint32_t) (hi & 0x03) << 16);
         _maintenance = true;
         _nba = true;
@@ -618,11 +630,12 @@ bool ts11_c::dma_fetch_bytes(uint32_t addr, uint8_t *data, uint32_t len, bool sw
     uint32_t word_hi = hi | 1u;
     unsigned wordcount = (unsigned) ((word_hi + 1 - word_lo) / 2);
 
-    std::vector<uint16_t> span(wordcount);
-    if (!dma_read_words(word_lo, span.data(), wordcount))
+    if (wordcount > TS11_MAX_RECORD / 2 + 2)
+        return false;
+    if (!dma_read_words(word_lo, _dma_span, wordcount))
         return false;
 
-    const uint8_t *bytes = (const uint8_t *) span.data();   // bus and ARM are little-endian
+    const uint8_t *bytes = (const uint8_t *) _dma_span;   // bus and ARM are little-endian
     for (uint32_t k = 0; k < len; k++)
         data[k] = bytes[byte_address(addr, k, swap_bytes) - word_lo];
     return true;
@@ -653,9 +666,11 @@ bool ts11_c::dma_store_bytes(uint32_t addr, const uint8_t *data, uint32_t len, b
     uint32_t word_hi = hi | 1u;
     unsigned wordcount = (unsigned) ((word_hi + 1 - word_lo) / 2);
 
-    std::vector<uint16_t> span(wordcount, 0);
+    if (wordcount > TS11_MAX_RECORD / 2 + 2)
+        return false;
+    memset(_dma_span, 0, 2 * (size_t) wordcount);
     std::vector<bool> touched(2 * wordcount, false);
-    uint8_t *bytes = (uint8_t *) span.data();
+    uint8_t *bytes = (uint8_t *) _dma_span;
     for (uint32_t k = 0; k < len; k++) {
         uint32_t off = byte_address(addr, k, swap_bytes) - word_lo;
         bytes[off] = data[k];
@@ -667,16 +682,16 @@ bool ts11_c::dma_store_bytes(uint32_t addr, const uint8_t *data, uint32_t len, b
     for (unsigned w = 0; w < wordcount; w++) {
         if (touched[2 * w] && touched[2 * w + 1])
             continue;
-        uint16_t old;
-        if (!dma_read_words(word_lo + 2 * w, &old, 1))
+        if (!dma_read_words(word_lo + 2 * w, &_dma_word, 1))
             return false;
+        uint16_t old = _dma_word;
         if (!touched[2 * w])
             bytes[2 * w] = (uint8_t) (old & 0xff);
         if (!touched[2 * w + 1])
             bytes[2 * w + 1] = (uint8_t) (old >> 8);
     }
 
-    return dma_write_words(word_lo, span.data(), wordcount);
+    return dma_write_words(word_lo, _dma_span, wordcount);
 }
 
 // ---------------------------------------------------------------------------
@@ -716,7 +731,7 @@ uint16_t ts11_c::build_xst0(void)
 void ts11_c::send_message(unsigned message_type, unsigned class_code, bool ack)
 {
     unsigned words = (extended_active() && _msgbuf_len >= 16) ? 8 : 7;
-    uint16_t m[8];
+    uint16_t *m = _dma_message;
 
     if (_high_speed)
         _xst4 |= 0x8000;    // HSP: the transport runs at 100 ips
@@ -744,6 +759,12 @@ void ts11_c::send_message(unsigned message_type, unsigned class_code, bool ack)
 //
 void ts11_c::terminate(unsigned tc)
 {
+    // A subsystem initialize that arrived while this command was running has
+    // already put the subsystem where it belongs; the command it halted says
+    // nothing more (EK-OTS11-TM-003 5.3.4).
+    if (_reset_generation != _command_generation)
+        return;
+
     _tc = tc;
 
     if (_msgbuf_owned && !_nba && !_suppress_message) {
@@ -811,8 +832,17 @@ void ts11_c::worker(unsigned instance)
         if (init_asserted)
             continue;
 
+        // The auto-load a subsystem initialize asks for, on the thread that
+        // owns the transport.
+        if (_pending_autoload) {
+            _pending_autoload = false;
+            if (drivecount > 0 && drive()->is_online())
+                drive()->tape().rewind();
+        }
+
         check_transport_status();
 
+        _command_generation = _reset_generation;
         if (do_boot)
             execute_boot();
         else if (do_command)
@@ -828,7 +858,7 @@ void ts11_c::worker(unsigned instance)
             send_message(MSG_ATTN, _attn_class, false);
             _msgbuf_owned = false;
             _ssr = true;
-            if (_eai)
+            if (_eai && _interrupt_enable)
                 update_tssr_and_interrupt();
             else
                 update_tssr();
@@ -859,7 +889,7 @@ bool ts11_c::packet_address(uint16_t low, uint16_t high, uint32_t *addr)
 
 void ts11_c::execute_command(void)
 {
-    uint16_t pkt[4];
+    uint16_t *pkt = _dma_packet;
 
     clear_command_status();
 
@@ -887,13 +917,26 @@ void ts11_c::execute_command(void)
     // of the command. The message carries no ACK, so the CPU keeps the command
     // buffer and knows to reissue; volume check and interrupt enable stay as
     // they were (TSV05 UG 3.3.3.2).
-    if (_attn_pending && _msgbuf_owned && !_nba) {
+    //
+    // Write characteristics and write subsystem memory run regardless: they
+    // are how the software names the message buffer the attention would be
+    // deposited in, so holding them back on a pending attention would leave no
+    // way out of it (TSV05 UG 3.3.3.2).
+    bool names_the_buffer = (command == TS_CMD_WRITE_CHARACTERISTICS
+            || command == TS_CMD_WRITE_SUBSYSTEM_MEM);
+    if (_attn_pending && _msgbuf_owned && !_nba && !names_the_buffer) {
         _attn_pending = false;
         _tc = TC_ATTENTION;
         send_message(MSG_ATTN, _attn_class, false);
         _msgbuf_owned = false;
         _ssr = true;
-        update_tssr_and_interrupt();
+        // An attention interrupts when the message buffer release that armed
+        // it enabled interrupts and attention interrupts are enabled
+        // (EK-OTS11-TM-003 table 5-11 EAI; TSV05 UG 3.3.3.2).
+        if (_eai)
+            update_tssr_and_interrupt();
+        else
+            update_tssr();
         return;
     }
 
@@ -1206,7 +1249,8 @@ unsigned ts11_c::command_write_characteristics(uint16_t low, uint16_t high, uint
         wanted = limit;
     unsigned words = (wanted + 1) / 2;
 
-    uint16_t data[5] = { 0, 0, 0, 0, 0 };
+    uint16_t *data = _dma_chars;
+    memset(data, 0, sizeof _dma_chars);
     if (!dma_read_words(addr, data, words)) {
         _nxm = true;
         _nba = true;

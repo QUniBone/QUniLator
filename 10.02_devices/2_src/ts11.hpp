@@ -195,6 +195,31 @@ private:
     // staging for one record between the tape and host memory
     std::vector<uint8_t> _record;
 
+    /*** buffers the bus writes into ***/
+    //
+    // Every buffer handed to DMA() belongs to the device rather than to the
+    // frame that starts the transfer: a transfer reported timed out may still
+    // be owned by the PRU, and the words it is carrying land here whenever it
+    // finishes. A stack buffer would be gone by then.
+    uint16_t _dma_packet[4];        // the command packet
+    uint16_t _dma_chars[5];         // a write characteristics block
+    uint16_t _dma_message[8];       // the message packet
+    uint16_t _dma_word = 0;         // one word read back under a partial store
+    // one record, plus the two words a record straddling word boundaries needs
+    uint16_t _dma_span[TS11_MAX_RECORD / 2 + 2];
+
+    /*** a subsystem initialize against a command already running ***/
+    //
+    // Initialize arrives on the thread serving the register write and halts
+    // whatever the worker is doing (EK-OTS11-TM-003 5.3.4). The worker owns
+    // the transport, so the auto-load the manual describes is left for it to
+    // perform rather than reaching into the tape from another thread, and the
+    // generation says whether the command the worker is finishing belongs to
+    // the subsystem as it now stands.
+    volatile unsigned _reset_generation = 0;
+    unsigned _command_generation = 0; // the generation the running command began in
+    volatile bool _pending_autoload = false;
+
     void reset_subsystem(void);
     void clear_command_status(void);
     void check_transport_status(void);
