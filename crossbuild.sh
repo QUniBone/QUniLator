@@ -10,8 +10,9 @@
 # below for what pins the compiler.
 #
 # usage:
-#   ./crossbuild.sh            build for QBUS (demo binary)
-#   ./crossbuild.sh -u         build for UNIBUS
+#   ./crossbuild.sh            build for the bus build.env records
+#   ./crossbuild.sh -u         build for UNIBUS instead
+#   ./crossbuild.sh -q         build for QBUS instead
 #   ./crossbuild.sh -d         build and deploy to the board build.env names
 #   ./crossbuild.sh -c         clean object directory first
 #   ./crossbuild.sh -p         rebuild the PRU firmware even if it is present
@@ -21,16 +22,38 @@
 # board's bus-mode setting names, so one binary serves either use.
 #
 # Where -d deploys to is described by build.env, which names one person's board
-# and so is not in git. build.env.example documents every setting; copy it and
-# fill it in.
+# and so is not in git. The first run copies build.env.example to it and stops
+# so it can be filled in; build.env.example documents every setting.
 
 set -e
 cd "$(dirname "$0")"
 
-# Deploy settings. Sourced whenever the file is there, so a syntax error in it
-# is reported by any build rather than only by one that deploys.
-if [ -f build.env ]; then
-    . ./build.env
+# Deploy settings. Every build reads them, so a build.env that is missing or
+# incomplete is reported by any run rather than only by one that deploys — the
+# answer is the same either way, and finding out before the build beats finding
+# out after it.
+if [ ! -f build.env ]; then
+    cp build.env.example build.env
+    echo "build.env did not exist; build.env.example has been copied to it." >&2
+    echo "Edit build.env to name your board, then run this again." >&2
+    exit 1
+fi
+. ./build.env
+
+# The example's placeholder host counts as no value: it is the one thing every
+# copy of build.env carries and no board answers to.
+if [ "$QUNILATOR_HOST" = "you@yourboard.local" ]; then
+    QUNILATOR_HOST=
+fi
+
+missing=
+for var in QUNILATOR_HOST QUNILATOR_BUS QUNILATOR_DEPLOY_MODE QUNILATOR_REMOTE_DIR; do
+    [ -n "${!var}" ] || missing="$missing $var"
+done
+if [ -n "$missing" ]; then
+    echo "build.env sets no value for:$missing." >&2
+    echo "Edit build.env and give each of them one, then run this again." >&2
+    exit 1
 fi
 
 IMAGE=qunibone-crossbuild
@@ -49,14 +72,28 @@ PRU_CGT_VERSION=2.3.1
 # header-stamp write that follow the build.
 DOCKER_USER="$(id -u):$(id -g)"
 
-SUFFIX=_q
-PLATFORM=QBUS
+# Which bus to build for. The board carries one, and build.env is what names
+# that board, so the bus belongs there too: a build with no option is the build
+# for the board that is going to run it. -u and -q override, for the run that
+# builds the other one.
+#
+# The emulator is compiled for its bus, and an appliance deploy installs it as
+# /usr/bin/<name> whatever bus it was built for — so a default of "qbus" for a
+# board running unibone would replace that binary with one for the wrong bus and
+# restart the service onto it. The value is required for exactly that reason.
+case "$QUNILATOR_BUS" in
+    qbus)   SUFFIX=_q; PLATFORM=QBUS ;;
+    unibus) SUFFIX=_u; PLATFORM=UNIBUS ;;
+    *) echo "QUNILATOR_BUS is \"$QUNILATOR_BUS\"; it is qbus or unibus." \
+            "Fix build.env." >&2; exit 1 ;;
+esac
 DEPLOY=0
 CLEAN=0
 PRU_CLEAN=0
-while getopts "udcp" opt; do
+while getopts "uqdcp" opt; do
     case $opt in
         u) SUFFIX=_u; PLATFORM=UNIBUS;;
+        q) SUFFIX=_q; PLATFORM=QBUS;;
         d) DEPLOY=1;;
         c) CLEAN=1;;
         p) PRU_CLEAN=1;;
@@ -68,25 +105,13 @@ done
 # <name>.service, so an appliance deploy needs to know which board this is.
 . packaging/board.sh
 
-# What a deploy needs, checked before the build rather than after it.
-if [ $DEPLOY = 1 ]; then
-    missing=
-    [ -n "$QUNILATOR_HOST" ] || missing="$missing QUNILATOR_HOST"
-    case "$QUNILATOR_DEPLOY_MODE" in
-        appliance) ;;
-        checkout) [ -n "$QUNILATOR_REMOTE_DIR" ] \
-                || missing="$missing QUNILATOR_REMOTE_DIR" ;;
-        "") missing="$missing QUNILATOR_DEPLOY_MODE" ;;
-        *) echo "QUNILATOR_DEPLOY_MODE is \"$QUNILATOR_DEPLOY_MODE\";" \
-                "it is appliance or checkout" >&2; exit 1 ;;
-    esac
-    if [ -n "$missing" ]; then
-        echo "-d needs$missing." >&2
-        [ -f build.env ] && echo "Set it in build.env." >&2 \
-            || echo "Copy build.env.example to build.env and fill it in." >&2
-        exit 1
-    fi
-fi
+# The one build.env setting that is more than "has a value": the mode names
+# what is on the board, and only two boards exist.
+case "$QUNILATOR_DEPLOY_MODE" in
+    appliance|checkout) ;;
+    *) echo "QUNILATOR_DEPLOY_MODE is \"$QUNILATOR_DEPLOY_MODE\";" \
+            "it is appliance or checkout. Fix build.env." >&2; exit 1 ;;
+esac
 
 # builder image: Debian with the armhf cross toolchain.
 #
@@ -293,3 +318,10 @@ if [ $DEPLOY = 1 ]; then
         checkout)  deploy_checkout;;
     esac
 fi
+
+# The last line says which board this was for. The build takes a minute and
+# scrolls past, and the bus now comes from a file rather than the command line,
+# so what came out is worth stating rather than inferring from the option that
+# was or was not typed.
+echo "Built $PLATFORM ($NAME): $BINARY_WEB$([ $DEPLOY = 1 ] \
+    && echo " — deployed to $QUNILATOR_HOST")"

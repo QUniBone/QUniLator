@@ -31,6 +31,19 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             dpkg-dev device-tree-compiler gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
 
+      - name: Write build.env
+        # crossbuild.sh reads the board and its bus from build.env and refuses
+        # to build without one. A runner has no board and deploys nothing, so
+        # the host here is never contacted; the bus is qbus, and -u below
+        # builds the other one.
+        run: |
+          cat > build.env <<'EOF'
+          QUNILATOR_HOST=ci@ci
+          QUNILATOR_BUS=qbus
+          QUNILATOR_DEPLOY_MODE=appliance
+          QUNILATOR_REMOTE_DIR=QUniLator
+          EOF
+
       - name: Build both packages
         run: |
           ./crossbuild.sh                 # QBUS binary
