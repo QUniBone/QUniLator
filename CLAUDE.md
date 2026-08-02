@@ -2,31 +2,60 @@
 
 ## The board
 
-The development QBone is `qbone` (`qbone.huebner.org`), user `hans`, with
-passwordless sudo and key-based ssh. The PDP-11 it sits in is an 11/73.
+**`build.env` names the board to work against, and it is the only place that
+does.** `QUNILATOR_HOST` is an ssh destination, `<user>@<host>`, and both halves
+are needed: the host is where the board answers, and the user is the account on
+it. Never write a board's name into a command from memory or from an older note
+in this file — read `build.env` and use what it says.
+
+    eval "$(grep -E '^QUNILATOR_HOST=' build.env)"
+    BOARD_USER=${QUNILATOR_HOST%@*}
+    BOARD_HOST=${QUNILATOR_HOST#*@}
+
+ssh goes to `$QUNILATOR_HOST` on the operator's key, which the first-run dialog
+installed; no password is involved and none should be typed. Deploys
+(`crossbuild.sh -d`) use exactly that.
+
+A `.local` host name is mDNS, which does not resolve inside the tool sandbox.
+Either run the command with the sandbox off or use the address it resolves to.
+
+`build.env` also records the bus that board carries and where a deploy puts
+what it built; `build.env.example` documents every setting. It is not in git —
+it describes one person's board — and `crossbuild.sh` creates it from the
+example on its first run and stops so it can be filled in.
 
 ## Driving it: use the web API
 
-The emulator runs as `qbone.service` (`/usr/bin/qbone`), serving the web
-interface and API on port 80. **Drive the board through that API.** The API is
-documented in `10.05_web/docs/api.md` — read it rather than guessing endpoints.
+The emulator runs as `<name>.service` (`/usr/bin/<name>` — `qbone` or `unibone`,
+whichever bus the board is), serving the web interface and API on port 80.
+**Drive the board through that API.** The API is documented in
+`10.05_web/docs/api.md` — read it rather than guessing endpoints.
 
-Authentication is HTTP basic, any user name, password in `~/.qbone-pw` on the
-workstation:
+Authentication is HTTP basic, and **the user name is part of it**: the first-run
+dialog creates one identity that is both the BeagleBone account and the web
+login, so the name is the one in `QUNILATOR_HOST` and the password is in
+`~/.qbone-pw` on the workstation.
 
-    curl -s -u ":$(cat ~/.qbone-pw)" http://qbone/api/devices
+    curl -s -u "$BOARD_USER:$(cat ~/.qbone-pw)" http://$BOARD_HOST/api/devices
 
-Requests without it answer `401`.
+Requests without it answer `401`, and so does the right password under the wrong
+name. (A board set up before the name existed carries only a password and takes
+any name; that is what the old "any user name" here meant, and it does not hold
+for a board set up through the first-run dialog.)
+
+`~/.qbone-pw` is the web password. It is also the account password, which only
+matters where no key is installed — with the key in place nothing should ask
+for it.
 
 The service applies `settings.json` on startup, which is where the console
-bridge and other machine settings live. Stopping it to run `qbone-demo` by hand
+bridge and other machine settings live. Stopping it to run `<name>-demo` by hand
 loses that, so the interactive menu is for hardware-level work the API does not
 cover, not for ordinary device configuration.
 
 State lives in `/var/lib/qunilator`: `images/` for disk images, `configs/` for saved
 device snapshots, `settings.json` for board settings.
 
-Useful endpoints, all under `http://qbone/api`:
+Useful endpoints, all under `http://$BOARD_HOST/api`:
 
 | | |
 |---|---|
@@ -55,13 +84,17 @@ external bridge alike) and for every program driving it (ODT, boot blocks, the
 OS). Pace each character on the echo; where nothing echoes (a password prompt),
 fall back to a delay per character.
 
+The rest of this section, and the hardware notes at the end, describe the QBUS
+board in the 11/73. A different board is a different machine: check what it
+carries rather than assuming these.
+
 **The 11/73 has an on-board console SLU, wired to the bone's `/dev/ttyS2`.**
 The console is therefore real hardware, and the WebSocket that carries it is
 `/ws/console/ext` — the raw tty bridge, with no emulated device behind it. Read
 it with `websocat`:
 
-    AUTH=$(printf ":%s" "$(cat ~/.qbone-pw)" | base64)
-    websocat --binary -H="Authorization: Basic $AUTH" ws://qbone/ws/console/ext
+    AUTH=$(printf "%s:%s" "$BOARD_USER" "$(cat ~/.qbone-pw)" | base64)
+    websocat --binary -H="Authorization: Basic $AUTH" ws://$BOARD_HOST/ws/console/ext
 
 The bridge is enabled by `external_console` in `PUT /api/settings`, whose
 `source` is `ttys2`, `webserial` or `off`. It must stay `ttys2` on this board.
@@ -81,9 +114,40 @@ the bridge fail to open with "Another process has locked the comport".
 ## Building
 
 `./crossbuild.sh` builds for the board in Docker; `-d` deploys the binary.
+Which bus it builds for comes from `QUNILATOR_BUS` in `build.env` — the board
+that is going to run it — and `-u`/`-q` override that for one run. An appliance
+deploy installs the result as `/usr/bin/<name>` whatever bus it was built for,
+so building for the wrong one and deploying is a bad afternoon; that is why the
+setting is required rather than defaulted.
 The builder image is Debian trixie, the same distribution the appliance image
 carries, and its tag is a hash of the recipe in the script, so editing the
 recipe builds a new image rather than reusing the old one.
+
+Every run reads `build.env` and refuses to build while `QUNILATOR_HOST`,
+`QUNILATOR_BUS`, `QUNILATOR_DEPLOY_MODE` or `QUNILATOR_REMOTE_DIR` has no value,
+naming the ones that do not. The last line of a run says what came out:
+
+    Built UNIBUS (unibone): 10.03_app_demo/4_deploy_u/qbone-web
+
+## Deploying to the board
+
+`./crossbuild.sh -d` sends the build to `QUNILATOR_HOST`. In `appliance` mode —
+a board flashed from the release image, which is the usual one — it replaces
+`/usr/bin/<name>` and **restarts `<name>.service`**, so the machine the board is
+running goes down with it. `QUNILATOR_DEPLOY_FRONTEND=1` adds the web bundle,
+unpacked into `/usr/share/qunilator/frontend`. It is a `build.env` setting, and
+works on the command line for one run because the file leaves it unset:
+
+    QUNILATOR_DEPLOY_FRONTEND=1 ./crossbuild.sh -d
+
+The web root is served from disk, so the frontend by itself would need no
+restart — but there is no frontend-only path: the swap happens inside the
+appliance deploy, after the binary has been replaced and the service bounced.
+A UI change therefore costs the running machine, and a board running something
+that matters is asked about first.
+
+ssh and scp go on the key; nothing prompts for a password. An appliance deploy
+writes below `/usr` and restarts a unit, so the account needs sudo there.
 
 Two linker settings that have to stay:
 
@@ -124,11 +188,12 @@ they say nothing about layout, colour, focus, drag behaviour, the WebSocket
 streams, or whether a widget draws at all. Only the live page does.
 
 Drive it with the `claude-in-chrome` tools against a board serving the built
-bundle — `unibone` is free for this, `qbone` needs asking first. The loop is:
+bundle — the one `build.env` names. A board that is running something for
+somebody else needs asking first. The loop is:
 
 1. `cd 10.05_web/3_frontend && npm run build`
-2. deploy the `dist/` tree to `/usr/share/qunilator/frontend` on the board (see
-   the deploy notes; a frontend-only swap needs no service restart)
+2. `QUNILATOR_DEPLOY_FRONTEND=1 ./crossbuild.sh -d` — see "Deploying to the
+   board" above for what that costs the running machine
 3. navigate to the screen the change touches, exercise it, and screenshot it
 
 A change that alters what an operator sees carries a screenshot of the new

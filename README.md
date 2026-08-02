@@ -203,8 +203,12 @@ images, for a bone built another way.
 
 Cross-build with `crossbuild.sh` (Docker, no toolchain to install):
 
-    ./crossbuild.sh        # QBUS
+    ./crossbuild.sh        # the bus build.env records
+    ./crossbuild.sh -q     # QBUS
     ./crossbuild.sh -u     # UNIBUS
+
+The first run copies `build.env.example` to `build.env` and stops so it can be
+filled in: it names the board a deploy goes to and the bus to build for.
 
 For deploying to a bone and building distributable images, see
 [`DISTRIBUTION.md`](DISTRIBUTION.md) and
