@@ -333,6 +333,24 @@ what `/api/memory/map` reports.
 This sweeps the whole address space and holds the bus for the length of the
 sweep, so run it with the CPU halted.
 
+### `POST /api/memory/place`
+
+```json
+{"startaddr": "10000000", "size": "2040 KB"}
+```
+
+Places the memory card: `startaddr` is a number or an octal string, `size` a
+count of bytes or a count followed by `KB` or `MB`. The two describe one card
+and are applied as one placement — set one parameter at a time, a card moving
+from one range to another passes through placements it refuses, such as a start
+address that carries the old size past the I/O page.
+
+A card that is in the machine gives up its range and takes the new one. A
+placement the machine refuses — a range something already answers, or one
+reaching into the I/O page — answers `409` with the reason and leaves the card
+where it was. Answers
+`{"ok": true, "startaddr": …, "endaddr": …, "size": "…", "enabled": …}`.
+
 ### `POST /api/memory/fill`
 
 ```json
@@ -501,6 +519,41 @@ configuration stores them:
  "layout": {"console": {"x": 0, "y": 6}},
  "devices": [{"name": "RL11", "enabled": true,
               "params": {"address": "174400", ...}}, ...]}
+```
+
+### `GET /api/configs/<name>?export=<form>`
+
+The same document the plain `GET` returns, as a file to keep, or the setup as
+commands. `Content-Disposition` names it, so a browser saves rather than
+renders it.
+
+| `export=` | | |
+|---|---|---|
+| `json` | `<name>.qcfg.json` | the configuration document, which is what an import reads |
+| `script` | `<name>.cmd` | the device set as commands for the interactive menu: `sd <dev>`, `p <param> <val>`, then `en <dev>` for each card that is in the machine |
+
+Carrying the media is the web interface's business, not the board's: it holds
+the document and every image the configuration names in one zip, built in the
+browser from this endpoint and `GET /api/images/<subpath>`.
+
+### `POST /api/configs/<name>/import`
+
+The body is a configuration document. `<name>` must be free — an import brings
+in a machine the board did not have, and writing over one it did is what
+[`PUT /api/configs/<name>`](#put-apiconfigsname) is for; an existing name is
+refused `409`. The document is validated the way `PUT` validates one, so a
+device the machine does not have, a parameter a device does not have, or one an
+operator may not set is refused by name and nothing is written.
+
+The **DIP binding travels but does not displace**: a `dip_value` another
+configuration on this board already claims is dropped, and the answer says so —
+two configurations answering one switch setting is the ambiguity the binding
+exists to prevent. The title and the dashboard layout are restored as they
+stand.
+
+```json
+{"ok": true, "name": "rsx-from-elsewhere",
+ "note": "the DIP value 1 is claimed by \"211bsd\", so the import is unbound"}
 ```
 
 ### `PUT /api/configs/<name>`

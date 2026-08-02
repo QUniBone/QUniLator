@@ -1,7 +1,7 @@
 // Promise-based imperative overlays: confirm, image picker, first-run password.
 import { apiJSON } from '../api';
 import { toast } from './toast';
-import { esc, humanSize, imageSubpath, parentDir, baseName } from './util';
+import { esc, humanSize, imageSubpath, octalStr, parentDir, baseName } from './util';
 import type { ImageInfo, ImageListing } from '../types';
 
 export function confirmModal(title: string, body: string, confirmLabel: string): Promise<boolean> {
@@ -137,6 +137,142 @@ export function promptModal(
     const dot = select === 'stem' ? initial.lastIndexOf('.') : -1;
     if (dot > 0) el.setSelectionRange(0, dot);
     else el.select();
+  });
+}
+
+// ---- placing the memory card ----
+
+export interface MemoryPlacement {
+  startaddr: string; // octal, as the card's parameter reads
+  size: string; // "2040 KB", as the card is described
+}
+
+// A byte count as the card describes itself: whole megabytes, else whole
+// kilobytes, else a count of bytes.
+function cardSize(bytes: number): string {
+  if (bytes >= 1048576 && bytes % 1048576 === 0) return bytes / 1048576 + ' MB';
+  if (bytes >= 1024 && bytes % 1024 === 0) return bytes / 1024 + ' KB';
+  return bytes + ' bytes';
+}
+
+// Where the card goes, asked before it is put in the machine. A card is placed
+// by a start address and a size, and the addresses left free are the ones above
+// whatever memory the machine carries itself — so the fields open on the first
+// free address and the rest of the space below the I/O page, and what the
+// machine answers is on the page next to them.
+//
+// Sizing the machine's own memory sweeps the address space and takes the bus
+// for the length of it, so the probe is a button the operator presses rather
+// than something opening this dialog does.
+export function pickPlacement(
+  title: string,
+  current: MemoryPlacement,
+  confirmLabel: string
+): Promise<MemoryPlacement | null> {
+  return new Promise((resolve) => {
+    const host = document.createElement('div');
+    host.className = 'modal-overlay';
+    host.innerHTML =
+      '<div class="card modal-card"><div class="card-head"><h3>' +
+      esc(title) +
+      '</h3><button class="modal-close" data-mp-no aria-label="Close" title="Close">&times;</button></div>' +
+      '<div class="card-body">' +
+      '<div class="mem-carries muted" style="display:flex; align-items:center; gap:10px; ' +
+      'margin:0 0 14px; font-size:var(--fs-1)">' +
+      '<span data-mp-carries style="flex:1">reading the map…</span>' +
+      '<button class="btn small" data-mp-probe>Probe</button></div>' +
+      '<div class="set-grid">' +
+      '<label class="set-name" for="mp-start">start</label>' +
+      '<input class="set-val mono" id="mp-start" type="text" value="' +
+      esc(current.startaddr) +
+      '">' +
+      '<label class="set-name" for="mp-size">size</label>' +
+      '<input class="set-val" id="mp-size" type="text" placeholder="256 KB" value="' +
+      esc(current.size) +
+      '"></div>' +
+      '<div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">' +
+      '<button class="btn" data-mp-no>Cancel</button>' +
+      '<button class="btn primary" data-mp-yes>' +
+      esc(confirmLabel) +
+      '</button></div></div></div>';
+
+    const startEl = host.querySelector('#mp-start') as HTMLInputElement;
+    const sizeEl = host.querySelector('#mp-size') as HTMLInputElement;
+    const carries = host.querySelector('[data-mp-carries]') as HTMLElement;
+    const probeBtn = host.querySelector('[data-mp-probe]') as HTMLButtonElement;
+
+    // What the machine answers, and the placement that follows from it: the
+    // first address its own memory leaves free, up to the I/O page.
+    const readMap = (m: {
+      addr_width: number;
+      iopage_start: number;
+      physical_end: number | null;
+    }) => {
+      if (m.physical_end === null) {
+        carries.textContent = 'the machine’s own memory has not been sized';
+        return;
+      }
+      const free = m.physical_end + 2;
+      carries.textContent =
+        'the machine answers ' +
+        octalStr(0, m.addr_width) +
+        '..' +
+        octalStr(m.physical_end, m.addr_width) +
+        ' — ' +
+        cardSize(free);
+      startEl.value = octalStr(free, m.addr_width);
+      sizeEl.value = free < m.iopage_start ? cardSize(m.iopage_start - free) : '0 bytes';
+    };
+
+    apiJSON<{ addr_width: number; iopage_start: number; physical_end: number | null }>(
+      '/api/memory/map'
+    )
+      .then((r) => {
+        if (r.ok) readMap(r.data);
+      })
+      .catch(() => {});
+
+    const probe = async () => {
+      probeBtn.disabled = true;
+      carries.textContent = 'sizing the machine’s memory…';
+      const r = await apiJSON<{ error?: string }>('/api/memory/probe', { method: 'POST' });
+      probeBtn.disabled = false;
+      if (!r.ok) {
+        carries.textContent = r.data.error || 'the probe was refused';
+        return;
+      }
+      const m = await apiJSON<{
+        addr_width: number;
+        iopage_start: number;
+        physical_end: number | null;
+      }>('/api/memory/map');
+      if (m.ok) readMap(m.data);
+    };
+
+    const done = (v: MemoryPlacement | null) => {
+      host.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve(v);
+    };
+    const submit = () => {
+      const startaddr = startEl.value.trim();
+      const size = sizeEl.value.trim();
+      if (startaddr && size) done({ startaddr, size });
+    };
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key === 'Escape') done(null);
+      else if (ev.key === 'Enter') submit();
+    }
+    host.addEventListener('click', (ev) => {
+      const target = ev.target as HTMLElement;
+      if (target === host || target.closest('[data-mp-no]')) done(null);
+      else if (target.closest('[data-mp-probe]')) probe();
+      else if (target.closest('[data-mp-yes]')) submit();
+    });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(host);
+    startEl.focus();
+    startEl.select();
   });
 }
 

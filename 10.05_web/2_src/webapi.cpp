@@ -36,6 +36,7 @@
 #include "storagecontroller.hpp"
 #include "timeout.hpp"     // timeout_c, used by rl0102.hpp
 #include "rl0102.hpp"
+#include "memory.hpp"
 #include "parameter.hpp"
 #include "qunibus.h"
 #include "ddrmem.h"
@@ -961,6 +962,79 @@ static void memory_fill(struct mg_connection *conn, const picojson::value &req) 
 	send_json(conn, 200, picojson::value(res));
 }
 
+// The machine's memory card, or nullptr on a build that carries none.
+// Caller holds device_c::mydevices_mutex.
+static memory_c *memory_card_locked(void) {
+	for (device_c *d : device_c::mydevices) {
+		memory_c *mem = dynamic_cast<memory_c *>(d);
+		if (mem != nullptr)
+			return mem;
+	}
+	return nullptr;
+}
+
+// What the card answers, as the interfaces read it back.
+static picojson::value memory_placement_json(memory_c *mem) {
+	picojson::object res;
+	res["ok"] = picojson::value(true);
+	res["startaddr"] = picojson::value((double) mem->startaddr.value);
+	res["endaddr"] = picojson::value((double) mem->endaddr.value);
+	res["size"] = picojson::value(mem->size.value);
+	res["enabled"] = picojson::value(mem->enabled.value);
+	return picojson::value(res);
+}
+
+// POST /api/memory/place {"startaddr":…, "size":…} — place the card.
+//
+// A start address and a size describe one range, and a card set one parameter
+// at a time passes through the placements between the old range and the new
+// one: moving the start of a card that fills the machine runs it into the I/O
+// page, which the card refuses. So the two arrive together and the card is
+// placed once, which is also how a configuration file applies them.
+//
+// A card in the machine gives up its range and takes the new one, so this is
+// the operator re-strapping it where it stands; a range the machine already
+// answers is refused and the card stays where it was.
+static void memory_place(struct mg_connection *conn, const picojson::value &req) {
+	unsigned start = 0;
+	const picojson::value &sv = req.get("startaddr");
+	if (sv.is<double>())
+		start = (unsigned) sv.get<double>();
+	else if (!sv.is<std::string>() || !parse_octal(sv.get<std::string>(), &start)) {
+		send_error(conn, 400, "\"startaddr\" must be a number or octal string");
+		return;
+	}
+	if (!req.get("size").is<std::string>()) {
+		send_error(conn, 400,
+				"\"size\" must be text: a count of bytes, or one followed by KB or MB");
+		return;
+	}
+	std::string sizespec = req.get("size").get<std::string>();
+
+	std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
+	memory_c *mem;
+	{
+		std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
+		mem = memory_card_locked();
+	}
+	if (mem == nullptr) {
+		send_error(conn, 404, "this machine carries no memory card");
+		return;
+	}
+	mem->last_error.clear();
+	if (!mem->place_at(start, sizespec)) {
+		std::string why = mem->last_error;
+		send_error(conn, 409, mem->name.value + ": " + sizespec + " at "
+				+ qunibus->addr2text(start)
+				+ (why.empty() ? " is not a placement the machine takes" : ": " + why));
+		return;
+	}
+	WEB_INFO("memory: %s at %s..%s", mem->size.value.c_str(),
+			qunibus->addr2text(mem->startaddr.value),
+			qunibus->addr2text(mem->endaddr.value));
+	send_json(conn, 200, memory_placement_json(mem));
+}
+
 static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	const struct mg_request_info *ri = mg_get_request_info(conn);
 	std::string uri = ri->local_uri ? ri->local_uri : "";
@@ -974,7 +1048,7 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		memory_map(conn);
 		return 200;
 	}
-	if (rest == "/probe" || rest == "/fill") {
+	if (rest == "/probe" || rest == "/fill" || rest == "/place") {
 		if (strcmp(ri->request_method, "POST") != 0) {
 			send_error(conn, 405, "POST required");
 			return 405;
@@ -988,7 +1062,10 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 			send_error(conn, 400, "body must be a JSON object");
 			return 400;
 		}
-		memory_fill(conn, req);
+		if (rest == "/place")
+			memory_place(conn, req);
+		else
+			memory_fill(conn, req);
 		return 200;
 	}
 	if (!rest.empty() && rest != "/") {

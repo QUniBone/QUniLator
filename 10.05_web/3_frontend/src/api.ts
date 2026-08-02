@@ -68,6 +68,27 @@ export async function liveSetParam(
   return res;
 }
 
+// The memory card is placed as one range: its start address and its size
+// describe one card, and sent one at a time they walk through placements the
+// card refuses. Answers the same shape a refusal does, so the caller reports
+// the reason the machine gave.
+export async function placeMemory(
+  startaddr: string,
+  size: string
+): Promise<ApiResult<{ error?: string }>> {
+  const res = await apiJSON<{ error?: string }>('/api/memory/place', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ startaddr, size }),
+  });
+  toast('memory: ' + size + ' at ' + startaddr, res.ok ? 'card placed' : res.data.error || 'rejected');
+  // The store is up to date before the caller acts on the result: a card put
+  // into the machine right after being placed writes its own refresh, and the
+  // two must not race — the later answer is the one that stands.
+  await refreshDevices().catch(() => {});
+  return res;
+}
+
 export async function liveControl(action: string, okMsg: string): Promise<void> {
   const res = await apiJSON<{ error?: string }>('/api/control', {
     method: 'POST',
@@ -545,4 +566,185 @@ export async function deleteRecording(name: string): Promise<boolean> {
   });
   if (!r.ok) toast('delete', 'Could not delete ' + name);
   return r.ok;
+}
+
+// ---- carrying a configuration off the board ------------------------------
+
+import { makeZip, readZip, saveAs, type ZipEntry } from './lib/cfgfile';
+
+/**
+ * A drive's image parameter as a storage subpath. A configuration records the
+ * medium the way the device holds it, which may carry the image tree's own
+ * name in front; the storage API and the listing speak subpaths. This is the
+ * frontend's copy of webstorage_image_subpath().
+ */
+export function imageSubpath(value: string): string {
+  let v = value;
+  if (v.startsWith('./')) v = v.slice(2);
+  if (v.startsWith('images/')) v = v.slice(7);
+  return v;
+}
+
+/** The images a configuration's drives hold, as subpaths, each named once. */
+export function imagesNamedBy(doc: ConfigSnapshot): string[] {
+  const out: string[] = [];
+  for (const d of doc.devices ?? []) {
+    const v = (d.params as Record<string, string> | undefined)?.image;
+    if (typeof v !== 'string' || v === '') continue;
+    const sub = imageSubpath(v);
+    if (sub !== '' && !out.includes(sub)) out.push(sub);
+  }
+  return out;
+}
+
+/** The configuration document, as a file to keep. */
+export async function exportConfigDocument(name: string): Promise<void> {
+  const r = await fetch(
+    '/api/configs/' + encodeURIComponent(name) + '?export=json'
+  );
+  if (!r.ok) {
+    toast('export', 'could not read ' + name);
+    return;
+  }
+  saveAs(await r.blob(), name + '.qcfg.json');
+}
+
+/** The same setup as commands for the interactive menu. */
+export async function exportConfigScript(name: string): Promise<void> {
+  const r = await fetch(
+    '/api/configs/' + encodeURIComponent(name) + '?export=script'
+  );
+  if (!r.ok) {
+    toast('export', 'could not read ' + name);
+    return;
+  }
+  saveAs(await r.blob(), name + '.cmd');
+}
+
+/**
+ * The configuration and every image its drives name, as one archive. A
+ * snapshot alone restores onto a board that has none of the media, which is
+ * a machine that cannot start.
+ */
+export async function exportConfigBundle(
+  name: string,
+  onProgress?: (msg: string) => void
+): Promise<boolean> {
+  const doc = await fetchConfigSnapshot(name);
+  if (doc === null) {
+    toast('export', 'could not read ' + name);
+    return false;
+  }
+  const entries: ZipEntry[] = [
+    {
+      name: name + '.qcfg.json',
+      data: new TextEncoder().encode(JSON.stringify(doc, null, 2)),
+    },
+  ];
+  const images = imagesNamedBy(doc);
+  for (let i = 0; i < images.length; i++) {
+    onProgress?.(`fetching ${images[i]} (${i + 1} of ${images.length})`);
+    const r = await fetch(subURL('/api/images/', images[i]));
+    if (!r.ok) {
+      toast('export', 'could not read image ' + images[i]);
+      return false;
+    }
+    entries.push({
+      name: 'images/' + images[i],
+      data: new Uint8Array(await r.arrayBuffer()),
+    });
+  }
+  onProgress?.('building the archive');
+  saveAs(makeZip(entries), name + '.qcfg.zip');
+  return true;
+}
+
+export interface ImportResult {
+  ok: boolean;
+  error?: string;
+  note?: string;
+  imagesWritten?: number;
+  imagesKept?: string[];
+}
+
+/**
+ * Bring a configuration in under `name`. The file is either the document or
+ * an archive carrying it and its media.
+ *
+ * An image already at that path is kept and named in the result: the board's
+ * copy may be the one a running machine holds, and overwriting it silently is
+ * not something an import should do.
+ */
+export async function importConfigFile(
+  name: string,
+  file: File,
+  onProgress?: (msg: string) => void
+): Promise<ImportResult> {
+  let docText: string | null = null;
+  const images: ZipEntry[] = [];
+
+  if (/\.zip$/i.test(file.name)) {
+    onProgress?.('reading the archive');
+    let entries: ZipEntry[];
+    try {
+      entries = await readZip(await file.arrayBuffer());
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+    for (const e of entries) {
+      if (e.name.startsWith('images/')) images.push(e);
+      else if (/\.json$/i.test(e.name) && docText === null)
+        docText = new TextDecoder().decode(e.data);
+    }
+    if (docText === null)
+      return { ok: false, error: 'the archive carries no configuration document' };
+  } else {
+    docText = await file.text();
+  }
+
+  let doc: unknown;
+  try {
+    doc = JSON.parse(docText);
+  } catch {
+    return { ok: false, error: 'the file is not a configuration document' };
+  }
+
+  // The images go in first: a configuration whose media arrive after it would
+  // name files the board does not have yet.
+  const kept: string[] = [];
+  let written = 0;
+  // What the board already holds, read once: an image at the same path may be
+  // the one a running machine has open, so the archive's copy gives way to it.
+  const listing = await apiJSON<{ images?: { path: string }[] }>('/api/images');
+  const present = new Set((listing.data.images ?? []).map((i) => i.path));
+  for (let i = 0; i < images.length; i++) {
+    const sub = images[i].name.replace(/^images\//, '');
+    onProgress?.(`writing ${sub} (${i + 1} of ${images.length})`);
+    if (present.has(sub)) {
+      kept.push(sub);
+      continue;
+    }
+    const slash = sub.lastIndexOf('/');
+    const dir = slash > 0 ? sub.slice(0, slash) : '';
+    const base = slash > 0 ? sub.slice(slash + 1) : sub;
+    const up = await uploadImages(
+      [new File([images[i].data as BlobPart], base)],
+      dir
+    );
+    if (!up.ok) return { ok: false, error: up.error || 'could not write ' + sub };
+    written++;
+  }
+
+  onProgress?.('writing the configuration');
+  const r = await apiJSON<{ error?: string; note?: string }>(
+    '/api/configs/' + encodeURIComponent(name) + '/import',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(doc),
+    }
+  );
+  if (!r.ok) return { ok: false, error: r.data?.error || 'the board refused it' };
+  await loadConfigs();
+  return { ok: true, note: r.data?.note, imagesWritten: written, imagesKept: kept };
 }

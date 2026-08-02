@@ -6,7 +6,7 @@ import { useEffect, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { LiveDev } from '../../types';
 import { octalStr } from '../../lib/util';
-import { apiJSON, liveSetParam } from '../../api';
+import { apiJSON, placeMemory } from '../../api';
 import { alertModal } from '../../lib/modals';
 import { statusParam } from '../../lib/devmodel';
 import { DeviceWidget, paramVal } from './base';
@@ -58,10 +58,12 @@ function bands(m: MemoryMap): Band[] {
 
 // The card is placed the way a card is described: a start address and a size.
 // The last address it answers follows from the two and is read here rather than
-// set. The machine can refuse a placement — a range it already answers would
-// put two cards on one cycle — and then the card stays where it was, so the
-// fields go back to what they held and the reason is put in front of the
-// operator.
+// set. Both fields go to the machine together, so an edit of either one is a
+// whole placement — a start moved on its own would carry the size the card had
+// and reach past where it may answer. The machine can refuse a placement — a
+// range it already answers would put two cards on one cycle — and then the card
+// stays where it was, so the fields go back to what they held and the reason is
+// put in front of the operator.
 function Placement({ d }: { d: LiveDev }) {
   const start = paramVal(d, 'startaddr');
   const size = paramVal(d, 'size');
@@ -72,9 +74,9 @@ function Placement({ d }: { d: LiveDev }) {
   useEffect(() => setStartDraft(start), [start]);
   useEffect(() => setSizeDraft(size), [size]);
 
-  const place = async (param: string, value: string) => {
-    if (value === paramVal(d, param)) return;
-    const res = await liveSetParam(d.name, param, value, 'card placed');
+  const commit = async () => {
+    if (startDraft === start && sizeDraft === size) return;
+    const res = await placeMemory(startDraft, sizeDraft);
     if (!res.ok) {
       setStartDraft(start);
       setSizeDraft(size);
@@ -84,21 +86,19 @@ function Placement({ d }: { d: LiveDev }) {
       );
     }
   };
-  const commitStart = () => place('startaddr', startDraft);
-  const commitSize = () => place('size', sizeDraft);
 
   return html`<div class="mem-place">
     <label class="mem-field"
       ><span>start</span>
       <input class="mono" type="text" value=${startDraft} spellcheck=${false}
         onInput=${(e: Event) => setStartDraft((e.target as HTMLInputElement).value)}
-        onChange=${commitStart} onBlur=${commitStart} />
+        onChange=${commit} onBlur=${commit} />
     </label>
     <label class="mem-field"
       ><span>size</span>
       <input type="text" value=${sizeDraft} placeholder="256 KB" spellcheck=${false}
         onInput=${(e: Event) => setSizeDraft((e.target as HTMLInputElement).value)}
-        onChange=${commitSize} onBlur=${commitSize} />
+        onChange=${commit} onBlur=${commit} />
     </label>
     <span class="mem-note">ends at <span class="mem-addr mono">${end}</span></span>
   </div>`;

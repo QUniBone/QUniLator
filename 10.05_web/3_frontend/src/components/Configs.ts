@@ -15,7 +15,7 @@ import { html } from '../html';
 import { useState, useEffect } from 'preact/hooks';
 import { useRoute, useLocation } from 'preact-iso';
 import { esc, octalStr } from '../lib/util';
-import { alertModal, confirmModal, promptModal, pickDevice } from '../lib/modals';
+import { alertModal, confirmModal, promptModal, pickDevice, pickPlacement } from '../lib/modals';
 import { setNavGuard, clearNavGuard, guardedRoute } from '../lib/navguard';
 import {
   loadConfigs,
@@ -26,7 +26,13 @@ import {
   saveConfigDoc,
   applyConfig,
   liveControl,
+  placeMemory,
   renameConfig,
+  exportConfigDocument,
+  exportConfigScript,
+  exportConfigBundle,
+  importConfigFile,
+  imagesNamedBy,
   setConfigTitle,
   setConfigDip,
   deleteConfig,
@@ -117,6 +123,18 @@ function storedRow(d: LiveDev, st: Staged): Row {
     addressOptions: d.addressOptions,
     vectorOptions: d.vectorOptions,
   };
+}
+
+// A parameter of a row, as text; "" when the device has none by that name.
+function paramOf(row: Row, name: string): string {
+  const p = row.params.find((q) => q.n === name);
+  return p ? p.v : '';
+}
+
+// A card placed by a start address and a size — the machine's memory. It is
+// added at a placement rather than at its default, so the Add flow asks for one.
+function isMemoryCard(row: Row): boolean {
+  return row.params.some((p) => p.n === 'startaddr') && row.params.some((p) => p.n === 'size');
 }
 
 type SetEnabled = (name: string, on: boolean) => void;
@@ -252,6 +270,7 @@ function DevRow({
   onToggle,
   onParam,
   onImage,
+  onPlace,
 }: {
   row: Row;
   cfg: string;
@@ -261,6 +280,7 @@ function DevRow({
   onToggle: SetEnabled;
   onParam: SetParam;
   onImage: SetImage;
+  onPlace: (row: Row) => void;
 }) {
   const loc = useLocation();
   const open = device === row.name;
@@ -268,8 +288,14 @@ function DevRow({
   // parameters are lifted out of the generic parameter grid
   const lines = serialLines(row.params);
   const lineParams = new Set(lines.flatMap((l) => [l.roleParam, l.hostParam, l.portParam]));
-  const gridParams = row.params.filter((p) => p.n !== 'image' && !lineParams.has(p.n));
-  const hasDetail = gridParams.length > 0 || lines.length > 0;
+  // the memory card's start address and size describe one placement and are set
+  // as one, so they are lifted out of the grid the same way
+  const card = isMemoryCard(row);
+  const placeParams = new Set(card ? ['startaddr', 'size'] : []);
+  const gridParams = row.params.filter(
+    (p) => p.n !== 'image' && !lineParams.has(p.n) && !placeParams.has(p.n)
+  );
+  const hasDetail = gridParams.length > 0 || lines.length > 0 || card;
   const toggleOpen = () => {
     const base = '/config/' + encodeURIComponent(cfg);
     const path = open ? base : base + '/' + encodeURIComponent(row.name);
@@ -312,6 +338,19 @@ function DevRow({
       open && hasDetail
         ? html`<div class="params">
       ${
+        card
+          ? html`<div class="serial-lines">
+          <div class="serial-lines-head">The card answers one range: a start address and a size, set together</div>
+          <div class="dev-sub">
+            <span class="mono">${paramOf(row, 'startaddr')}</span>
+            <span class="muted">${paramOf(row, 'size')}</span>
+            <span class="spacer"></span>
+            <button class="btn small" onClick=${() => onPlace(row)}>Place…</button>
+          </div>
+        </div>`
+          : null
+      }
+      ${
         lines.length
           ? html`<div class="serial-lines">
           <div class="serial-lines-head">Serial lines — a bare port listens, <span class="mono">host:port</span> connects, <span class="mono">ws</span> is a browser terminal</div>
@@ -343,7 +382,8 @@ function DevRow({
       row.enabled
         ? (row.drives || []).map(
             (d) => html`<${DevRow} row=${d} cfg=${cfg} device=${device} sub=${true}
-              onToggle=${onToggle} onParam=${onParam} onImage=${onImage} key=${d.name} />`
+              onToggle=${onToggle} onParam=${onParam} onImage=${onImage}
+              onPlace=${onPlace} key=${d.name} />`
           )
         : null
     }
@@ -536,9 +576,42 @@ function Detail({ name }: { name: string }) {
     }));
   })();
   const conflicts = computeConflicts(visible);
+  // A memory card goes into the machine at a placement, and its construction
+  // default answers the whole space below the I/O page — which every machine
+  // that carries memory of its own already answers. So the card is placed
+  // before it is added: the operator is asked where it goes, and the machine
+  // takes the placement while the card is still out of it. A placement the
+  // machine refuses leaves the card out, with the reason it gave.
+  const placeCard = async (row: Row, confirmLabel: string): Promise<boolean> => {
+    const p = await pickPlacement(
+      'Place the memory card',
+      { startaddr: paramOf(row, 'startaddr'), size: paramOf(row, 'size') },
+      confirmLabel
+    );
+    if (!p) return false;
+    if (!isCurrent) {
+      stagedParam(row.name, 'startaddr', p.startaddr);
+      stagedParam(row.name, 'size', p.size);
+      return true;
+    }
+    const res = await placeMemory(p.startaddr, p.size);
+    if (!res.ok)
+      await alertModal(
+        'Card not placed',
+        res.data.error || 'The machine refused the placement.'
+      );
+    return res.ok;
+  };
+
   const doAdd = async () => {
     const pick = await pickDevice('Add a device', available);
-    if (pick) (isCurrent ? liveToggle : stagedToggle)(pick, true);
+    if (!pick) return;
+    const row = roots.find((r) => r.name === pick);
+    if (row && isMemoryCard(row)) {
+      if (await placeCard(row, 'Add')) (isCurrent ? liveToggle : stagedToggle)(pick, true);
+      return;
+    }
+    (isCurrent ? liveToggle : stagedToggle)(pick, true);
   };
 
   const doSaveAs = async () => {
@@ -615,6 +688,7 @@ function Detail({ name }: { name: string }) {
               <button class="btn small" onClick=${doLoad}>Load</button>`
         }
         <button class="btn small" onClick=${doRename}>Rename…</button>
+        <${ExportMenu} name=${name} />
         <${DelButton} label="Delete" confirmLabel="Confirm delete" onConfirm=${doDelete} />
       </div>
     </div>
@@ -631,7 +705,8 @@ function Detail({ name }: { name: string }) {
                 conflict=${conflicts[r.name]}
                 onToggle=${isCurrent ? liveToggle : stagedToggle}
                 onParam=${isCurrent ? liveParam : stagedParam}
-                onImage=${isCurrent ? liveImage : stagedImage} key=${r.name} />`
+                onImage=${isCurrent ? liveImage : stagedImage}
+                onPlace=${(rw: Row) => placeCard(rw, 'Place')} key=${r.name} />`
             )
           : html`<div class="cfg-empty muted">No devices yet — use “Add device” to add one.</div>`
       }
@@ -665,6 +740,108 @@ function MasterRow({ c }: { c: ConfigSummary }) {
   </button>`;
 }
 
+
+// Carrying a configuration off the board. Three forms, because they answer
+// different questions: the document is the machine as this board records it
+// and is what an import reads; the command script recreates the setup on a
+// board driven from the interactive menu; the archive carries the media too,
+// which is what a configuration needs to start on a board that has never seen
+// them.
+function ExportMenu({ name }: { name: string }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState('');
+  const [images, setImages] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    fetchConfigSnapshot(name)
+      .then((d) => setImages(d ? imagesNamedBy(d).length : null))
+      .catch(() => setImages(null));
+  }, [open, name]);
+
+  const bundle = async () => {
+    setOpen(false);
+    setBusy('reading');
+    await exportConfigBundle(name, setBusy);
+    setBusy('');
+  };
+
+  if (busy)
+    return html`<button class="btn small" disabled=true>${busy}…</button>`;
+  return html`<span class="export-wrap">
+    <button class="btn small" onClick=${() => setOpen(!open)}>Export ▾</button>
+    ${
+      open
+        ? html`<div class="export-menu" onMouseLeave=${() => setOpen(false)}>
+            <button class="export-item" onClick=${() => { setOpen(false); exportConfigDocument(name); }}>
+              <span>Configuration document</span>
+              <span class="muted">JSON, and what an import reads</span>
+            </button>
+            <button class="export-item" onClick=${() => { setOpen(false); exportConfigScript(name); }}>
+              <span>Menu command script</span>
+              <span class="muted">recreates it from the interactive menu</span>
+            </button>
+            <button class="export-item" onClick=${bundle}>
+              <span>Archive with the media</span>
+              <span class="muted">${
+                images === null
+                  ? 'the document and every image it names'
+                  : images === 0
+                    ? 'no drive in it holds an image'
+                    : `the document and ${images} image${images === 1 ? '' : 's'}`
+              }</span>
+            </button>
+          </div>`
+        : null
+    }
+  </span>`;
+}
+
+// Bringing one in. The name is the operator's: an import is a machine this
+// board did not have, and the board refuses a name already taken rather than
+// writing over what is there.
+function ImportButton() {
+  const [busy, setBusy] = useState('');
+  const pick = async (e: Event) => {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = ''; // so the same file can be picked again
+    if (!file) return;
+    const suggested = file.name.replace(/\.(qcfg\.)?(json|zip|cmd)$/i, '');
+    const name = await promptModal(
+      'Import configuration',
+      'Name for the imported configuration',
+      suggested,
+      'Import'
+    );
+    if (!name) return;
+    setBusy('reading');
+    const r = await importConfigFile(name, file, setBusy);
+    setBusy('');
+    if (!r.ok) {
+      await alertModal('Import refused', r.error || 'the board refused it');
+      return;
+    }
+    // alertModal renders its body as text, so this is written as text.
+    const lines: string[] = [`${name} imported.`];
+    if (r.imagesWritten)
+      lines.push(
+        `${r.imagesWritten} image${r.imagesWritten === 1 ? '' : 's'} written.`
+      );
+    if (r.imagesKept?.length)
+      lines.push(
+        `The board already had ${r.imagesKept.join(', ')}, and keeps its own copy.`
+      );
+    if (r.note) lines.push(r.note + '.');
+    await alertModal('Imported', lines.join(' '));
+  };
+  return html`<label class=${'btn small' + (busy ? ' disabled' : '')}>
+    ${busy ? busy + '…' : 'Import…'}
+    <input type="file" accept=".json,.zip,application/json,application/zip"
+      style="display:none" disabled=${!!busy} onChange=${pick} />
+  </label>`;
+}
+
 export function ConfigsPage() {
   const s = useStore();
   const loc = useLocation();
@@ -684,7 +861,7 @@ export function ConfigsPage() {
   return html`<section class="page active" data-page="configurations">
     <div class="cfg-layout">
       <div class="cfg-master card">
-        <div class="card-head"><h3>Configurations</h3></div>
+        <div class="card-head"><h3>Configurations</h3><${ImportButton} /></div>
         <div class="cfg-list">
           ${
             configs.length

@@ -1530,6 +1530,124 @@ void webconfigs_startup(const std::string &override_config) {
 }
 
 // /api/configs, /api/configs/<name>, /api/configs/<name>/apply
+
+// ---- export and import ---------------------------------------------------
+//
+// A configuration is a machine setup, and a setup an operator has arrived at is
+// worth keeping off the board it was built on. Two forms travel:
+//
+//  - the JSON document, which is what this module already stores and what an
+//    import reads back; and
+//  - a command script in the interactive menu's own format, for a board driven
+//    from the menu rather than through the API.
+//
+// The document carries the title, the DIP binding and the dashboard layout
+// alongside the device set, so an export is the whole configuration. What an
+// import does with the first two differs, because they say something about the
+// board rather than about the machine: the layout is restored as it stands, and
+// the DIP binding only when no configuration on this board already claims that
+// value -- two configurations answering one switch setting is exactly the
+// ambiguity the binding exists to prevent.
+
+// Render the device set as menu commands: select a device, set its parameters,
+// enable it. Order matters -- a parameter is set while the device is out of the
+// machine, then the enable installs it, which is the order the API takes too.
+static std::string config_as_script(const std::string &name,
+		const picojson::value &content) {
+	std::string out;
+	out += "# " + name;
+	if (content.get("title").is<std::string>())
+		out += " - " + content.get("title").get<std::string>();
+	out += "\n";
+	out += "# QUniLator configuration, as commands for the interactive menu.\n";
+	out += "# Paste at the device menu prompt, or feed with the menu's script\n";
+	out += "# facility. Devices are set up first and enabled afterwards, which\n";
+	out += "# is the order a parameter change requires.\n\n";
+	if (!content.get("devices").is<picojson::array>())
+		return out;
+	const picojson::array &devs = content.get("devices").get<picojson::array>();
+	std::string enables;
+	for (const picojson::value &dv : devs) {
+		if (!dv.is<picojson::object>())
+			continue;
+		const picojson::object &d = dv.get<picojson::object>();
+		if (d.find("name") == d.end() || !d.at("name").is<std::string>())
+			continue;
+		std::string dname = d.at("name").get<std::string>();
+		out += "sd " + dname + "\n";
+		if (d.find("params") != d.end() && d.at("params").is<picojson::object>()) {
+			const picojson::object &ps = d.at("params").get<picojson::object>();
+			for (picojson::object::const_iterator it = ps.begin(); it != ps.end(); ++it) {
+				std::string v = it->second.is<std::string>()
+						? it->second.get<std::string>() : it->second.to_str();
+				out += "p " + it->first + " " + v + "\n";
+			}
+		}
+		out += "\n";
+		if (d.find("enabled") != d.end() && d.at("enabled").is<bool>()
+				&& d.at("enabled").get<bool>())
+			enables += "en " + dname + "\n";
+	}
+	if (!enables.empty())
+		out += "# the cards go into the machine\n" + enables;
+	return out;
+}
+
+// Send a document as a file the browser saves rather than renders.
+static void send_attachment(struct mg_connection *conn, const std::string &body,
+		const std::string &filename, const char *type) {
+	mg_printf(conn,
+			"HTTP/1.1 200 OK\r\nContent-Type: %s\r\n"
+			"Content-Disposition: attachment; filename=\"%s\"\r\n"
+			"Content-Length: %u\r\nConnection: close\r\n\r\n",
+			type, filename.c_str(), (unsigned) body.size());
+	mg_write(conn, body.data(), body.size());
+}
+
+// POST /api/configs/<name>/import  — the body is a configuration document.
+//
+// The name is the operator's choice and must be free: an import brings in a
+// machine that was not here, and writing over one that was is what PUT is for.
+static void config_import(struct mg_connection *conn, const std::string &name) {
+	picojson::value doc;
+	if (!read_json_body_full(conn, &doc) || !doc.is<picojson::object>()) {
+		send_error(conn, 400, "body must be a configuration document");
+		return;
+	}
+	picojson::value existing;
+	std::string err;
+	if (read_config(name, &existing, &err)) {
+		send_error(conn, 409, "a configuration named \"" + name
+				+ "\" is already here; import under another name");
+		return;
+	}
+	picojson::object &o = doc.get<picojson::object>();
+	// The DIP binding belongs to the board, not to the machine: keep it only
+	// when this board has the switch value free, and say so when it does not.
+	std::string dip_note;
+	int dip = config_dip_value(doc);
+	if (dip >= 0) {
+		std::string holder = config_for_dip(dip);
+		if (!holder.empty() && holder != name) {
+			o.erase("dip_value");
+			dip_note = "the DIP value " + std::to_string(dip)
+					+ " is claimed by \"" + holder + "\", so the import is unbound";
+		}
+	}
+	std::string error;
+	int status = 422;
+	if (!webconfigs_write(name, doc, /*from_live*/false, &error, &status)) {
+		send_error(conn, status, error);
+		return;
+	}
+	picojson::object res;
+	res["ok"] = picojson::value(true);
+	res["name"] = picojson::value(name);
+	if (!dip_note.empty())
+		res["note"] = picojson::value(dip_note);
+	send_json(conn, 200, picojson::value(res));
+}
+
 static int api_configs_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	const struct mg_request_info *ri = mg_get_request_info(conn);
 	std::string uri = ri->local_uri ? ri->local_uri : "";
@@ -1578,7 +1696,7 @@ static int api_configs_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		if (sep != std::string::npos) {
 			std::string tail = name.substr(sep + 1);
 			if (tail == "apply" || tail == "rename" || tail == "title"
-					|| tail == "dip" || tail == "layout") {
+					|| tail == "dip" || tail == "layout" || tail == "import") {
 				action = tail;
 				name = name.substr(0, sep);
 			}
@@ -1618,6 +1736,8 @@ static int api_configs_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		config_set_dip(conn, name);
 	} else if (action == "layout" && method == "PUT") {
 		config_set_layout(conn, name);
+	} else if (action == "import" && method == "POST") {
+		config_import(conn, name);
 	} else if (action.empty() && method == "PUT") {
 		const char *query = ri->query_string;
 		bool from_live = query != nullptr && strstr(query, "from=live") != nullptr;
@@ -1625,8 +1745,28 @@ static int api_configs_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	} else if (action.empty() && method == "GET") {
 		picojson::value content;
 		std::string err;
-		if (!read_config(name, &content, &err))
+		if (!read_config(name, &content, &err)) {
 			send_error(conn, 404, err);
+			return 404;
+		}
+		// ?export=json hands the same document back as a file to save;
+		// ?export=script renders it as menu commands.
+		const char *query = ri->query_string;
+		std::string ex;
+		if (query != nullptr) {
+			const char *p = strstr(query, "export=");
+			if (p != nullptr) {
+				p += 7;
+				while (*p != '\0' && *p != '&')
+					ex.push_back(*p++);
+			}
+		}
+		if (ex == "script")
+			send_attachment(conn, config_as_script(name, content), name + ".cmd",
+					"text/plain; charset=utf-8");
+		else if (ex == "json")
+			send_attachment(conn, content.serialize(true), name + ".qcfg.json",
+					"application/json");
 		else
 			send_json(conn, 200, content);
 	} else if (action.empty() && method == "DELETE") {
