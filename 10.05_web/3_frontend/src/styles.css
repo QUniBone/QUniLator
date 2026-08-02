@@ -228,10 +228,13 @@ button { font: inherit; color: inherit; }
   font-family: var(--font-mono); font-size: var(--fs-0);
   color: var(--ink-muted); white-space: nowrap;
 }
+/* A chip is one word of state, so it keeps its shape: a hyphenated label like
+   READ-ONLY reads as two chips when it wraps. */
 .chip {
   display: inline-block; padding: 1px 8px; border-radius: 999px;
   font-size: var(--fs-0); font-weight: 600; letter-spacing: .04em;
   text-transform: uppercase; border: 1px solid transparent;
+  white-space: nowrap;
 }
 .chip.ok   { color: var(--ok);   background: var(--ok-soft); }
 .chip.warn { color: var(--warn); background: var(--warn-soft); }

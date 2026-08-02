@@ -195,6 +195,11 @@ function ContentsPanel({ data }: { data?: ImageContents }) {
       )}</tbody></table></div></div>`;
 }
 
+// An overlay that has taken no write is the resting state of every read-only
+// pack a drive holds: nothing to discard, nothing to consolidate and no unsaved
+// work to announce. The chip and the operations appear with the first write.
+const overlayHasWrites = (im: ImageInfo) => !!im.overlay && (im.overlay_dirty_blocks ?? 0) > 0;
+
 // The copy-on-write overlay readout and its three operations, shown beneath a
 // disk row whose image carries an active overlay. Discard reverts to the base;
 // consolidate folds the writes into the base (destructive) or into a fresh file
@@ -566,17 +571,17 @@ export function StoragePage() {
         <span class="pick-icon">💾</span>
         <span class="mono">${im.name}</span>
         ${im.writable === false ? html`<span class="chip off" title="read-only file">read-only</span>` : null}
-        ${im.overlay ? html`<span class="chip warn" title="a copy-on-write overlay holds unsaved writes">overlay</span>` : null}</span></td>
-      <td class="mono">${humanSize(im.size)}</td>
+        ${overlayHasWrites(im) ? html`<span class="chip warn" title="a copy-on-write overlay holds unsaved writes">overlay</span>` : null}</span></td>
+      <td class="mono" style="white-space:nowrap">${humanSize(im.size)}</td>
       <td><${ImageUsage} im=${im} /></td>
-      <td class="muted mono" style="font-size:var(--fs-0)">${im.mtime}</td>
+      <td class="muted mono" style="font-size:var(--fs-0); white-space:nowrap">${im.mtime}</td>
       <td style="text-align:right; white-space:nowrap">
         <button class="btn small" onClick=${() => toggleContents(im.path)}>${open ? 'Hide' : 'Contents'}</button>${' '}
         <a class="btn small" href=${subURL('/api/images/', im.path)} download>Download</a>${' '}
         <button class="btn small" onClick=${() => renameEntry(im.path, false)}>Rename…</button>${' '}
         <${DelButton} label="Delete" confirmLabel="Confirm delete" onConfirm=${() => deleteImage(im.path)} />
       </td></tr>
-      ${im.overlay
+      ${overlayHasWrites(im)
         ? html`<tr key=${'ov:' + im.path} class="overlay-row"><td colspan="5" style=${indent(depth + 1)}>
             <${OverlayPanel} im=${im} /></td></tr>`
         : null}
