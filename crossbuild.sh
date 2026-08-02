@@ -156,16 +156,15 @@ fi
 # and whose PRU half does not, and the two disagree in ways that look like a
 # hardware fault.
 pru_sources_newer() {
-    local image
-    image=$(ls "$PRU_DEPLOY_DIR"/pru1_code_*_array.c 2>/dev/null | head -1)
-    [ -n "$image" ] || return 0
+    local image=$1
+    [ -s "$image" ] || return 0
     [ -n "$(find 10.01_base/2_src/pru0 10.01_base/2_src/pru1${SUFFIX} \
             10.01_base/2_src/shared -newer "$image" -name '*.[ch]' -print -quit \
             2>/dev/null)" ]
 }
 if [ -z "$(ls "$PRU_DEPLOY_DIR"/*_array.c 2>/dev/null || true)" ] \
         || [ -z "$(ls "$PRU_DEPLOY_DIR"/*.out 2>/dev/null || true)" ] \
-        || pru_sources_newer; then
+        || pru_sources_newer "$(ls "$PRU_DEPLOY_DIR"/pru1_code_*_array.c 2>/dev/null | head -1)"; then
     echo "Building PRU firmware with clpru $PRU_CGT_VERSION ..."
     for prudir in pru0 pru1${SUFFIX}; do
         docker run --rm --platform linux/amd64 --user "$DOCKER_USER" \
