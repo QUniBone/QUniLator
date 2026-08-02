@@ -146,6 +146,10 @@ void m9312_c::plug_rom(parameter_string_c *filepath, unsigned rom_idx,
 
 	rom_c *r = rom[rom_idx]; // alias
 	bool empty_socket = false; // new state: ROM plugged into socket?
+	// where the socket answers on the bus. Loading moves it to the addresses the
+	// file carries, and a file that cannot be used must not leave it there: the
+	// next ROM would be relocated onto the rejected file's addresses.
+	uint32_t baseaddress_saved = r->baseaddress;
 
 	if (filepath == NULL || filepath->new_value.empty())
 		empty_socket = true;
@@ -156,15 +160,15 @@ void m9312_c::plug_rom(parameter_string_c *filepath, unsigned rom_idx,
 	if (!empty_socket) {
 		// ROM file must contain addresses rom_required_file_start_address
 		// so after loading, baseaddress is changed to file addresses.
-		uint32_t baseaddress_saved = r->baseaddress;
-
 		if (!r->load_macro11_listing(filepath->new_value.c_str())) {
 			ERROR("Loading %s from file %s failed.", r->name.c_str(), filepath->new_value.c_str());
+			r->baseaddress = baseaddress_saved;
 			filepath->new_value = "";
 			empty_socket = true;
 		} else if (r->baseaddress != rom_required_file_start_address) {
 			ERROR("Content for %s in file %s not starting at %06o.", r->name.c_str(),
 					filepath->new_value.c_str(), rom_required_file_start_address);
+			r->baseaddress = baseaddress_saved;
 			filepath->new_value = "";
 			empty_socket = true;
 		} else {
@@ -178,31 +182,73 @@ void m9312_c::plug_rom(parameter_string_c *filepath, unsigned rom_idx,
 		r->fill(empty_socket_data_value);
 }
 
+// The code labels of every plugged ROM, gathered into one map: an autoboot
+// address may name a label of any socket. An empty socket carries none, since
+// filling a ROM with the empty pattern clears its labels.
+codelabel_map_c m9312_c::all_codelabels()
+{
+	codelabel_map_c result;
+	for (int i = 0; i < 5; i++)
+		if (rom[i] != NULL)
+			for (codelabel_map_c::iterator it = rom[i]->codelabels.begin();
+					it != rom[i]->codelabels.end(); ++it)
+				result.add(it->first, it->second);
+	return result;
+}
+
+// Those labels as one line, for the operator who has to name one of them.
+// Bounded: a log message is a line, not a listing.
+std::string m9312_c::codelabels_text()
+{
+	const size_t max_len = 300;
+	codelabel_map_c labels = all_codelabels();
+	std::string result;
+	for (codelabel_map_c::iterator it = labels.begin(); it != labels.end(); ++it) {
+		if (result.size() > max_len) {
+			result += ", ...";
+			break;
+		}
+		if (!result.empty())
+			result += ", ";
+		result += it->first;
+	}
+	return result;
+}
+
 // Update dependencies from loaded ROMs and symbolic boot address.
 // Search symbolic auto boot address in installed and relocated ROMs
-void m9312_c::resolve() 
+void m9312_c::resolve()
 {
 	/* 1. get boot address */
+	uint32_t bootaddress_previous = bootaddress;
 	bootaddress = MEMORY_ADDRESS_INVALID;
 
 	// check: autoboot code label present in any ROM?
 	if (!bootaddress_label.value.empty()) {
 		// search for ROM label in code label table of all ROMs.
 		// Upper/lower case matters!
-		for (int i = 0; i < 5; i++)
-			if (rom[i] != NULL) {
-				codelabel_map_c codelabels = rom[i]->codelabels;
-				if (codelabels.is_defined(bootaddress_label.value))
-					bootaddress = codelabels.get_address(bootaddress_label.value);
-			}
+		codelabel_map_c codelabels = all_codelabels();
+		if (codelabels.is_defined(bootaddress_label.value))
+			bootaddress = codelabels.get_address(bootaddress_label.value);
 	}
 
-	if (bootaddress == MEMORY_ADDRESS_INVALID)
-		bootaddress_info.value = "DISABLED";
-	else {
+	if (bootaddress_label.value.empty())
+		bootaddress_info.set("DISABLED");
+	else if (bootaddress == MEMORY_ADDRESS_INVALID) {
+		// A label was asked for and no plugged ROM defines it: the machine will
+		// not auto boot. Saying "DISABLED" would read as if no boot had been
+		// asked for, so say which of the two it is.
+		bootaddress_info.set("UNRESOLVED");
+		// changing a ROM can take the label away under a boot address that was
+		// resolved; that is a machine which stops booting, so it is said out loud
+		if (bootaddress_previous != MEMORY_ADDRESS_INVALID)
+			WARNING("Code label \"%s\" no longer defined by the plugged ROMs, no auto boot."
+					" Available labels: %s", bootaddress_label.value.c_str(),
+					codelabels_text().c_str());
+	} else {
 		char buff[10];
-		sprintf(buff, "%06o", bootaddress);
-		bootaddress_info.value = buff;
+		snprintf(buff, sizeof(buff), "%06o", bootaddress);
+		bootaddress_info.set(buff);
 		INFO("Code label \"%s\" resolved, auto boot PC = %06o", bootaddress_label.value.c_str(),
 				bootaddress);
 	}
@@ -258,7 +304,27 @@ bool m9312_c::on_param_changed(parameter_c *param)
 		resolve();
 		return true;
 	} else if (param == &bootaddress_label) {
-		bootaddress_label.value = bootaddress_label.new_value; // resolve() works on .value
+		// A label is typed, and a wrong one is a machine that comes up and does
+		// nothing: the ROM has no such entry point, so no auto boot happens and
+		// nothing says why. Check it against what the plugged ROMs define, and
+		// answer with the labels there are to choose from.
+		std::string label = bootaddress_label.new_value;
+		trim(label); // a stray space is not part of a MACRO11 label
+		codelabel_map_c codelabels = all_codelabels();
+		if (!label.empty() && !codelabels.is_defined(label)) {
+			if (codelabels.empty())
+				// Nothing is plugged in, so no label can resolve. Program a
+				// socket first: a configuration applies its ROM files before
+				// the address that names one of their labels.
+				ERROR("No ROM is plugged in, so code label \"%s\" names nothing."
+						" Program a socket first.", label.c_str());
+			else
+				ERROR("Code label \"%s\" is not defined by the plugged ROMs."
+						" Available labels: %s", label.c_str(), codelabels_text().c_str());
+			return false; // keep the label that was there
+		}
+		bootaddress_label.new_value = label;
+		bootaddress_label.value = label; // resolve() works on .value
 		resolve();
 	}
 	// no own parameter or "enable" logic
@@ -286,8 +352,8 @@ bool m9312_c::on_before_install()
 		}
 
 	if (!bootaddress_label.value.empty() && bootaddress == MEMORY_ADDRESS_INVALID) {
-		WARNING("Code label \"%s\", not found in any ROM. no auto boot",
-				bootaddress_label.value.c_str());
+		WARNING("Code label \"%s\" not found in any ROM, no auto boot. Available labels: %s",
+				bootaddress_label.value.c_str(), codelabels_text().c_str());
 	}
 
 	// install ROMs to UNIBUS

@@ -205,6 +205,19 @@ way a drive's medium is resolved (a subpath, `images/…`, or an absolute path
 inside the tree); an absolute path outside the tree is stored unchanged, which
 is what keeps a configuration naming a file under `/usr/share` working.
 
+The M9312's `bootaddress_label` names a MACRO-11 label of one of those
+listings, and a label no plugged ROM defines is a machine that comes up and
+does nothing. So a `PUT` of it is checked against the code labels of the
+sockets that carry a listing: a label none of them defines is refused `409`,
+the message naming the labels there are to choose from, and with every socket
+empty it is refused as naming nothing — program a socket first. An applied
+configuration therefore sets a device's ROM sockets before the rest of its
+parameters, whatever order the document lists them in.
+
+`bootaddress_info` is the resolved power-on PC. `DISABLED` means no autoboot
+was asked for; `UNRESOLVED` means a label was and the plugged ROMs no longer
+define it — swapping a ROM out from under a resolved address leaves it there.
+
 `enabled` says the card is **in the machine**, not that it is answering the bus
 this instant: a machine switched off at the panel still carries its cards, and
 each drive still names the medium it holds (see

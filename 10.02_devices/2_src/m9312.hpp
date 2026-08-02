@@ -42,6 +42,11 @@ private:
 
 	void resolve(void);
 
+	// the code labels of all plugged ROMs, which are what a boot address may name
+	codelabel_map_c all_codelabels(void);
+	// those labels as one bounded line, to tell an operator what there is to choose
+	std::string codelabels_text(void);
+
 	unsigned bootaddress_timeout_ms = 300;
 	timeout_c bootaddress_timeout; // vector max 300ms active
 	int bootaddress_reg_trap_accesses; // count access to trap registers
