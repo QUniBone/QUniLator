@@ -62,6 +62,9 @@ mrv11d_c::mrv11d_c() :
 	startaddr.value = 0;
 
 	contents.kind = parameter_c::PARAM_STATUS;
+
+	// the card is programmed from a file of the image tree
+	romfile.content = parameter_c::CONTENT_ROM;
 	arraysize.kind = parameter_c::PARAM_STATUS;
 	windows.kind = parameter_c::PARAM_STATUS;
 	range.kind = parameter_c::PARAM_STATUS;

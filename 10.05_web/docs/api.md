@@ -189,6 +189,22 @@ into the configuration. Both collections use the same entry shape. Parameter
 parameters carry `base` (usually 8) and `bitwidth`. Drives reference their
 controller through `parent`.
 
+A parameter whose value names a **file of the image tree** says so with
+`content`, which is absent for an ordinary value:
+
+| `content` | what it names | empty value means |
+|---|---|---|
+| `image` | the medium a drive holds | no medium in the drive |
+| `rom` | the file a PROM card's socket is programmed from | an empty socket |
+
+The device declares this, so a caller offers the file browser for such a
+parameter whatever the device called it — a drive's `image`, the MRV11-D's
+`romfile`, the M9312's five `bootromN_file` sockets — rather than recognising
+particular names. A `PUT` of one resolves its value against the image tree the
+way a drive's medium is resolved (a subpath, `images/…`, or an absolute path
+inside the tree); an absolute path outside the tree is stored unchanged, which
+is what keeps a configuration naming a file under `/usr/share` working.
+
 `enabled` says the card is **in the machine**, not that it is answering the bus
 this instant: a machine switched off at the panel still carries its cards, and
 each drive still names the medium it holds (see

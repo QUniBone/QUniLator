@@ -13,6 +13,7 @@ function liveParam(p: ApiParam): LiveParam {
     t: 'str',
     v: '',
   };
+  if (p.content) out.c = p.content;
   if (p.type === 'unsigned' || p.type === 'unsigned64') {
     if (p.base === 8) {
       out.t = 'oct';
@@ -63,7 +64,9 @@ export function liveModel(devs: ApiDevice[]): LiveDev[] {
         // is degraded gracefully rather than treated as a fault.
         statusParams: (d.statusparams || []).map(liveParam),
         drives: [] as LiveDev[],
-        img: String((d.params.find((p) => p.name === 'image') || { value: '' }).value || ''),
+        // the medium is the parameter the drive declares as one, not one
+        // recognised by its name
+        img: String((d.params.find((p) => p.content === 'image') || { value: '' }).value || ''),
         addressOptions: d.address_options,
         vectorOptions: d.vector_options,
       },
@@ -146,10 +149,11 @@ export function applyParamValue(dev: string, name: string, value: unknown): void
   walkDevs((d) => {
     if (d.name === dev) {
       if (name === 'enabled') d.enabled = !!value;
-      if (name === 'image') d.img = String(value || '');
       // A committed value can land on either collection: configuration values in
       // params, machine-driven lamp/state/counter values in statusParams.
       const p = d.params.find((q) => q.n === name) || statusParam(d, name);
+      // the medium the drive declares, whatever it named the parameter
+      if (p && p.c === 'image') d.img = String(value || '');
       if (p) {
         if (p.t === 'oct') p.v = octalStr(Number(value), p.bw);
         else if (p.t === 'hex') p.v = hexStr(Number(value), p.bw);

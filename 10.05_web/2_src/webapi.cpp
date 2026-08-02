@@ -111,6 +111,14 @@ static picojson::value param_to_json(device_c *dev, parameter_c *p) {
 		o["info"] = picojson::value(p->info);
 	if (!p->unit.empty())
 		o["unit"] = picojson::value(p->unit);
+	// What the value names, when it is not an ordinary one: a file of the image
+	// tree, and which kind belongs in it. The interface offers the file browser
+	// for these rather than a text box, and does so because the device said so
+	// — not because of the name the parameter happens to carry.
+	if (p->content == parameter_c::CONTENT_IMAGE)
+		o["content"] = picojson::value("image");
+	else if (p->content == parameter_c::CONTENT_ROM)
+		o["content"] = picojson::value("rom");
 
 	if (parameter_string_c *ps = dynamic_cast<parameter_string_c *>(p)) {
 		o["type"] = picojson::value("string");
@@ -344,9 +352,10 @@ static void notify_carried(device_c *dev) {
 	for (device_c *d : devs) {
 		webevents_note_param(d->name.value, d->enabled.name,
 				picojson::value(webpower_is_in_machine(d)));
-		if (parameter_c *img = d->param_by_name("image"))
-			webevents_note_param(d->name.value, img->name,
-					picojson::value(webpower_param_value(d, img)));
+		for (parameter_c *img : d->parameter)
+			if (img->content == parameter_c::CONTENT_IMAGE)
+				webevents_note_param(d->name.value, img->name,
+						picojson::value(webpower_param_value(d, img)));
 	}
 }
 
@@ -402,7 +411,8 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 			// of the machine is on no bus, so a value set on it is inert until
 			// the card goes in.
 			if (webpower_devices_are_off()
-					&& (param == &dev->enabled || param->name == "image")) {
+					&& (param == &dev->enabled
+							|| param->content == parameter_c::CONTENT_IMAGE)) {
 				std::string err;
 				bool ok;
 				if (param == &dev->enabled) {
@@ -542,7 +552,7 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 						return;
 					}
 				}
-				if (param->name == "image") {
+				if (param->content == parameter_c::CONTENT_IMAGE) {
 					// the web interface keeps images in one directory, so a
 					// bare name attaches the file it manages by that name
 					value = webstorage_image_path(value);
@@ -576,10 +586,12 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 						send_json(conn, 200, param_to_json(dev, param));
 						return;
 					}
-				} else if (param->name == "romfile") {
-					// a ROM image is a file of the same tree, named by its
-					// subpath. Several boards may be programmed from one file,
-					// so nothing holds it.
+				} else if (param->content == parameter_c::CONTENT_ROM) {
+					// a ROM is a file of the same tree, named by its subpath.
+					// Several sockets may be programmed from one file, so
+					// nothing holds it. An absolute path outside the tree is
+					// left as it stands, which is what keeps a configuration
+					// naming a packaged listing working.
 					value = webstorage_image_path(value);
 				}
 				// A device may refuse a value — a memory card whose new range
@@ -602,7 +614,7 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 					param->name.c_str(), value.c_str());
 			// attaching/detaching an image changes which files the shares must
 			// hold read-only while the machine runs
-			if (param->name == "image")
+			if (param->content == parameter_c::CONTENT_IMAGE)
 				webstorage_refresh_readonly(webevents_is_powered()
 						&& !webevents_is_halted());
 		} catch (bad_parameter &e) {

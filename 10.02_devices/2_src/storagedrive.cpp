@@ -72,6 +72,10 @@ storagedrive_c::storagedrive_c(storagecontroller_c *_controller) :
     // LED index moves as I/O runs and the ACCESS lamp lights with transfers.
     activity_led.kind = parameter_c::PARAM_STATUS;
     access_lamp.kind = parameter_c::PARAM_STATUS;
+
+    // the medium is a file of the image tree, which is how the web interface
+    // knows to offer the file browser for it rather than a text box
+    image_filepath.content = parameter_c::CONTENT_IMAGE;
 }
 
 storagedrive_c::~storagedrive_c() 

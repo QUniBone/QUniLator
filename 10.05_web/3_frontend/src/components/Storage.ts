@@ -486,7 +486,7 @@ export function StoragePage() {
   const newImage = async () => {
     const media = new Map<string, { name: string; label: string; type: string; size: number }>();
     flatDevices().forEach((d) => {
-      if (!d.params.some((p) => p.n === 'image') || media.has(d.type)) return;
+      if (!d.params.some((p) => p.c === 'image') || media.has(d.type)) return;
       const tape = d.category === 'tape';
       const cap = d.params.find((p) => p.n === 'capacity');
       const size = tape ? 0 : Number(cap ? cap.v : 0);

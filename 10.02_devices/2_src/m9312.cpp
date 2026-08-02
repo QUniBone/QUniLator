@@ -114,6 +114,17 @@ m9312_c::m9312_c() :	qunibusdevice_c()  // super class constructor
 	bootaddress = MEMORY_ADDRESS_INVALID;
 	bootaddress_info.value = "DISABLED";
 
+	// Every socket is programmed from a file of the image tree, which is what
+	// makes the web interface offer the file browser for it and what lets the
+	// API take the subpath a drive's medium is named by. The listings the
+	// package ships are copied into that tree first, so a socket never names
+	// package content directly.
+	consemurom_filepath.content = parameter_c::CONTENT_ROM;
+	bootrom1_filepath.content = parameter_c::CONTENT_ROM;
+	bootrom2_filepath.content = parameter_c::CONTENT_ROM;
+	bootrom3_filepath.content = parameter_c::CONTENT_ROM;
+	bootrom4_filepath.content = parameter_c::CONTENT_ROM;
+
 }
 
 m9312_c::~m9312_c() 

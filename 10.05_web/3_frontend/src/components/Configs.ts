@@ -41,7 +41,7 @@ import { keptDevices } from '../lib/devmodel';
 import { serialEndpoint, serialLines } from '../lib/serial';
 import type { SerialLine, SerialRole } from '../lib/serial';
 import { useStore } from '../store';
-import { Chip, ImageField, DelButton } from './common';
+import { Chip, ImageField, FileField, DelButton } from './common';
 import type { LiveDev, LiveParam, ConfigSnapshot, ConfigSummary } from '../types';
 
 // ---- staged edits of a stored document ----
@@ -78,9 +78,12 @@ interface Row {
   type: string;
   category: string; // what the device is, which groups it in the Add picker
   enabled: boolean;
-  takesImage: boolean;
+  // the name of the parameter the device declares as its medium (content
+  // "image"), when it has one — the drive is asked, rather than a parameter
+  // called "image" being looked for
+  imageParam?: string;
   image: string;
-  params: LiveParam[]; // settable/display params (image handled separately)
+  params: LiveParam[]; // settable/display params (the medium handled separately)
   drives: Row[];
   addressOptions?: number[];
   vectorOptions?: number[];
@@ -89,6 +92,11 @@ interface Row {
 // interrupts. Editable as a menu of the type's standard values; the backend
 // gates a live change on the CPU being halted.
 const BUS_PLACEMENT = new Set(['base_addr', 'intr_vector', 'intr_level']);
+
+// The parameter a device declares as the medium it holds, if any. A drive's is
+// called "image", but that is the device's business: what marks it is the
+// content the backend publishes for it.
+const mediumParam = (d: LiveDev): string | undefined => d.params.find((p) => p.c === 'image')?.n;
 function liveRow(d: LiveDev): Row {
   return {
     name: d.name,
@@ -96,7 +104,7 @@ function liveRow(d: LiveDev): Row {
     type: d.type,
     category: d.category || '',
     enabled: d.enabled,
-    takesImage: d.params.some((p) => p.n === 'image'),
+    imageParam: mediumParam(d),
     image: d.img,
     params: d.params,
     drives: (d.drives || []).map(liveRow),
@@ -112,12 +120,12 @@ function storedRow(d: LiveDev, st: Staged): Row {
     type: d.type,
     category: d.category || '',
     enabled: !!st.enabled[d.name],
-    takesImage: d.params.some((p) => p.n === 'image'),
-    image: 'image' in pv ? pv.image : d.img,
+    imageParam: mediumParam(d),
+    image: mediumParam(d) && mediumParam(d)! in pv ? pv[mediumParam(d)!] : d.img,
     // bus-placement fields read back read-only on a live enabled device, but the
     // configuration still edits them, so they are kept rather than filtered
     params: d.params
-      .filter((p) => (!p.ro || BUS_PLACEMENT.has(p.n)) && p.n !== 'image')
+      .filter((p) => (!p.ro || BUS_PLACEMENT.has(p.n)) && p.c !== 'image')
       .map((p) => ({ ...p, v: p.n in pv ? pv[p.n] : p.v })),
     drives: (d.drives || []).map((c) => storedRow(c, st)),
     addressOptions: d.addressOptions,
@@ -139,7 +147,7 @@ function isMemoryCard(row: Row): boolean {
 
 type SetEnabled = (name: string, on: boolean) => void;
 type SetParam = (name: string, param: string, value: string) => void;
-type SetImage = (name: string, image: string) => void;
+type SetImage = (name: string, param: string, image: string) => void;
 
 // A plain-language read-back of what a serial field's text does, translated by
 // the same pure endpoint parser the field writes with.
@@ -205,6 +213,11 @@ function placementOptions(row: Row, p: LiveParam): string[] | null {
   return strs;
 }
 
+// Where each kind of file the API marks belongs, so the browser opens there for
+// a parameter that has none set yet. The ROM listings the package ships are
+// copied into roms/ first, which is why a socket opens on that folder.
+const CONTENT_DIR: Record<string, string> = { rom: 'roms', image: '' };
+
 function paramControl(row: Row, p: LiveParam, onParam: SetParam) {
   const placement = placementOptions(row, p);
   if (placement)
@@ -212,6 +225,12 @@ function paramControl(row: Row, p: LiveParam, onParam: SetParam) {
       onParam(row.name, p.n, (e.target as HTMLSelectElement).value)}>
       ${placement.map((s) => html`<option value=${s} selected=${s === p.v}>${s}</option>`)}</select>`;
   if (p.ro) return html`<span class="ro">${p.v}</span>`;
+  // a parameter naming a file is picked from the library, never typed
+  if (p.c)
+    return html`<${FileField} label=${row.name + '.' + p.n} value=${p.v}
+      startDir=${CONTENT_DIR[p.c]}
+      emptyLabel=${p.c === 'rom' ? 'empty socket' : 'no image'}
+      onPick=${(n: string) => onParam(row.name, p.n, n)} />`;
   if (p.t === 'bool')
     return html`<input type="checkbox" checked=${p.v === '1'} onChange=${(e: Event) =>
       onParam(row.name, p.n, (e.target as HTMLInputElement).checked ? '1' : '0')} />`;
@@ -293,7 +312,7 @@ function DevRow({
   const card = isMemoryCard(row);
   const placeParams = new Set(card ? ['startaddr', 'size'] : []);
   const gridParams = row.params.filter(
-    (p) => p.n !== 'image' && !lineParams.has(p.n) && !placeParams.has(p.n)
+    (p) => p.c !== 'image' && !lineParams.has(p.n) && !placeParams.has(p.n)
   );
   const hasDetail = gridParams.length > 0 || lines.length > 0 || card;
   const toggleOpen = () => {
@@ -308,9 +327,9 @@ function DevRow({
       <span class="muted" style="font-size:var(--fs-0)">${row.type}</span>
       ${conflict ? html`<span class="chip err" title=${conflict}>⚠ conflict</span>` : null}
       ${
-        row.takesImage
+        row.imageParam
           ? html`<${ImageField} drive=${row.name} image=${row.image}
-            onPick=${(n: string) => onImage(row.name, n)} />`
+            onPick=${(n: string) => onImage(row.name, row.imageParam!, n)} />`
           : null
       }
       <span class="spacer"></span>
@@ -517,8 +536,8 @@ function Detail({ name }: { name: string }) {
       );
   };
   const liveParam: SetParam = (dev, pn, val) => liveSetParam(dev, pn, val, 'parameter set');
-  const liveImage: SetImage = async (dev, img) => {
-    const res = await liveSetParam(dev, 'image', img, img ? 'image attached' : 'image detached');
+  const liveImage: SetImage = async (dev, param, img) => {
+    const res = await liveSetParam(dev, param, img, img ? 'image attached' : 'image detached');
     if (!res.ok)
       await alertModal(
         img ? 'Medium not attached' : 'Medium not detached',
@@ -538,7 +557,7 @@ function Detail({ name }: { name: string }) {
   const stagedToggle: SetEnabled = (dev, on) => stage((st) => (st.enabled[dev] = on));
   const stagedParam: SetParam = (dev, pn, val) =>
     stage((st) => (st.params[dev] = { ...(st.params[dev] || {}), [pn]: val }));
-  const stagedImage: SetImage = (dev, img) => stagedParam(dev, 'image', img);
+  const stagedImage: SetImage = (dev, param, img) => stagedParam(dev, param, img);
 
   const roots = isCurrent
     ? s.devmodel.map(liveRow)

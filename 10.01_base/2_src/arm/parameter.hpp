@@ -86,11 +86,23 @@ public:
 	// to PARAM_CONFIG, so nothing is misclassified by omission.
 	enum parameter_kind_e { PARAM_CONFIG, PARAM_STATUS };
 
+	// What the value names, for a caller that can offer more than a text box.
+	// A device that takes a file says so here rather than being recognised by
+	// the name it gave the parameter: the web interface then offers the file
+	// browser for it, and the API resolves what it is given against the image
+	// tree. CONTENT_IMAGE is a medium a drive holds, CONTENT_ROM the listing or
+	// binary a PROM card is programmed from — both are files under
+	// $QUNILATOR_DIR/images, and the two differ in what the browser opens on
+	// and in what an empty value means (no medium / an empty socket).
+	// CONTENT_PLAIN, the default, is an ordinary value.
+	enum parameter_content_e { CONTENT_PLAIN, CONTENT_IMAGE, CONTENT_ROM };
+
 	parameterized_c *parameterized; // link to parent object
 	std::string name;
 	std::string shortname;
 	bool readonly;
 	parameter_kind_e kind = PARAM_CONFIG;
+	parameter_content_e content = CONTENT_PLAIN;
 	std::string info; // help text
 	std::string unit; // "MB",
 	std::string format; // printf, scanf

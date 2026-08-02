@@ -38,9 +38,14 @@ export function imageSubpath(stored: string): string {
   return s;
 }
 
-// Display label for a drive's medium: its subpath within the image tree.
+// Display label for a file a device names: its subpath within the image tree.
+// A path from outside the tree — a configuration that still names a listing
+// under /usr/share — has no subpath to show, and its leading directories would
+// crowd out the part that identifies it, so such a value shows its file name.
+// The full value stays available as the field's tooltip.
 export function imageLabel(stored: string): string {
-  return imageSubpath(stored);
+  const sub = imageSubpath(stored);
+  return sub.startsWith('/') ? baseName(sub) : sub;
 }
 
 // The parent folder of a subpath ("" for a top-level entry).

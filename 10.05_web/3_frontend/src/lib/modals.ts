@@ -310,7 +310,11 @@ function crumbHTML(cwd: string): string {
 export async function pickImage(
   title: string,
   emptyLabel: string,
-  current: string
+  current: string,
+  // Where the browser opens when the parameter holds nothing yet: the folder
+  // that kind of file belongs in (a PROM card opens on roms/). With a value
+  // set, the folder holding it wins — the list lands on what is loaded.
+  startDir?: string
 ): Promise<string | null> {
   const listing: ImageListing = await fetch('/api/images')
     .then((r) => r.json())
@@ -319,7 +323,7 @@ export async function pickImage(
   const images: ImageInfo[] = listing.images || [];
   const now = imageSubpath(current || '');
   // open in the folder that holds the current medium, so the list lands on it
-  let cwd = now.includes('/') ? parentDir(now) : '';
+  let cwd = now.includes('/') ? parentDir(now) : startDir || '';
 
   return new Promise((resolve) => {
     const host = document.createElement('div');
