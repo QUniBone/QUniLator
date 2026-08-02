@@ -27,6 +27,26 @@ export function MachinePage() {
             )}>
           <option value="16">16-bit</option><option value="18">18-bit</option><option value="22">22-bit</option></select></div>
         <div class="set-info">CPU address width. Changing it re-bases the I/O page, so it applies only while the bus is halted.</div>
+        ${
+          s.settings.emulated_cpu_available
+            ? html`<div class="set-name">Processor</div>
+              <div class="set-val">
+                ${(
+                  [
+                    [false, 'Real, on the bus'],
+                    [true, 'Emulated'],
+                  ] as const
+                ).map(
+                  ([v, lbl]) =>
+                    html`<label class="radio"><input type="radio" name="ecpu" checked=${!!s.settings.emulated_cpu === v}
+                    onChange=${() => putSettings({ emulated_cpu: v }, 'processor set')} /> ${lbl}</label>`
+                )}
+              </div>
+              <div class="set-info">Who arbitrates the bus. Emulated adds the KA11, KD11 and VAX processors
+                to the device list, one of which a configuration enables. The device set is built when the
+                service starts, so this takes effect at the next restart.</div>`
+            : null
+        }
       </div></div></div>
     <div class="card" style="max-width:560px"><div class="card-head"><h3>External console</h3></div>
       <div class="card-body">

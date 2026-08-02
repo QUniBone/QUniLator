@@ -51,6 +51,8 @@ export const store: Store = {
     platform: '',
     address_width: 22,
     external_console: { source: 'webserial', port: 'ttyS2', baud: 38400 },
+    emulated_cpu: false,
+    emulated_cpu_available: false,
   },
   images: [],
   dirs: [],

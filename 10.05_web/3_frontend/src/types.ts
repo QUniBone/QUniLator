@@ -98,6 +98,11 @@ export interface Settings {
   platform: string;
   address_width: number;
   external_console: ExternalConsole;
+  // The board is either a peripheral of a real PDP-11 or the machine itself.
+  // Only a UNIBUS build carries the emulated processors, so a QBUS board
+  // reports emulated_cpu_available false and is offered no choice.
+  emulated_cpu?: boolean;
+  emulated_cpu_available?: boolean;
 }
 
 // ---- REST: images / configs ----
