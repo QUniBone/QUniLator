@@ -1,0 +1,72 @@
+# Any TS11/TSV05 XXDP tape against the emulated TS11 on unibone's emulated
+# PDP-11/34. The tape and the test selection are variables, so one script
+# surveys the family:
+#
+#   node dist/src/cli.js run scripts/unibone-xxdp-ts-tape.yaml \
+#       --var TAPE=VTSDE0 --var SEL=/TESTS:1-4:6-9
+#
+# SEL takes a DRS test selection - ranges and singles joined by colons - or an
+# empty string for every test.
+#
+# The Unibus board is an M7982, which carries neither TSDBX nor the Extended
+# Features switch, so the tests that ask for them belong on qbone: here CVTSD
+# reaches test 004 and 006 through 009, and CVTSC and CVTSE stop at their
+# first Extended Features test. See scripts/qbone-xxdp-ts-tape.yaml.
+#
+# The error match carries the test and subtest, so the livelock guard reads a
+# new error as progress and stops only on the same one repeating.
+console: "0"
+host: unibone
+title: XXDP ${TAPE} against the emulated TS11
+timeout: 60s
+machine:
+  config: pdp1134-ts
+  start: restart
+deviations:
+  - event: halt
+    fail: the CPU halted during the run
+steps:
+  - name: boot
+    expect:
+      - match: "ENTER DATE"
+        send: ""
+      - match: /RESTART ADDR|\n\./
+        goto: load
+    timeout: 120s
+  - name: prompt
+    expect: /\n\./
+  - name: load
+    wait: 2s
+    send: R ${TAPE}
+  - name: supervisor
+    expect: "DR>"
+    send: START${SEL}
+    timeout: 90s
+  - name: change-hw
+    expect: /CHANGE HW.*\?/i
+    send: Y
+  - name: dialog
+    expect:
+      - match: /UNITS.*\?/i
+        send: "1"
+        goto: dialog
+      - match: /CHANGE SW.*\?/i
+        send: "N"
+        goto: dialog
+      - match: /ZERO LD UNIT|DOIT ANYWAY/i
+        send: "N"
+        goto: dialog
+      - match: /SELECT DRIVE[^?]*\?/i
+        send: "0"
+        goto: dialog
+      - match: /\(L\)\s*\?/
+        send: "N"
+        goto: dialog
+      - match: /\?[\x00-\x20]*$/
+        send: ""
+        goto: dialog
+      - match: /END PASS|\b0 CUMULATIVE ERRORS|EOP\s+\d/i
+        done: true
+      - match: /(HRD ERR|SFT ERR|DVC FTL|FTL ERR)\s+\d+ ON UNIT \d+ TST \d+ SUB \d+/i
+        goto: dialog
+    timeout: 900s
