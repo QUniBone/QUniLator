@@ -78,10 +78,18 @@ typedef struct {
     // answers such an acknowledge with the level's last vector.
     uint8_t canceled_request_mask;
 
-    // IEP time until which DMR is withheld from the bus. Refreshed while an
-    // interrupt acknowledge runs and when a vector transfer completes, so a
-    // DMA grant cannot land inside the CPU's interrupt-entry microcode.
-    uint32_t dmr_holdoff_until;
+    // The DMR holdoff: while active, DMR is withheld from the bus so a DMA
+    // grant cannot land inside the CPU's interrupt-entry microcode. Armed
+    // while an interrupt acknowledge runs and when a vector transfer
+    // completes; expires ARB_IAK_DMR_HOLDOFF_TICKS after the arming, by
+    // unsigned difference from the free-running IEP counter. The pair (flag,
+    // start time) rather than a bare deadline: a deadline compared signed
+    // against a wrapping 32-bit counter comes back true on its own 2^31 ticks
+    // after the last interrupt - ~10.7 s at IEP rate - and a guest that never
+    // interrupts (XXDP polls its console) then stalls every new DMA request
+    // for the next 10.7 s, twice per counter wrap, indefinitely.
+    uint32_t dmr_holdoff_start;
+    uint8_t dmr_holdoff_active;
 
     // DMR has been committed to the bus for the pending DMA request. The
     // holdoff only delays this commitment; once made, DMR stands until the

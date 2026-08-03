@@ -108,7 +108,8 @@ void sm_arb_reset() {
     sm_arb.device_forwarded_grant_mask = 0;
     sm_arb.device_request_signalled_mask = 0;
     sm_arb.canceled_request_mask = 0;
-    sm_arb.dmr_holdoff_until = PRU_IEP_TMR_CNT;
+    sm_arb.dmr_holdoff_start = PRU_IEP_TMR_CNT;
+    sm_arb.dmr_holdoff_active = 0;
     sm_arb.dmr_committed = 0;
 
     sm_arb.intr_level_index = 0 ;
@@ -223,7 +224,8 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
         {
             bool dma_holdoff;
             if (buslatches_getbyte(6) & BIT(5)) { /* RIAKI: IAK in progress */
-                sm_arb.dmr_holdoff_until = PRU_IEP_TMR_CNT + ARB_IAK_DMR_HOLDOFF_TICKS;
+                sm_arb.dmr_holdoff_start = PRU_IEP_TMR_CNT;
+                sm_arb.dmr_holdoff_active = 1;
                 // While the acknowledge runs the CPU cannot have a DMGO in
                 // flight (its arbiter does one transaction at a time), so
                 // this is the one safe moment to take a standing DMR off the
@@ -234,7 +236,15 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
                 // timing out on a garbage bus).
                 sm_arb.dmr_committed = 0;
             }
-            dma_holdoff = (int32_t)(PRU_IEP_TMR_CNT - sm_arb.dmr_holdoff_until) < 0;
+            // Expire by unsigned distance from the arming, which survives the
+            // IEP counter wrapping; this pass runs every few microseconds, so
+            // an expired holdoff clears long before the difference itself can
+            // wrap.
+            if (sm_arb.dmr_holdoff_active
+                    && (PRU_IEP_TMR_CNT - sm_arb.dmr_holdoff_start)
+                        >= ARB_IAK_DMR_HOLDOFF_TICKS)
+                sm_arb.dmr_holdoff_active = 0;
+            dma_holdoff = sm_arb.dmr_holdoff_active;
             if (sm_arb.device_request_mask & PRIORITY_ARBITRATION_BIT_NP) {
                 if (!sm_arb.dmr_committed && !dma_holdoff)
                     sm_arb.dmr_committed = 1;
@@ -446,7 +456,8 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
 
         // the CPU's interrupt-entry microcode runs from here: keep DMR off
         // the bus until it is done (see grant_check)
-        sm_arb.dmr_holdoff_until = PRU_IEP_TMR_CNT + ARB_IAK_DMR_HOLDOFF_TICKS;
+        sm_arb.dmr_holdoff_start = PRU_IEP_TMR_CNT;
+        sm_arb.dmr_holdoff_active = 1;
         qbus_diag.intr_answered++;
 
         // signal to ARM which INTR was completed
@@ -498,7 +509,8 @@ uint8_t sm_arb_worker_device(uint8_t granted_requests_mask) {
         buslatches_setbits(4, BIT(3), 0) ; // negate RPLY
         buslatches_setbyte(0, 0);					// DAL7..0
         buslatches_setbyte(1, 0);					// DAL15..8
-        sm_arb.dmr_holdoff_until = PRU_IEP_TMR_CNT + ARB_IAK_DMR_HOLDOFF_TICKS;
+        sm_arb.dmr_holdoff_start = PRU_IEP_TMR_CNT;
+        sm_arb.dmr_holdoff_active = 1;
         sm_arb.state = state_arbitration_grant_check ;
         return 0 ;
 

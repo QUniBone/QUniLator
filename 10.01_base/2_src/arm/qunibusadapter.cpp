@@ -885,6 +885,16 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
                                              : "none",
                           qunibus_c::control2text(qunibus_cycle),
                           qunibus->addr2text(unibus_addr), wordcount);
+                    // Where the transfer died, read off the mailbox. cur_status
+                    // 1 is the PRU parked in NPR/NPG/SACK arbitration - a grant
+                    // that never came; 0 with signaled != acked is a transfer
+                    // that finished whose completion event was never serviced.
+                    ERROR("  mailbox: dma.cur_status=%u cur_addr=%s "
+                          "event dma signaled=%u acked=%u",
+                          (unsigned) mailbox->dma.cur_status,
+                          qunibus->addr2text(mailbox->dma.cur_addr),
+                          (unsigned) mailbox->events.dma.signaled,
+                          (unsigned) mailbox->events.dma.acked);
                     break;
                 }
                 assert(!res);
