@@ -259,15 +259,39 @@ pru_sources_newer() {
             10.01_base/2_src/shared -newer "$image" -name '*.[ch]' -print -quit \
             2>/dev/null)" ]
 }
+# The PRU build runs on the container's own filesystem, not on the bind mount.
+# clpru is an x86-64 binary emulated on an ARM Mac, and creating its output
+# files (.pp, .nfo, .object, interlist .asm) over the virtiofs mount fails
+# sporadically - "cannot open preprocessing output file", a different file
+# every run. So the sources are copied in, the compiler writes only to /tmp,
+# and the finished firmware is copied out after the whole build has succeeded.
+# A failed build therefore leaves the previous complete firmware in place -
+# there is no partially rebuilt state for the ARM build to pick up. The
+# support package and the compiler are read-only inputs and stay where they
+# are; reading from the mount has never failed.
+pru_make() {
+    # $1 = pru source dir under 10.01_base/2_src, $2... = extra make args
+    local prudir="$1"; shift
+    docker run --rm --platform linux/amd64 --user "$DOCKER_USER" \
+        -v "$PWD:/qunibone" \
+        -e PRUDIR="$prudir" -e PLATFORM="$PLATFORM" \
+        -e DEPLOY_DIR="$PRU_DEPLOY_DIR" $PRU_IMAGE \
+        bash -ec '
+            cp -a /qunibone/10.01_base/2_src /tmp/src
+            make -C "/tmp/src/$PRUDIR" QUNILATOR_DIR=/qunibone \
+                QUNILATOR_PLATFORM="$PLATFORM" OBJ_DIR=/tmp/obj "$@"
+            mkdir -p "/qunibone/$DEPLOY_DIR"
+            cp /tmp/obj/*_code_*.out /tmp/obj/*_code_*.out.map \
+               /tmp/obj/*_array.c /tmp/obj/*_array.h "/qunibone/$DEPLOY_DIR/"
+        ' pru_make "$@"
+}
+
 if [ -z "$(ls "$PRU_DEPLOY_DIR"/*_array.c 2>/dev/null || true)" ] \
         || [ -z "$(ls "$PRU_DEPLOY_DIR"/*.out 2>/dev/null || true)" ] \
         || pru_sources_newer "$(ls "$PRU_DEPLOY_DIR"/pru1_code_*_array.c 2>/dev/null | head -1)"; then
     echo "Building PRU firmware with clpru $PRU_CGT_VERSION ..."
     for prudir in pru0 pru1${SUFFIX}; do
-        docker run --rm --platform linux/amd64 --user "$DOCKER_USER" \
-            -v "$PWD:/qunibone" \
-            -w "/qunibone/10.01_base/2_src/$prudir" $PRU_IMAGE \
-            make QUNILATOR_DIR=/qunibone QUNILATOR_PLATFORM=$PLATFORM all
+        pru_make "$prudir" all
     done
 fi
 # The internal-bus PRU1 image: the same sources with NO_PHYSICAL_BUS, compiled
@@ -279,12 +303,8 @@ INT_NAME=$([ "$SUFFIX" = _u ] && echo unibusint || echo qbusint)
 # touched after every run for make's sake, which would hide a source edit.
 if pru_sources_newer "$PRU_DEPLOY_DIR/internal/pru1_code_${INT_NAME}_array.c"; then
     echo "Building the internal-bus PRU firmware ..."
-    docker run --rm --platform linux/amd64 --user "$DOCKER_USER" \
-        -v "$PWD:/qunibone" \
-        -w "/qunibone/10.01_base/2_src/pru1${SUFFIX}" $PRU_IMAGE \
-        make QUNILATOR_DIR=/qunibone QUNILATOR_PLATFORM=$PLATFORM \
-            OBJ_DIR="/qunibone/$PRU_DEPLOY_DIR/internal" \
-            CC_CODE_FLAGS="-D$PLATFORM -DNO_PHYSICAL_BUS" internal
+    PRU_DEPLOY_DIR="$PRU_DEPLOY_DIR/internal" pru_make "pru1${SUFFIX}" \
+        CC_CODE_FLAGS="-D$PLATFORM -DNO_PHYSICAL_BUS" internal
     cp "$PRU_DEPLOY_DIR/internal/pru1_code_${INT_NAME}_array.c" \
        "$PRU_DEPLOY_DIR/internal/pru1_code_${INT_NAME}_array.h" \
        "$PRU_DEPLOY_DIR/internal/pru1_code_${INT_NAME}.out" "$PRU_DEPLOY_DIR/"
