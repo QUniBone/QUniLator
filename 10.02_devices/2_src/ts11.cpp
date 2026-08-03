@@ -280,6 +280,7 @@ void ts11_c::reset_subsystem(void)
     _attn_class = 0;
     _volume_check = true;
     _bot_strip = false;
+    _bot_blank = false;
     _high_speed = false;
 
     _pending_command = false;
@@ -716,7 +717,9 @@ uint16_t ts11_c::build_xst0(void)
     v |= XST0_PED;                  // the transport reads and writes 1600 bpi PE only
     if (d->is_write_locked())
         v |= XST0_WLK;
-    if (d->tape().at_bot())
+    // On the blank stretch erases laid down past the marker, the head is
+    // beyond BOT even though the image position has not moved.
+    if (d->tape().at_bot() && d->erased_footage() == 0 && !_bot_blank)
         v |= XST0_BOT;
     if (d->at_eot())
         v |= XST0_EOT;
@@ -845,8 +848,9 @@ void ts11_c::worker(unsigned instance)
         if (_pending_autoload) {
             _pending_autoload = false;
             if (drivecount > 0 && drive()->is_online()) {
-                drive()->tape().rewind();
+                drive()->rewind();
                 _bot_strip = false;
+                _bot_blank = false;
             }
         }
 
@@ -1055,10 +1059,14 @@ void ts11_c::execute_command(void)
 
     // Where the motion left the tape: reverse motion that ended on the BOT
     // marker stopped ON it, anything else - forward motion, a rewind, a write,
-    // reverse ending mid-tape - leaves the strip state behind. A refused
-    // command moved nothing and changes nothing.
-    if (motion_command && tc != TC_FUNCTION_REJECT && drivecount > 0)
+    // reverse ending mid-tape - leaves the strip state behind. An erase keeps
+    // the blank-stretch state it just established. A refused command moved
+    // nothing and changes nothing.
+    if (motion_command && tc != TC_FUNCTION_REJECT && drivecount > 0) {
         _bot_strip = (_xst3 & XST3_REV) != 0 && drive()->tape().at_bot();
+        if (!(command == TS_CMD_FORMAT && mode == 1))
+            _bot_blank = false;
+    }
 
     terminate(tc);
 }
@@ -1070,6 +1078,19 @@ void ts11_c::execute_command(void)
 static inline unsigned tc_worse(unsigned a, unsigned b)
 {
     return a > b ? a : b;
+}
+
+//
+// at_load_point():
+//  True when the tape rests at the settled load point, where a reverse command
+//  is nonexecutable: at BOT on the image with no erased footage in front of
+//  the head, and the head neither stopped on the marker nor sits on the blank
+//  an erase just laid down.
+//
+bool ts11_c::at_load_point(void)
+{
+    return drive()->tape().at_bot() && drive()->erased_footage() == 0
+           && !_bot_strip && !_bot_blank;
 }
 
 //
@@ -1087,7 +1108,7 @@ unsigned ts11_c::command_read(unsigned mode, bool opp, bool swb, uint32_t addr, 
         return transfer_record(addr, count, swb, false);
 
     case 1:     // read previous (reverse)
-        if (drive()->tape().at_bot() && !_bot_strip) {
+        if (at_load_point()) {
             // a reverse command issued at the settled load point is refused
             // (EK-OTS11-TM-003 table 5-6, BOT: TC3 at BOT on a reverse command);
             // stopped ON the marker after reversing into it, the motion runs
@@ -1099,7 +1120,7 @@ unsigned ts11_c::command_read(unsigned mode, bool opp, bool swb, uint32_t addr, 
         return transfer_record(addr, count, swb, true);
 
     case 2:     // reread previous
-        if (drive()->tape().at_bot() && !_bot_strip) {
+        if (at_load_point()) {
             _xst0_errors |= XST0_NEF;
             _xst3 |= XST3_RIB;
             return TC_FUNCTION_REJECT;
@@ -1130,6 +1151,32 @@ unsigned ts11_c::command_read(unsigned mode, bool opp, bool swb, uint32_t addr, 
 }
 
 //
+// reverse_met_bot():
+//  Reverse motion that found no object where the image answers BOT. Across a
+//  gap's length of blank the motion halts on the BOT marker with RIB and the
+//  tape status alert; in a longer blank stretch the transport's gap shutdown
+//  stops it a shutdown's length further back, still deep in the blank and
+//  short of the marker, and the command ends operation incomplete with the
+//  position lost - the next reverse from there gives up the same way (CVTSD
+//  TST 004 SUB 001 reads back over one erase gap and alerts, SUB 003 issues
+//  motion after motion over a fully erased tape and expects OPI on each).
+//
+unsigned ts11_c::reverse_met_bot(void)
+{
+    ts05_tape_c *d = drive();
+
+    if (d->erased_footage() > TS05_BLANK_SHUTDOWN_BYTES) {
+        d->blank_backed(TS05_BLANK_SHUTDOWN_BYTES);
+        _xst3 |= XST3_OPI;
+        return TC_UNRECOVERABLE;
+    }
+    d->rewind();    // the head rests on the marker; the short blank lies ahead
+    _xst3 |= XST3_RIB;
+    _xst0_errors |= XST0_BOT;
+    return TC_TAPE_STATUS_ALERT;
+}
+
+//
 // retry_backspace():
 //  The reverse motion of a write or write-tape-mark retry. The object it
 //  crosses - record or tape mark - is the one being rewritten, so crossing it
@@ -1148,9 +1195,7 @@ unsigned ts11_c::retry_backspace(void)
     case simh_tape_c::R_TAPE_MARK:
         return TC_NORMAL;
     case simh_tape_c::R_BEGIN_OF_TAPE:
-        _xst0_errors |= XST0_BOT;
-        _xst3 |= XST3_RIB;
-        return TC_TAPE_STATUS_ALERT;
+        return reverse_met_bot();
     default:
         _xst3 |= XST3_OPI;
         return TC_UNRECOVERABLE;
@@ -1180,9 +1225,8 @@ unsigned ts11_c::space_one(bool reverse)
         _xst0_errors |= XST0_TMK | XST0_RLS;
         return TC_TAPE_STATUS_ALERT;
     case simh_tape_c::R_BEGIN_OF_TAPE:
-        _xst0_errors |= XST0_BOT | XST0_RLS;
-        _xst3 |= XST3_RIB;
-        return TC_TAPE_STATUS_ALERT;
+        _xst0_errors |= XST0_RLS;
+        return reverse_met_bot();
     default:
         _xst3 |= XST3_OPI;
         return TC_UNRECOVERABLE;
@@ -1221,10 +1265,13 @@ unsigned ts11_c::transfer_record(uint32_t addr, uint32_t count, bool swb, bool r
             return TC_TAPE_STATUS_ALERT;
         }
         if (r == simh_tape_c::R_BEGIN_OF_TAPE) {
-            _xst0_errors |= XST0_BOT | XST0_RLS;
-            _xst3 |= XST3_RIB;
+            // Meeting BOT while searching for the record reports through
+            // reverse_met_bot(); a record found and read reports by its
+            // length alone, even when the head stops at the marker (CVTSD
+            // TST 004 SUB 002 reads the first record and completes normally).
+            _xst0_errors |= XST0_RLS;
             _rbpcr = (uint16_t) count;
-            return TC_TAPE_STATUS_ALERT;
+            return reverse_met_bot();
         }
         if (r != simh_tape_c::R_RECORD) {
             _xst3 |= XST3_OPI;
@@ -1274,13 +1321,6 @@ unsigned ts11_c::transfer_record(uint32_t addr, uint32_t count, bool swb, bool r
     } else if (reclen > count) {
         _xst0_errors |= XST0_RLL;
         tc = TC_TAPE_STATUS_ALERT;
-    }
-    // A reverse read whose record was the first on the tape ends on the BOT
-    // marker: reversed into BOT, RIB and the alert - where a space landing
-    // there completes normally (CVTSD TST 001 SUB 002 vs TST 004 SUB 001).
-    if (reverse && t.at_bot()) {
-        _xst3 |= XST3_RIB;
-        tc = tc_worse(tc, TC_TAPE_STATUS_ALERT);
     }
     return tc;
 }
@@ -1377,7 +1417,7 @@ unsigned ts11_c::command_write(unsigned mode, bool swb, uint32_t addr, uint32_t 
     }
 
     // A retry issued at the settled load point has nothing to back over.
-    if (mode == 2 && t.at_bot() && !_bot_strip) {
+    if (mode == 2 && at_load_point()) {
         _xst0_errors |= XST0_NEF;
         _xst3 |= XST3_RIB;
         return TC_FUNCTION_REJECT;
@@ -1417,8 +1457,9 @@ unsigned ts11_c::command_position(unsigned mode, uint32_t count)
     bool reverse = (mode == 1 || mode == 3);
 
     if (mode == 4) {
-        t.rewind();
+        drive()->rewind();
         _bot_strip = false;
+        _bot_blank = false;
         return TC_NORMAL;
     }
     if (mode > 4) {
@@ -1427,7 +1468,7 @@ unsigned ts11_c::command_position(unsigned mode, uint32_t count)
     }
     if (reverse) {
         _xst3 |= XST3_REV;
-        if (t.at_bot() && !_bot_strip) {
+        if (at_load_point()) {
             // refused at the settled load point, like every reverse command;
             // stopped ON the marker it runs and halts there with RIB
             _xst0_errors |= XST0_NEF;
@@ -1448,9 +1489,7 @@ unsigned ts11_c::command_position(unsigned mode, uint32_t count)
         simh_tape_c::result_t r = reverse ? t.space_reverse(&reclen) : t.space_forward(&reclen);
 
         if (r == simh_tape_c::R_BEGIN_OF_TAPE) {
-            _xst0_errors |= XST0_BOT;
-            _xst3 |= XST3_RIB;
-            tc = TC_TAPE_STATUS_ALERT;
+            tc = reverse_met_bot();
             break;
         }
         if (r != simh_tape_c::R_RECORD && r != simh_tape_c::R_TAPE_MARK) {
@@ -1521,11 +1560,26 @@ unsigned ts11_c::command_format(unsigned mode)
         return TC_FUNCTION_REJECT;
     }
 
-    if (mode == 1)  // erase: 3.75 inches of blank tape, no record written
+    if (mode == 1) {
+        // Erase: 3.75 inches of blank tape laid down moving forward, no
+        // record written. The blank overwrites what lay ahead, so the image
+        // ends here, the way a write makes itself the end of the recorded
+        // tape. Issued inside the BOT strip it carries the head past the
+        // marker onto the blank stretch, so BOT stops reporting and a reverse
+        // command runs from here - finding only erased tape, it halts at the
+        // marker with RIB (CVTSD TST 004 SUB 001). The footage counts toward
+        // the EOT strip, which stops an erase loop with the alert.
+        if (t.at_bot()) {
+            _bot_strip = false;
+            _bot_blank = true;
+        }
+        t.erase_here();
+        d->erase_gap();
         return d->at_eot() ? TC_TAPE_STATUS_ALERT : TC_NORMAL;
+    }
 
     // A retry issued at the settled load point has nothing to back over.
-    if (mode == 2 && t.at_bot() && !_bot_strip) {
+    if (mode == 2 && at_load_point()) {
         _xst0_errors |= XST0_NEF;
         _xst3 |= XST3_RIB;
         return TC_FUNCTION_REJECT;
@@ -1576,8 +1630,9 @@ unsigned ts11_c::command_control(unsigned mode)
         return TC_NORMAL;
 
     case 1:     // rewind and unload
-        d->tape().rewind();
+        d->rewind();
         _bot_strip = false;
+        _bot_blank = false;
         d->online_switch.set(false);
         terminate(TC_NORMAL);
         return TC_NORMAL;
@@ -1592,8 +1647,9 @@ unsigned ts11_c::command_control(unsigned mode)
             terminate(TC_FUNCTION_REJECT);
             return TC_FUNCTION_REJECT;
         }
-        d->tape().rewind();
+        d->rewind();
         _bot_strip = false;
+        _bot_blank = false;
         terminate(TC_NORMAL);
         return TC_NORMAL;
 
@@ -1628,8 +1684,9 @@ void ts11_c::execute_boot(void)
         return;
     }
 
-    t.rewind();
+    d->rewind();
     _bot_strip = false;
+    _bot_blank = false;
     r = t.space_forward(&reclen);
     if (r != simh_tape_c::R_RECORD) {
         _xst3 |= XST3_OPI;

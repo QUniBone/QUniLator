@@ -75,6 +75,14 @@ public:
 	result_t write_record(const uint8_t *buf, uint32_t len);
 	result_t write_tape_mark();
 
+	// Blank tape laid down at the current position (an erase): what followed
+	// is gone, and the position does not move - the blank itself is nothing
+	// the image records. Ignored on a read-only tape.
+	void erase_here() {
+		if (open_ && !readonly_)
+			truncate_here();
+	}
+
 	// SIMH marker constants (exposed for the controller and tests).
 	static const uint32_t MTR_TMK = 0x00000000;
 	static const uint32_t MTR_EOM = 0xffffffff;

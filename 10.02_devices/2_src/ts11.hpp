@@ -50,6 +50,16 @@
 // transport reports EOT. Settable per drive, so a shorter reel can be modelled.
 #define TS05_CAPACITY   (40ull * 1024 * 1024)
 
+// Tape footage one erase command lays down: 3.75 inches of blank tape at
+// 1600 bpi (EK-OTS11-TM-003 5.3.4).
+#define TS05_ERASE_GAP_BYTES 6000u
+
+// Blank footage past which a motion searching for an object gives up: the
+// transport's gap shutdown, 25 feet at 1600 bpi. Within it a reverse halts on
+// the BOT marker with the tape status alert; beyond it the command ends
+// operation incomplete with the position lost.
+#define TS05_BLANK_SHUTDOWN_BYTES 480000u
+
 // How long a packet or record transfer may take before it is called lost. A
 // real transfer is microseconds; this is only there so a bus that has stopped
 // answering cannot park the worker for good, which would take the device with
@@ -105,15 +115,30 @@ public:
         return !_tape.is_open() || _tape.is_readonly() || !write_enable_ring.value;
     }
     // Tape position has reached the reel's length: the EOT reflective strip.
+    // Blank footage laid down by erase commands counts toward it, though the
+    // image does not record it.
     bool at_eot(void) {
-        return _tape.is_open() && capacity.value != 0 && _tape.position() >= capacity.value;
+        return _tape.is_open() && capacity.value != 0
+               && _tape.position() + _erased_bytes >= capacity.value;
     }
+
+    // An erase carries the head 3.75 inches down the tape; the footage
+    // accumulates until a rewind returns the reel to BOT (CVTSD TST 004
+    // SUB 003 erases from BOT until the transport answers EOT).
+    void erase_gap(void) { _erased_bytes += TS05_ERASE_GAP_BYTES; }
+    uint64_t erased_footage(void) { return _erased_bytes; }
+    // A reverse the gap shutdown stopped backed this far into the blank.
+    void blank_backed(uint64_t bytes) {
+        _erased_bytes = _erased_bytes > bytes ? _erased_bytes - bytes : 0;
+    }
+    void rewind(void) { _tape.rewind(); _erased_bytes = 0; }
 
     // The record layer the controller drives.
     simh_tape_c &tape(void) { return _tape; }
 
 private:
     simh_tape_c _tape;
+    uint64_t _erased_bytes = 0;
 };
 
 class ts11_c: public storagecontroller_c {
@@ -254,12 +279,18 @@ private:
     unsigned transfer_record(uint32_t addr, uint32_t count, bool swb, bool reverse);
     unsigned space_one(bool reverse);
     unsigned retry_backspace(void);
+    unsigned reverse_met_bot(void);
 
-    // The tape stopped on the BOT marker by reversing into it, as against
-    // resting at the settled load point: reverse motion still runs from the
-    // marker (and halts on it with RIB), where at the load point a reverse
-    // command is nonexecutable. Tracks the last motion command's ending.
+    bool at_load_point(void);
+
+    // Where the head sits inside the BOT strip. Stopped ON the marker by
+    // reversing into it, reverse motion still runs (and halts at once with
+    // RIB), where at the settled load point a reverse command is
+    // nonexecutable. An erase issued inside the strip carries the head
+    // forward onto the blank tape it lays down: the image position is
+    // unchanged, but BOT stops reporting and reverse motion runs from there.
     bool _bot_strip = false;
+    bool _bot_blank = false;
 };
 
 #endif /* _TS11_HPP_ */
