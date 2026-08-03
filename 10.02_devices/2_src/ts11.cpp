@@ -281,6 +281,8 @@ void ts11_c::reset_subsystem(void)
     _volume_check = true;
     _bot_strip = false;
     _bot_blank = false;
+    _rewinding = false;
+    _unit_select = 0;
     _high_speed = false;
 
     _pending_command = false;
@@ -345,7 +347,9 @@ uint16_t ts11_c::tssr_value(void)
     v |= (uint16_t) (((_tsba >> 16) & 0x03) << 8);  // A17, A16
     if (_ssr)
         v |= 0x0080;                        // SSR
-    if (drivecount > 0 && !drive()->is_online())
+    // The selected transport is off-line, and one that is not in the
+    // subsystem at all answers the same way.
+    if (drivecount == 0 || _unit_select != 0 || !drive()->is_online())
         v |= 0x0040;                        // OFL
     v |= (uint16_t) ((_fc & 0x03) << 4);    // fatal class
     v |= (uint16_t) ((_tc & 0x07) << 1);    // termination class
@@ -717,6 +721,10 @@ uint16_t ts11_c::build_xst0(void)
     v |= XST0_PED;                  // the transport reads and writes 1600 bpi PE only
     if (d->is_write_locked())
         v |= XST0_WLK;
+    // "Tape is moving ... the transport is asserting Formatter Busy or
+    // Rewinding status" (EK-TSV05-UG-001 table 3-11).
+    if (_rewinding)
+        v |= XST0_MOT;
     // On the blank stretch erases laid down past the marker, the head is
     // beyond BOT even though the image position has not moved.
     if (d->tape().at_bot() && d->erased_footage() == 0 && !_bot_blank)
@@ -747,7 +755,7 @@ void ts11_c::send_message(unsigned message_type, unsigned class_code, bool ack)
     m[2] = _rbpcr;
     m[3] = build_xst0();
     m[4] = _xst1;
-    m[5] = _xst2;
+    m[5] = (uint16_t) (_xst2 | (_rewinding ? XST2_OPM : 0));
     m[6] = _xst3;
     m[7] = _xst4;
 
@@ -851,6 +859,7 @@ void ts11_c::worker(unsigned instance)
                 drive()->rewind();
                 _bot_strip = false;
                 _bot_blank = false;
+                _rewinding = false;
             }
         }
 
@@ -899,6 +908,29 @@ bool ts11_c::packet_address(uint16_t low, uint16_t high, uint32_t *addr)
         *addr = (uint32_t) low | ((uint32_t) (high & 0x0003) << 16);
     }
     return true;
+}
+
+//
+// command_mode_legal():
+//  Whether a command code and mode field name a command at all
+//  (EK-TSV05-UG-001 table 3-16). Control mode 4 is named here because the
+//  decode knows it; whether the board carries the Extended Features that
+//  execute it is the command's own business.
+//
+static bool command_mode_legal(unsigned command, unsigned mode)
+{
+    switch (command) {
+    case TS_CMD_READ:                   return mode <= 3;
+    case TS_CMD_WRITE_CHARACTERISTICS:  return mode == 0;
+    case TS_CMD_WRITE:                  return mode == 0 || mode == 2;
+    case TS_CMD_WRITE_SUBSYSTEM_MEM:    return mode == 0;
+    case TS_CMD_POSITION:               return mode <= 4;
+    case TS_CMD_FORMAT:                 return mode <= 2;
+    case TS_CMD_CONTROL:                return mode <= 2 || mode == 4;
+    case TS_CMD_INITIALIZE:             return mode == 0;
+    case TS_CMD_GET_STATUS:             return mode == 0;
+    default:                            return false;
+    }
 }
 
 void ts11_c::execute_command(void)
@@ -973,6 +1005,14 @@ void ts11_c::execute_command(void)
         return;
     }
 
+    // What the packet asks for is decoded before the transport is consulted,
+    // so an illegal command is named as one whatever else stands in its way:
+    // the NEF a volume check or an off-line transport adds stands beside ILC
+    // rather than in place of it (CVTSC TST 004 SUB 010).
+    bool illegal = !command_mode_legal(command, mode);
+    if (illegal)
+        _xst0_errors |= XST0_ILC;
+
     // Without a message buffer the controller can report nothing, so every
     // command but write characteristics is refused (TSV05 UG table 3-5, NBA).
     if (_nba && command != TS_CMD_WRITE_CHARACTERISTICS) {
@@ -985,12 +1025,24 @@ void ts11_c::execute_command(void)
     // cleared (EK-OTS11-TM-003 table 5-5, NEF).
     bool motion_command = (command == TS_CMD_READ || command == TS_CMD_WRITE
                            || command == TS_CMD_POSITION || command == TS_CMD_FORMAT);
+
+    // A rewind may still be running: tape motion waits for the reel to reach
+    // BOT, anything else answers over it and takes the rewind's own end with
+    // it once that has passed.
+    if (drivecount > 0)
+        settle_rewind(motion_command);
+
     if (motion_command) {
-        if (!drive()->is_online() || _volume_check) {
+        if (_unit_select != 0 || !drive()->is_online() || _volume_check) {
             _xst0_errors |= XST0_NEF;
             terminate(TC_FUNCTION_REJECT);
             return;
         }
+    }
+
+    if (illegal) {
+        terminate(TC_FUNCTION_REJECT);
+        return;
     }
 
     unsigned tc = TC_NORMAL;
@@ -1007,7 +1059,10 @@ void ts11_c::execute_command(void)
 
     case TS_CMD_INITIALIZE:
         // With no microdiagnostic error outstanding the drive initialize is a
-        // no-op that updates the message, as get status does.
+        // no-op that updates the message, as get status does - but it always
+        // returns the unit selection to transport 0 (EK-TSV05-UG-001 3.3.4.9,
+        // table 3-18).
+        _unit_select = 0;
         break;
 
     case TS_CMD_READ:
@@ -1029,11 +1084,6 @@ void ts11_c::execute_command(void)
         break;
 
     case TS_CMD_WRITE_CHARACTERISTICS:
-        if (mode != 0) {
-            _xst0_errors |= XST0_ILC;
-            tc = TC_FUNCTION_REJECT;
-            break;
-        }
         tc = command_write_characteristics(pkt[1], pkt[2], pkt[3]);
         break;
 
@@ -1078,6 +1128,52 @@ void ts11_c::execute_command(void)
 static inline unsigned tc_worse(unsigned a, unsigned b)
 {
     return a > b ? a : b;
+}
+
+//
+// start_rewind():
+//  Sets the reel turning for a rewind with immediate interrupt, which answers
+//  "at the start of the rewind rather than when the tape reaches BOT"
+//  (EK-TSV05-UG-001 3.3.4.8). The tape reaches BOT when the wind-back time
+//  for the footage behind it has passed; until then the transport reports
+//  motion, and the image still holds the position the reel is winding back
+//  from. The ordinary rewind answers on arrival instead, so the host sees the
+//  turning reel only as the time the command takes, and that one moves the
+//  image at once.
+//
+void ts11_c::start_rewind(void)
+{
+    _rewind_done_ns = timeout_c::abstime_ns() + drive()->rewind_time_us() * 1000;
+    _rewinding = true;
+}
+
+//
+// settle_rewind():
+//  Brings a rewind that is still running to its end. A command that moves
+//  tape waits for the reel: "if a transport is rewinding and another tape
+//  motion command is issued to it, the controller will wait until the tape
+//  has been rewound to BOT before proceeding" (EK-TSV05-UG-001 3.3.4.8).
+//  Anything else - a get status, a message buffer release - answers over the
+//  turning reel, and only collects the rewind once its time has passed.
+//
+void ts11_c::settle_rewind(bool wait)
+{
+    if (!_rewinding)
+        return;
+
+    while (timeout_c::abstime_ns() < _rewind_done_ns) {
+        if (!wait)
+            return;
+        // A subsystem initialize that arrives meanwhile owns the transport.
+        if (_reset_generation != _command_generation)
+            return;
+        timeout_c::wait_ms(1);
+    }
+
+    drive()->rewind();
+    _bot_strip = false;
+    _bot_blank = false;
+    _rewinding = false;
 }
 
 //
@@ -1144,8 +1240,7 @@ unsigned ts11_c::command_read(unsigned mode, bool opp, bool swb, uint32_t addr, 
         tc = space_one(false);
         return tc_worse(tc, transfer_record(addr, count, swb, true));
 
-    default:
-        _xst0_errors |= XST0_ILC;
+    default:                // the decode has already refused any other mode
         return TC_FUNCTION_REJECT;
     }
 }
@@ -1385,8 +1480,13 @@ unsigned ts11_c::command_write_characteristics(uint16_t low, uint16_t high, uint
         _eri = (data[3] & 0x0010) != 0;
     }
     // Likewise a count under 10 leaves the extended control word unfetched.
-    if (extended_active() && extent >= 10)
+    if (extended_active() && extent >= 10) {
         _high_speed = (data[4] & 0x0020) != 0;
+        // Bits 2-0 select "a transport for subsequent tape operations"
+        // (EK-TSV05-UG-001 table 3-18). The subsystem carries one, so any
+        // other number selects a transport that is not there.
+        _unit_select = data[4] & 0x0007;
+    }
 
     _nba = false;
 
@@ -1407,10 +1507,6 @@ unsigned ts11_c::command_write(unsigned mode, bool swb, uint32_t addr, uint32_t 
     ts05_tape_c *d = drive();
     simh_tape_c &t = d->tape();
 
-    if (mode != 0 && mode != 2) {
-        _xst0_errors |= XST0_ILC;
-        return TC_FUNCTION_REJECT;
-    }
     if (d->is_write_locked()) {
         _xst0_errors |= XST0_WLE | XST0_NEF;
         return TC_FUNCTION_REJECT;
@@ -1461,10 +1557,6 @@ unsigned ts11_c::command_position(unsigned mode, uint32_t count)
         _bot_strip = false;
         _bot_blank = false;
         return TC_NORMAL;
-    }
-    if (mode > 4) {
-        _xst0_errors |= XST0_ILC;
-        return TC_FUNCTION_REJECT;
     }
     if (reverse) {
         _xst3 |= XST3_REV;
@@ -1551,10 +1643,6 @@ unsigned ts11_c::command_format(unsigned mode)
     ts05_tape_c *d = drive();
     simh_tape_c &t = d->tape();
 
-    if (mode > 2) {
-        _xst0_errors |= XST0_ILC;
-        return TC_FUNCTION_REJECT;
-    }
     if (d->is_write_locked()) {
         _xst0_errors |= XST0_WLE | XST0_NEF;
         return TC_FUNCTION_REJECT;
@@ -1633,6 +1721,7 @@ unsigned ts11_c::command_control(unsigned mode)
         d->rewind();
         _bot_strip = false;
         _bot_blank = false;
+        _rewinding = false;
         d->online_switch.set(false);
         terminate(TC_NORMAL);
         return TC_NORMAL;
@@ -1647,14 +1736,13 @@ unsigned ts11_c::command_control(unsigned mode)
             terminate(TC_FUNCTION_REJECT);
             return TC_FUNCTION_REJECT;
         }
-        d->rewind();
-        _bot_strip = false;
-        _bot_blank = false;
+        // The answer goes out with the reel still turning, so the message it
+        // deposits reports the motion and the operation in progress.
+        start_rewind();
         terminate(TC_NORMAL);
         return TC_NORMAL;
 
-    default:
-        _xst0_errors |= XST0_ILC;
+    default:                // the decode has already refused any other mode
         terminate(TC_FUNCTION_REJECT);
         return TC_FUNCTION_REJECT;
     }
@@ -1687,6 +1775,7 @@ void ts11_c::execute_boot(void)
     d->rewind();
     _bot_strip = false;
     _bot_blank = false;
+    _rewinding = false;
     r = t.space_forward(&reclen);
     if (r != simh_tape_c::R_RECORD) {
         _xst3 |= XST3_OPI;

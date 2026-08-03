@@ -50,6 +50,13 @@
 // transport reports EOT. Settable per drive, so a shorter reel can be modelled.
 #define TS05_CAPACITY   (40ull * 1024 * 1024)
 
+// The recording density the transport reads and writes: 1600 bpi PE.
+#define TS05_BPI 1600u
+
+// Average rewind speed, a 10.5 inch reel wound back at 175 in/s
+// (EK-TSV05-UG-001 table 1-2, which is the 2.8 minutes a full reel takes).
+#define TS05_REWIND_IPS 175u
+
 // Tape footage one erase command lays down: 3.75 inches of blank tape at
 // 1600 bpi (EK-OTS11-TM-003 5.3.4).
 #define TS05_ERASE_GAP_BYTES 6000u
@@ -132,6 +139,12 @@ public:
         _erased_bytes = _erased_bytes > bytes ? _erased_bytes - bytes : 0;
     }
     void rewind(void) { _tape.rewind(); _erased_bytes = 0; }
+
+    // How long the reel takes to wind back to BOT from where it stands.
+    uint64_t rewind_time_us(void) {
+        return (_tape.position() + _erased_bytes) * 1000000ull
+               / (TS05_BPI * TS05_REWIND_IPS);
+    }
 
     // The record layer the controller drives.
     simh_tape_c &tape(void) { return _tape; }
@@ -282,6 +295,8 @@ private:
     unsigned reverse_met_bot(void);
 
     bool at_load_point(void);
+    void start_rewind(void);
+    void settle_rewind(bool wait);
 
     // Where the head sits inside the BOT strip. Stopped ON the marker by
     // reversing into it, reverse motion still runs (and halts at once with
@@ -291,6 +306,19 @@ private:
     // unchanged, but BOT stops reporting and reverse motion runs from there.
     bool _bot_strip = false;
     bool _bot_blank = false;
+
+    // Which transport of the subsystem subsequent commands address. The
+    // subsystem carries one, so anything but 0 addresses a transport that is
+    // not there, and the controller reports it off-line. Initialize returns
+    // the selection to 0 (EK-TSV05-UG-001 table 3-18).
+    unsigned _unit_select = 0;
+
+    // A rewind with immediate interrupt answers at the start of the rewind,
+    // so the reel is still turning when the host reads the status it left:
+    // the tape reaches BOT at _rewind_done_ns, and until then the transport
+    // reports motion and the operation is in progress.
+    bool _rewinding = false;
+    uint64_t _rewind_done_ns = 0;
 };
 
 #endif /* _TS11_HPP_ */
