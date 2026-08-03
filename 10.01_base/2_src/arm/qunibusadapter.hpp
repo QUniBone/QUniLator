@@ -29,6 +29,8 @@
 #ifndef _QUNIBUSADAPTER_HPP_
 #define _QUNIBUSADAPTER_HPP_
 
+#include <atomic>
+
 #include "iopageregister.h"
 #include "priorityrequest.hpp"
 #include "qunibusadapter.hpp"
@@ -93,6 +95,12 @@ public:
 	unibuscpu_c *installed_cpu(void) { return registered_cpu; }
 
 	bool on_param_changed(parameter_c *param) override;  // must implement
+
+	// True while a device register access is being served and the PRU is
+	// holding that bus cycle open. A device's own logic runs inside this
+	// window, so a transfer it starts there begins against a stretched cycle.
+	// Sampled by DMA() into its trace; nothing is decided by it.
+	std::atomic<bool> deviceregister_servicing{false};
 
 	// list of registered devices.
 	// Defines GRANT priority:

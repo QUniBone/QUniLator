@@ -775,11 +775,12 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
     // a request went to the PRU or was queued behind another, which is the
     // question a transfer that never completes raises.
     if (!dma_request.is_cpu_access)
-        DEBUG("DMA() req: dev %s, %s @ %s, wordcount %u, slot %u",
+        DEBUG("DMA() req: dev %s, %s @ %s, wordcount %u, slot %u%s",
               dma_request.device ? dma_request.device->name.value.c_str() : "none",
               qunibus_c::control2text(qunibus_cycle),
               qunibus->addr2text(unibus_addr), wordcount,
-              dma_request.priority_slot);
+              dma_request.priority_slot,
+              deviceregister_servicing ? " [register cycle open]" : "");
 
     // put into schedule tables
 
@@ -1497,9 +1498,19 @@ void qunibusadapter_c::worker(unsigned instance)
 
                 // DATI/DATO
                 // DEBUG_FAST("EVENT_DEVICEREGISTER:  control=%d, addr=%06o", (int)mailbox->events.unibus_control, mailbox->events.addr);
+                // The PRU stretches the bus cycle across this call, so nothing
+                // here may cost what a log line costs - formatting one per
+                // register access holds every cycle open long enough to stop a
+                // machine booting. A flag instead: the device's own logic runs
+                // inside this window and whatever it starts, a worker woken
+                // straight into a DMA among it, begins while the cycle is still
+                // open. DMA() samples the flag, so a transfer can be placed
+                // inside or outside the window after the fact.
+                deviceregister_servicing = true;
                 worker_deviceregister_event();
                 // ARM2PRU opcodes raised by device logic are processed in midst of bus cycle
                 EVENT_ACK(*mailbox, deviceregister); // PRU continues bus cycle with SSYN now
+                deviceregister_servicing = false;
             }
 
             if (!EVENT_IS_ACKED(*mailbox, dma) && !mailbox->dma.cpu_access) {

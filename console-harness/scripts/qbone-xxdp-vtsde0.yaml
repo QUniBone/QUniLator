@@ -23,7 +23,10 @@
 # The assertion aborts the service, so a run of this script normally ends with
 # the console transport dropping rather than with a diagnostic verdict. That is
 # the finding, not a fault in the script.
-console: auto
+# channel 0, not auto: the channel is resolved before the configuration is
+# applied, so a board carrying something else at the time - after a service
+# restart it carries whatever the DIP switches selected - has no DL11 to find.
+console: "0"
 host: qbone
 title: XXDP CVTSD against the emulated TSV05
 timeout: 60s
