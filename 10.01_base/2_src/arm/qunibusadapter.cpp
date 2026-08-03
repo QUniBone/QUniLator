@@ -538,11 +538,14 @@ void qunibusadapter_c::request_execute_active_on_PRU(unsigned level_index)
         // Start the PRU:
         // signal still not cleared in worker() while processing this
         // assert(mailbox->events.event_dma == 0); // previous signal must have been processed
-        _DEBUG(
-            "request_execute_active_on_PRU() DMA: dev %s, ->active = dma_request %p, start = %s, control=%u, wordcount=%u, data=%06o ...",
-            dmareq->device ? dmareq->device->name.value.c_str() : "none", dmareq,
-            qunibus->addr2text(mailbox->dma.startaddr), (unsigned) mailbox->dma.buscycle,
-            (unsigned) mailbox->dma.wordcount, (unsigned) mailbox->dma.words[0]);
+        if (!dmareq->is_cpu_access)
+            DEBUG("DMA -> PRU: dev %s, start = %s, control=%u, wordcount=%u, "
+                  "data=%06o ...",
+                  dmareq->device ? dmareq->device->name.value.c_str() : "none",
+                  qunibus->addr2text(mailbox->dma.startaddr),
+                  (unsigned) mailbox->dma.buscycle,
+                  (unsigned) mailbox->dma.wordcount,
+                  (unsigned) mailbox->dma.words[0]);
         mailbox->dma.cur_status = 0; // device DMA, not by CPU
         mailbox_execute(ARM2PRU_DMA);
         // scheduling is fast, on complete there's a signal.
@@ -766,9 +769,17 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
     dma_request.buffer = buffer;
     dma_request.wordcount = wordcount;
     dma_request.chunk_max_words = PRU_MAX_DMA_WORDCOUNT; // PRU limit, maybe less
-    _DEBUG("DMA() req: dev %s, %s @ %s, wordcount %d",
-           dma_request.device ? dma_request.device->name.value.c_str() : "none",
-           qunibus_c::control2text(qunibus_cycle), qunibus->addr2text(unibus_addr), wordcount);
+    // A device transfer is rare next to an emulated processor's own accesses,
+    // which come through here one word at a time at instruction rate, so a
+    // device request is traced and a CPU access is not: the trace says whether
+    // a request went to the PRU or was queued behind another, which is the
+    // question a transfer that never completes raises.
+    if (!dma_request.is_cpu_access)
+        DEBUG("DMA() req: dev %s, %s @ %s, wordcount %u, slot %u",
+              dma_request.device ? dma_request.device->name.value.c_str() : "none",
+              qunibus_c::control2text(qunibus_cycle),
+              qunibus->addr2text(unibus_addr), wordcount,
+              dma_request.priority_slot);
 
     // put into schedule tables
 
@@ -779,7 +790,10 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
         // else triggered by PRU signals
         request_activate_lowest_slot(dma_request.level_index);
         request_execute_active_on_PRU(dma_request.level_index);
-    }
+    } else if (!dma_request.is_cpu_access)
+        DEBUG("DMA() queued behind the active request of %s: the PRU signals "
+              "when it may run",
+              prl->active->device ? prl->active->device->name.value.c_str() : "none");
     pthread_mutex_unlock(&requests_mutex);
 
     // DEBUG_FAST("device DMA start: %s @ %06o, len=%d", qunibus->control2text(qunibus_cycle), unibus_addr, wordcount);
@@ -1210,6 +1224,11 @@ void qunibusadapter_c::worker_device_dma_chunk_complete_event()
     // worker_intr_complete_event() already do. The caller acks the event.
     if (dmareq == NULL)
         return;
+    if (!dmareq->is_cpu_access)
+        DEBUG("DMA <- PRU: dev %s, status=%u, wordcount=%u, cur_addr=%s",
+              dmareq->device ? dmareq->device->name.value.c_str() : "none",
+              (unsigned) mailbox->dma.cur_status, (unsigned) mailbox->dma.wordcount,
+              qunibus->addr2text(mailbox->dma.cur_addr));
     // fix PRU data struct: remove IOPAGE bit from mailbox struct, was set im mailbox_execute()
     mailbox->dma.startaddr &= ~QUNIBUS_IOPAGE_ADDR_BITMASK ;
     mailbox->dma.cur_addr &= ~QUNIBUS_IOPAGE_ADDR_BITMASK ;
