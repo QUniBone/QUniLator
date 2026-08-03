@@ -79,6 +79,11 @@
 
 // XST2 bits, EK-OTS11-TM-003 table 5-7 / TSV05 UG figure 3-15
 #define XST2_OPM    0x8000  // operation in progress
+// The revision level field, XST2<7:0>: after a write characteristics command it
+// carries the two configuration switches and the microcode revision, and after
+// every other command the number of the selected transport (TSV05 UG table 3-9).
+#define XST2_RL_EF  0x0080  // Extended Features Enable switch
+#define XST2_RL_BUF 0x0040  // Buffering Enable switch
 
 // XST3 bits, EK-OTS11-TM-003 table 5-8
 #define XST3_OPI    0x0040  // operation incomplete
@@ -1040,6 +1045,11 @@ void ts11_c::execute_command(void)
         }
     }
 
+    // Every command but write characteristics answers with the number of the
+    // selected transport in the low bits of XST2 (TSV05 UG table 3-9).
+    if (command != TS_CMD_WRITE_CHARACTERISTICS)
+        _xst2 |= (uint16_t) (_unit_select & 0x07);
+
     if (illegal) {
         terminate(TC_FUNCTION_REJECT);
         return;
@@ -1403,6 +1413,11 @@ unsigned ts11_c::transfer_record(uint32_t addr, uint32_t count, bool swb, bool r
         src += captured - n;    // the last bytes written are the first read back
         dest += count - n;      // stored from the top of the buffer downwards
     }
+    DEBUG("read%s %u of %u bytes to %06o swb=%d: %02x %02x %02x %02x",
+          reverse ? " rev" : "", n, reclen, dest, swb,
+          n > 0 ? src[0] : 0, n > 1 ? src[1] : 0,
+          n > 2 ? src[2] : 0, n > 3 ? src[3] : 0);
+
     if (n > 0 && !dma_store_bytes(dest, src, n, swb)) {
         _nxm = true;
         return TC_RECOVERABLE_ONE_RECORD;
@@ -1490,9 +1505,13 @@ unsigned ts11_c::command_write_characteristics(uint16_t low, uint16_t high, uint
 
     _nba = false;
 
-    // The message this command returns carries the control microcode revision
-    // in the low byte of XST2 (EK-OTS11-TM-003 table 5-7 note).
+    // The message this command returns carries the module's configuration in
+    // the low byte of XST2: the Extended Features switch, the Buffering Enable
+    // switch, and the control microcode revision. This controller writes every
+    // record straight to tape, so its buffering switch reads off.
     _xst2 |= TS11_MICROCODE_REVISION;
+    if (extended_active())
+        _xst2 |= XST2_RL_EF;
     return TC_NORMAL;
 }
 
@@ -1524,6 +1543,10 @@ unsigned ts11_c::command_write(unsigned mode, bool swb, uint32_t addr, uint32_t 
         _nxm = true;
         return TC_RECOVERABLE_NO_MOTION;
     }
+
+    DEBUG("write %u bytes from %06o swb=%d: %02x %02x %02x %02x", count, addr, swb,
+          count > 0 ? _record[0] : 0, count > 1 ? _record[1] : 0,
+          count > 2 ? _record[2] : 0, count > 3 ? _record[3] : 0);
 
     if (mode == 2) {
         unsigned tc = retry_backspace();
