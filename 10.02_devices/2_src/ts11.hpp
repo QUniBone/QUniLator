@@ -253,6 +253,13 @@ private:
 
     unsigned transfer_record(uint32_t addr, uint32_t count, bool swb, bool reverse);
     unsigned space_one(bool reverse);
+    unsigned retry_backspace(void);
+
+    // The tape stopped on the BOT marker by reversing into it, as against
+    // resting at the settled load point: reverse motion still runs from the
+    // marker (and halts on it with RIB), where at the load point a reverse
+    // command is nonexecutable. Tracks the last motion command's ending.
+    bool _bot_strip = false;
 };
 
 #endif /* _TS11_HPP_ */

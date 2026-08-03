@@ -279,6 +279,7 @@ void ts11_c::reset_subsystem(void)
     _attn_pending = false;
     _attn_class = 0;
     _volume_check = true;
+    _bot_strip = false;
     _high_speed = false;
 
     _pending_command = false;
@@ -747,6 +748,8 @@ void ts11_c::send_message(unsigned message_type, unsigned class_code, bool ack)
     m[6] = _xst3;
     m[7] = _xst4;
 
+    DEBUG("message type=%02o xst0=%06o xst1=%06o xst3=%06o rbpcr=%o",
+          message_type, m[3], m[4], m[6], m[2]);
     if (!dma_write_words(_msgbuf_addr, m, words))
         _nxm = true;
 }
@@ -766,6 +769,11 @@ void ts11_c::terminate(unsigned tc)
         return;
 
     _tc = tc;
+
+    DEBUG("terminate tc=%u xst0err=%06o xst1=%06o xst3=%06o obj=%u%s",
+          tc, _xst0_errors, _xst1, _xst3,
+          drivecount > 0 ? (unsigned) drive()->tape().object_position() : 0,
+          drivecount > 0 && drive()->tape().at_bot() ? " BOT" : "");
 
     if (_msgbuf_owned && !_nba && !_suppress_message) {
         unsigned message_type, class_code = 0;
@@ -836,8 +844,10 @@ void ts11_c::worker(unsigned instance)
         // owns the transport.
         if (_pending_autoload) {
             _pending_autoload = false;
-            if (drivecount > 0 && drive()->is_online())
+            if (drivecount > 0 && drive()->is_online()) {
                 drive()->tape().rewind();
+                _bot_strip = false;
+            }
         }
 
         check_transport_status();
@@ -944,6 +954,13 @@ void ts11_c::execute_command(void)
     if (cvc)
         _volume_check = false;
 
+    // one line per command, with the tape position it starts from: the record
+    // a diagnostic's expectations diverge from the model at is read off here
+    DEBUG("command %02o mode %o pkt=%06o,%06o,%06o ack=%d cvc=%d opp=%d swb=%d obj=%u%s",
+          command, mode, pkt[1], pkt[2], pkt[3], ack, cvc, opp, swb,
+          drivecount > 0 ? (unsigned) drive()->tape().object_position() : 0,
+          drivecount > 0 && drive()->tape().at_bot() ? " BOT" : "");
+
     // The format field takes only 000 and 100: a one-word header with the
     // interrupt disabled or enabled.
     if (format & 0x03) {
@@ -1036,7 +1053,23 @@ void ts11_c::execute_command(void)
         break;
     }
 
+    // Where the motion left the tape: reverse motion that ended on the BOT
+    // marker stopped ON it, anything else - forward motion, a rewind, a write,
+    // reverse ending mid-tape - leaves the strip state behind. A refused
+    // command moved nothing and changes nothing.
+    if (motion_command && tc != TC_FUNCTION_REJECT && drivecount > 0)
+        _bot_strip = (_xst3 & XST3_REV) != 0 && drive()->tape().at_bot();
+
     terminate(tc);
+}
+
+// The worse of two termination classes: a command built from two motions - a
+// retry's space and its rewrite, a reread's space and its read - runs both
+// halves and reports the graver outcome, with the status bits of both standing
+// (the TS11 microcode combines its sub-operations the same way).
+static inline unsigned tc_worse(unsigned a, unsigned b)
+{
+    return a > b ? a : b;
 }
 
 //
@@ -1047,7 +1080,6 @@ void ts11_c::execute_command(void)
 //
 unsigned ts11_c::command_read(unsigned mode, bool opp, bool swb, uint32_t addr, uint32_t count)
 {
-    simh_tape_c &t = drive()->tape();
     unsigned tc;
 
     switch (mode) {
@@ -1055,43 +1087,41 @@ unsigned ts11_c::command_read(unsigned mode, bool opp, bool swb, uint32_t addr, 
         return transfer_record(addr, count, swb, false);
 
     case 1:     // read previous (reverse)
-        if (t.at_bot()) {
+        if (drive()->tape().at_bot() && !_bot_strip) {
+            // a reverse command issued at the settled load point is refused
+            // (EK-OTS11-TM-003 table 5-6, BOT: TC3 at BOT on a reverse command);
+            // stopped ON the marker after reversing into it, the motion runs
+            // and halts there with RIB instead
             _xst0_errors |= XST0_NEF;
+            _xst3 |= XST3_RIB;
             return TC_FUNCTION_REJECT;
         }
         return transfer_record(addr, count, swb, true);
 
     case 2:     // reread previous
-        if (t.at_bot()) {
+        if (drive()->tape().at_bot() && !_bot_strip) {
             _xst0_errors |= XST0_NEF;
+            _xst3 |= XST3_RIB;
             return TC_FUNCTION_REJECT;
         }
         if (opp) {
-            // read reverse, space forward
+            // read reverse, space forward: both halves run, worse outcome wins
             tc = transfer_record(addr, count, swb, true);
-            if (tc == TC_NORMAL || tc == TC_TAPE_STATUS_ALERT)
-                space_one(false);
-            return tc;
+            return tc_worse(tc, space_one(false));
         }
         // space reverse, read forward
         tc = space_one(true);
-        if (tc != TC_NORMAL)
-            return tc;
-        return transfer_record(addr, count, swb, false);
+        return tc_worse(tc, transfer_record(addr, count, swb, false));
 
     case 3:     // reread next
         if (opp) {
             // read forward, space reverse
             tc = transfer_record(addr, count, swb, false);
-            if (tc == TC_NORMAL || tc == TC_TAPE_STATUS_ALERT)
-                space_one(true);
-            return tc;
+            return tc_worse(tc, space_one(true));
         }
         // space forward, read reverse
         tc = space_one(false);
-        if (tc != TC_NORMAL)
-            return tc;
-        return transfer_record(addr, count, swb, true);
+        return tc_worse(tc, transfer_record(addr, count, swb, true));
 
     default:
         _xst0_errors |= XST0_ILC;
@@ -1100,10 +1130,40 @@ unsigned ts11_c::command_read(unsigned mode, bool opp, bool swb, uint32_t addr, 
 }
 
 //
+// retry_backspace():
+//  The reverse motion of a write or write-tape-mark retry. The object it
+//  crosses - record or tape mark - is the one being rewritten, so crossing it
+//  is the operation itself and reports nothing. Motion that meets the BOT
+//  marker halts there with RIB and a tape status alert, and the retry's
+//  rewrite does not run (CVTSD TST 001: the record ahead survives).
+//
+unsigned ts11_c::retry_backspace(void)
+{
+    simh_tape_c &t = drive()->tape();
+    uint32_t reclen = 0;
+
+    _xst3 |= XST3_REV;
+    switch (t.space_reverse(&reclen)) {
+    case simh_tape_c::R_RECORD:
+    case simh_tape_c::R_TAPE_MARK:
+        return TC_NORMAL;
+    case simh_tape_c::R_BEGIN_OF_TAPE:
+        _xst0_errors |= XST0_BOT;
+        _xst3 |= XST3_RIB;
+        return TC_TAPE_STATUS_ALERT;
+    default:
+        _xst3 |= XST3_OPI;
+        return TC_UNRECOVERABLE;
+    }
+}
+
+//
 // space_one():
 //  Moves over a single object. Returns TC_NORMAL when that was a data record,
 //  and otherwise the termination class the object it met calls for, with the
-//  status bits that go with it set.
+//  status bits that go with it set. Reverse motion that meets the BOT marker
+//  halts there and reports RIB (EK-OTS11-TM-003 table 5-8): a tape status
+//  alert, not a refusal - the command was in progress when it met the marker.
 //
 unsigned ts11_c::space_one(bool reverse)
 {
@@ -1120,6 +1180,7 @@ unsigned ts11_c::space_one(bool reverse)
         _xst0_errors |= XST0_TMK | XST0_RLS;
         return TC_TAPE_STATUS_ALERT;
     case simh_tape_c::R_BEGIN_OF_TAPE:
+        _xst0_errors |= XST0_BOT | XST0_RLS;
         _xst3 |= XST3_RIB;
         return TC_TAPE_STATUS_ALERT;
     default:
@@ -1160,6 +1221,7 @@ unsigned ts11_c::transfer_record(uint32_t addr, uint32_t count, bool swb, bool r
             return TC_TAPE_STATUS_ALERT;
         }
         if (r == simh_tape_c::R_BEGIN_OF_TAPE) {
+            _xst0_errors |= XST0_BOT | XST0_RLS;
             _xst3 |= XST3_RIB;
             _rbpcr = (uint16_t) count;
             return TC_TAPE_STATUS_ALERT;
@@ -1204,16 +1266,23 @@ unsigned ts11_c::transfer_record(uint32_t addr, uint32_t count, bool swb, bool r
         return TC_RECOVERABLE_ONE_RECORD;
     }
 
+    unsigned tc = TC_NORMAL;
     if (reclen < count) {
         _xst0_errors |= XST0_RLS;
         _rbpcr = (uint16_t) (count - reclen);
-        return TC_TAPE_STATUS_ALERT;
-    }
-    if (reclen > count) {
+        tc = TC_TAPE_STATUS_ALERT;
+    } else if (reclen > count) {
         _xst0_errors |= XST0_RLL;
-        return TC_TAPE_STATUS_ALERT;
+        tc = TC_TAPE_STATUS_ALERT;
     }
-    return TC_NORMAL;
+    // A reverse read whose record was the first on the tape ends on the BOT
+    // marker: reversed into BOT, RIB and the alert - where a space landing
+    // there completes normally (CVTSD TST 001 SUB 002 vs TST 004 SUB 001).
+    if (reverse && t.at_bot()) {
+        _xst3 |= XST3_RIB;
+        tc = tc_worse(tc, TC_TAPE_STATUS_ALERT);
+    }
+    return tc;
 }
 
 //
@@ -1306,8 +1375,11 @@ unsigned ts11_c::command_write(unsigned mode, bool swb, uint32_t addr, uint32_t 
         _xst0_errors |= XST0_WLE | XST0_NEF;
         return TC_FUNCTION_REJECT;
     }
-    if (mode == 2 && t.at_bot()) {
+
+    // A retry issued at the settled load point has nothing to back over.
+    if (mode == 2 && t.at_bot() && !_bot_strip) {
         _xst0_errors |= XST0_NEF;
+        _xst3 |= XST3_RIB;
         return TC_FUNCTION_REJECT;
     }
 
@@ -1318,7 +1390,7 @@ unsigned ts11_c::command_write(unsigned mode, bool swb, uint32_t addr, uint32_t 
     }
 
     if (mode == 2) {
-        unsigned tc = space_one(true);
+        unsigned tc = retry_backspace();
         if (tc != TC_NORMAL)
             return tc;
     }
@@ -1346,6 +1418,7 @@ unsigned ts11_c::command_position(unsigned mode, uint32_t count)
 
     if (mode == 4) {
         t.rewind();
+        _bot_strip = false;
         return TC_NORMAL;
     }
     if (mode > 4) {
@@ -1354,8 +1427,11 @@ unsigned ts11_c::command_position(unsigned mode, uint32_t count)
     }
     if (reverse) {
         _xst3 |= XST3_REV;
-        if (t.at_bot()) {
+        if (t.at_bot() && !_bot_strip) {
+            // refused at the settled load point, like every reverse command;
+            // stopped ON the marker it runs and halts there with RIB
             _xst0_errors |= XST0_NEF;
+            _xst3 |= XST3_RIB;
             return TC_FUNCTION_REJECT;
         }
     }
@@ -1372,6 +1448,7 @@ unsigned ts11_c::command_position(unsigned mode, uint32_t count)
         simh_tape_c::result_t r = reverse ? t.space_reverse(&reclen) : t.space_forward(&reclen);
 
         if (r == simh_tape_c::R_BEGIN_OF_TAPE) {
+            _xst0_errors |= XST0_BOT;
             _xst3 |= XST3_RIB;
             tc = TC_TAPE_STATUS_ALERT;
             break;
@@ -1443,16 +1520,19 @@ unsigned ts11_c::command_format(unsigned mode)
         _xst0_errors |= XST0_WLE | XST0_NEF;
         return TC_FUNCTION_REJECT;
     }
-    if (mode == 2 && t.at_bot()) {
-        _xst0_errors |= XST0_NEF;
-        return TC_FUNCTION_REJECT;
-    }
 
     if (mode == 1)  // erase: 3.75 inches of blank tape, no record written
         return d->at_eot() ? TC_TAPE_STATUS_ALERT : TC_NORMAL;
 
+    // A retry issued at the settled load point has nothing to back over.
+    if (mode == 2 && t.at_bot() && !_bot_strip) {
+        _xst0_errors |= XST0_NEF;
+        _xst3 |= XST3_RIB;
+        return TC_FUNCTION_REJECT;
+    }
+
     if (mode == 2) {
-        unsigned tc = space_one(true);
+        unsigned tc = retry_backspace();
         if (tc != TC_NORMAL)
             return tc;
     }
@@ -1497,6 +1577,7 @@ unsigned ts11_c::command_control(unsigned mode)
 
     case 1:     // rewind and unload
         d->tape().rewind();
+        _bot_strip = false;
         d->online_switch.set(false);
         terminate(TC_NORMAL);
         return TC_NORMAL;
@@ -1512,6 +1593,7 @@ unsigned ts11_c::command_control(unsigned mode)
             return TC_FUNCTION_REJECT;
         }
         d->tape().rewind();
+        _bot_strip = false;
         terminate(TC_NORMAL);
         return TC_NORMAL;
 
@@ -1547,6 +1629,7 @@ void ts11_c::execute_boot(void)
     }
 
     t.rewind();
+    _bot_strip = false;
     r = t.space_forward(&reclen);
     if (r != simh_tape_c::R_RECORD) {
         _xst3 |= XST3_OPI;
