@@ -18,6 +18,8 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { withRetry } from "./retry.js";
+
 export interface BoardTarget {
   host: string;
   authHeader?: string;
@@ -58,7 +60,11 @@ export function makeTarget(host: string, pwFile?: string, userFile?: string): Bo
 async function apiGet(target: BoardTarget, path: string): Promise<unknown> {
   const headers: Record<string, string> = {};
   if (target.authHeader) headers["Authorization"] = target.authHeader;
-  const res = await fetch(`http://${target.host}${path}`, { headers });
+  const res = await withRetry(
+    `GET ${path}`,
+    () => fetch(`http://${target.host}${path}`, { headers }),
+    { log: (l) => process.stderr.write(l) },
+  );
   if (!res.ok) throw new Error(`GET ${path}: HTTP ${res.status}`);
   return res.json();
 }
@@ -71,11 +77,16 @@ async function apiPost(
   const headers: Record<string, string> = {};
   if (target.authHeader) headers["Authorization"] = target.authHeader;
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  const res = await fetch(`http://${target.host}${path}`, {
-    method: "POST",
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const res = await withRetry(
+    `POST ${path}`,
+    () =>
+      fetch(`http://${target.host}${path}`, {
+        method: "POST",
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }),
+    { log: (l) => process.stderr.write(l) },
+  );
   const text = await res.text();
   if (!res.ok) throw new Error(`POST ${path}: HTTP ${res.status} ${text}`);
   try {

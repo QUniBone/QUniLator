@@ -6,6 +6,8 @@
  */
 import WebSocket from "ws";
 
+import { withRetry } from "./retry.js";
+
 export type MachineEventName = "halt" | "power-loss";
 
 /** What a session needs from an events stream (MachineEvents or a test fake). */
@@ -30,6 +32,12 @@ export class MachineEvents implements EventSource {
   }
 
   open(): Promise<void> {
+    return withRetry("events stream", () => this.openOnce(), {
+      log: (l) => process.stderr.write(l),
+    });
+  }
+
+  private openOnce(): Promise<void> {
     return new Promise((resolve, reject) => {
       const headers: Record<string, string> = {};
       if (this.authHeader) headers["Authorization"] = this.authHeader;

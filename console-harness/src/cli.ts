@@ -275,8 +275,10 @@ async function main(): Promise<number> {
 main().then(
   (code) => process.exit(code),
   (err: unknown) => {
+    // Anything landing here is unexpected (script failures return a code), so
+    // the stack is part of the report.
     process.stderr.write(
-      `qcon: ${err instanceof Error ? err.message : String(err)}\n`,
+      `qcon: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`,
     );
     process.exit(2);
   },

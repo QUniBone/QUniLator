@@ -9,6 +9,8 @@
 import WebSocket from "ws";
 import { Socket, connect as tcpConnect } from "node:net";
 
+import { withRetry } from "./retry.js";
+
 export interface Transport {
   open(): Promise<void>;
   /** Send bytes toward the guest. */
@@ -99,6 +101,12 @@ export class WsTransport extends TransportBase {
   }
 
   open(): Promise<void> {
+    return withRetry(this.label, () => this.openOnce(), {
+      log: (l) => process.stderr.write(l),
+    });
+  }
+
+  private openOnce(): Promise<void> {
     return new Promise((resolve, reject) => {
       const headers: Record<string, string> = {};
       if (this.opts.authHeader) headers["Authorization"] = this.opts.authHeader;
@@ -127,10 +135,15 @@ export class WsTransport extends TransportBase {
           /* not JSON: ignore */
         }
       });
-      ws.on("close", () => this.emitClose());
+      // A handshake that never opened is a failed attempt, not a close of the
+      // session's transport: the session subscribes before open() settles and
+      // must not see the attempts a retry burns through.
+      ws.on("close", () => {
+        if (opened) this.emitClose();
+      });
       ws.on("error", (err: Error) => {
         if (!opened) reject(err);
-        this.emitClose(err);
+        else this.emitClose(err);
       });
     });
   }
