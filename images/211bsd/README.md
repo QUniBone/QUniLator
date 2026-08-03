@@ -91,3 +91,51 @@ it can rebuild itself.
 
 The image is not in this repository — it is a gigabyte of disk. See
 `DISTRIBUTION.md` for where the sample images are published.
+
+## QBONETS: the same machine with a TS11 instead of a TMSCP tape
+
+`QBONETS` is `QBONE` with the TS11 driver in place of the TMSCP one, for a
+machine whose tape is QUniLator's emulated TSV05 at 172520 rather than a TK50.
+
+| item | value |
+|---|---|
+| `IDENT` | `QBONETS` |
+| `NTS` | 1 — the TS11/TSV05 |
+| `NTMSCP`, `NTMS` | 0 — the TMSCP tape goes, to make room |
+
+The MSCP *disk* the system boots from is the `ra` driver and is untouched.
+
+Two things this build turns on that a plain rebuild does not:
+
+**Keep config's own Makefile.** The README above tells you to restore
+`Makefile.old` after `config`, which is right for rebuilding an unchanged
+configuration. It is wrong when a driver has been added: that file is the
+object list from before, so the kernel links without the new driver and
+nothing complains. The tell is `ts.o` never appearing in the make log.
+
+**Move the driver into an overlay.** `config` puts `ts.o` in the non-overlaid
+`BASE`, and 9 kB of driver there overflows the kernel:
+
+    ld: too big for type 431
+    *** Exit 2
+
+`OV9` held `tmscp.o` and `tmscpdump.o`, which are 20-byte stubs once TMSCP is
+configured out, so the TS11 goes there:
+
+    sed -e 's/tm.o ts.o tty.o/tm.o tty.o/' Makefile > /usr/tmp/m2
+    sed -e '/^OV9=/s/tmscp.o/ts.o tmscp.o/' /usr/tmp/m2 > Makefile
+
+Then `/etc/dtab` decides what autoconfig probes — uncomment `ts`, comment
+`tms` (the lines are tab separated, so match the trailing comment text):
+
+    sed -e '/ts11 driver/s/^# //' -e '/tmscp driver/s/^tms/# tms/' /etc/dtab
+
+A kernel that has it prints this at boot, where one built without the driver
+says `ts ? csr 172520 vector 224 skipped:  No autoconfig routines.`:
+
+    ts 0 csr 172520 vector 224 attached
+
+`nm` on the finished kernel proves nothing either way — the build strips its
+own symbols with symcompact, strcompact and symorder.
+
+The image built from this configuration is `2.11BSD_qbonets.dsk`.
