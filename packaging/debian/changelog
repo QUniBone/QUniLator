@@ -1,3 +1,48 @@
+qbone (1.15.0-1) trixie; urgency=low
+
+  * A TS11/TSV05 tape subsystem answers on the bus. The reel turns after a
+    rewind answers, an erase blanks the tape ahead and motion into the blank
+    ends incomplete, BOT is recognised at both the places it lives, and the
+    revision-level field reports the module's switches and the selected unit.
+    DEC's own diagnostics run against it, CVTSD and CVTSC reporting no errors,
+    and 2.11BSD drives it through a kernel configuration whose tape is the TS11.
+  * A console scripting harness drives a machine from a script: input is paced
+    on the guest's echo, a script brings its own machine up, a stuck step fails
+    at the prompt rather than at the deadline, and a session is recorded and
+    rendered for a reader. Console sessions and an XXDP runner built on them are
+    offered over MCP.
+  * The media manager is a tree an image can be dragged through, a machine is a
+    file rather than something baked into the image, and a configuration is
+    carried off the board and brought back. The sample pack ships in dl/.
+  * A packaged ROM is copied into the media tree rather than named by path, a
+    device parameter that names a file is believed, and an M9312 boot address
+    names a label the ROMs define or is refused.
+  * A memory card is placed by start address and size, the top of the address
+    space belongs to the CPU module, a probe reports the machine's memory rather
+    than the board's own, and a card goes in without a walk of the address
+    space. The cards the PRU answers for carry an access lamp per direction.
+  * The USB port carries a network interface and a login. A CDC Ethernet and CDC
+    ACM gadget is built over configfs, usb0 holds 192.168.7.2 whether or not a
+    host is attached and serves the attached host a lease, and a getty answers
+    on the gadget's serial port. The login banner names both addresses the board
+    answers on, and a serial login answers on ttyS1 beside the debug header.
+  * The Add-a-device list scrolls, sorts and searches, a refused device opens a
+    dialog saying why, attaching a medium puts the drive in the machine, an RL
+    medium changes without spinning the pack down first, and a power cycle
+    rebuilds every card.
+  * The setup dialog names the board and reaches its shell, sets a user name
+    alongside the password, and says when it is working. One program drives the
+    board at a time, and the interactive program is <name>-cli.
+  * build.env names the board and the bus it carries and stops a build that is
+    half-filled, crossbuild.sh -g builds unoptimised with debug symbols, the CPU
+    core tests run in the crossbuild, and a deploy reaches a board flashed from
+    the release image. The PRU firmware builds inside the container.
+  * A busy DMA slot refuses the transfer rather than aborting, DMA runs under the
+    internal-bus firmware, and the DMR holdoff expires by distance from its
+    arming.
+
+ -- Hans Huebner <hans.huebner@gmail.com>  Tue, 04 Aug 2026 08:00:00 +0200
+
 qbone (1.14.0-1) trixie; urgency=low
 
   * An MRV11-D universal PROM module sits on the bus with the MXV11-B2 bootstrap
