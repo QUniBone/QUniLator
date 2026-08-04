@@ -1295,24 +1295,28 @@ static void config_set_layout(struct mg_connection *conn, const std::string &nam
 // Apply a saved configuration to the device set: the work behind both
 // POST /api/configs/<name>/apply and the --config option of the service.
 // Returns false when the configuration cannot be read; parameters the devices
-// reject are collected in "errors" and do not fail the call.
+// reject are collected in "errors" and do not fail the call. "warnings" carries
+// what the apply did that took effect but is worth saying out loud, and may be
+// null where nobody is listening.
 static bool apply_document(const picojson::value &content, const std::string &name,
-		picojson::array *errors, std::string *error, int *status);
+		picojson::array *errors, picojson::array *warnings, std::string *error,
+		int *status);
 
 // Apply a saved configuration, by name.
 static bool apply_config(const std::string &name, picojson::array *errors,
-		std::string *error, int *status) {
+		picojson::array *warnings, std::string *error, int *status) {
 	picojson::value content;
 	if (!read_config(name, &content, error)) {
 		if (status != nullptr)
 			*status = 404;
 		return false;
 	}
-	return apply_document(content, name, errors, error, status);
+	return apply_document(content, name, errors, warnings, error, status);
 }
 
 static bool apply_document(const picojson::value &content, const std::string &name,
-		picojson::array *errors, std::string *error, int *status) {
+		picojson::array *errors, picojson::array *warnings, std::string *error,
+		int *status) {
 	if (!content.get("devices").is<picojson::array>()) {
 		*error = "configuration \"" + name + "\" has no devices";
 		if (status != nullptr)
@@ -1536,10 +1540,10 @@ static bool apply_document(const picojson::value &content, const std::string &na
 // this call with the current name: it re-initialises the live machine to the
 // saved device set, dropping any device enabled since the last save.
 static void config_apply(struct mg_connection *conn, const std::string &name) {
-	picojson::array errors;
+	picojson::array errors, warnings;
 	std::string error;
 	int status = 404;
-	if (!apply_config(name, &errors, &error, &status)) {
+	if (!apply_config(name, &errors, &warnings, &error, &status)) {
 		send_error(conn, status, error);
 		return;
 	}
@@ -1547,18 +1551,22 @@ static void config_apply(struct mg_connection *conn, const std::string &name) {
 	picojson::object res;
 	res["ok"] = picojson::value(errors.empty());
 	res["errors"] = picojson::value(errors);
+	res["warnings"] = picojson::value(warnings);
 	send_json(conn, 200, picojson::value(res));
 }
 
 bool webconfigs_apply(const std::string &name, std::vector<std::string> *rejections,
-		std::string *error) {
-	picojson::array errors;
-	if (!apply_config(name, &errors, error, nullptr))
+		std::string *error, std::vector<std::string> *warnings) {
+	picojson::array errs, warns;
+	if (!apply_config(name, &errs, &warns, error, nullptr))
 		return false;
 	set_current(name);
 	if (rejections != nullptr)
-		for (picojson::value &e : errors)
+		for (picojson::value &e : errs)
 			rejections->push_back(e.is<std::string>() ? e.get<std::string>() : "?");
+	if (warnings != nullptr)
+		for (picojson::value &w : warns)
+			warnings->push_back(w.is<std::string>() ? w.get<std::string>() : "?");
 	return true;
 }
 
@@ -1641,9 +1649,9 @@ static std::string apply_named_or_fallback(const std::string &selected,
 		ensure_fallback_config();
 		name = fallback_config_name;
 	}
-	std::vector<std::string> rejections;
+	std::vector<std::string> rejections, warnings;
 	std::string error;
-	if (!webconfigs_apply(name, &rejections, &error)) {
+	if (!webconfigs_apply(name, &rejections, &error, &warnings)) {
 		WEB_ERROR("Configuration \"%s\" not applied: %s", name.c_str(), error.c_str());
 		// keep the current pointer pointed at what was asked for, so the UI
 		// reports the intended configuration even when it failed to read
@@ -1652,6 +1660,10 @@ static std::string apply_named_or_fallback(const std::string &selected,
 	}
 	for (const std::string &r : rejections)
 		WEB_WARNING("Configuration \"%s\": %s", name.c_str(), r.c_str());
+	// Nobody is at the interface during a startup apply, so what an interactive
+	// apply would have shown on screen goes to the journal instead.
+	for (const std::string &w : warnings)
+		WEB_WARNING("Configuration \"%s\": %s", name.c_str(), w.c_str());
 	WEB_INFO("Configuration \"%s\" applied (DIP %d), %u rejections.",
 			name.c_str(), dip, (unsigned) rejections.size());
 	return name;
@@ -1683,9 +1695,9 @@ static bool apply_current_mirror(void) {
 		}
 	}
 
-	picojson::array errors;
+	picojson::array errors, warnings;
 	std::string apply_error;
-	if (!apply_document(content, "the machine as it last stood", &errors,
+	if (!apply_document(content, "the machine as it last stood", &errors, &warnings,
 			&apply_error, nullptr)) {
 		WEB_ERROR("The machine as it last stood was not restored: %s",
 				apply_error.c_str());
@@ -1694,6 +1706,9 @@ static bool apply_current_mirror(void) {
 	for (const picojson::value &e : errors)
 		WEB_WARNING("Restoring the machine: %s",
 				e.is<std::string>() ? e.get<std::string>().c_str() : "device refused");
+	for (const picojson::value &w : warnings)
+		WEB_WARNING("Restoring the machine: %s",
+				w.is<std::string>() ? w.get<std::string>().c_str() : "?");
 	set_current(derived_from);
 	if (derived_from.empty())
 		WEB_INFO("Came up as the machine last running, which no configuration names.");

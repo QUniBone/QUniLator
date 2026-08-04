@@ -422,14 +422,18 @@ export async function saveConfigDoc(name: string, doc: ConfigSnapshot): Promise<
 
 // Apply / Revert: restore <name> onto the machine and make it current.
 export async function applyConfig(name: string): Promise<boolean> {
-  const res = await apiJSON<{ ok?: boolean; errors?: string[] }>(
+  const res = await apiJSON<{ ok?: boolean; errors?: string[]; warnings?: string[] }>(
     '/api/configs/' + encodeURIComponent(name) + '/apply',
     { method: 'POST' }
   );
+  // A warning is the apply taking effect and saying what it did - a processor
+  // put on the bus, say - so it is reported over the plain success message,
+  // and a rejection over that again.
+  const warns = (res.data.warnings || []).join('; ');
   toast(
     'POST /api/configs/' + name + '/apply',
     res.ok && res.data.ok
-      ? 'configuration applied'
+      ? warns || 'configuration applied'
       : 'applied with rejections: ' + ((res.data.errors || []).join('; ') || 'request failed')
   );
   await refreshDevices().catch(() => {});

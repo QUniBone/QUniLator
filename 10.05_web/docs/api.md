@@ -808,8 +808,14 @@ current name: it re-initialises the live machine to the saved device set,
 dropping any device enabled since the last save.
 
 ```json
-{"ok": true, "errors": []}
+{"ok": true, "errors": [], "warnings": []}
 ```
+
+`errors` is the configuration failing to take: a parameter a device refused, a
+device that does not exist. `warnings` is the opposite — the configuration
+taking, and doing something the operator is owed a word about, such as putting
+an emulated processor on a bus the board does not know it owns. `ok` reflects
+`errors` alone, so a call can succeed and still carry warnings.
 
 Applied to a machine whose power is off, the snapshot becomes what that machine
 carries and the emulation is left dark (see
