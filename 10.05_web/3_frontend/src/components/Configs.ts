@@ -472,10 +472,38 @@ function DipField({ name, dip }: { name: string; dip: number }) {
 // instruction about a backplane, and the board is fitted to a machine before it
 // is configured, so the wording says plainly what is being promised and the
 // board announces it loudly when it acts on it.
-function AutostartField({ name, on }: { name: string; on: boolean }) {
+function AutostartField({ name, on, cardList }: { name: string; on: boolean; cardList: string }) {
+  // Switching it on is the moment to say what is being promised, because it is
+  // the only moment anybody is present: from here the board acts on this at
+  // every power-on, including the one after it has been moved into a machine
+  // nobody has told it about. Switching it off needs no confirmation - that
+  // direction touches no bus.
+  const toggle = async (e: Event) => {
+    const box = e.target as HTMLInputElement;
+    const wanted = box.checked;
+    if (
+      wanted &&
+      !(await confirmModal(
+        'Start ' + esc(name) + ' by itself at power-on?',
+        'At every power-on the board will put this machine on the bus without waiting for anybody: ' +
+          '<b>' +
+          esc(cardList || 'the cards this configuration names') +
+          '</b>.<br><br>' +
+          'It cannot check first. The board is fitted to a machine and configured afterwards, so if ' +
+          'this card is ever moved to another backplane, this configuration will describe a machine ' +
+          'that no longer exists — and two cards answering one address, or a second processor on a ' +
+          'bus that already has one, is what follows. The board will say what it did, in the journal ' +
+          'and in a notice on this page, but only after the fact.',
+        'Start it by itself'
+      ))
+    ) {
+      box.checked = false; // the box shows what is stored, and nothing was
+      return;
+    }
+    setConfigAutostart(name, wanted);
+  };
   return html`<label class="cfg-autostart">
-    <input type="checkbox" checked=${on}
-      onChange=${(e: Event) => setConfigAutostart(name, (e.target as HTMLInputElement).checked)} />
+    <input type="checkbox" checked=${on} onChange=${toggle} />
     <span class="muted">Start this machine at power-on</span>
     <span class="cfg-dip-live muted">${
       on
@@ -739,7 +767,7 @@ function Detail({ name }: { name: string }) {
     </div>
     <div class="cfg-detail-sub">
       <${DipField} name=${name} dip=${dip} />
-      <${AutostartField} name=${name} on=${autostart} />
+      <${AutostartField} name=${name} on=${autostart} cardList=${(summary?.enabled || []).join(', ')} />
       <span class="spacer"></span>
       <button class="btn small primary" onClick=${doAdd}>+ Add device</button>
     </div>
