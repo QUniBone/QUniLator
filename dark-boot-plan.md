@@ -226,3 +226,22 @@ boot with nothing offered in its place.
   surface that refusal rather than logging it.
 - `10.05_web/3_frontend/src/store.ts:60-61` holds `emulated_cpu` and
   `emulated_cpu_available` in the settings model; both go with 3.3.
+
+## 6. What was built
+
+Steps 1 to 5 are in, on `feat/dark-boot`, verified on the board and in the
+browser. Two things differ from the plan above:
+
+- **Switching autostart on asks first.** The plan had the flag announcing
+  itself only after the fact, which leaves the one moment a person is present
+  unused. The checkbox now raises a confirmation naming the cards that will go
+  onto the bus and saying what the board cannot check — that it reads no
+  backplane, and that a configuration outliving the machine it was written for
+  means two cards on one address or a second processor. Switching it off asks
+  nothing.
+- **The DIP-0 case carries autostart through the mirror.** "The machine as it
+  last stood" is an edit of a named configuration, so that configuration's flag
+  governs it; a machine no configuration names stays dark.
+
+Step 3.7, the advisory bus probe, is **not built**. It was optional, and it
+wants somewhere to live on the power-up screen first.

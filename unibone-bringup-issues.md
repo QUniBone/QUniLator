@@ -218,6 +218,13 @@ fetches from emulated memory and halts on the zero word:
 Added in `main_qbone_web.cpp`, `10.05_web/2_src/websettings.cpp`,
 `device_label.cpp` and the frontend's `widgets.ts`.
 
+**Superseded.** The `emulated_cpu` setting is gone. It was a declaration about
+the backplane, stored on the board and never re-asked, and it travelled with the
+card exactly as a configuration does — so it was as stale as anything else after
+a move, and failed silently. The processors are now always in the device set,
+disabled, and enabling one is what tells the board it is the machine; the
+arbitration and the memory claim follow from that. See `dark-boot-plan.md`.
+
 ### 8. The console switches were configuration
 
 HALT, START and CONTINUE were `PARAM_CONFIG`, so a machine saved with HALT
