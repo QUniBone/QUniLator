@@ -131,9 +131,13 @@ else
     ./crossbuild.sh "${FLAG[@]}"
     ./packaging/build-deb.sh "${FLAG[@]}"
     # one deb per board in the staging directory: build-image.sh refuses to
-    # guess between two versions
+    # guess between two versions. The build leaves its deb in the working
+    # directory and never sweeps the older ones, so name the version this run
+    # built rather than globbing - a glob would copy every version back in.
+    DEB=${BOARD}_$(packaging/version.sh)_armhf.deb
+    [ -f "$DEB" ] || { echo "build-deb.sh left no $DEB" >&2; exit 1; }
     rm -f "$DIST"/${BOARD}_*_armhf.deb
-    cp ${BOARD}_*_armhf.deb "$DIST/"
+    cp "$DEB" "$DIST/"
 fi
 
 # ------------------------------------------------- disk images and configs
