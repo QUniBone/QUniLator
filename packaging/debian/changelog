@@ -1,3 +1,23 @@
+qbone (1.16.0-1) trixie; urgency=low
+
+  * An image file's mode is the medium's write ring. Clearing a file's write
+    permission write-protects the image it holds, the way pulling a tape's ring
+    does: the emulator reads the mode as the cartridge goes into the drive
+    rather than letting the open decide, so "chmod 444" protects an image from a
+    service that runs as root. An image the operator has protected keeps its
+    protection when the machine releases it.
+  * The System page says which UART carries the Linux login. Each of the three
+    is either a login or the emulator's, one login is kept at all times, and a
+    port an enabled DL11 or the console bridge holds is refused a login and
+    names what holds it. The kernel console follows the first port with a login,
+    so a boot message never lands in a line an emulated device has. The 115200
+    login drop-in ships for all three ports.
+  * The shared onboarding password of the base image is locked once the operator
+    has an account of their own, so the credentials the setup dialog takes are
+    the only ones that reach the board.
+
+ -- Hans Huebner <hans.huebner@gmail.com>  Tue, 04 Aug 2026 09:05:00 +0200
+
 qbone (1.15.0-1) trixie; urgency=low
 
   * A TS11/TSV05 tape subsystem answers on the bus. The reel turns after a
