@@ -30,6 +30,10 @@
    from a workstation; the account holds nothing else that a share login does
    not already have.
 
+   The base image is onboarded with a shared account whose password is the same
+   on every board of that image. Creating the operator's account is what makes
+   that one unnecessary, so its password is locked at the same moment.
+
    Everything here is root-only and best effort. A development host has no
    useradd to run and no shares to serve, and does nothing.
 
@@ -70,6 +74,15 @@ static const char *HOME_BASE = "/home";
 // mark, and only an account carrying it is ever removed.
 static const char *OPERATOR_MARK = "QUniLator operator";
 
+// The account the BeagleBone base image is onboarded with. Its password is the
+// same on every board of that image and is printed in that image's
+// documentation, so it is a way in for anyone who can reach the board. It is
+// the way onto a board nobody has set up yet, and it stops being needed the
+// moment the operator has an account of their own; the password is locked then,
+// leaving the account, its home and its groups where they are. "sudo usermod
+// --unlock debian" puts it back.
+static const char *ONBOARDING_ACCOUNT = "debian";
+
 static const char *USERADD = "/usr/sbin/useradd";
 static const char *USERDEL = "/usr/sbin/userdel";
 static const char *USERMOD = "/usr/sbin/usermod";
@@ -79,6 +92,7 @@ static const char *SMBPASSWD = "/usr/bin/smbpasswd";
 static const char *SYSTEMCTL = "/usr/bin/systemctl";
 static const char *SSHD = "/usr/sbin/sshd";
 
+static const char *SHADOW_FILE = "/etc/shadow";
 static const char *SMB_CONF = "/etc/samba/smb.conf";
 static const char *FTP_USERLIST = "/etc/vsftpd.userlist";
 static const char *SSHD_CONF_DIR = "/etc/ssh/sshd_config.d";
@@ -477,6 +491,50 @@ static bool ensure_account(const std::string &name) {
 	return true;
 }
 
+// True when an account has no usable password: the hash field is empty, or
+// carries the "!" or "*" that says a hash is there but withheld. /etc/shadow is
+// read as a file rather than through getspnam, which keeps this translation
+// unit compiling on the development host the tests run on. An account with no
+// line to read counts as locked, so nothing is done to it.
+static bool password_is_locked(const char *name) {
+	std::string shadow;
+	if (!read_file(SHADOW_FILE, &shadow))
+		return true;
+	std::string prefix = std::string(name) + ":";
+	size_t pos = 0;
+	while (pos < shadow.size()) {
+		size_t eol = shadow.find('\n', pos);
+		size_t end = eol == std::string::npos ? shadow.size() : eol;
+		if (shadow.compare(pos, prefix.size(), prefix) == 0) {
+			char hash = pos + prefix.size() < end ? shadow[pos + prefix.size()] : 0;
+			return hash == 0 || hash == ':' || hash == '!' || hash == '*';
+		}
+		if (eol == std::string::npos)
+			break;
+		pos = eol + 1;
+	}
+	return true;
+}
+
+// Withdraw the shared onboarding password once the operator has a login of
+// their own. Called from where that login is created, so the board is never
+// left with neither.
+static void lock_onboarding_account(const std::string &operator_name) {
+	if (operator_name == ONBOARDING_ACCOUNT || !have(USERMOD))
+		return;
+	if (getpwnam(ONBOARDING_ACCOUNT) == nullptr
+			|| password_is_locked(ONBOARDING_ACCOUNT))
+		return;
+	const char *argv[] = { USERMOD, "--lock", ONBOARDING_ACCOUNT, nullptr };
+	if (run(argv) != 0) {
+		WEB_WARNING("could not lock the %s account's password", ONBOARDING_ACCOUNT);
+		return;
+	}
+	WEB_INFO("%s now has a login of its own, so the shared %s password is "
+			"locked; \"sudo usermod --unlock %s\" restores it",
+			operator_name.c_str(), ONBOARDING_ACCOUNT, ONBOARDING_ACCOUNT);
+}
+
 // Remove an account this service created. A name that is not ours, or is the
 // one now in force, is left alone.
 static void retire_account(const std::string &name, const std::string &keep) {
@@ -655,6 +713,7 @@ void webshares_apply(const std::string &previous, const std::string &name,
 			set_unix_password(name, password);
 			set_samba_password(name, password);
 			in_force = name;
+			lock_onboarding_account(name);
 		}
 	}
 	point_ftp_at(in_force);

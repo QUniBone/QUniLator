@@ -291,21 +291,38 @@ before running demo by hand:
     sudo systemctl stop qbone
     sudo ./10.03_app_demo/4_deploy_q/demo
 
-Admin password
---------------
+The operator's account
+----------------------
 
 A board that has no password answers every request, which is what makes a
-freshly installed one reachable. Open the interface and it asks for a
-password before anything else; from then on the browser asks for it on every
-visit, and any user name is accepted. It is stored in settings.json as a
+freshly installed one reachable. Open the interface and it asks for a user
+name and a password before anything else; from then on the browser asks for
+them on every visit. The password is stored in settings.json as a
 PBKDF2-HMAC-SHA256 digest, so that file becomes readable only by root.
+
+That one name and password are the whole board's login. Setting them creates
+an account of the same name with a home under /home, a login shell and
+membership of qunilator-admin, which carries sudo - so the same credentials
+reach the web interface, the SMB, FTP and SFTP shares of the image library,
+and an ssh session. Paste an ssh public key into the same dialog and the
+account answers that key too. Both are changeable afterwards from the System
+page, which also renames the board.
+
+The base image is onboarded with its own shared account, debian, whose
+password is the same on every board of that image. Once the operator's
+account exists, that password is locked - the account, its home and its
+groups stay as they are, and
+
+    sudo usermod --unlock debian
+
+brings the password back.
 
 Open the interface promptly after installing. Until a password is set, anyone
 who can reach port 80 can operate the machine.
 
-Setting WEBUI_PASSWORD in the service's environment overrides all of this:
-the password is then whatever the variable says and the interface will not
-change it.
+Setting WEBUI_PASSWORD in the service's environment overrides the web
+credentials: the password is then whatever the variable says, the interface
+will not change it, and no operator account is created.
 
 The service runs as root: the PRU driver maps physical memory and the bus
 engine needs realtime scheduling priority.
