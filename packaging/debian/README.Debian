@@ -340,5 +340,28 @@ Setting WEBUI_PASSWORD in the service's environment overrides the web
 credentials: the password is then whatever the variable says, the interface
 will not change it, and no operator account is created.
 
-The service runs as root: the PRU driver maps physical memory and the bus
-engine needs realtime scheduling priority.
+The service runs as root
+------------------------
+
+Four things it does need it. The PRU driver maps physical memory through
+/dev/mem, which the kernel gates on CAP_SYS_RAWIO whatever the device's mode
+says. The bus engine runs at realtime scheduling priority. The web interface
+administers the appliance - it creates and removes the operator's account, sets
+Unix and Samba passwords, renames the board, rewrites the share configurations
+and moves the serial logins - and each of those is a root operation in its own
+right. The interface answers on port 80.
+
+What follows for the image tree is that the service is not bound by its file
+permissions the way another program would be: root is granted a read/write open
+of any file. Where that matters - a medium the operator has write-protected -
+the emulator reads the file's owner write bit and honours it rather than letting
+the open decide, so "chmod 444" on an image protects it. The mode is read as the
+image is attached to a drive and kept for as long as it is there.
+
+An unprivileged service would still need CAP_SYS_RAWIO for /dev/mem, which
+carries the power to write kernel memory, so the privilege it keeps is close to
+the privilege it gave up; and the administration above would move into a setuid
+helper, which is the same authority reached through a longer path. Reaching the
+PRU memories and the emulated machine's DDR window as UIO maps declared by the
+cape overlay is what would remove the capability, and it puts new regions into
+the overlay that the board's whole bus access depends on.
