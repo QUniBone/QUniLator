@@ -35,6 +35,7 @@ import {
   imagesNamedBy,
   setConfigTitle,
   setConfigDip,
+  setConfigAutostart,
   deleteConfig,
 } from '../api';
 import { keptDevices } from '../lib/devmodel';
@@ -466,6 +467,24 @@ function DipField({ name, dip }: { name: string; dip: number }) {
   </label>`;
 }
 
+// Whether the board switches this machine on by itself when it loads it at
+// power-on, rather than holding it dark for the panel switch. It is a standing
+// instruction about a backplane, and the board is fitted to a machine before it
+// is configured, so the wording says plainly what is being promised and the
+// board announces it loudly when it acts on it.
+function AutostartField({ name, on }: { name: string; on: boolean }) {
+  return html`<label class="cfg-autostart">
+    <input type="checkbox" checked=${on}
+      onChange=${(e: Event) => setConfigAutostart(name, (e.target as HTMLInputElement).checked)} />
+    <span class="muted">Start this machine at power-on</span>
+    <span class="cfg-dip-live muted">${
+      on
+        ? 'the board puts these cards on the bus by itself, and says so afterwards'
+        : 'the board loads it and leaves it switched off'
+    }</span>
+  </label>`;
+}
+
 function Detail({ name }: { name: string }) {
   const s = useStore();
   const loc = useLocation();
@@ -475,6 +494,7 @@ function Detail({ name }: { name: string }) {
   const summary = (s.configs || []).find((c) => c.name === name);
   const title = summary?.title || name;
   const dip = summary?.dip_value ?? -1;
+  const autostart = summary?.autostart ?? false;
 
   const [staged, setStaged] = useState<Staged | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -719,6 +739,7 @@ function Detail({ name }: { name: string }) {
     </div>
     <div class="cfg-detail-sub">
       <${DipField} name=${name} dip=${dip} />
+      <${AutostartField} name=${name} on=${autostart} />
       <span class="spacer"></span>
       <button class="btn small primary" onClick=${doAdd}>+ Add device</button>
     </div>

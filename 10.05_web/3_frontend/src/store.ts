@@ -40,6 +40,12 @@ export interface Store {
   // machine while it is set, so the page locks rather than letting an operator
   // press buttons that will be refused.
   heldBy: string;
+  // The board's standing notice, from the state frame's `notice`: something it
+  // did on its own that no request of the operator's would show them - a
+  // configuration that came up running unattended because it was marked to.
+  // Empty when there is none. It stands until dismissed, and the dismissal is
+  // the only record that a person saw it.
+  notice: string;
   bus: BusState;
   hw: HwState;
   log: LogLine[]; // ascending by id; newest appended, older pages prepended
@@ -71,6 +77,7 @@ export const store: Store = {
   update: null,
   connected: false,
   heldBy: '',
+  notice: '',
   bus: { halted: false, init: false },
   hw: {
     dcok: true,

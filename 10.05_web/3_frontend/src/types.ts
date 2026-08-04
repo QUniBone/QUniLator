@@ -179,6 +179,9 @@ export interface ConfigSummary {
   mtime?: string;
   enabled?: string[];
   dip_value?: number; // the DIP setting that selects it at power-on; -1 for none
+  // whether the board switches this machine on by itself when it loads it,
+  // instead of holding it dark for the panel switch
+  autostart?: boolean;
 }
 export interface ConfigDeviceSnapshot {
   name: string;

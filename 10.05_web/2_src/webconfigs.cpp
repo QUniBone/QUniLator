@@ -56,10 +56,11 @@
                                        the medium that drive starts with
 
    Files live in $QUNILATOR_DIR/configs/<name>.json. Besides the devices, a file
-   may carry an operator "title" and a "dip_value" (the DIP setting that selects
-   it at power-on); both are optional metadata, preserved across a live-save:
+   may carry an operator "title", a "dip_value" (the DIP setting that selects it
+   at power-on) and "autostart" (whether the board switches this machine on by
+   itself when it loads it); all optional metadata, preserved across a live-save:
 
-     {"title":"RT-11 bench","dip_value":3,
+     {"title":"RT-11 bench","dip_value":3,"autostart":false,
       "devices":[{"name":"RL11","enabled":true,
                   "params":{"address":"160010", ...}}, ...]}
 */
@@ -449,7 +450,8 @@ static void preserve_metadata(const std::string &name, picojson::value *doc) {
 	bool want_title = o.find("title") == o.end();
 	bool want_dip = o.find("dip_value") == o.end();
 	bool want_layout = o.find("layout") == o.end();
-	if (!want_title && !want_dip && !want_layout)
+	bool want_autostart = o.find("autostart") == o.end();
+	if (!want_title && !want_dip && !want_layout && !want_autostart)
 		return;
 	picojson::value existing;
 	std::string err;
@@ -461,6 +463,15 @@ static void preserve_metadata(const std::string &name, picojson::value *doc) {
 		o["dip_value"] = existing.get("dip_value");
 	if (want_layout && existing.get("layout").is<picojson::object>())
 		o["layout"] = existing.get("layout");
+	if (want_autostart && existing.get("autostart").is<bool>())
+		o["autostart"] = existing.get("autostart");
+}
+
+// Whether a configuration switches its machine on by itself when the board
+// loads it at power-on. Absent means no, which is what every configuration
+// written before this existed says, and the direction that touches no bus.
+static bool config_autostart(const picojson::value &content) {
+	return content.get("autostart").is<bool>() && content.get("autostart").get<bool>();
 }
 
 // The DIP value a configuration binds itself to, or -1 when it names none.
@@ -924,6 +935,8 @@ static picojson::value configs_list_value(void) {
 			// the DIP value that selects this configuration at power-on, or -1
 			o["dip_value"] = picojson::value(
 					(double) (read ? config_dip_value(content) : -1));
+			// whether the board switches this machine on by itself at power-on
+			o["autostart"] = picojson::value(read && config_autostart(content));
 			o["enabled"] = picojson::value(enabled);
 			configs.push_back(picojson::value(o));
 		}
@@ -1247,6 +1260,60 @@ static void config_set_dip(struct mg_connection *conn, const std::string &name) 
 	picojson::object res;
 	res["ok"] = picojson::value(true);
 	res["dip_value"] = picojson::value((double) dip);
+	send_json(conn, 200, picojson::value(res));
+}
+
+// PUT /api/configs/<name>/autostart  {"value": true|false}
+//
+// Whether the board switches this machine on by itself when it loads it at
+// power-on, instead of holding it dark for the panel switch. It is a standing
+// instruction, and no standing instruction can be safe: the board is fitted to
+// a machine and configured afterwards, so a configuration that was right on
+// one backplane describes cards - and possibly a processor - that the next one
+// already has. Nothing here can check that. What the flag buys instead is that
+// the board says loudly what it did and who asked for it, in the journal and
+// in a notice that stands until somebody dismisses it.
+//
+// It is file metadata, disturbing neither the current pointer nor the running
+// machine, and it defaults to absent, so every configuration written before it
+// existed comes up dark.
+static void config_set_autostart(struct mg_connection *conn, const std::string &name) {
+	picojson::value req;
+	if (!read_json_body(conn, &req)) {
+		send_error(conn, 400, "body must be a JSON object with a \"value\"");
+		return;
+	}
+	const picojson::value &v = req.get("value");
+	if (!v.is<bool>()) {
+		send_error(conn, 400, "value must be true or false");
+		return;
+	}
+	bool on = v.get<bool>();
+	picojson::value content;
+	std::string err;
+	if (!read_config(name, &content, &err)) {
+		send_error(conn, 404, err);
+		return;
+	}
+	if (!content.is<picojson::object>()) {
+		send_error(conn, 422, "configuration \"" + name + "\" is not a JSON object");
+		return;
+	}
+	picojson::object &root = content.get<picojson::object>();
+	if (on)
+		root["autostart"] = picojson::value(true);
+	else
+		root.erase("autostart");
+	std::string werr;
+	if (!write_config_file(name, content.serialize(), &werr)) {
+		send_error(conn, 500, werr);
+		return;
+	}
+	WEB_INFO("configuration \"%s\" autostart = %s", name.c_str(), on ? "on" : "off");
+	webevents_note_config();
+	picojson::object res;
+	res["ok"] = picojson::value(true);
+	res["autostart"] = picojson::value(on);
 	send_json(conn, 200, picojson::value(res));
 }
 
@@ -1688,7 +1755,7 @@ static void ensure_fallback_config(void) {
 // Apply the configuration the given name selects (empty → the bundled empty
 // configuration), set the current pointer, and report the applied name.
 static std::string apply_named_or_fallback(const std::string &selected,
-		int dip) {
+		int dip, std::vector<std::string> *out_warnings = nullptr) {
 	std::string name = selected;
 	if (name.empty() || !valid_config_name(name)) {
 		ensure_fallback_config();
@@ -1709,9 +1776,36 @@ static std::string apply_named_or_fallback(const std::string &selected,
 	// apply would have shown on screen goes to the journal instead.
 	for (const std::string &w : warnings)
 		WEB_WARNING("Configuration \"%s\": %s", name.c_str(), w.c_str());
+	if (out_warnings != nullptr)
+		*out_warnings = warnings;
 	WEB_INFO("Configuration \"%s\" applied (DIP %d), %u rejections.",
 			name.c_str(), dip, (unsigned) rejections.size());
 	return name;
+}
+
+// Switch the machine on at the end of a startup apply, because the
+// configuration says to. Everything a person would have been told by an
+// interactive apply has to survive to be read later: the journal carries it,
+// and the notice stands on the interface until somebody dismisses it, naming
+// what went onto a bus nobody was watching.
+static void autostart_machine(const std::string &name,
+		const std::vector<std::string> &warnings) {
+	std::string cards = webpower_carried_names();
+	std::string err;
+	std::string what = "autostarted \"" + name + "\" unattended";
+	if (!cards.empty())
+		what += ": " + cards;
+	for (const std::string &w : warnings)
+		what += ". " + w;
+	if (!webpower_devices_on(&err)) {
+		WEB_ERROR("Autostart of \"%s\" refused: %s", name.c_str(), err.c_str());
+		webevents_note_notice("\"" + name + "\" is marked to start itself, and the "
+				"machine refused to come up: " + err);
+		return;
+	}
+	webevents_note_powered(true);
+	WEB_WARNING("%s", what.c_str());
+	webevents_note_notice(what);
 }
 
 // Bring the machine back up as it last stood, from the mirror. The
@@ -1720,7 +1814,8 @@ static std::string apply_named_or_fallback(const std::string &selected,
 // mirror naming one that has since been deleted comes up as an unnamed
 // machine rather than pointing at nothing. False when there is no mirror to
 // come up from, which is a board that has not run since this was introduced.
-static bool apply_current_mirror(void) {
+static bool apply_current_mirror(std::string *out_name = nullptr,
+		std::vector<std::string> *out_warnings = nullptr) {
 	picojson::value content;
 	std::string err;
 	if (!read_config(current_mirror_name, &content, &err)
@@ -1754,7 +1849,15 @@ static bool apply_current_mirror(void) {
 	for (const picojson::value &w : warnings)
 		WEB_WARNING("Restoring the machine: %s",
 				w.is<std::string>() ? w.get<std::string>().c_str() : "?");
+	if (out_warnings != nullptr)
+		for (const picojson::value &w : warnings)
+			out_warnings->push_back(w.is<std::string>() ? w.get<std::string>() : "?");
 	set_current(derived_from);
+	// The machine as it last stood is an edit of the named configuration, so
+	// that configuration's autostart is what governs it; an unnamed machine
+	// answers to none and stays dark.
+	if (out_name != nullptr)
+		*out_name = derived_from;
 	if (derived_from.empty())
 		WEB_INFO("Came up as the machine last running, which no configuration names.");
 	else
@@ -1764,19 +1867,43 @@ static bool apply_current_mirror(void) {
 }
 
 void webconfigs_startup(const std::string &override_config) {
+	// The board loads its machine into the dark: the cards it names and the
+	// media they hold are what the panel switch will bring up, and nothing of
+	// it reaches the bus meanwhile. A board is fitted to a machine and
+	// configured afterwards, so what it carries at power-on describes a
+	// backplane it may no longer be in - and there is nobody at the interface
+	// at boot to be told. webpower comes up dark; this only has to leave it so.
+	std::string name;
+	bool autostart = false;
+	std::vector<std::string> warnings;
+
 	// --config is an explicit override for bring-up and testing; otherwise the
 	// machine comes up as the configuration the DIP switches select.
 	if (!override_config.empty()) {
-		apply_named_or_fallback(override_config, -1);
-		return;
+		name = apply_named_or_fallback(override_config, -1, &warnings);
+	} else {
+		int dip = webevents_dip_value();
+		// Switch setting 0 is not a slot: it is what the switches read when
+		// nobody has chosen a machine, and it brings back the one that was
+		// running, unsaved changes and all.
+		if (dip == 0 && apply_current_mirror(&name, &warnings))
+			;
+		else
+			name = apply_named_or_fallback(config_for_dip(dip), dip, &warnings);
 	}
-	int dip = webevents_dip_value();
-	// Switch setting 0 is not a slot: it is what the switches read when nobody
-	// has chosen a machine, and it brings back the one that was running,
-	// unsaved changes and all.
-	if (dip == 0 && apply_current_mirror())
-		return;
-	apply_named_or_fallback(config_for_dip(dip), dip);
+
+	// Only a configuration that says so switches itself on. It is a standing
+	// instruction and therefore stale by construction; what makes it bearable
+	// is that it announces itself. See config_set_autostart().
+	picojson::value content;
+	std::string err;
+	if (!name.empty() && read_config(name, &content, &err))
+		autostart = config_autostart(content);
+	if (autostart)
+		autostart_machine(name, warnings);
+	else
+		WEB_INFO("The machine is loaded and switched off; the panel switch "
+				"brings it up.");
 }
 
 // /api/configs, /api/configs/<name>, /api/configs/<name>/apply
@@ -1884,6 +2011,16 @@ static void config_import(struct mg_connection *conn, const std::string &name) {
 					+ " is claimed by \"" + holder + "\", so the import is unbound";
 		}
 	}
+	// Autostart is a standing instruction given to one board about one
+	// backplane; it does not travel with the machine any more than the DIP
+	// binding does. An import comes in dark, and whoever wants it to start
+	// itself here says so here.
+	std::string autostart_note;
+	if (o.find("autostart") != o.end()) {
+		o.erase("autostart");
+		autostart_note = "the imported configuration does not start itself; "
+				"set autostart on this board if it should";
+	}
 	std::string error;
 	int status = 422;
 	if (!webconfigs_write(name, doc, /*from_live*/false, &error, &status)) {
@@ -1895,6 +2032,8 @@ static void config_import(struct mg_connection *conn, const std::string &name) {
 	res["name"] = picojson::value(name);
 	if (!dip_note.empty())
 		res["note"] = picojson::value(dip_note);
+	if (!autostart_note.empty())
+		res["autostart_note"] = picojson::value(autostart_note);
 	send_json(conn, 200, picojson::value(res));
 }
 
@@ -1946,7 +2085,8 @@ static int api_configs_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		if (sep != std::string::npos) {
 			std::string tail = name.substr(sep + 1);
 			if (tail == "apply" || tail == "rename" || tail == "title"
-					|| tail == "dip" || tail == "layout" || tail == "import") {
+					|| tail == "dip" || tail == "layout" || tail == "autostart"
+					|| tail == "import") {
 				action = tail;
 				name = name.substr(0, sep);
 			}
@@ -1984,6 +2124,8 @@ static int api_configs_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		config_set_title(conn, name);
 	} else if (action == "dip" && method == "PUT") {
 		config_set_dip(conn, name);
+	} else if (action == "autostart" && method == "PUT") {
+		config_set_autostart(conn, name);
 	} else if (action == "layout" && method == "PUT") {
 		config_set_layout(conn, name);
 	} else if (action == "import" && method == "POST") {

@@ -31,12 +31,22 @@ void webevents_note_param(const std::string &dev, const std::string &param,
 		const picojson::value &value);
 
 // set the logical power flag and publish it in the state event. Runtime only:
-// a service restart comes up powered on. While powered off the dashboard shows
-// a frozen, dark machine and the run controls are refused.
+// a service restart comes up with the machine dark, since the board loads its
+// configuration without putting it on the bus. While powered off the dashboard
+// shows a frozen, dark machine and the run controls are refused.
 void webevents_note_powered(bool powered);
 
 // current logical power state
 bool webevents_is_powered(void);
+
+// The standing notice: one thing the board did that an operator is owed and
+// that no request of theirs will show them - today, a configuration that came
+// up running unattended because it was marked to. It travels in the state
+// frame, so it reaches a page that connects long afterwards, and it stands
+// until somebody dismisses it: the dismissal is the acknowledgement, and the
+// only record that a human saw it. Empty text clears it.
+void webevents_note_notice(const std::string &text);
+std::string webevents_notice(void);
 
 // Hold the board for work no interface may act during, naming what holds it:
 // the checks a power-up runs before it drives the bus, or the interactive menu

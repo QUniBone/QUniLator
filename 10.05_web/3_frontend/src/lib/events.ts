@@ -111,6 +111,7 @@ export function initEvents(): void {
       }
       if (ev.leds) ev.leds.forEach((v: boolean, i: number) => (hw.leds[i] = v));
       if (ev.switches) ev.switches.forEach((v: boolean, i: number) => (hw.dip[i] = v));
+      if ('notice' in ev) store.notice = typeof ev.notice === 'string' ? ev.notice : '';
       if ('held_by' in ev) {
         const held = typeof ev.held_by === 'string' ? ev.held_by : '';
         // Whatever held the board was free to change the machine while it had

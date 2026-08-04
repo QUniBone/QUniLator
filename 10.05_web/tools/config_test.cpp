@@ -152,6 +152,14 @@ void websettings_save(void) {}
 
 void webevents_note_config(void) {} // the event stream is not part of this test
 
+// The power flag and the standing notice the startup path publishes. The event
+// stream is stubbed, but what was said is kept: a test of the boot asserts that
+// an autostart announced itself.
+static bool g_powered = false;
+static std::string g_notice;
+void webevents_note_powered(bool powered) { g_powered = powered; }
+void webevents_note_notice(const std::string &text) { g_notice = text; }
+
 // the board's DIP switches, which pick the power-on configuration; the test
 // drives the value directly to stand in for the switch hardware
 static int g_dip_value = -1;
@@ -368,6 +376,15 @@ int main(void) {
 	dl = new test_device_c("dl", "DL11");
 
 	webconfigs_init(configs_dir);
+
+	// The board comes up dark, which is what section 13 tests. Everything
+	// before it is about applying to a machine whose power is on, so switch it
+	// on here the way the panel switch does.
+	{
+		std::string err;
+		check(webpower_devices_are_off(), "the board comes up with the machine dark");
+		check(webpower_devices_on(&err), "power the machine up for the apply tests");
+	}
 
 	/* 1. save captures the enabled devices and only their non-default params */
 	reset_devices();
@@ -1268,6 +1285,76 @@ int main(void) {
 		unlink(cfg_path("nocpucfg").c_str());
 		reset_devices();
 		delete cpu;
+	}
+
+	/* 13. the boot. A board is fitted to a machine and configured afterwards,
+	      so what it carries at power-on describes a backplane it may no longer
+	      be in - and at boot there is nobody at the interface to be warned.
+	      The configuration is therefore loaded into the dark, and only one
+	      that says so switches itself on, announcing that it did. */
+	{
+		std::string err;
+		int status = 0;
+		picojson::value doc = make_doc({ dev_entry("rl", true, {}),
+				dev_entry("rl0", true, {}) });
+		doc.get<picojson::object>()["dip_value"] = picojson::value((double) 5);
+		check(webconfigs_write("bootcfg", doc, false, &err, &status), "write bootcfg");
+
+		// a plain configuration is loaded and left dark
+		webpower_devices_off();
+		g_powered = false;
+		g_notice.clear();
+		g_dip_value = 5;
+		webconfigs_startup("");
+		check(webconfigs_current() == "bootcfg", "DIP 5 selects bootcfg at startup");
+		check(webpower_devices_are_off(), "which the board loads without powering up");
+		check(!rl->enabled.value && !rl0->enabled.value,
+				"so none of its cards is on the bus");
+		check(webpower_is_in_machine(rl) && webpower_is_in_machine(rl0),
+				"though the machine carries them, for the panel switch");
+		check(!g_powered, "and the interface is told the machine is off");
+		check(g_notice.empty(), "with nothing to announce");
+
+		// the same configuration marked to start itself
+		picojson::value autodoc = make_doc({ dev_entry("rl", true, {}),
+				dev_entry("rl0", true, {}) });
+		autodoc.get<picojson::object>()["dip_value"] = picojson::value((double) 5);
+		autodoc.get<picojson::object>()["autostart"] = picojson::value(true);
+		check(webconfigs_write("bootcfg", autodoc, false, &err, &status),
+				"mark bootcfg to start itself");
+
+		// the list reports the flag, so an operator can see which configuration
+		// on the board is the one that does this
+		picojson::value list;
+		check(picojson::parse(list, webconfigs_list_json()).empty(), "list parses");
+		bool listed = false;
+		for (const picojson::value &c : list.get("configs").get<picojson::array>())
+			if (c.get("name").get<std::string>() == "bootcfg")
+				listed = c.get("autostart").is<bool>() && c.get("autostart").get<bool>();
+		check(listed, "the list reports bootcfg as self-starting");
+
+		webpower_devices_off();
+		g_powered = false;
+		g_notice.clear();
+		webconfigs_startup("");
+		check(!webpower_devices_are_off(), "a self-starting configuration comes up");
+		check(rl->enabled.value && rl0->enabled.value, "with its cards on the bus");
+		check(g_powered, "the interface is told the machine is on");
+		check(g_notice.find("bootcfg") != std::string::npos,
+				"and a notice stands, naming the configuration");
+		check(g_notice.find("rl") != std::string::npos,
+				"and what it put on the bus");
+
+		// a saved configuration keeps the flag across a live save
+		check(webconfigs_save("bootcfg", &err), "save the live machine over bootcfg");
+		picojson::value saved;
+		check(read_json_file(cfg_path("bootcfg"), &saved), "bootcfg re-read");
+		check(saved.get("autostart").is<bool>() && saved.get("autostart").get<bool>(),
+				"a live save keeps the autostart flag");
+
+		unlink(cfg_path("bootcfg").c_str());
+		g_dip_value = -1;
+		reset_devices();
 	}
 
 	// tidy the temp tree
