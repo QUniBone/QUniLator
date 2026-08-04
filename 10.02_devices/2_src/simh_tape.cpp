@@ -11,21 +11,25 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "medium_write_protect.hpp"
 #include "simh_tape.hpp"
 
 bool simh_tape_c::open(const std::string &path, bool readonly)
 {
 	close();
 	path_ = path;
-	readonly_ = readonly;
+	// A reel whose file withholds write permission comes without its write ring.
+	readonly_ = readonly || medium_write_protected(path);
 	// A read/write mount creates the tape if absent; a read-only mount requires it.
 	std::ios::openmode mode = std::ios::in | std::ios::out | std::ios::binary;
-	f_.open(path.c_str(), mode);
-	if (!f_.is_open() && !readonly) {
-		// create it
-		std::ofstream create(path.c_str(), std::ios::binary);
-		create.close();
+	if (!readonly_) {
 		f_.open(path.c_str(), mode);
+		if (!f_.is_open()) {
+			// create it
+			std::ofstream create(path.c_str(), std::ios::binary);
+			create.close();
+			f_.open(path.c_str(), mode);
+		}
 	}
 	if (!f_.is_open()) {
 		// last resort: read-only mount

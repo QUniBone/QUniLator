@@ -292,8 +292,15 @@ void webstorage_refresh_readonly(bool machine_running) {
 			continue;
 		struct stat st;
 		std::string abs = images_dir + "/" + sub;
-		if (stat(abs.c_str(), &st) == 0)
-			chmod(abs.c_str(), st.st_mode & ~(mode_t) 0222);
+		if (stat(abs.c_str(), &st) != 0)
+			continue;
+		// An image the operator has write-protected is left exactly as it is:
+		// its mode is what the drive reads the medium's write ring from, and
+		// restoring the write bit on release would quietly pull the protection
+		// off a medium the operator set it on.
+		if ((st.st_mode & S_IWUSR) == 0)
+			continue;
+		chmod(abs.c_str(), st.st_mode & ~(mode_t) 0222);
 		ro_marked.insert(sub);
 	}
 	// restore owner-write on images no longer held (detached, or machine halted)
@@ -902,7 +909,7 @@ static void image_overlay_op(struct mg_connection *conn, const std::string &base
 			// consolidating writes into the base needs a writable base; a base
 			// the user made read-only cannot be committed into (its permissions
 			// are never touched), so fail with a clear, specific message
-			if (access(image_abs(base).c_str(), W_OK) != 0) {
+			if (medium_write_protected(image_abs(base))) {
 				fail_status = 409;
 				errmsg = "cannot consolidate into read-only base image \"" + base + "\"";
 			} else {

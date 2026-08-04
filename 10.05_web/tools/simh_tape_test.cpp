@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "simh_tape.hpp"
@@ -161,6 +162,21 @@ int main(void)
 		check(t.read_forward(buf, sizeof buf, &len) == simh_tape_c::R_END_OF_MEDIUM,
 				"nothing survives past the overwrite");
 		t.close();
+	}
+
+	/* 7. a file whose mode withholds write permission is a reel with no write
+	   ring: asked for read/write, it still mounts protected. On the board the
+	   emulator is root, which the kernel would let write it regardless, so the
+	   mode is what medium_write_protected() answers from. */
+	{
+		check(chmod(path.c_str(), 0444) == 0, "write-protect the image file");
+		simh_tape_c t;
+		check(t.open(path, false), "open a write-protected file read/write");
+		check(t.is_readonly(), "a write-protected file mounts as a protected reel");
+		check(t.write_record((const uint8_t *) "x", 1) == simh_tape_c::R_ERROR,
+				"write refused on a protected reel");
+		t.close();
+		chmod(path.c_str(), 0644);
 	}
 
 	unlink(path.c_str());

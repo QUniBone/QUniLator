@@ -40,6 +40,7 @@
 #include <vector>
 #include "logsource.hpp"
 #include "bytebuffer.hpp"
+#include "medium_write_protect.hpp"
 
 class storagedrive_c ;
 
@@ -75,6 +76,13 @@ public:
 class storageimage_binfile_c: public storageimage_base_c {
 private:
     bool readonly ;
+    // The medium's own write protection, read from the image file's mode as the
+    // cartridge goes in and kept for as long as it is in the drive. It is taken
+    // once because the file's mode moves under the emulator's feet: the web
+    // service clears the write bits of an attached image while the machine runs,
+    // so that the file shares cannot write a medium the machine is using, and a
+    // re-open (an RL11 INIT) would otherwise read that back as a protected pack.
+    bool write_protected ;
     std::fstream f; // image file
     std::string image_fname ;
 
@@ -82,6 +90,7 @@ public:
     storageimage_binfile_c(std::string _image_fname) {
         image_fname = _image_fname ;
         readonly = false ;
+        write_protected = medium_write_protected(image_fname) ;
     }
 
     // nothing to free
@@ -91,14 +100,11 @@ public:
     }
 
     // Write protection belongs to the medium, so a drive holding a cartridge it
-    // has not opened - a pack at rest - reports it too: an existing file the
-    // process may not write is a protected cartridge. A file yet to be created
-    // is writable, and open() settles it for the mounted medium.
+    // has not opened - a pack at rest - reports it too.
     virtual bool is_readonly() override {
         if (is_open())
             return readonly ;
-        return !image_fname.empty() && access(image_fname.c_str(), F_OK) == 0
-               && access(image_fname.c_str(), W_OK) != 0 ;
+        return write_protected ;
     }
     virtual bool open(storagedrive_c *drive, bool create) override;
     virtual bool is_open(	void) override;

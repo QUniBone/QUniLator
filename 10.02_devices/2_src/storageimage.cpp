@@ -93,13 +93,13 @@ bool storageimage_binfile_c::open(storagedrive_c *_drive, bool create)
             close(); // after RL11 INIT
         if (image_fname.empty())
             return true ; // ! is_open
-        f.open(image_fname, std::ios::in | std::ios::out | std::ios::binary | std::ios::ate);
-        if (f.is_open())
-            return true;
+        if (!write_protected) {
+            f.open(image_fname, std::ios::in | std::ios::out | std::ios::binary | std::ios::ate);
+            if (f.is_open())
+                return true;
+        }
 
-        // is readonly? try open for read only
-
-        // try again readonly
+        // a protected medium, or one this process may not write: read only
         f.open(image_fname, std::ios::in | std::ios::binary | std::ios::ate);
         if (f.is_open()) {
             readonly = true;
@@ -646,6 +646,11 @@ bool storageimage_cow_c::commit()
     // made read-only cannot be committed into; fail cleanly rather than touch
     // its permissions. (The overlay itself already keeps the emulator off the
     // base, so nothing else needs write here.)
+    if (medium_write_protected(base_fname)) {
+        ERROR("storageimage_cow_c::commit: the base %s is write protected",
+              base_fname.c_str()) ;
+        return false ;
+    }
     int base_rw_fd = ::open(base_fname.c_str(), O_RDWR) ;
     if (base_rw_fd < 0) {
         ERROR("storageimage_cow_c::commit cannot open base %s for writing (%s)",
