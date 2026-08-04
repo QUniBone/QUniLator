@@ -306,18 +306,6 @@ chmod 644 /etc/issue
 # only what the board itself says.
 rm -f /etc/issue.net
 
-# A login on the second UART as well as on the debug header. The stock unit
-# offers a descending list of speeds for BREAK to step through, so a terminal
-# that sends one drops the line to 57600 and the operator reads noise; a list of
-# one holds it at 115200, which is the speed the debug header already runs at.
-install -d -m 755 /etc/systemd/system/serial-getty@ttyS1.service.d
-cat > /etc/systemd/system/serial-getty@ttyS1.service.d/baud.conf <<'BAUD'
-[Service]
-ExecStart=
-ExecStart=-/sbin/agetty -o '-p -- \\u' --noreset --noclear --keep-baud 115200 - $TERM
-BAUD
-chmod 644 /etc/systemd/system/serial-getty@ttyS1.service.d/baud.conf
-
 rm -rf /tmp/in
 CHROOT
 
@@ -329,9 +317,11 @@ echo "-- enabling the services (offline, from the host)"
 # qunilator-usb-gadget builds the CDC Ethernet gadget, which is what brings usb0
 # into existence for usb0.network to address
 systemctl --root=/mnt enable qunilator-network.service ${NAME}.service qunilator-setup.service qunilator-leds.service qunilator-resize.service qunilator-announce.service qunilator-usb-gadget.service >/dev/null 2>&1 || true
-# a login on the second UART and on the gadget's serial port, which
+# A login on the second UART and on the gadget's serial port, which
 # qunilator-usb-gadget creates as /dev/ttyGS0; the debug header's getty the base
-# image already enables
+# image already enables. ttyS1 is a login as the image ships, which is the
+# QUniBone Classic arrangement; the System page moves it to leave ttyS1 for an
+# emulated serial card.
 systemctl --root=/mnt enable serial-getty@ttyS1.service serial-getty@ttyGS0.service >/dev/null 2>&1 || true
 # The update check, so a flashed board knows where it stands. The package's
 # postinst enables it too, but its systemd calls are guarded on a running systemd

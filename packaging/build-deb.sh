@@ -150,6 +150,14 @@ install -m 644 packaging/debian/qunilator-network.service \
 install -d -m 755 $STAGE/lib/systemd/system/serial-getty@ttyGS0.service.d
 install -m 644 packaging/debian/serial-getty-ttyGS0.conf \
     $STAGE/lib/systemd/system/serial-getty@ttyGS0.service.d/10-gadget.conf
+# The three UARTs, so a login the web interface moves onto any of them comes up
+# at the speed the others run at. The drop-in only describes the login; which
+# ports carry one is the interface's setting.
+for uart in ttyS0 ttyS1 ttyS2; do
+    install -d -m 755 $STAGE/lib/systemd/system/serial-getty@$uart.service.d
+    install -m 644 packaging/debian/serial-getty-uart.conf \
+        $STAGE/lib/systemd/system/serial-getty@$uart.service.d/10-uart.conf
+done
 # An unattended upgrade would stop the operator's running machine with no
 # warning, which is what the interface's install dialog exists to prevent.
 install -m 644 packaging/debian/apt-unattended-qunilator.conf \

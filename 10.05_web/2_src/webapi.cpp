@@ -64,6 +64,7 @@
 #include "weblogging.hpp"
 #include "webversion.hpp"
 #include "webupdate.hpp"
+#include "webserialports.hpp"
 #include "websystem.hpp"
 
 static void send_json(struct mg_connection *conn, int status, const picojson::value &val) {
@@ -1400,6 +1401,8 @@ void webapi_register(struct mg_context *ctx) {
 	webupdate_register(ctx);
 	// the board's own name and the operator's ssh key
 	websystem_register(ctx);
+	// which UART carries the Linux login, and which is left for the emulator
+	webserialports_register(ctx);
 	webevents_register(ctx);
 	webconsole_register(ctx);
 	webconsole_ext_register(ctx);

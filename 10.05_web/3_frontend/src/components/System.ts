@@ -399,7 +399,7 @@ function BoardCard() {
         </div>
         <div class="set-info">${
           keyUser
-            ? html`A public key pasted here is what
+            ? html`A public key pasted here is what${' '}
                 <span class="mono">${keyUser}</span> reaches a shell on this board with, and sudo
                 once there. ${hasKey
                   ? 'A key is installed; a new one replaces it.'
@@ -412,6 +412,106 @@ function BoardCard() {
         <button class="btn primary" disabled=${busy || key.trim() === ''}
           onClick=${saveKey}>Install key</button>
       </div>
+    </div></div>`;
+}
+
+interface SerialPort {
+  device: string;
+  where: string;
+  login: boolean;
+  kernel_console: boolean;
+  used_by: string;
+}
+interface SerialPorts {
+  ports: SerialPort[];
+  reboot_required: boolean;
+  warnings?: string[];
+  error?: string;
+}
+
+// The board's three UARTs, each either a Linux login or the emulator's. One
+// login is kept at all times, so a board whose network has gone is still
+// reachable with a terminal. The kernel console follows the first port that
+// carries a login, which is a boot setting and says so.
+function SerialPortsCard() {
+  const [state, setState] = useState<SerialPorts | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    apiJSON<SerialPorts>('/api/serialports')
+      .then((r) => setState(r.ok ? r.data : { ports: [], reboot_required: false }))
+      .catch(() => setState({ ports: [], reboot_required: false }));
+  };
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (state === null || !state.ports.length) return null;
+
+  async function toggle(device: string, login: boolean) {
+    const s = state as SerialPorts;
+    const logins = s.ports
+      .filter((p) => (p.device === device ? login : p.login))
+      .map((p) => p.device);
+    setError('');
+    setBusy(true);
+    const res = await apiJSON<SerialPorts>('/api/serialports', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ logins }),
+    }).catch(() => ({ ok: false, data: { error: 'The board did not answer.' } as SerialPorts }));
+    setBusy(false);
+    if (!res.ok) {
+      load();
+      return setError(res.data.error || 'The ports could not be set.');
+    }
+    setState(res.data);
+    const warns = (res.data.warnings || []).join('; ');
+    if (warns) setError(warns);
+    toast(
+      'serialports',
+      login ? 'A login answers on ' + device : device + ' is free for the emulator',
+    );
+  }
+
+  const logins = state.ports.filter((p) => p.login);
+  return html`<div class="card" style="max-width:720px; margin-bottom:14px">
+    <div class="card-head"><h3>Serial ports</h3>
+      <span class="chip ok mono">${logins.map((p) => p.device).join(' ') || '—'}</span>
+    </div>
+    <div class="card-body">
+      <div class="set-grid">
+        ${state.ports.map(
+          (p) => html`
+          <div class="set-name mono">${p.device}</div>
+          <div class="set-val" style="display:flex; gap:8px; align-items:center">
+            <label><input type="checkbox" checked=${p.login}
+              disabled=${busy || (p.login && logins.length === 1)}
+              onChange=${() => toggle(p.device, !p.login)} /> Linux login</label>
+            ${p.kernel_console ? html`<span class="chip">kernel console</span>` : null}
+            ${p.used_by ? html`<span class="chip warn mono">${p.used_by}</span>` : null}
+          </div>
+          <div class="set-info">${p.where}. ${
+            p.login
+              ? 'A terminal here reaches a shell on the board.'
+              : p.used_by
+                ? html`Held by <span class="mono">${p.used_by}</span>.`
+                : 'Free — an emulated DL11 or the console bridge can take it.'
+          }</div>`,
+        )}
+      </div>
+      <p class="muted" style="margin-top:12px">One port keeps its login: it is the way back onto a
+        board whose network has gone. The USB port carries a login of its own as well. A port the
+        emulator holds cannot take one — disable the device first.</p>
+      ${
+        state.reboot_required
+          ? html`<p class="upd-warn">The kernel console moves with the login. Reboot the board to
+              stop it printing on the port it was on.</p>`
+          : null
+      }
+      ${error ? html`<p class="upd-warn">${error}</p>` : null}
     </div></div>`;
 }
 
@@ -476,6 +576,7 @@ export function SystemPage() {
       <p class="lede">Who reaches this board, what it runs, and updating it.</p>
       <${AccessCard} />
       <${BoardCard} />
+      <${SerialPortsCard} />
       <p class="muted">Reading the update status…</p></section>`;
 
   const busy = updateRunning(u);
@@ -486,6 +587,8 @@ export function SystemPage() {
     <${AccessCard} />
 
     <${BoardCard} />
+
+    <${SerialPortsCard} />
 
     <${RecordingsCard} />
 

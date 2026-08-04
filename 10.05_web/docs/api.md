@@ -148,6 +148,46 @@ offer, both with 422. A board with no user name set answers 409.
 
 Answers `{"ok": true, "user": "operators"}`.
 
+### `GET /api/serialports`
+
+```json
+{"ports": [
+   {"device": "ttyS0", "where": "debug header, J1 pins 4/5 - needs a 3.3 V TTL adapter",
+    "login": true,  "kernel_console": true,  "used_by": ""},
+   {"device": "ttyS1", "where": "cape connector",
+    "login": true,  "kernel_console": false, "used_by": ""},
+   {"device": "ttyS2", "where": "cape connector",
+    "login": false, "kernel_console": false, "used_by": "DL11"}],
+ "reboot_required": false}
+```
+
+The board's three UARTs. `login` says a `serial-getty` answers there, which is
+what keeps the emulator off the port; `used_by` names the enabled DL11 or the
+console bridge that holds it, and is empty for a free port. `kernel_console` is
+the port printk writes on, read from the command line the kernel booted with.
+`reboot_required` says that setting has been moved and takes effect at the next
+boot.
+
+### `PUT /api/serialports`
+
+```json
+{"logins": ["ttyS0"]}
+```
+
+Names every port that is to carry a Linux login; the rest are freed for the
+emulator. An empty list is refused with 422, since one login is the way back onto
+a board whose network has gone, as is a name that is not a port of this board. A
+port an enabled device holds is refused a login with 409. A host with no systemd
+answers 501.
+
+The kernel console follows the first port in the list, so printk never writes
+into a line an emulated device has. That is a boot setting (`console=` in
+`/boot/uEnv.txt`), so the answer reports `reboot_required` rather than treating
+it as done.
+
+Answers the same body as the GET, with a `warnings` array for any unit that did
+not start or stop.
+
 ## Devices and parameters
 
 Devices are the emulated hardware — controllers, drives, serial lines.

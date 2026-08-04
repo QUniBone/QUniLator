@@ -119,11 +119,27 @@ carries is open blocks in the kernel and cannot be interrupted, taking the
 getty with it; qunilator-usb-gadget refuses to start dismantling while the
 getty is running rather than wedge on it.
 
-A serial login answers on the debug header (ttyS0) and on ttyS1 as well, both at
-115200 8N1. The banner above the prompt names the addresses the board answers
-on, so a terminal shows where to point a browser without logging in. ttyS2
-belongs to the emulator - it carries the console of the machine on the bus - and
-holding it from the Linux side stops the console bridge from opening it.
+Serial ports
+------------
+
+The board brings out three UARTs. ttyS0 is on the debug header, J1 pins 4 and
+5, and wants a 3.3 V TTL adapter; ttyS1 and ttyS2 come out on the cape. Each is
+either a Linux login or the emulator's, and the System page of the web
+interface says which. As the image ships, ttyS0 and ttyS1 carry a login - the
+ttyS1 login is the QUniBone Classic arrangement - and ttyS2 is free for an
+emulated DL11 or for the console bridge that carries a real CPU's own SLU.
+Holding a port from the Linux side is what stops the emulator opening it, and
+the interface refuses to put a login on a port an enabled device has.
+
+One port keeps its login at all times: it is the way back onto a board whose
+network has gone. All of them run at 115200 8N1, and the banner above the
+prompt names the addresses the board answers on, so a terminal shows where to
+point a browser without logging in.
+
+The kernel console follows the first port that carries a login, so printk never
+writes into a line an emulated device holds. That is a boot setting, console=
+in /boot/uEnv.txt, so the interface says when a reboot is needed to finish the
+move.
 
 Running
 -------

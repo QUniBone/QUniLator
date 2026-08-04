@@ -309,6 +309,7 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/webauth.o	\
 	$(OBJDIR)/webshares.o	\
 	$(OBJDIR)/websystem.o	\
+	$(OBJDIR)/webserialports.o	\
 	$(OBJDIR)/webversion.o	\
 	$(OBJDIR)/webupdate.o	\
 	$(OBJDIR)/civetweb.o
@@ -741,6 +742,9 @@ $(OBJDIR)/webshares.o :  $(WEB_SRC_DIR)/webshares.cpp $(WEB_SRC_DIR)/webshares.h
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/websystem.o :  $(WEB_SRC_DIR)/websystem.cpp $(WEB_SRC_DIR)/websystem.hpp $(WEB_SRC_DIR)/webshares.hpp $(WEB_SRC_DIR)/webauth.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/webserialports.o :  $(WEB_SRC_DIR)/webserialports.cpp $(WEB_SRC_DIR)/webserialports.hpp $(WEB_SRC_DIR)/websettings.hpp device_configuration.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webversion.o :  $(WEB_SRC_DIR)/webversion.cpp $(WEB_SRC_DIR)/webversion.hpp $(QUNILATOR_ROOT)/packaging/debian/changelog
