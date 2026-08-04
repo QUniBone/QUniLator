@@ -100,8 +100,11 @@ ways in:
 
 A Mac or a Linux host binds both with no driver of its own. The address is
 configured whether or not anything is plugged in, which is what lets the login
-banner name it. The serial getty holds the port open and waits; the login
-prompt appears once a host enumerates the gadget.
+banner name it. The getty waits on the serial port for a host to arrive, and a
+drop-in has agetty open that port itself with CLOCAL: the port carries a
+carrier signal only while a host is attached, and the stock unit's own setup of
+the port waits on that carrier in the kernel, where nothing can interrupt it -
+which leaves a getty systemd cannot stop and a shutdown that never finishes.
 
 The gadget is built once and left standing - stopping the service leaves it in
 place, and starting it again over a tree that is already there is what repairs

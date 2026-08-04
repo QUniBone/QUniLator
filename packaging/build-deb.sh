@@ -145,6 +145,11 @@ install -m 644 packaging/debian/qunilator-network.service \
     packaging/debian/qunilator-update-check.timer \
     packaging/debian/qunilator-usb-gadget.service \
     $STAGE/lib/systemd/system/
+# The login on the gadget's serial port needs agetty to open that port itself;
+# the drop-in says why.
+install -d -m 755 $STAGE/lib/systemd/system/serial-getty@ttyGS0.service.d
+install -m 644 packaging/debian/serial-getty-ttyGS0.conf \
+    $STAGE/lib/systemd/system/serial-getty@ttyGS0.service.d/10-gadget.conf
 # An unattended upgrade would stop the operator's running machine with no
 # warning, which is what the interface's install dialog exists to prevent.
 install -m 644 packaging/debian/apt-unattended-qunilator.conf \
