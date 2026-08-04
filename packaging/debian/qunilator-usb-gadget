@@ -1,0 +1,137 @@
+#!/bin/sh
+# Build the USB gadget the board is reached through when the LAN is no help.
+#
+# The board registers a USB peripheral controller but the base image creates no
+# gadget for it, so without this there is no usb0, the fixed address in
+# usb0.network never lands anywhere, and the login banner offers a URL with no
+# host in it. This builds the gadget over configfs and binds it to the
+# controller, giving one USB cable two ways in:
+#
+#   CDC Ethernet (usb0)     systemd-networkd puts 192.168.7.2 on it and serves
+#                           the attached host a lease on the same subnet, so
+#                           the web interface answers with no DHCP server and
+#                           no address to discover
+#   CDC ACM (/dev/ttyGS0)   a serial console, which serial-getty@ttyGS0 offers
+#                           a login on - the way in when the network is the
+#                           thing that is broken
+#
+# Both are what a Mac or a Linux host binds with no driver of its own. A Windows
+# host wants RNDIS for the network half, which is a second configuration
+# carrying a second network interface, and the single fixed address here
+# describes one.
+#
+# usage: qunilator-usb-gadget start|stop
+
+set -e
+
+G=/sys/kernel/config/usb_gadget/qunilator
+FUNC_NET=ecm.usb0
+FUNC_ACM=acm.GS0
+CFG=c.1
+
+# Both ends of the link need a stable hardware address. A gadget that draws a
+# random one every boot arrives at the host as a brand new interface every boot,
+# and whatever the host had configured for the old one does not carry over.
+# machine-id lasts as long as the installation; 02 and 06 are locally
+# administered unicast prefixes, and differ so the two ends do not collide.
+mac_for() {
+    suffix=$(sed 's/.*\(..\)\(..\)\(..\)\(..\)\(..\)$/\1:\2:\3:\4:\5/' /etc/machine-id)
+    echo "$1:$suffix"
+}
+
+# Whether the gadget is bound, which is the only state worth short-circuiting
+# on. The content is what says so: a configfs attribute stats as a whole page
+# whatever it holds, so a size test calls an empty UDC bound and skips the
+# build.
+is_bound() {
+    [ -e "$G/UDC" ] && [ -n "$(cat "$G/UDC" 2>/dev/null)" ]
+}
+
+start() {
+    udc=$(ls /sys/class/udc 2>/dev/null | head -1)
+    if [ -z "$udc" ]; then
+        echo "no USB peripheral controller: nothing to build"
+        return 0
+    fi
+    if is_bound; then
+        echo "gadget already bound to $(cat "$G/UDC")"
+        return 0
+    fi
+
+    # Every step below is idempotent, so a tree left behind by an interrupted
+    # run is built back up to a complete one rather than removed first. That
+    # matters: removing a function directory blocks uninterruptibly while a port
+    # it carries is open, and the serial console is open whenever a getty sits
+    # on it.
+    mkdir -p "$G"
+    echo 0x1d6b > "$G/idVendor"     # Linux Foundation
+    echo 0x0104 > "$G/idProduct"    # multifunction composite gadget
+    echo 0x0200 > "$G/bcdUSB"       # USB 2.0
+    echo 0x0100 > "$G/bcdDevice"
+
+    mkdir -p "$G/strings/0x409"
+    echo QUniLator > "$G/strings/0x409/manufacturer"
+    hostname > "$G/strings/0x409/product"
+    cut -c1-16 /etc/machine-id > "$G/strings/0x409/serialnumber"
+
+    mkdir -p "$G/configs/$CFG/strings/0x409"
+    echo "CDC Ethernet and serial" > "$G/configs/$CFG/strings/0x409/configuration"
+    echo 250 > "$G/configs/$CFG/MaxPower"
+
+    mkdir -p "$G/functions/$FUNC_NET"
+    mac_for 02 > "$G/functions/$FUNC_NET/dev_addr"
+    mac_for 06 > "$G/functions/$FUNC_NET/host_addr"
+
+    # the serial console; the port it creates is /dev/ttyGS0
+    mkdir -p "$G/functions/$FUNC_ACM"
+
+    ln -sf "$G/functions/$FUNC_NET" "$G/configs/$CFG/$FUNC_NET"
+    ln -sf "$G/functions/$FUNC_ACM" "$G/configs/$CFG/$FUNC_ACM"
+
+    # binding names the controller, which is what brings usb0 and ttyGS0 into
+    # existence
+    if ! echo "$udc" > "$G/UDC" 2>/dev/null; then
+        echo "failed to bind the gadget to $udc" >&2
+        return 1
+    fi
+    echo "USB gadget bound to $udc"
+}
+
+stop() {
+    [ -d "$G" ] || return 0
+    # Unbind first: configfs refuses to dismantle a gadget that is still bound.
+    # It takes an empty line rather than a truncation - the attribute answers a
+    # write, and truncating the file issues none, leaving the gadget bound.
+    # Removing a function directory while a port it carries is open blocks in
+    # the kernel and cannot be interrupted - it takes the getty on that port
+    # with it and wedges shutdown. A getty holds the serial port for as long as
+    # it runs, so say what to do and change nothing: an unbind that leaves the
+    # ports alive puts the tree and the controller out of step with each other.
+    if [ -e /dev/ttyGS0 ] && systemctl is-active --quiet serial-getty@ttyGS0.service 2>/dev/null; then
+        echo "serial-getty@ttyGS0 holds /dev/ttyGS0 open. Stop it first:" >&2
+        echo "    systemctl stop serial-getty@ttyGS0.service" >&2
+        return 1
+    fi
+
+    echo "" > "$G/UDC" 2>/dev/null || true
+
+    # the ports go away with the binding, which udev takes a moment to follow
+    i=0
+    while [ -e /dev/ttyGS0 ] && [ "$i" -lt 10 ]; do
+        sleep 1
+        i=$((i + 1))
+    done
+
+    rm -f "$G/configs/$CFG/$FUNC_NET" "$G/configs/$CFG/$FUNC_ACM"
+    rmdir "$G/configs/$CFG/strings/0x409" 2>/dev/null || true
+    rmdir "$G/configs/$CFG" 2>/dev/null || true
+    rmdir "$G/functions/$FUNC_NET" "$G/functions/$FUNC_ACM" 2>/dev/null || true
+    rmdir "$G/strings/0x409" 2>/dev/null || true
+    rmdir "$G" 2>/dev/null || true
+}
+
+case "$1" in
+    start) start ;;
+    stop)  stop ;;
+    *)     echo "usage: $0 start|stop" >&2; exit 2 ;;
+esac

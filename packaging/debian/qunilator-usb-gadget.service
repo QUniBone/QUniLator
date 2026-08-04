@@ -1,0 +1,23 @@
+[Unit]
+Description=USB gadget: network interface and serial console
+Documentation=file:/usr/share/qunilator/README.Debian
+# configfs is where the gadget is built. networkd addresses the network
+# interface when it appears, so this needs no ordering against it - but
+# serial-getty@ttyGS0 is bound to the tty device this creates, so the gadget is
+# built before the gettys start.
+RequiresMountsFor=/sys/kernel/config
+Before=getty.target
+# a board whose USB port has no peripheral controller has no gadget to build
+ConditionPathIsDirectory=/sys/class/udc
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/qunilator-usb-gadget start
+# The gadget is built once and left standing: dismantling it means removing
+# configfs directories whose ports the gettys hold open, which blocks in the
+# kernel uninterruptibly. `qunilator-usb-gadget stop` does it by hand, once the
+# getty on /dev/ttyGS0 has been stopped.
+
+[Install]
+WantedBy=multi-user.target

@@ -133,7 +133,8 @@ stage_frontend $STAGE/usr/share/qunilator/frontend
 # whichever bus it bridges, so it installs exactly as it is in the repository.
 install -m 755 packaging/debian/qunilator-network packaging/debian/qunilator-setup \
     packaging/debian/qunilator-resize packaging/debian/qunilator-announce \
-    packaging/debian/qunilator-rename packaging/debian/qunilator-update $STAGE/usr/sbin/
+    packaging/debian/qunilator-rename packaging/debian/qunilator-update \
+    packaging/debian/qunilator-usb-gadget $STAGE/usr/sbin/
 # status LEDs: a tiny standalone daemon, cross-compiled here
 arm-linux-gnueabihf-gcc -O2 -Wall -o $STAGE/usr/sbin/qunilator-leds packaging/debian/qunilator-leds.c
 install -m 644 packaging/debian/qunilator-network.service \
@@ -142,6 +143,7 @@ install -m 644 packaging/debian/qunilator-network.service \
     packaging/debian/qunilator-update.service packaging/debian/qunilator-update-os.service \
     packaging/debian/qunilator-update-check.service \
     packaging/debian/qunilator-update-check.timer \
+    packaging/debian/qunilator-usb-gadget.service \
     $STAGE/lib/systemd/system/
 # An unattended upgrade would stop the operator's running machine with no
 # warning, which is what the interface's install dialog exists to prevent.
@@ -402,6 +404,17 @@ if [ "$1" = configure ]; then
         # updated by hand. The timer only reads a version and writes a status
         # file; nothing is installed without an operator asking for it.
         systemctl enable --now qunilator-update-check.timer || true
+        # The USB gadget, enabled on an upgrade as well, so a board that
+        # predates it gains the fixed address its login banner offers. Building
+        # a gadget takes nothing away from a board already reachable over the
+        # LAN, and the unit's condition passes it over where there is no
+        # peripheral controller to bind.
+        systemctl enable --now qunilator-usb-gadget.service || true
+        # A login on the gadget's serial port. An image built before the gadget
+        # existed masked this getty, because the tty it names was never created
+        # and the unit spun; the gadget creates it now, so lift the mask.
+        systemctl unmask serial-getty@ttyGS0.service || true
+        systemctl enable --now serial-getty@ttyGS0.service || true
         # $2 is the previously configured version, empty on a first install.
         # Enabling only then keeps a unit the operator disabled disabled.
         # The emulator needs boot settings qunilator-setup applies and a reboot to

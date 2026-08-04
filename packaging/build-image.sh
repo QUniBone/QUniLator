@@ -287,12 +287,15 @@ cp "$DTB" "/boot/dtbs/$KVER/$BASE_DTB"
 # The address above the login prompt. agetty expands these when it writes
 # /etc/issue to the console, so the serial console shows where the board can be
 # reached without anyone logging in. \n is the hostname, \4{br0} the bridge's
-# IPv4 address - blank until DHCP answers.
+# IPv4 address - blank until DHCP answers - and \4{usb0} the gadget's fixed
+# 192.168.7.2. Each URL sits on its own line, so the two line up under a
+# hostname of any length.
 cat > /etc/issue <<'ISSUE'
 Debian GNU/Linux \r on \m
 
-\n - web interface: http://\4{br0}/
-      over USB:     http://\4{usb0}/
+\n - web interface:
+      over Ethernet: http://\4{br0}/
+      over USB:      http://\4{usb0}/
 
 ISSUE
 chmod 644 /etc/issue
@@ -303,6 +306,18 @@ chmod 644 /etc/issue
 # only what the board itself says.
 rm -f /etc/issue.net
 
+# A login on the second UART as well as on the debug header. The stock unit
+# offers a descending list of speeds for BREAK to step through, so a terminal
+# that sends one drops the line to 57600 and the operator reads noise; a list of
+# one holds it at 115200, which is the speed the debug header already runs at.
+install -d -m 755 /etc/systemd/system/serial-getty@ttyS1.service.d
+cat > /etc/systemd/system/serial-getty@ttyS1.service.d/baud.conf <<'BAUD'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty -o '-p -- \\u' --noreset --noclear --keep-baud 115200 - $TERM
+BAUD
+chmod 644 /etc/systemd/system/serial-getty@ttyS1.service.d/baud.conf
+
 rm -rf /tmp/in
 CHROOT
 
@@ -311,7 +326,13 @@ echo "-- enabling the services (offline, from the host)"
 # configures its network bridge with no login; the image enables it, a package
 # install leaves it disabled
 # <name>-announce prints the board's address on the console once it has one
-systemctl --root=/mnt enable qunilator-network.service ${NAME}.service qunilator-setup.service qunilator-leds.service qunilator-resize.service qunilator-announce.service >/dev/null 2>&1 || true
+# qunilator-usb-gadget builds the CDC Ethernet gadget, which is what brings usb0
+# into existence for usb0.network to address
+systemctl --root=/mnt enable qunilator-network.service ${NAME}.service qunilator-setup.service qunilator-leds.service qunilator-resize.service qunilator-announce.service qunilator-usb-gadget.service >/dev/null 2>&1 || true
+# a login on the second UART and on the gadget's serial port, which
+# qunilator-usb-gadget creates as /dev/ttyGS0; the debug header's getty the base
+# image already enables
+systemctl --root=/mnt enable serial-getty@ttyS1.service serial-getty@ttyGS0.service >/dev/null 2>&1 || true
 # The update check, so a flashed board knows where it stands. The package's
 # postinst enables it too, but its systemd calls are guarded on a running systemd
 # and the install above happens in a chroot, so this is what enables it here.
@@ -319,12 +340,8 @@ systemctl --root=/mnt enable qunilator-update-check.timer >/dev/null 2>&1 || tru
 # mDNS: <name>.local, and the DNS-SD advertisement the package drops in
 # /etc/avahi/services. The postinst enables it, this makes sure of it.
 systemctl --root=/mnt enable avahi-daemon.service >/dev/null 2>&1 || true
-# The USB gadget serial getty spins on a tty that is not reliably present and
-# wedges the console; the appliance is reached over the physical UART, the web
-# interface and ssh. Only the getty is masked - the gadget's network interface
-# stays, and usb0.network addresses it. Mask the GPIO daemon's unit too -
-# nothing here uses it.
-systemctl --root=/mnt mask serial-getty@ttyGS0.service gpio-manager.service >/dev/null 2>&1 || true
+# The GPIO daemon's unit: nothing here uses it.
+systemctl --root=/mnt mask gpio-manager.service >/dev/null 2>&1 || true
 # a persistent journal survives reboots
 mkdir -p /mnt/var/log/journal
 

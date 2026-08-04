@@ -85,7 +85,42 @@ to the uplink's MAC so the lease does not change. qunilator-network creates the
 veth pair from /etc/qunilator/network.conf before the emulator starts; the
 controller binds to veth-pdp. The networkd files live in
 /etc/systemd/network/{br0.netdev,br0.network,eth0.network,veth-br.network,
-veth-pdp.network}.
+veth-pdp.network,usb0.network}.
+
+A machine plugged into the board's USB port reaches it too.
+qunilator-usb-gadget builds the gadget over configfs, and one cable carries two
+ways in:
+
+    CDC Ethernet          usb0, which usb0.network fixes at 192.168.7.2 and
+                          which serves the attached host a lease on the same
+                          subnet - so http://192.168.7.2/ answers with no LAN,
+                          no DHCP server and no address to discover
+    CDC ACM               /dev/ttyGS0, a serial console carrying a login, which
+                          answers when the network is the thing that is broken
+
+A Mac or a Linux host binds both with no driver of its own. The address is
+configured whether or not anything is plugged in, which is what lets the login
+banner name it. The serial getty holds the port open and waits; the login
+prompt appears once a host enumerates the gadget.
+
+The gadget is built once and left standing - stopping the service leaves it in
+place, and starting it again over a tree that is already there is what repairs
+a half-built one. Dismantling it is a manual step, and the getty on its serial
+port comes off first:
+
+    systemctl stop serial-getty@ttyGS0.service
+    qunilator-usb-gadget stop
+
+That order matters. Removing a configfs function directory while a port it
+carries is open blocks in the kernel and cannot be interrupted, taking the
+getty with it; qunilator-usb-gadget refuses to start dismantling while the
+getty is running rather than wedge on it.
+
+A serial login answers on the debug header (ttyS0) and on ttyS1 as well, both at
+115200 8N1. The banner above the prompt names the addresses the board answers
+on, so a terminal shows where to point a browser without logging in. ttyS2
+belongs to the emulator - it carries the console of the machine on the bus - and
+holding it from the Linux side stops the console bridge from opening it.
 
 Running
 -------
