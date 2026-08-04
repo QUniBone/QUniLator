@@ -133,7 +133,7 @@ static void print_device(device_c *device)
 }
 
 // bring up PRU emulation code and the device set; also used at startup in web mode
-void application_c::devices_startup(bool with_emulated_CPU, bool internal_bus)
+void application_c::devices_startup(bool internal_bus)
 {
 //	iopageregisters_init();
     // QBUS/UNIBUS activity
@@ -147,13 +147,13 @@ void application_c::devices_startup(bool with_emulated_CPU, bool internal_bus)
     gpios->activity_leds.enabled = !gpios->leds_for_debug ;
     buslatches.output_enable(true);
 
-    // devices need physical or emulated CPU Arbitrator
-    // to answer BR and NPR requests.
-    if (with_emulated_CPU)
-        // not yet active, switches to CLIENT when emulated CPU started
-        qunibus->set_arbitrator_active(false) ;
-    else
-        qunibus->set_arbitrator_active(true) ;
+    // Devices need an arbitrator to answer their BR and NPR requests, and
+    // until a processor of this board's own is enabled that arbitrator is
+    // whatever machine the board was fitted to: the board asks for the bus
+    // like the peripheral it is. Enabling an emulated processor is what takes
+    // the bus over, and unibuscpu_c::set_bus_arbitration() writes the mode
+    // from there on.
+    qunibus->set_arbitrator_active(true) ;
 
     // without PDP-11 CPU no INIT after power ON was generated.
     // Devices may trash the bus lines.
@@ -161,7 +161,7 @@ void application_c::devices_startup(bool with_emulated_CPU, bool internal_bus)
 
     qunibusadapter->enabled.set(true);
 
-    device_configuration = new device_configuration_c(with_emulated_CPU);
+    device_configuration = new device_configuration_c();
 }
 
 void application_c::devices_shutdown(void)
@@ -177,7 +177,7 @@ void application_c::devices_shutdown(void)
     hardware_shutdown(); // stop PRU
 }
 
-void application_c::menu_devices(const char *menu_code, bool with_emulated_CPU)
+void application_c::menu_devices(const char *menu_code)
 {
     /** list of usable devices ***/
     bool with_storage_file_test = false;
@@ -197,7 +197,7 @@ void application_c::menu_devices(const char *menu_code, bool with_emulated_CPU)
     // then the menu only borrows it and quitting keeps it alive
     bool borrowed_configuration = (device_configuration != nullptr);
     if (!borrowed_configuration)
-        devices_startup(with_emulated_CPU, /*internal_bus*/false);
+        devices_startup(/*internal_bus*/false);
 
     slu_c *DL11 = device_configuration->DL11;
     std::stringstream& dl11_rcv_stream = device_configuration->dl11_rcv_stream;

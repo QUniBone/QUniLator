@@ -41,6 +41,7 @@
 #include "device.hpp"
 #include "parameter.hpp"
 #include "qunibusdevice.hpp"
+#include "unibuscpu.hpp"
 
 #include "device_configuration.hpp"
 #include "device_label.hpp"
@@ -229,6 +230,19 @@ struct test_controller_c : public test_device_c {
 				d->enabled.set(false);
 		return device_c::on_param_changed(param);
 	}
+};
+
+/*** a synthetic emulated processor. An apply that enables one of these is an
+     apply that makes the board the machine - it takes the bus over - so the
+     configuration model warns about it, whether the machine took the card now
+     or is holding it dark. ***/
+struct test_cpu_c : public unibuscpu_c {
+	test_cpu_c(const char *nm, const char *ty) {
+		name.value = nm;
+		type_name.value = ty;
+	}
+	void on_power_changed(signal_edge_enum, signal_edge_enum) override {}
+	void on_init_changed(void) override {}
 };
 
 /*** a card the machine will not take: its install fails the way a card whose
@@ -1202,6 +1216,58 @@ int main(void) {
 		delete uda0;
 		delete uda1;
 		delete uda;
+	}
+
+	/* 12. a configuration that carries an emulated processor says so. The board
+	      cannot see what is in the backplane it was fitted to, so this is a
+	      word to the operator rather than a refusal: the apply succeeds, and
+	      the warning rides beside the (empty) rejections. */
+	{
+		test_cpu_c *cpu = new test_cpu_c("CPU20", "KA11");
+		std::string err;
+		int status = 0;
+
+		picojson::value with = make_doc({ dev_entry("rl", true, {}),
+				dev_entry("CPU20", true, {}) });
+		check(webconfigs_write("cpucfg", with, false, &err, &status), "write cpucfg");
+		picojson::value without = make_doc({ dev_entry("rl", true, {}),
+				dev_entry("CPU20", false, {}) });
+		check(webconfigs_write("nocpucfg", without, false, &err, &status),
+				"write nocpucfg");
+
+		{
+			std::vector<std::string> rej, warn;
+			check(webconfigs_apply("cpucfg", &rej, &err, &warn),
+					"apply a configuration carrying a processor");
+			check(rej.empty(), "which is not a rejection");
+			check(warn.size() == 1, "and warns exactly once");
+			check(warn.size() == 1 && warn[0].find("CPU20") != std::string::npos,
+					"naming the processor it enabled");
+			check(warn.size() == 1 && warn[0].find("KA11") != std::string::npos,
+					"and its model");
+		}
+		{
+			std::vector<std::string> rej, warn;
+			check(webconfigs_apply("nocpucfg", &rej, &err, &warn),
+					"apply a configuration whose processor is disabled");
+			check(warn.empty(), "which warns about nothing");
+		}
+		// the same configuration loaded into a machine with its power off:
+		// nothing is enabled, so only the document can answer, and it must
+		webpower_devices_off();
+		{
+			std::vector<std::string> rej, warn;
+			check(webconfigs_apply("cpucfg", &rej, &err, &warn),
+					"apply it into a dark machine");
+			check(webpower_devices_are_off(), "which stays dark");
+			check(!cpu->enabled.value, "with the processor not installed");
+			check(warn.size() == 1, "and warns all the same");
+		}
+		check(webpower_devices_on(&err), "power up again");
+		unlink(cfg_path("cpucfg").c_str());
+		unlink(cfg_path("nocpucfg").c_str());
+		reset_devices();
+		delete cpu;
 	}
 
 	// tidy the temp tree

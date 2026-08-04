@@ -20,8 +20,6 @@ void websettings_register(struct mg_context *ctx);
 
 // Whether this board runs the emulated KA11 (PDP-11/20) instead of serving a
 // physical CPU. Read at startup; a change takes effect at the next start.
-bool websettings_emulated_cpu(void);
-void websettings_set_emulated_cpu(bool on);
 
 // Whether the board keeps its bus internal instead of driving a backplane. The
 // firmware is chosen when the PRU is loaded, so a change takes effect at the

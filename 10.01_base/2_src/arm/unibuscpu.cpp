@@ -25,7 +25,17 @@
  */
 
 #include "logger.hpp"
+#include "qunibus.h"
 #include "unibuscpu.hpp"
+
+// Who arbitrates the bus, from the state this processor is now in: the
+// processor itself while it runs, nobody while it is installed and halted, and
+// whatever machine the board was fitted to when no processor is installed at
+// all. See bus_owner in the header for why that last case is the default.
+void unibuscpu_c::set_bus_arbitration(bool arbitrating)
+{
+	qunibus->set_arbitrator_active(!bus_owner || arbitrating);
+}
 
 // after QBUS/UNIBUS install, device is reset by DCLO/DCOK cycle
 void unibuscpu_c::on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge) 

@@ -151,6 +151,11 @@ public:
     bool on_before_install(void) override ;
     void on_after_uninstall(void) override ;
 
+    // Whether this processor claimed the machine's memory out of the board's
+    // DDR when it was enabled, and so must give it back when it is disabled.
+    // False when a memory card already answered the range.
+    bool claimed_memory = false;
+
     // used for DATI/DATO, operated by qunibusadapter
     dma_request_c data_transfer_request = dma_request_c(this);
 

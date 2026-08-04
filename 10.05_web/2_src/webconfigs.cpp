@@ -87,6 +87,7 @@
 #include "device.hpp"
 #include "parameter.hpp"
 #include "qunibusadapter.hpp"
+#include "unibuscpu.hpp"
 #include "qunibusdevice.hpp"
 #include "panel.hpp"
 #include "mscp_server.hpp"
@@ -1292,6 +1293,34 @@ static void config_set_layout(struct mg_connection *conn, const std::string &nam
 // POST /api/configs/<name>/apply — restore a snapshot. Devices are stored
 // in registry order (controllers before their drives), so applying in
 // order enables controllers first. Rejections are collected, not fatal.
+// The emulated processor a configuration document enables, or nullptr. Read
+// from the document rather than from the device set, because a configuration
+// applied to a machine whose power is off is carried dark: the processor it
+// names is not enabled yet, and that is exactly when the operator wants
+// telling. No bus test is needed - a build that has no emulated processor has
+// no device of this type for the cast to match.
+static unibuscpu_c *configured_processor(const picojson::value &content) {
+	if (!content.get("devices").is<picojson::array>())
+		return nullptr;
+	for (const picojson::value &d : content.get("devices").get<picojson::array>()) {
+		if (!d.get("name").is<std::string>())
+			continue;
+		if (!d.get("enabled").is<bool>() || !d.get("enabled").get<bool>())
+			continue;
+		std::string devname = d.get("name").get<std::string>();
+		std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
+		for (device_c *cand : device_c::mydevices) {
+			if (strcasecmp(cand->name.value.c_str(), devname.c_str()) != 0)
+				continue;
+			unibuscpu_c *cpu = dynamic_cast<unibuscpu_c *>(cand);
+			if (cpu != nullptr)
+				return cpu;
+			break;
+		}
+	}
+	return nullptr;
+}
+
 // Apply a saved configuration to the device set: the work behind both
 // POST /api/configs/<name>/apply and the --config option of the service.
 // Returns false when the configuration cannot be read; parameters the devices
@@ -1527,6 +1556,22 @@ static bool apply_document(const picojson::value &content, const std::string &na
 		}
 
 	}
+
+	// A configuration that carries a processor of the board's own says so, and
+	// says it whether the machine took it now or is holding it dark: what it
+	// describes is a board that owns the bus it is on, and the machine it was
+	// fitted to may have a processor already. Nothing here can tell - the
+	// backplane is not ours to read - so this is a word to the operator, not a
+	// refusal.
+	if (warnings != nullptr) {
+		unibuscpu_c *cpu = configured_processor(content);
+		if (cpu != nullptr)
+			warnings->push_back(picojson::value("\"" + name + "\" carries the emulated "
+					"processor " + cpu->name.value + " (" + cpu->type_name.value + "), which "
+					"makes this board the machine: it arbitrates the bus, and a machine that "
+					"has a processor of its own must not be given a second"));
+	}
+
 	// An apply resets every device's verbosity to its construction default, so
 	// re-assert the persisted log levels: the stored overrides win, the rest
 	// fall to the global default.
