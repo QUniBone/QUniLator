@@ -183,6 +183,7 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/menu_buslatches.o	\
 	$(OBJDIR)/menu_qunibus_signals.o	\
 	$(OBJDIR)/menu_masterslave.o	\
+	$(OBJDIR)/menu_disassemble.o	\
 	$(OBJDIR)/menu_interrupts.o	\
 	$(OBJDIR)/menu_ddrmem_slave_only.o \
 	$(OBJDIR)/menu_devices.o \
@@ -385,6 +386,9 @@ $(OBJDIR)/menu_qunibus_signals.o :  menu_qunibus_signals.cpp application.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/menu_masterslave.o :  menu_masterslave.cpp application.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/menu_disassemble.o :  menu_disassemble.cpp application.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/menu_interrupts.o :  menu_interrupts.cpp application.hpp

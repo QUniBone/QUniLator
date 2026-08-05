@@ -16,6 +16,7 @@ import type {
   LogLevelName,
   PackageRom,
   DebugCpu,
+  DebugListing,
 } from './types';
 
 export interface ApiResult<T = Record<string, unknown>> {
@@ -62,6 +63,27 @@ export async function fetchMemory(
   );
   if (!r.ok) return { ok: false, words: [], error: r.data?.error || 'the board refused the read' };
   return { ok: true, words: r.data?.words || [], error: '' };
+}
+
+// A code listing read out of the machine's memory. The count is decimal, unlike
+// the octal address: it counts instructions rather than naming a place in the
+// machine. The board picks the CPU model from the processor the machine carries
+// unless one is named.
+export async function fetchDisassembly(
+  address: number,
+  count = 10,
+  model?: string
+): Promise<{ ok: boolean; listing: DebugListing | null; error: string }> {
+  const q =
+    '/api/debug/disassemble?address=' +
+    address.toString(8) +
+    '&count=' +
+    count +
+    (model ? '&model=' + encodeURIComponent(model) : '');
+  const r = await apiJSON<DebugListing & { error?: string }>(q);
+  if (!r.ok)
+    return { ok: false, listing: null, error: r.data?.error || 'the board refused the listing' };
+  return { ok: true, listing: r.data, error: '' };
 }
 
 export function apiSetParam(dev: string, param: string, value: string) {

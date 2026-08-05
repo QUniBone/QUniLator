@@ -302,6 +302,8 @@ export interface DebugRegister {
 export interface DebugProbePoint {
   address: number;
   name?: string;
+  // what the address means on a PDP-11, where it means anything
+  info?: string;
   value: number | null;
 }
 
@@ -316,6 +318,32 @@ export interface DebugPsw {
   has_modes: boolean;
   mode?: string;
   previous_mode?: string;
+}
+
+// One disassembled instruction. `words` is as long as the instruction is: on a
+// PDP-11 an instruction is only as long as its operands make it.
+export interface DebugInstruction {
+  address: number;
+  words: number[];
+  mnemonic: string;
+  operands: string;
+  known: boolean; // an instruction on some PDP-11
+  available: boolean; // ... and on this model
+  truncated: boolean; // a word of it could not be read
+  comment?: string;
+  // addresses the operands name which mean something: device registers, the
+  // processor and memory management registers, trap and interrupt vectors
+  known_addresses?: { address: number; info: string }[];
+}
+
+export interface DebugListing {
+  address: number;
+  next: number; // where a following listing continues
+  model: string;
+  options: string;
+  instructions: DebugInstruction[];
+  complete: boolean; // false: memory stopped answering before the count was met
+  reason?: string;
 }
 
 export interface DebugCpu {

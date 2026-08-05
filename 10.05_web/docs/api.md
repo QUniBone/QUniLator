@@ -656,6 +656,46 @@ Registers of a real Q-bus processor are reachable over its console micro-ODT
 (halt the CPU, read `R0/`…`R7/`, `RS/`), and of a real UNIBUS machine from its
 front panel. Neither is driven from here.
 
+`probe[].info` and the disassembler's `known_addresses` come from the same map
+of what an address means on a PDP-11 (`pdp11disas_address_info()`), so a bare
+number is named wherever one is shown.
+
+### `GET /api/debug/disassemble?address=<octal>&count=<n>&model=<name>`
+
+The machine's memory read over the bus and turned back into instructions. Works
+whichever kind of processor runs the machine: the board is bus master, so this
+asks the processor nothing.
+
+`count` is **decimal** — it counts instructions rather than naming a place in
+the machine, and `count=10` meaning eight is a trap not worth setting. 1..200,
+default 10. `address` is octal and even.
+
+```json
+{"address": 261638, "next": 261672, "model": "11/34",
+ "options": "eis mmu mfps sxs mark rtt", "complete": true,
+ "instructions": [
+   {"address": 261638, "words": [5313, 63744], "mnemonic": "mov",
+    "operands": "#174400,r1", "known": true, "available": true,
+    "truncated": false,
+    "known_addresses": [{"address": 63744, "info": "rl11 rlcs (control/status)"}]},
+   {"address": 261652, "words": [62980], "mnemonic": "subf", "operands": "ac4,ac0",
+    "known": true, "available": false, "truncated": false,
+    "comment": "fp11 not on pdp-11/34"}]}
+```
+
+**Which machine it is decoded for matters.** An 11/20 has fewer instructions
+than an 11/70, and a disassembler told the wrong model invents instructions the
+CPU would trap on. The default is the processor the machine carries — its device
+type, so an emulated 11/34 needs no saying — and `model` overrides it
+(`11/34`, `1134` and `34` all name the same machine; `cpu_model_list()` has the
+rest). An instruction outside the model's set is still disassembled, with
+`available: false` and a `comment` saying what it would need.
+
+`next` is where a following listing continues, which is what a "more" button
+asks for. `complete` is false when memory stopped answering before the count was
+met — a listing running into the end of what a card answers ends there, with
+`reason` saying where.
+
 ## Disk images
 
 Image files live in a folder hierarchy under `$QUNILATOR_DIR/images/`. The

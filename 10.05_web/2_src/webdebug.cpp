@@ -33,6 +33,9 @@
 #include "qunibus.h"
 #include "device.hpp"
 #include "device_configuration.hpp"
+#include "pdp11disas.hpp"
+// for qunibus_disasmemory_c, the windowed DMA the interactive listing uses too
+#include "application.hpp"
 #if defined(UNIBUS)
 #include "cpu.hpp"
 #endif
@@ -62,6 +65,19 @@ static void send_error(struct mg_connection *conn, int status, const std::string
 
 static picojson::value num(uint64_t v) {
 	return picojson::value((double) v);
+}
+
+// An octal address as the console writes it. Whole string or nothing: a typo
+// silently read as its leading digits would send the listing somewhere else.
+static bool parse_octal_addr(const std::string &s, uint32_t *out) {
+	if (s.empty())
+		return false;
+	char *end = nullptr;
+	unsigned long v = strtoul(s.c_str(), &end, 8);
+	if (*end != '\0')
+		return false;
+	*out = (uint32_t) v;
+	return true;
 }
 
 // The status word, taken apart. The mode fields are only there on a model that
@@ -324,9 +340,15 @@ static picojson::value bus_json(bool force) {
 	picojson::array points;
 	for (unsigned i = 0; i < probe_point_count; i++) {
 		picojson::object p;
-		p["address"] = num(qunibus->iopage_start_addr + probe_points[i].offset);
+		uint32_t addr = qunibus->iopage_start_addr + probe_points[i].offset;
+		p["address"] = num(addr);
 		if (probe_points[i].name != nullptr)
 			p["name"] = picojson::value(std::string(probe_points[i].name));
+		// what the address means on a PDP-11, for the points the table does not
+		// name itself - the disassembler's map of the I/O page knows the rest
+		std::string info = pdp11disas_address_info(addr);
+		if (!info.empty())
+			p["info"] = picojson::value(info);
 		p["value"] = answered[i] ? num(values[i]) : picojson::value();
 		points.push_back(picojson::value(p));
 	}
@@ -360,6 +382,104 @@ static picojson::value bus_json(bool force) {
 	return picojson::value(o);
 }
 
+/* ---- the code listing --------------------------------------------------- */
+
+// Which machine the listing is decoded for. An 11/20 has fewer instructions
+// than an 11/70, so a disassembler told the wrong model invents instructions
+// the CPU would trap on - which is why the caller may name one, and why the
+// default is the processor the machine actually carries rather than a guess.
+// A model the module does not know leaves *options untouched and answers false.
+static bool listing_options(const std::string &requested, pdp11disas_options_c *options) {
+	if (!requested.empty())
+		return options->set_cpu_model(requested);
+#if defined(UNIBUS)
+	std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
+	cpu_base_c *pdp11 = dynamic_cast<cpu_base_c *>(carried_cpu_locked());
+	// "PDP-11/34" as the device names it; the module strips the prefix itself
+	if (pdp11 != nullptr)
+		options->set_cpu_model(pdp11->type_name.value);
+#endif
+	return true;
+}
+
+static picojson::value instruction_json(const pdp11disas_instruction_c &i) {
+	picojson::object o;
+	o["address"] = num(i.addr);
+	picojson::array words;
+	for (unsigned w = 0; w < i.wordcount; w++)
+		words.push_back(num(i.word[w]));
+	o["words"] = picojson::value(words);
+	o["mnemonic"] = picojson::value(i.mnemonic);
+	o["operands"] = picojson::value(i.operands);
+	o["known"] = picojson::value(i.known);
+	o["available"] = picojson::value(i.available);
+	o["truncated"] = picojson::value(i.truncated);
+	std::string comment = i.comment();
+	if (!comment.empty())
+		o["comment"] = picojson::value(comment);
+	// The addresses the operands name which mean something on a PDP-11: device
+	// registers, the processor and memory management registers, the trap and
+	// interrupt vectors. What makes a listing readable without a manual beside
+	// it - "@#177564" is the console transmitter, not a number.
+	if (!i.known_addresses.empty()) {
+		picojson::array known;
+		for (uint32_t addr : i.known_addresses) {
+			picojson::object k;
+			k["address"] = num(addr);
+			k["info"] = picojson::value(pdp11disas_address_info(addr));
+			known.push_back(picojson::value(k));
+		}
+		o["known_addresses"] = picojson::value(known);
+	}
+	return picojson::value(o);
+}
+
+// GET /api/debug/disassemble?address=<octal>&count=<n>&model=<name>
+//
+// Reads the machine's memory over the bus and turns it back into instructions.
+// The listing stops where memory stops answering rather than failing: a region
+// running into the end of what a card answers is a listing that ends there.
+static void disassemble(struct mg_connection *conn, uint32_t address, unsigned count,
+		const std::string &model) {
+	pdp11disas_options_c options;
+	if (!listing_options(model, &options)) {
+		send_error(conn, 400, "unknown CPU model \"" + model + "\". Known are: "
+				+ pdp11disas_options_c::cpu_model_list());
+		return;
+	}
+
+	std::vector<pdp11disas_instruction_c> instructions;
+	uint32_t next;
+	{
+		// The same lock every other bus-master transfer takes, held across the
+		// whole listing: the adapter fetches a window at a time and would
+		// otherwise interleave its DMAs with another request's.
+		std::lock_guard<std::mutex> block(web_bus_mutex());
+		qunibus_disasmemory_c memory(web_bus_timeout_ms);
+		next = pdp11disas_region(options, memory, address, count, &instructions);
+	}
+
+	picojson::object res;
+	res["address"] = num(address);
+	res["next"] = num(next);
+	res["model"] = picojson::value(options.cpu_model);
+	res["options"] = picojson::value(
+			pdp11disas_options_c::options_as_text(options.options));
+	picojson::array arr;
+	for (const pdp11disas_instruction_c &i : instructions)
+		arr.push_back(instruction_json(i));
+	res["instructions"] = picojson::value(arr);
+	res["complete"] = picojson::value(instructions.size() >= count);
+	if (instructions.size() < count) {
+		char msg[160];
+		snprintf(msg, sizeof msg,
+				"nothing readable at %06o: the listing ends where the memory does",
+				(unsigned) next);
+		res["reason"] = picojson::value(std::string(msg));
+	}
+	send_json(conn, 200, picojson::value(res));
+}
+
 /* ---- the endpoint ------------------------------------------------------- */
 
 static int api_debug_handler(struct mg_connection *conn, void * /*cbdata*/) {
@@ -367,13 +487,49 @@ static int api_debug_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	std::string uri = ri->local_uri ? ri->local_uri : "";
 	std::string rest = uri.substr(strlen("/api/debug"));
 
-	if (rest != "/cpu") {
+	if (rest != "/cpu" && rest != "/disassemble") {
 		send_error(conn, 404, "unknown debug path");
 		return 404;
 	}
 	if (strcmp(ri->request_method, "GET") != 0) {
 		send_error(conn, 405, "GET required");
 		return 405;
+	}
+
+	if (rest == "/disassemble") {
+		char buf[64];
+		const char *q = ri->query_string;
+		size_t qlen = q ? strlen(q) : 0;
+		uint32_t address = 0;
+		if (q == nullptr || mg_get_var(q, qlen, "address", buf, sizeof buf) <= 0
+				|| !parse_octal_addr(buf, &address)) {
+			send_error(conn, 400, "address=<octal> required");
+			return 400;
+		}
+		// The instruction count is decimal, unlike the octal addresses: it
+		// counts instructions rather than naming a place in the machine, and
+		// "count=10" meaning eight is a trap not worth setting.
+		unsigned count = 10;
+		if (mg_get_var(q, qlen, "count", buf, sizeof buf) > 0)
+			count = (unsigned) strtoul(buf, nullptr, 10);
+		if (count < 1 || count > 200) {
+			send_error(conn, 400, "count is 1..200 instructions, decimal");
+			return 400;
+		}
+		if (address >= qunibus->addr_space_byte_count || (address & 1)) {
+			char msg[128];
+			snprintf(msg, sizeof msg,
+					"address out of range: an instruction is at an even address, and "
+					"the machine's address space is %u bit, ending at %06o",
+					qunibus->addr_width, qunibus->addr_space_byte_count - 2);
+			send_error(conn, 400, msg);
+			return 400;
+		}
+		std::string model;
+		if (mg_get_var(q, qlen, "model", buf, sizeof buf) > 0)
+			model = buf;
+		disassemble(conn, address, count, model);
+		return 200;
 	}
 	bool force = false;
 	if (ri->query_string != nullptr) {

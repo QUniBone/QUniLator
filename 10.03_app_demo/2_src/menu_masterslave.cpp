@@ -57,6 +57,9 @@ void application_c::menu_masterslave(const char * menu_code, bool with_cpu_arbit
 //    bool testcontroller_enabled = false;
     bool show_help = true ;                         // show cmds on first screen, then only on error or request
     bool active = false;                            // true if PRU executes slave&master logic
+    // DISASSEMBLE has its own address, so a code listing does not move the
+    // EXAM/DEPOSIT address and the other way round
+    unsigned dis_addr = 0;
     unsigned cur_addr = 0;
     bool ready;
     char * s_choice;
@@ -121,6 +124,9 @@ void application_c::menu_masterslave(const char * menu_code, bool with_cpu_arbit
                 printf("d <val>                     DEPOSIT <val> into next <addr>\n");
                 printf("xe                          Like EXAM, but local access to DDR memory. Only in emulated memory range.\n");
                 printf("xd                          Like DEPOSIT, local access to DDR memory. (CPU cache not updated!)\n");
+                printf("da <addr> [n]               DISASSEMBLE <n> instructions at <addr>, 10 at a time [octal]\n");
+                printf("da                          DISASSEMBLE the next instructions\n");
+                printf("xda <addr> [n] / xda        Like DISASSEMBLE, but local access to DDR memory\n");
                 printf("lb <filename>               Load memory content from disk file, as binary image\n");
                 printf("ll <filename>               Load memory content from MACRO-11 listing\n");
                 printf("lp <filename>               Load memory content from Absolute Papertape image\n");
@@ -139,6 +145,9 @@ void application_c::menu_masterslave(const char * menu_code, bool with_cpu_arbit
             printf("pwr                         Simulate QBUS power cycle (DCOK/POK) like front panel RESTART\n");
 #endif
 
+            printf("set                         Show the CPU model and options DISASSEMBLE decodes for\n");
+            printf("set cpu <model>             Set CPU model, default 11/20. \"set\" lists all models\n");
+            printf("set <option> <0|1>          Add/remove an instruction set option, like fp11 or cis\n");
             printf("dbg c|s|f                   Debug log: Clear, Show on console, dump to File.\n");
             printf("                               (file = %s)\n", 
                 logger->default_filepath.c_str());
@@ -344,6 +353,50 @@ void application_c::menu_masterslave(const char * menu_code, bool with_cpu_arbit
                 else 
                     printf("DDRMEM DEPOSIT %s <- %06o\n", qunibus->addr2text(cur_addr), w[i]);
             }
+        }
+        else if (!strcasecmp(s_opcode, "da") || !strcasecmp(s_opcode, "xda")) {
+            // DISASSEMBLE over the bus, or locally in DDR memory
+            unsigned instruction_count = 0; // 0 = until the user stops it
+
+            if (n_fields >= 2)  // disassemble at <addr>
+                qunibus->parse_addr(s_param[0], &dis_addr);
+            if (n_fields >= 3)  // ... only <n> instructions
+                instruction_count = strtol(s_param[1], NULL, 8);
+            printf("%s\n", disassembler_options.as_text().c_str());
+            if (!strcasecmp(s_opcode, "xda")) {
+                ddrmem_disasmemory_c memory;
+                dis_addr = disassemble(memory, dis_addr, instruction_count);
+            } else {
+                qunibus_disasmemory_c memory;
+                dis_addr = disassemble(memory, dis_addr, instruction_count);
+            }
+        }
+        else if (!strcasecmp(s_opcode, "set")) {
+            // the CPU model and instruction set options DISASSEMBLE decodes for
+            if (n_fields == 1) {
+                printf("%s\n", disassembler_options.as_text().c_str());
+                printf("  CPU models: %s\n", pdp11disas_options_c::cpu_model_list().c_str());
+                printf("  Options   : %s\n", pdp11disas_options_c::option_list().c_str());
+            }
+            else if (n_fields == 3 && !strcasecmp(s_param[0], "cpu")) {
+                if (!disassembler_options.set_cpu_model(s_param[1]))
+                    printf("Unknown CPU model \"%s\". Known are: %s\n", s_param[1],
+                        pdp11disas_options_c::cpu_model_list().c_str());
+                else
+                    printf("%s\n", disassembler_options.as_text().c_str());
+            }
+            else if (n_fields == 3) {
+                bool enable = (strchr("1yYtT", s_param[1][0]) != NULL);
+                if (!enable && strchr("0nNfF", s_param[1][0]) == NULL)
+                    printf("Use 0 or 1 to switch an option off or on.\n");
+                else if (!disassembler_options.set_option(s_param[0], enable))
+                    printf("Unknown option \"%s\". Known are: %s\n", s_param[0],
+                        pdp11disas_options_c::option_list().c_str());
+                else
+                    printf("%s\n", disassembler_options.as_text().c_str());
+            }
+            else
+                printf("Use \"set\", \"set cpu <model>\" or \"set <option> <0|1>\".\n");
         }
         else if (!strncasecmp(s_opcode, "l", 1) && (n_fields == 2)) {
             // is one of the "lx" opcodes
