@@ -345,6 +345,15 @@ function MemoryView({
 // instruction occupies, then what it does. The columns are padded rather than
 // laid out in a grid because the whole line is monospace anyway, and a listing
 // that can be selected and pasted as text is worth more than one that cannot.
+// What the board has to say about an instruction: why it is not available on
+// this model, or what the addresses it names mean. "" when it is plain code.
+function commentOf(i: DebugInstruction): string {
+  if (i.comment) return i.comment;
+  return (i.known_addresses || [])
+    .map((k) => octalStr(k.address, 16) + ' = ' + k.info)
+    .join(', ');
+}
+
 function listingLine(i: DebugInstruction, width: number): string {
   const words = i.words.map((w) => octalStr(w, 16)).join(' ');
   return (
@@ -444,18 +453,20 @@ function DisassemblyView({
         cycles, so there is nothing to disassemble.</p>`}
       ${lines.length > 0 &&
       html`<div class="dbg-listing mono" ref=${box}>
-        ${lines.map(
-          (i) => html`<div class=${'dbg-code' + (i.available ? '' : ' dbg-code-odd')}>
-            ${listingLine(i, width)}
-            ${(i.comment || (i.known_addresses || []).length > 0) &&
-            html`<span class="dbg-comment"
-              >  ; ${i.comment ||
-              (i.known_addresses || [])
-                .map((k) => octalStr(k.address, 16) + ' = ' + k.info)
-                .join(', ')}</span
-            >`}
-          </div>`
-        )}
+        ${lines.map((i) => {
+          const code = listingLine(i, width);
+          const note = commentOf(i);
+          // The listing does not scroll sideways — a code column that moves
+          // under the reader is worse than one that ends. What does not fit is
+          // the comment, so it is the part that is cut, and the whole of it is
+          // one hover away. The line carries it too, for an instruction whose
+          // own operands reach the edge.
+          return html`<div class=${'dbg-code' + (i.available ? '' : ' dbg-code-odd')}
+            title=${note ? code + '  ; ' + note : code}>
+            <span class="dbg-code-text">${code}</span>
+            ${note && html`<span class="dbg-comment" title=${note}>  ; ${note}</span>`}
+          </div>`;
+        })}
       </div>`}
     </div>
   </div>`;

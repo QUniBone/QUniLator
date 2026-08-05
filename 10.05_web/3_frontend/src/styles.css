@@ -1374,11 +1374,18 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
 /* A listing grows as it is followed, so it scrolls in place rather than pushing
    everything below it down the page. Ten instructions fit before it does. */
 .dbg-listing {
-  max-height: 280px; overflow: auto;
+  /* Down only: a code column that slides sideways under the reader is worse
+     than one that ends, so a line that does not fit is cut rather than scrolled
+     — and what gets cut is the comment, which a hover gives back whole. */
+  max-height: 280px; overflow-x: hidden; overflow-y: auto;
   font-size: var(--fs-1); line-height: 1.5;
 }
-.dbg-code { white-space: pre; }
+.dbg-code { display: flex; white-space: pre; }
+.dbg-code-text { flex: 0 0 auto; }
 /* an instruction this model cannot execute, or none at all: still shown, since
    what is at the address is the answer, but not as ordinary code */
 .dbg-code-odd { color: var(--warn); }
-.dbg-comment { color: var(--ink-faint); }
+.dbg-comment {
+  color: var(--ink-faint);
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
