@@ -1354,6 +1354,34 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 
 // called by webserver_c::start(); the host test build registers fixtures instead
 // GET /api/log?before=<id>&limit=<n> — a page of the log journal, newest first
+// GET  /api/notice           the standing notice, or null
+// POST /api/notice/dismiss   clear it
+//
+// The notice is what the board did on its own and no request of the operator's
+// would show them. Dismissing it is the acknowledgement that somebody read it,
+// which is the only record that the warning reached a person.
+static int api_notice_handler(struct mg_connection *conn, void * /*cbdata*/) {
+	const struct mg_request_info *ri = mg_get_request_info(conn);
+	std::string uri = ri->local_uri ? ri->local_uri : "";
+	std::string rest = uri.substr(strlen("/api/notice"));
+	std::string method = ri->request_method;
+
+	if (rest == "/dismiss" && method == "POST") {
+		std::string had = webevents_notice();
+		webevents_note_notice("");
+		if (!had.empty())
+			WEB_INFO("notice dismissed: %s", had.c_str());
+	} else if (!(rest.empty() || rest == "/") || method != "GET") {
+		send_error(conn, 405, "GET /api/notice or POST /api/notice/dismiss");
+		return 405;
+	}
+	picojson::object o;
+	std::string text = webevents_notice();
+	o["notice"] = text.empty() ? picojson::value() : picojson::value(text);
+	send_json(conn, 200, picojson::value(o));
+	return 200;
+}
+
 static int api_log_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	const struct mg_request_info *ri = mg_get_request_info(conn);
 	if (strcmp(ri->request_method, "GET") != 0) {
@@ -1389,6 +1417,7 @@ void webapi_register(struct mg_context *ctx) {
 	mg_set_request_handler(ctx, "/api/control", api_control_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/memory", api_memory_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/log", api_log_handler, nullptr);
+	mg_set_request_handler(ctx, "/api/notice", api_notice_handler, nullptr);
 	webstorage_register(ctx);
 	webconfigs_register(ctx);
 	websettings_register(ctx);

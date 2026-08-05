@@ -162,7 +162,16 @@ does not run again.
 /usr/bin/qbone (/usr/bin/unibone on a UNIBUS board) serves the web interface
 and has no menu. The machine a board
 comes up as is a saved configuration: add "--config <name>" to the unit's
-ExecStart to apply one at startup. /usr/bin/qbone-cli is the same emulation
+ExecStart to apply one at startup.
+
+That machine is loaded switched off. The cards it names and the media they
+hold are what the board carries, and none of it is on the bus until somebody
+switches the machine on from the web interface - because a board goes into a
+machine first and is configured afterwards, so a configuration written for one
+backplane may describe cards the next one already has. A configuration can be
+marked to start itself ("Start this machine at power-on", on the Configurations
+page); the board then puts it on the bus at every startup without asking, and
+says what it did afterwards in the journal and in a notice on the interface. /usr/bin/qbone-cli is the same emulation
 driven from a terminal menu, for bus latch, master/slave and device exerciser
 work; it needs an operator on stdin and is not what the service runs. It drives
 the PRU and the bus, so it is installed set-user-id root and executable only by
@@ -184,9 +193,10 @@ Machines
 A machine is a saved configuration and the media its drives hold. This package
 ships one: the XXDP diagnostic pack as /var/lib/qunilator/images/xxdp25.rl02,
 and a configuration named "xxdp" that attaches it. On a UNIBUS board that
-configuration is a whole emulated PDP-11/20 with the M9312 ROMs, so it boots
-the pack by itself and is the quickest check that a board works; on a QBUS
-board it is the drive alone, for the real machine in the backplane to boot.
+configuration is a whole emulated PDP-11/20 with the M9312 ROMs, so switching
+that machine on boots the pack with no further setting up, and is the quickest
+check that a board works; on a QBUS board it is the drive alone, for the real
+machine in the backplane to boot.
 
 The pack is read-only and belongs to this package. A drive keeps its guest's
 writes in a copy-on-write overlay beside the file, so the shipped pack stays as

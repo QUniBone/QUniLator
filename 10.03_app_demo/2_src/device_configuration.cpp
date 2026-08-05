@@ -58,7 +58,7 @@ static std::vector<T *> build_mux_pool(unsigned count, const char *base_name,
 	return pool;
 }
 
-device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
+device_configuration_c::device_configuration_c() :
 		dl11_rcv_stream(std::ios::app | std::ios::in | std::ios::out),
 		dl11b_rcv_stream(std::ios::app | std::ios::in | std::ios::out),
 		cpuvax_rcv_stream(std::ios::app | std::ios::in | std::ios::out) {
@@ -142,31 +142,26 @@ device_configuration_c::device_configuration_c(bool with_emulated_CPU) :
 	m9312 = new m9312_c();
 	KE11A = new ke11_c();
 	DEUNA = new deuna_c();
-	CPU20 = NULL;
-	CPU34 = NULL;
-	CPUVAX = NULL;
-	if (with_emulated_CPU) {
-		// Both models exist as devices, so either can be picked from the web
-		// UI or the devices menu. CPU20 comes up enabled, so a machine started
-		// with an emulated CPU has one running without further operator action;
-		// selecting the 11/34 means disabling it and enabling CPU34.
-		CPU20 = new cpu20_c();
-		CPU34 = new cpu34_c();
-		// The VAX-11/780 is a third choice, and ships disabled: it carries its
-		// own memory and its own console, and a machine is a VAX only when an
-		// operator says so.
-		CPUVAX = new cpuvax_c();
-		CPUVAX->rs232adapter.stream_rcv = &cpuvax_rcv_stream;
-		CPUVAX->rs232adapter.stream_xmt = NULL;   // do not echo to stdout
-		CPU20->enabled.set(true);
-	}
+	// The processors a UNIBUS board can be. They cost nothing while disabled -
+	// no registers on the bus, no page handlers installed - so they are always
+	// in the device list, where a configuration can name one and an operator
+	// can see which models exist. None is enabled here: a board is a
+	// peripheral of the machine it was fitted to until a configuration says
+	// otherwise, and that is the direction that cannot damage a machine which
+	// already has a processor of its own.
+	CPU20 = new cpu20_c();
+	CPU34 = new cpu34_c();
+	// The VAX-11/780 carries its own memory and its own console; a machine is
+	// a VAX only when an operator says so.
+	CPUVAX = new cpuvax_c();
+	CPUVAX->rs232adapter.stream_rcv = &cpuvax_rcv_stream;
+	CPUVAX->rs232adapter.stream_xmt = NULL;   // do not echo to stdout
 #elif defined(QBUS)
 	RX11 = new RXV11_c();
 	RX211 = new RXV21_c();
 	DELQA = new delqa_c();
 	VCB01 = new vcb01_c();
 	MRV11D = new mrv11d_c();
-	(void) with_emulated_CPU; // no emulated CPU on QBUS
 #endif
 }
 

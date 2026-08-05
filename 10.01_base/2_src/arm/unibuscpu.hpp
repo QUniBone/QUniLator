@@ -44,6 +44,29 @@ class unibuscpu_c: public qunibusdevice_c {
 	bool power_event_ACLO_inactive ;
 //	enum power_event_enum power_event ;
 		
+	// Whether this processor is installed as the machine's own, which is what
+	// decides who arbitrates the bus. An installed emulated processor means
+	// the board *is* the machine: nothing outside it arbitrates, so the PRU
+	// runs no client protocol while the processor is halted - which is what
+	// lets the ARM reach memory to load it. With no emulated processor
+	// installed the board is a peripheral of whatever machine it was fitted
+	// to, and must ask for the bus before touching it. That is the safe
+	// direction: asking on a bus nobody arbitrates costs a refused request,
+	// while not asking on a bus somebody does arbitrate corrupts a running
+	// machine.
+	//
+	// "enabled" cannot answer this. The parameter takes its new value after
+	// on_before_install() and on_after_uninstall() have run, so during the
+	// callbacks that have to set the mode it still reads as the old one.
+	bool bus_owner = false;
+
+	// Put the PRU in the arbitration mode this processor's state calls for.
+	// "arbitrating" is whether the processor is granting the bus right now,
+	// which for a PDP-11 core means it is executing and for the VAX means its
+	// arbitrator is switched on. Defined in unibuscpu.cpp, where qunibus is in
+	// scope.
+	void set_bus_arbitration(bool arbitrating);
+
 	// called by PRU on INTR. level is the BR level 4..7 the request was
 	// granted at, which a processor that ranks its interrupts by priority
 	// needs; a PDP-11 takes the vector alone and ignores it.

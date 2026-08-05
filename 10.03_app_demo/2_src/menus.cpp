@@ -274,8 +274,7 @@ void application_c::menu_main(void)
                 "tm          Test Bus Master: access " QUNIBUS_NAME " address range without PDP-11 CPU arbitration\n");
             printf("ts          Test shared DDR memory = " QUNIBUS_NAME " memory as BUS SLAVE\n");
             printf("ti          Test Interrupts (needs physical PDP-11 CPU)\n");
-            printf("d           Emulate devices, with PDP-11 CPU arbitration\n");
-            printf("dc          Emulate devices and CPU, PDP-11 must be disabled.\n");
+            printf("d           Emulate devices, including the emulated processors\n");
             // printf("de          Device Exerciser: work with devices on the " QUNIBUS_NAME " without PDP-11 CPU arbitration\n");
             printf(
                 "m           Full memory slave emulation with DMA bus master functions by PDP-11 CPU.\n");
@@ -298,7 +297,7 @@ void application_c::menu_main(void)
                     || !strcasecmp(opcode, "tl") || !strcasecmp(opcode, "bs")
                     || !strcasecmp(opcode, "tm") || !strcasecmp(opcode, "ts")
                     || !strcasecmp(opcode, "ti") || !strcasecmp(opcode, "de")
-                    || !strcasecmp(opcode, "m") || !strcasecmp(opcode, "dc"))) {
+                    || !strcasecmp(opcode, "m"))) {
                 printf("Not available: emulated devices are active (web interface).\n");
                 printf("Use \"d\" to operate them, \"q\" to exit.\n");
             } else if (!strcasecmp(opcode, "tg")) {
@@ -318,9 +317,11 @@ void application_c::menu_main(void)
             } else if (!strcasecmp(opcode, "ti")) {
                 menu_interrupts("TI");
             } else if (!strcasecmp(opcode, "d")) {
-                menu_devices("D", false);
-            } else if (!strcasecmp(opcode, "dc")) {
-                menu_devices("DC", true);
+                // One device menu: the emulated processors are in the device
+                // set like any other card, so there is nothing for a separate
+                // "with CPU" entry to build differently. Enabling one there is
+                // what makes this board the machine.
+                menu_devices("D");
             } else if (!strcasecmp(opcode, "de")) {
                 menu_device_exercisers("DE");
             } else if (!strcasecmp(opcode, "m")) {

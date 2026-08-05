@@ -12,6 +12,7 @@ import { MachinePage } from './Machine';
 import { LogPage } from './Log';
 import { SystemPage } from './System';
 import { updateAvailable, updateRunning } from '../lib/update';
+import { dismissNotice } from '../api';
 
 // path → sidebar label. The active item is the one whose path is the current
 // path or a prefix of it (so /config/211bsd still lights "Configurations").
@@ -114,6 +115,25 @@ function BoardHeld({ reason }: { reason: string }) {
   </div>`;
 }
 
+/**
+ * The board's standing notice: something it did on its own, that no request of
+ * the operator's would show them. Today that is a configuration marked to
+ * start itself, which put cards - and possibly a processor - on a bus at boot
+ * with nobody watching.
+ *
+ * It is a bar rather than a modal because it reports something already done:
+ * there is no decision to take, only a thing to know. It stands until it is
+ * dismissed, and the dismissal goes to the board, because it is the record
+ * that a person saw the warning rather than a preference of one browser.
+ */
+function Notice({ text }: { text: string }) {
+  if (!text) return null;
+  return html`<div class="notice-bar" role="status">
+    <span class="notice-text">${text}</span>
+    <button class="btn small" onClick=${() => dismissNotice()}>Dismiss</button>
+  </div>`;
+}
+
 function Redirect({ to }: { to: string }) {
   const loc = useLocation();
   useEffect(() => {
@@ -133,6 +153,7 @@ export function App() {
     <div class="main">
       <${Topbar} title=${title} hw=${s.hw} settings=${s.settings} connected=${s.connected}
         update=${s.update} onUpdateClick=${() => guardedRoute(loc, '/system')} />
+      <${Notice} text=${s.notice} />
       <main class="content">
         <${Router}>
           <${Redirect} path="/" to="/dashboard" />

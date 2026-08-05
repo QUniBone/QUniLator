@@ -60,9 +60,6 @@ static std::string state_dir;
 // The update version the operator dismissed. On the board rather than in one
 // browser, so every page agrees about what is being announced.
 static std::string dismissed_version;
-// Whether the board runs the emulated KA11. Read once at startup, before the
-// device set is built, and honoured on the UNIBUS build alone.
-static bool emulated_cpu = false;
 // Whether the board keeps its bus to itself instead of driving a backplane.
 // Independent of the emulated CPU: a board can be the CPU of a real machine
 // full of real cards, or a machine entirely by itself.
@@ -115,8 +112,6 @@ static void load_settings(void) {
 		return;
 	webauth_load(v.get("admin"));
 	weblogging_load(v.get("log_levels"));
-	if (v.get("emulated_cpu").is<bool>())
-		emulated_cpu = v.get("emulated_cpu").get<bool>();
 	if (v.get("internal_bus").is<bool>())
 		internal_bus = v.get("internal_bus").get<bool>();
 	const picojson::value &upd = v.get("update");
@@ -141,7 +136,6 @@ static void save_settings(void) {
 	{
 		std::lock_guard<std::mutex> lock(settings_mutex);
 		root["external_console"] = external_console_json();
-		root["emulated_cpu"] = picojson::value(emulated_cpu);
 		root["internal_bus"] = picojson::value(internal_bus);
 		picojson::object upd;
 		upd["dismissed_version"] = picojson::value(dismissed_version);
@@ -177,11 +171,6 @@ external_console_c websettings_external_console(void) {
 	return ext_console;
 }
 
-bool websettings_emulated_cpu(void) {
-	std::lock_guard<std::mutex> lock(settings_mutex);
-	return emulated_cpu;
-}
-
 bool websettings_internal_bus(void) {
 	std::lock_guard<std::mutex> lock(settings_mutex);
 	return internal_bus;
@@ -212,14 +201,6 @@ std::string websettings_state_dir(void) {
 	return state_dir;
 }
 
-void websettings_set_emulated_cpu(bool on) {
-	{
-		std::lock_guard<std::mutex> lock(settings_mutex);
-		emulated_cpu = on;
-	}
-	save_settings();
-}
-
 static void settings_get(struct mg_connection *conn) {
 	picojson::object o;
 	o["platform"] = picojson::value(platform_name);
@@ -227,14 +208,8 @@ static void settings_get(struct mg_connection *conn) {
 	{
 		std::lock_guard<std::mutex> lock(settings_mutex);
 		o["external_console"] = external_console_json();
-		o["emulated_cpu"] = picojson::value(emulated_cpu);
 		o["internal_bus"] = picojson::value(internal_bus);
 	}
-#if defined(UNIBUS)
-	o["emulated_cpu_available"] = picojson::value(true);
-#else
-	o["emulated_cpu_available"] = picojson::value(false);
-#endif
 	send_json(conn, 200, picojson::value(o));
 }
 
@@ -298,27 +273,6 @@ static void settings_put(struct mg_connection *conn) {
 		if (!reason.empty())
 			warnings.push_back(picojson::value(reason));
 		changed = true;
-	}
-
-	// the emulated CPU — the board is either a peripheral of a real PDP-11 or
-	// the machine itself, and which one it is decides who arbitrates the bus.
-	// That is settled when the device set is built, so the switch takes effect
-	// at the next start of the service.
-	const picojson::value &ecpu = req.get("emulated_cpu");
-	if (ecpu.is<bool>()) {
-#if defined(UNIBUS)
-		if (ecpu.get<bool>() != websettings_emulated_cpu()) {
-			websettings_set_emulated_cpu(ecpu.get<bool>());
-			WEB_INFO("emulated CPU %s", ecpu.get<bool>() ? "on" : "off");
-			changed = true;
-			warnings.push_back(picojson::value(std::string(
-				"emulated CPU setting stored; restart the service to build the "
-				"device set with it")));
-		}
-#else
-		send_error(conn, 422, "no emulated CPU on this bus");
-		return;
-#endif
 	}
 
 	// the bus mode — which peripherals the machine can reach: the cards in a

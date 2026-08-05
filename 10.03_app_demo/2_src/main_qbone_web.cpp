@@ -74,9 +74,6 @@ static void usage(const char *progname)
 	printf("  --addresswidth <n>  " QUNIBUS_NAME " address width: 18\n");
 #endif
 	printf("  --config <name>     saved configuration to apply at startup\n");
-#if defined(UNIBUS)
-	printf("  --emulated-cpu      run the emulated KA11 (PDP-11/20) for this run\n");
-#endif
 	printf("  --loglevel <n>      %d fatal, %d error, %d warning, %d info (default), %d debug\n",
 			LL_FATAL, LL_ERROR, LL_WARNING, LL_INFO, LL_DEBUG);
 	printf("  --help              this text\n");
@@ -93,7 +90,6 @@ int main(int argc, char *argv[])
 #endif
 	unsigned loglevel = LL_INFO;
 	std::string startup_config;
-	bool opt_emulated_cpu = false;
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--port") && i + 1 < argc)
@@ -106,8 +102,6 @@ int main(int argc, char *argv[])
 			loglevel = strtoul(argv[++i], nullptr, 10);
 		else if (!strcmp(argv[i], "--config") && i + 1 < argc)
 			startup_config = argv[++i];
-		else if (!strcmp(argv[i], "--emulated-cpu"))
-			opt_emulated_cpu = true;
 		else if (!strcmp(argv[i], "--help")) {
 			usage(argv[0]);
 			return 0;
@@ -158,46 +152,19 @@ int main(int argc, char *argv[])
 	buslatches.output_enable(0); // DS8641 drivers off until the bus is ours
 	GPIO_SETVAL(gpios->reg_enable, 1); // leave SYSBOOT mode
 
-	// A board is either a peripheral of a physical PDP-11, which arbitrates the
-	// bus, or the machine itself with the emulated KA11 doing that. The device
-	// set is built for one of the two, so the setting is read before it exists;
-	// --emulated-cpu selects the KA11 for a run without changing what is stored.
 	websettings_startup();
-	bool emulated_cpu = websettings_emulated_cpu() || opt_emulated_cpu;
-#if !defined(UNIBUS)
-	if (emulated_cpu) {
-		WEB_WARNING("No emulated CPU on " QUNIBUS_NAME "; running as a peripheral.");
-		emulated_cpu = false;
-	}
-#endif
 
 	// Brings the PRU up with the emulation code and constructs the device set,
 	// which lives for the process lifetime. This starts the hardware; the PRU
 	// must not be started separately.
-	// The bus mode is independent of the CPU: a board can be the CPU of a real
-	// machine full of real cards, or a machine entirely by itself.
+	// A board is a peripheral of whatever machine it was fitted to until a
+	// configuration enables a processor of its own; that is what takes the bus
+	// over, and what claims the memory a machine with no cards of its own
+	// needs. The bus mode is a separate question: it decides which peripherals
+	// the machine can reach, the cards in a real backplane or the board's own.
 	bool internal_bus = websettings_internal_bus();
 	WEB_INFO("%s bus.", internal_bus ? "Internal" : "Physical");
-	app->devices_startup(emulated_cpu, internal_bus);
-
-	// The emulated CPU has no machine around it, so the board supplies the
-	// memory too: everything below the I/O page that no physical card answers.
-	// Claimed here rather than through the MEM card, so a machine that is
-	// nothing but this board comes up with memory whatever configuration is
-	// applied. The card writes the same range, so enabling it takes this over.
-	if (emulated_cpu) {
-		WEB_INFO("Emulated CPU: KA11 (PDP-11/20).");
-		unsigned first_invalid = qunibus->test_sizer();
-		if (first_invalid >= qunibus->iopage_start_addr)
-			WEB_INFO("Physical memory answers up to the I/O page; none emulated.");
-		else if (ddrmem->set_range(DDRMEM_RANGE_MEMORY, first_invalid, qunibus->iopage_start_addr - 2))
-			WEB_INFO("Emulating memory %s..%s.", qunibus->addr2text(first_invalid),
-					qunibus->addr2text(qunibus->iopage_start_addr - 2));
-		else
-			WEB_ERROR("Memory emulation for %s..%s refused.",
-					qunibus->addr2text(first_invalid),
-					qunibus->addr2text(qunibus->iopage_start_addr - 2));
-	}
+	app->devices_startup(internal_bus);
 
 	std::string docroot = resolve_docroot(webroot);
 	webserver_c web_server(port, docroot);
@@ -253,7 +220,7 @@ int main(int argc, char *argv[])
 	handlers.resume = [&]() {
 		{
 			std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
-			app->devices_startup(emulated_cpu, internal_bus);
+			app->devices_startup(internal_bus);
 			webconsole_register(web_server.context());
 			webconsole_ext_register(web_server.context());
 			// Registering starts the bridge's threads; the tty it carries is

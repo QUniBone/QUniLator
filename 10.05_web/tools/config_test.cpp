@@ -41,6 +41,7 @@
 #include "device.hpp"
 #include "parameter.hpp"
 #include "qunibusdevice.hpp"
+#include "unibuscpu.hpp"
 
 #include "device_configuration.hpp"
 #include "device_label.hpp"
@@ -151,6 +152,14 @@ void websettings_save(void) {}
 
 void webevents_note_config(void) {} // the event stream is not part of this test
 
+// The power flag and the standing notice the startup path publishes. The event
+// stream is stubbed, but what was said is kept: a test of the boot asserts that
+// an autostart announced itself.
+static bool g_powered = false;
+static std::string g_notice;
+void webevents_note_powered(bool powered) { g_powered = powered; }
+void webevents_note_notice(const std::string &text) { g_notice = text; }
+
 // the board's DIP switches, which pick the power-on configuration; the test
 // drives the value directly to stand in for the switch hardware
 static int g_dip_value = -1;
@@ -229,6 +238,19 @@ struct test_controller_c : public test_device_c {
 				d->enabled.set(false);
 		return device_c::on_param_changed(param);
 	}
+};
+
+/*** a synthetic emulated processor. An apply that enables one of these is an
+     apply that makes the board the machine - it takes the bus over - so the
+     configuration model warns about it, whether the machine took the card now
+     or is holding it dark. ***/
+struct test_cpu_c : public unibuscpu_c {
+	test_cpu_c(const char *nm, const char *ty) {
+		name.value = nm;
+		type_name.value = ty;
+	}
+	void on_power_changed(signal_edge_enum, signal_edge_enum) override {}
+	void on_init_changed(void) override {}
 };
 
 /*** a card the machine will not take: its install fails the way a card whose
@@ -354,6 +376,15 @@ int main(void) {
 	dl = new test_device_c("dl", "DL11");
 
 	webconfigs_init(configs_dir);
+
+	// The board comes up dark, which is what section 13 tests. Everything
+	// before it is about applying to a machine whose power is on, so switch it
+	// on here the way the panel switch does.
+	{
+		std::string err;
+		check(webpower_devices_are_off(), "the board comes up with the machine dark");
+		check(webpower_devices_on(&err), "power the machine up for the apply tests");
+	}
 
 	/* 1. save captures the enabled devices and only their non-default params */
 	reset_devices();
@@ -1202,6 +1233,128 @@ int main(void) {
 		delete uda0;
 		delete uda1;
 		delete uda;
+	}
+
+	/* 12. a configuration that carries an emulated processor says so. The board
+	      cannot see what is in the backplane it was fitted to, so this is a
+	      word to the operator rather than a refusal: the apply succeeds, and
+	      the warning rides beside the (empty) rejections. */
+	{
+		test_cpu_c *cpu = new test_cpu_c("CPU20", "KA11");
+		std::string err;
+		int status = 0;
+
+		picojson::value with = make_doc({ dev_entry("rl", true, {}),
+				dev_entry("CPU20", true, {}) });
+		check(webconfigs_write("cpucfg", with, false, &err, &status), "write cpucfg");
+		picojson::value without = make_doc({ dev_entry("rl", true, {}),
+				dev_entry("CPU20", false, {}) });
+		check(webconfigs_write("nocpucfg", without, false, &err, &status),
+				"write nocpucfg");
+
+		{
+			std::vector<std::string> rej, warn;
+			check(webconfigs_apply("cpucfg", &rej, &err, &warn),
+					"apply a configuration carrying a processor");
+			check(rej.empty(), "which is not a rejection");
+			check(warn.size() == 1, "and warns exactly once");
+			check(warn.size() == 1 && warn[0].find("CPU20") != std::string::npos,
+					"naming the processor it enabled");
+			check(warn.size() == 1 && warn[0].find("KA11") != std::string::npos,
+					"and its model");
+		}
+		{
+			std::vector<std::string> rej, warn;
+			check(webconfigs_apply("nocpucfg", &rej, &err, &warn),
+					"apply a configuration whose processor is disabled");
+			check(warn.empty(), "which warns about nothing");
+		}
+		// the same configuration loaded into a machine with its power off:
+		// nothing is enabled, so only the document can answer, and it must
+		webpower_devices_off();
+		{
+			std::vector<std::string> rej, warn;
+			check(webconfigs_apply("cpucfg", &rej, &err, &warn),
+					"apply it into a dark machine");
+			check(webpower_devices_are_off(), "which stays dark");
+			check(!cpu->enabled.value, "with the processor not installed");
+			check(warn.size() == 1, "and warns all the same");
+		}
+		check(webpower_devices_on(&err), "power up again");
+		unlink(cfg_path("cpucfg").c_str());
+		unlink(cfg_path("nocpucfg").c_str());
+		reset_devices();
+		delete cpu;
+	}
+
+	/* 13. the boot. A board is fitted to a machine and configured afterwards,
+	      so what it carries at power-on describes a backplane it may no longer
+	      be in - and at boot there is nobody at the interface to be warned.
+	      The configuration is therefore loaded into the dark, and only one
+	      that says so switches itself on, announcing that it did. */
+	{
+		std::string err;
+		int status = 0;
+		picojson::value doc = make_doc({ dev_entry("rl", true, {}),
+				dev_entry("rl0", true, {}) });
+		doc.get<picojson::object>()["dip_value"] = picojson::value((double) 5);
+		check(webconfigs_write("bootcfg", doc, false, &err, &status), "write bootcfg");
+
+		// a plain configuration is loaded and left dark
+		webpower_devices_off();
+		g_powered = false;
+		g_notice.clear();
+		g_dip_value = 5;
+		webconfigs_startup("");
+		check(webconfigs_current() == "bootcfg", "DIP 5 selects bootcfg at startup");
+		check(webpower_devices_are_off(), "which the board loads without powering up");
+		check(!rl->enabled.value && !rl0->enabled.value,
+				"so none of its cards is on the bus");
+		check(webpower_is_in_machine(rl) && webpower_is_in_machine(rl0),
+				"though the machine carries them, for the panel switch");
+		check(!g_powered, "and the interface is told the machine is off");
+		check(g_notice.empty(), "with nothing to announce");
+
+		// the same configuration marked to start itself
+		picojson::value autodoc = make_doc({ dev_entry("rl", true, {}),
+				dev_entry("rl0", true, {}) });
+		autodoc.get<picojson::object>()["dip_value"] = picojson::value((double) 5);
+		autodoc.get<picojson::object>()["autostart"] = picojson::value(true);
+		check(webconfigs_write("bootcfg", autodoc, false, &err, &status),
+				"mark bootcfg to start itself");
+
+		// the list reports the flag, so an operator can see which configuration
+		// on the board is the one that does this
+		picojson::value list;
+		check(picojson::parse(list, webconfigs_list_json()).empty(), "list parses");
+		bool listed = false;
+		for (const picojson::value &c : list.get("configs").get<picojson::array>())
+			if (c.get("name").get<std::string>() == "bootcfg")
+				listed = c.get("autostart").is<bool>() && c.get("autostart").get<bool>();
+		check(listed, "the list reports bootcfg as self-starting");
+
+		webpower_devices_off();
+		g_powered = false;
+		g_notice.clear();
+		webconfigs_startup("");
+		check(!webpower_devices_are_off(), "a self-starting configuration comes up");
+		check(rl->enabled.value && rl0->enabled.value, "with its cards on the bus");
+		check(g_powered, "the interface is told the machine is on");
+		check(g_notice.find("bootcfg") != std::string::npos,
+				"and a notice stands, naming the configuration");
+		check(g_notice.find("rl") != std::string::npos,
+				"and what it put on the bus");
+
+		// a saved configuration keeps the flag across a live save
+		check(webconfigs_save("bootcfg", &err), "save the live machine over bootcfg");
+		picojson::value saved;
+		check(read_json_file(cfg_path("bootcfg"), &saved), "bootcfg re-read");
+		check(saved.get("autostart").is<bool>() && saved.get("autostart").get<bool>(),
+				"a live save keeps the autostart flag");
+
+		unlink(cfg_path("bootcfg").c_str());
+		g_dip_value = -1;
+		reset_devices();
 	}
 
 	// tidy the temp tree

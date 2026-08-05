@@ -864,6 +864,10 @@ button.tree-name:hover .mono { color: var(--accent); }
 .cfg-dip { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-1); }
 .cfg-dip select { font-size: var(--fs-1); }
 .cfg-dip-live { font-size: var(--fs-0); }
+.cfg-autostart {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-left: 18px; font-size: var(--fs-1);
+}
 
 /* the machine is dark: what the editor changes is held for the power-up */
 .cfg-held {
@@ -1246,6 +1250,18 @@ button.tree-name:hover .mono { color: var(--accent); }
 .export-item:hover { background: var(--hover, #f0f0ea); }
 .export-item .muted { font-size: .75rem; }
 label.btn.disabled { opacity: .6; pointer-events: none; }
+
+/* The board's standing notice: something it did on its own, at boot, with
+   nobody watching. It sits between the topbar and the content rather than over
+   them, because it reports what is already done - there is nothing to decide,
+   and no reason to stop the operator reaching the machine it is about. */
+.notice-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 18px; border-bottom: 1px solid var(--line);
+  color: var(--warn); background: var(--warn-soft);
+  font-size: var(--fs-1);
+}
+.notice-text { flex: 1; line-height: 1.4; }
 
 /* The board held for work no page may act during. It sits above every other
    overlay: a modal open when the hold arrives is still a modal onto a machine

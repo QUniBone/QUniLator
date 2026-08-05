@@ -67,7 +67,15 @@ struct carried_device_t {
 // which must not wait on the machine.
 static std::mutex carried_mutex;
 static std::vector<carried_device_t> carried;
-static bool machine_dark = false;
+// The board comes up dark. A configuration loaded into a dark machine is
+// carried, not installed: nothing of it reaches the bus, no register handler
+// is plugged into the I/O page, and no processor takes the bus over. That
+// matters because a board is fitted to a machine first and configured
+// afterwards, so what it holds at power-on describes a machine it may no
+// longer be in - and at boot there is nobody there to be warned. The panel
+// switch, or a configuration marked to start itself, is what puts it on the
+// bus.
+static bool machine_dark = true;
 
 bool webpower_devices_are_off(void) {
 	std::lock_guard<std::mutex> lock(carried_mutex);
@@ -120,6 +128,13 @@ static std::string device_names(const std::vector<carried_device_t> &devs) {
 		s += d.dev->name.value;
 	}
 	return s;
+}
+
+std::string webpower_carried_names(void) {
+	std::lock_guard<std::mutex> lock(carried_mutex);
+	if (!machine_dark || carried.empty())
+		return "";
+	return device_names(carried);
 }
 
 // The devices to cycle, in registry order, sampled under mydevices_mutex so the

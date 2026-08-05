@@ -266,6 +266,8 @@ bool cpuvax_c::on_before_install(void)
         return false;
     }
     the_vax = this;
+    // From here the board is the machine; see unibuscpu_c::bus_owner.
+    bus_owner = true;
 
     halt_switch.value = false;
     start_switch.value = false;
@@ -281,7 +283,7 @@ bool cpuvax_c::on_before_install(void)
     if (bus_iopage.value) {
         mailbox->param = 1;
         mailbox_execute(ARM2PRU_CPU_ENABLE);
-        qunibus->set_arbitrator_active(true);
+        set_bus_arbitration(/*arbitrating*/true);
     }
 
     {
@@ -296,6 +298,9 @@ bool cpuvax_c::on_before_install(void)
 
 void cpuvax_c::on_after_uninstall(void)
 {
+    // The board is a peripheral again, and must ask for the bus. Cleared
+    // before machine_stop(), which is what writes the mode.
+    bus_owner = false;
     machine_stop("processor disabled");
     halt_switch.value = true;
     start_switch.value = false;
@@ -473,7 +478,7 @@ void cpuvax_c::machine_start(void)
     // and see nothing come of it.
     mailbox->param = 1;
     mailbox_execute(ARM2PRU_CPU_ENABLE);
-    qunibus->set_arbitrator_active(true);
+    set_bus_arbitration(/*arbitrating*/true);
     publish_unibus_map();
     // On emulated time the interval clock and every device delay advance with
     // the instructions executed, not with the wall. VMS calibrates its
@@ -505,7 +510,7 @@ void cpuvax_c::machine_stop(const char *why)
     ddrmem->base_virtual->unibus_map_active = 0;
     mailbox->param = 0;
     mailbox_execute(ARM2PRU_CPU_ENABLE);
-    qunibus->set_arbitrator_active(false);
+    set_bus_arbitration(/*arbitrating*/false);
     the_flexi_timeout_controller->set_mode(flexi_timeout_c::world_time);
     simh_shim_set_fixed_ips(0.0);
     publish_status();

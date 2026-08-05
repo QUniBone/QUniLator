@@ -85,11 +85,12 @@ public:
 	m9312_c *m9312;
 	ke11_c *KE11A;
 	deuna_c *DEUNA;
-	// The emulated CPU models, both only set with_emulated_CPU, else NULL.
-	// Both ship disabled: the operator picks a model by enabling it, and the
-	// second one is refused while the first is enabled, since the emulation
-	// cores reach the bus through one installed CPU. emulated_cpu() names
-	// whichever is running.
+	// The emulated processor models. All three always exist and all three ship
+	// disabled: which processor a machine has - if any - is what a
+	// configuration says, and enabling one is what tells the board it is the
+	// machine rather than a peripheral of one. A second is refused while the
+	// first is enabled, since the emulation cores reach the bus through one
+	// installed CPU. emulated_cpu() names whichever is enabled.
 	cpu20_c *CPU20;
 	cpu34_c *CPU34;
 	cpuvax_c *CPUVAX;
@@ -129,7 +130,7 @@ public:
 	// the VAX console, which is part of the processor and not a line on the bus
 	std::stringstream cpuvax_rcv_stream;
 
-	device_configuration_c(bool with_emulated_CPU);
+	device_configuration_c();
 	~device_configuration_c();
 
 #if defined(UNIBUS)

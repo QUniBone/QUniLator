@@ -73,6 +73,11 @@ void webpower_forget(void);
 bool webpower_is_in_machine(device_c *dev);
 std::string webpower_param_value(device_c *dev, parameter_c *p);
 
+// The cards the dark machine carries, named, for a message that has to say
+// what is about to go onto the bus. "" once the machine is on, where the
+// device list itself answers the question.
+std::string webpower_carried_names(void);
+
 // Put a card into the dark machine or take it out; taking a controller out
 // takes the drives that hang off it too. Answers false with the reason in
 // *error, the machine's power being on among them.

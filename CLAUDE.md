@@ -61,9 +61,21 @@ Useful endpoints, all under `http://$BOARD_HOST/api`:
 |---|---|
 | `GET /devices` | every device and its parameters |
 | `PUT /devices/<dev>/params/<param>` | `{"value": "..."}`; `enabled` switches the device |
-| `POST /control` | `{"action": "powercycle"}`, also `init`, `halt`, `continue` |
+| `POST /control` | `{"action": "powercycle"}`, also `init`, `halt`, `continue`, `dc_on`, `dc_off` |
 | `GET /configs`, `POST /configs/<name>/apply` | saved device snapshots |
 | `GET /images`, `POST /images` | disk images |
+| `GET /notice`, `POST /notice/dismiss` | what the board did unattended, until acknowledged |
+
+**A board that has just started serves a machine that is switched off.** The
+service loads the configuration the DIP switches name without putting any of it
+on the bus - no card is installed, no register window answers, no emulated
+processor takes the bus over - because a board is fitted to a machine and
+configured afterwards, and what it carries may describe a backplane it is no
+longer in. `POST /control {"action":"dc_on"}` is what brings the machine up, and
+until it has been given, `GET /devices` shows the cards the machine *carries*
+rather than what is live. A configuration marked `autostart` switches itself on
+at startup instead, and says so afterwards in the journal and in the standing
+notice (`GET /notice`).
 
 **Begin every test run with a power cycle.** `POST /control {"action":"powercycle"}`
 re-jumpers the devices of the running configuration and drops the CPU at a clean

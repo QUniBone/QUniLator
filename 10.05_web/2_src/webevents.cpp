@@ -72,12 +72,16 @@ static std::mutex state_mutex;
 static bool last_halt = false;
 static int cur_leds = 0, cur_switches = 0;
 static bool cur_init = false, cur_dcok = false, cur_pok = false;
-// logical power flag: runtime only, comes up powered on
-static bool cur_powered = true;
+// Logical power flag: runtime only. The board comes up dark - it loads the
+// configuration the switches name without putting any of it on the bus - so
+// this starts false and the panel switch, or an autostart, raises it.
+static bool cur_powered = false;
 // What holds the board, "" when nothing does. Part of the state frame, so a
 // page that connects while the board is held is locked as soon as it arrives
 // rather than only on the next change.
 static std::string cur_held_by;
+// The standing notice, "" when there is none. See webevents.hpp.
+static std::string cur_notice;
 
 // serialized {"t":"state",...} of the current values; caller holds state_mutex
 static std::string state_json(void) {
@@ -97,6 +101,8 @@ static std::string state_json(void) {
 	event["pok"] = picojson::value(cur_pok);
 	event["held_by"] = cur_held_by.empty() ?
 			picojson::value() : picojson::value(cur_held_by);
+	event["notice"] = cur_notice.empty() ?
+			picojson::value() : picojson::value(cur_notice);
 	return picojson::value(event).serialize();
 }
 
@@ -417,6 +423,22 @@ void webevents_note_powered(bool powered) {
 bool webevents_is_powered(void) {
 	std::lock_guard<std::mutex> lock(state_mutex);
 	return cur_powered;
+}
+
+void webevents_note_notice(const std::string &text) {
+	std::lock_guard<std::mutex> lock(state_mutex);
+	if (cur_notice == text)
+		return;
+	cur_notice = text;
+	picojson::object event;
+	event["t"] = picojson::value("state");
+	event["notice"] = text.empty() ? picojson::value() : picojson::value(text);
+	enqueue(event);
+}
+
+std::string webevents_notice(void) {
+	std::lock_guard<std::mutex> lock(state_mutex);
+	return cur_notice;
 }
 
 // Taking the board for work the interfaces must not act during: the checks a

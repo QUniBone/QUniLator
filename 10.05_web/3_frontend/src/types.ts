@@ -106,11 +106,6 @@ export interface Settings {
   platform: string;
   address_width: number;
   external_console: ExternalConsole;
-  // The board is either a peripheral of a real PDP-11 or the machine itself.
-  // Only a UNIBUS build carries the emulated processors, so a QBUS board
-  // reports emulated_cpu_available false and is offered no choice.
-  emulated_cpu?: boolean;
-  emulated_cpu_available?: boolean;
 }
 
 // ---- REST: images / configs ----
@@ -184,6 +179,9 @@ export interface ConfigSummary {
   mtime?: string;
   enabled?: string[];
   dip_value?: number; // the DIP setting that selects it at power-on; -1 for none
+  // whether the board switches this machine on by itself when it loads it,
+  // instead of holding it dark for the panel switch
+  autostart?: boolean;
 }
 export interface ConfigDeviceSnapshot {
   name: string;

@@ -81,8 +81,13 @@ struct config_image_use_t {
 // parameters the devices reject are collected in "rejections" and do not fail
 // the call. The web server must be started first: registering it is what finds
 // the configuration directory and captures the parameter defaults.
+//
+// "warnings" is what the apply did that succeeded but is worth saying out loud
+// - a configuration that puts a processor on the bus, for one. Rejections are
+// the configuration failing to take; warnings are it taking, and the operator
+// needing to know what it took.
 bool webconfigs_apply(const std::string &name, std::vector<std::string> *rejections,
-		std::string *error);
+		std::string *error, std::vector<std::string> *warnings = nullptr);
 
 // every configuration/drive pair that names this image file
 std::vector<config_image_use_t> webconfigs_image_uses(const std::string &image_name);

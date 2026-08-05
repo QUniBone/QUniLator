@@ -422,12 +422,9 @@ int application_c::run(int argc, char *argv[])
                 root = getenv("HOME");
             docroot = std::string(root ? root : ".") + "/10.05_web/3_frontend";
         }
-        // The device set lives for the process lifetime, menus only borrow it,
-        // and whether it carries the emulated CPU devices is settled while it
-        // is built. The stored setting is read here, so a board driven through
-        // the web interface comes up as the machine it is configured to be.
+        // The device set lives for the process lifetime; menus only borrow it.
         websettings_startup();
-        devices_startup(websettings_emulated_cpu(), /*internal_bus*/false);
+        devices_startup(/*internal_bus*/false);
         webserver = new webserver_c(opt_web_port, docroot);
         webserver->start();
     }

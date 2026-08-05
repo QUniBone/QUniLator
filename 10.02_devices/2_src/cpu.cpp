@@ -303,6 +303,33 @@ bool cpu_base_c::on_before_install(void)
     }
     unibone_cpu = this; // the CPU the cores reach, until another one installs
 
+    // From here the board is the machine, and stop() below puts the bus in the
+    // mode that follows from it. The mode is needed before the sizing DMA
+    // below, which on a board that is alone on its bus would otherwise wait
+    // for a grant nobody is there to give.
+    bus_owner = true;
+    set_bus_arbitration(/*arbitrating*/false);
+
+    // An emulated processor has no machine around it, so the board supplies
+    // the memory too: everything below the I/O page that no physical card
+    // answers. A memory card that already claimed the range keeps it - the
+    // operator placed that deliberately, and two claims on one range is what
+    // ddrmem refuses anyway.
+    if (!ddrmem->range_enabled(DDRMEM_RANGE_MEMORY)) {
+        unsigned first_invalid = qunibus->test_sizer();
+        if (first_invalid >= qunibus->iopage_start_addr)
+            INFO("Physical memory answers up to the I/O page; none emulated.");
+        else if (ddrmem->set_range(DDRMEM_RANGE_MEMORY, first_invalid,
+                                   qunibus->iopage_start_addr - 2)) {
+            claimed_memory = true;
+            INFO("Emulating memory %s..%s.", qunibus->addr2text(first_invalid),
+                 qunibus->addr2text(qunibus->iopage_start_addr - 2));
+        } else
+            ERROR("Memory emulation for %s..%s refused.",
+                  qunibus->addr2text(first_invalid),
+                  qunibus->addr2text(qunibus->iopage_start_addr - 2));
+    }
+
     halt_switch.value = false;
 // all other switches parsed synchronically in worker()
     start_switch.value = false;
@@ -317,6 +344,17 @@ void cpu_base_c::on_after_uninstall(void)
 // all other switches parsed synchronically in worker()
     start_switch.value = false;
     halt_switch.value = true;
+    // The memory this processor supplied goes with it: the board is no longer
+    // the machine, and the range belongs to whatever is.
+    if (claimed_memory) {
+        ddrmem->set_range(DDRMEM_RANGE_MEMORY, 1, 0); // start > end: disabled
+        claimed_memory = false;
+    }
+
+    // The board is a peripheral again, of a machine that may well be running,
+    // so it goes back to asking for the bus. Cleared before stop(), which is
+    // what writes the mode.
+    bus_owner = false;
     // HALT disabled CPU
     stop(NULL, show_none);
 
@@ -352,7 +390,7 @@ void cpu_base_c::start()
     runmode.value = true;
     mailbox->param = 1;
     mailbox_execute(ARM2PRU_CPU_ENABLE);
-    qunibus->set_arbitrator_active(true);
+    set_bus_arbitration(/*arbitrating*/true);
     pc.readonly = true; // can only be set on stopped CPU
     core_set_state(cpu_state_running);
     // time base of all device emulators now based on CPU opcode execution
@@ -380,7 +418,7 @@ void cpu_base_c::stop(const char * info, int show_options)
     runmode.value = false;
     mailbox->param = 0;
     mailbox_execute(ARM2PRU_CPU_ENABLE);
-    qunibus->set_arbitrator_active(false);
+    set_bus_arbitration(/*arbitrating*/false);
 
     if (info && strlen(info)) {
         // "info" is caller text: always an argument, never a format string

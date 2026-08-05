@@ -1,6 +1,6 @@
 // Typed REST layer for /api. Every mutation toasts its outcome and refreshes
 // the store the views read.
-import { setStore, emit } from './store';
+import { setStore, emit, store } from './store';
 import { toast } from './lib/toast';
 import { subURL } from './lib/util';
 import { liveModel, replayEventValues } from './lib/devmodel';
@@ -422,14 +422,18 @@ export async function saveConfigDoc(name: string, doc: ConfigSnapshot): Promise<
 
 // Apply / Revert: restore <name> onto the machine and make it current.
 export async function applyConfig(name: string): Promise<boolean> {
-  const res = await apiJSON<{ ok?: boolean; errors?: string[] }>(
+  const res = await apiJSON<{ ok?: boolean; errors?: string[]; warnings?: string[] }>(
     '/api/configs/' + encodeURIComponent(name) + '/apply',
     { method: 'POST' }
   );
+  // A warning is the apply taking effect and saying what it did - a processor
+  // put on the bus, say - so it is reported over the plain success message,
+  // and a rejection over that again.
+  const warns = (res.data.warnings || []).join('; ');
   toast(
     'POST /api/configs/' + name + '/apply',
     res.ok && res.data.ok
-      ? 'configuration applied'
+      ? warns || 'configuration applied'
       : 'applied with rejections: ' + ((res.data.errors || []).join('; ') || 'request failed')
   );
   await refreshDevices().catch(() => {});
@@ -498,6 +502,39 @@ export async function setConfigDip(name: string, dip: number | null): Promise<bo
   );
   await loadConfigs().catch(() => {});
   return res.ok;
+}
+
+// Whether the board switches this machine on by itself when it loads it at
+// power-on. A standing instruction, so the board announces loudly when it acts
+// on one; see the notice banner.
+export async function setConfigAutostart(name: string, on: boolean): Promise<boolean> {
+  const res = await apiJSON<{ error?: string }>(
+    '/api/configs/' + encodeURIComponent(name) + '/autostart',
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: on }),
+    }
+  );
+  toast(
+    'PUT /api/configs/' + name + '/autostart',
+    res.ok
+      ? on
+        ? 'this machine will start itself at power-on'
+        : 'this machine will be loaded but left switched off'
+      : res.data.error || 'rejected'
+  );
+  await loadConfigs().catch(() => {});
+  return res.ok;
+}
+
+// Clear the board's standing notice. The dismissal is the acknowledgement that
+// somebody read it, which is why it is a request to the board and not a local
+// flag in one browser.
+export async function dismissNotice(): Promise<void> {
+  const res = await apiJSON<{ error?: string }>('/api/notice/dismiss', { method: 'POST' });
+  if (!res.ok) toast('POST /api/notice/dismiss', res.data.error || 'rejected');
+  else store.notice = '';
 }
 
 export async function deleteConfig(name: string): Promise<boolean> {

@@ -436,8 +436,10 @@ Edits made dark move `modified` the way edits to a running machine do, and a
 save writes the machine as it stands. Power-down itself changes neither.
 
 `dc_on`/`dc_off` drive a **runtime logical power flag**, `powered`, reported in
-the `state` event. It is runtime only — a service restart comes up powered on —
-and does not touch the PRU or bus. While `powered` is false the machine is
+the `state` event. It is runtime only and does not touch the PRU or bus. A
+service restart comes up with the machine **dark**: the board loads its
+configuration without putting any of it on the bus (see
+[Configurations](#configurations)). While `powered` is false the machine is
 frozen and dark: `restart`, `halt`, and `continue` are refused with `409`, and
 `dc_on` is the only transition back up.
 
@@ -703,12 +705,27 @@ configuration binds itself to a value with
 [`PUT /api/configs/<name>/dip`](#put-apiconfigsnamedip); at most one may claim a
 given value.
 
+Whichever configuration is selected, the board comes up **dark**: the machine is
+loaded — the cards it names and the media they hold are what it carries — and
+none of it is on the bus. Nothing is installed, no register window answers, and
+no emulated processor takes the bus over. A board is fitted to a machine and
+configured afterwards, so what it carries at power-on describes a backplane it
+may no longer be in, and at boot there is nobody at the interface to be warned.
+`dc_on` (see [`POST /api/control`](#post-apicontrol)) is what brings it up.
+
+A configuration marked with
+[`PUT /api/configs/<name>/autostart`](#put-apiconfigsnameautostart) switches
+itself on instead. That is a standing instruction and cannot be made safe — the
+board still cannot see the backplane — so it is made loud: the boot logs a
+warning naming the cards it put on the bus, and raises the standing
+[notice](#get-apinotice), which holds until somebody dismisses it.
+
 ### `GET /api/configs`
 
 ```json
 {"current": "rt11", "modified": false,
  "configs": [{"name": "rt11", "title": "RT-11 bench", "mtime": "2026-07-16 20:52",
-              "enabled": ["RL11", "rl0"], "dip_value": 3}]}
+              "enabled": ["RL11", "rl0"], "dip_value": 3, "autostart": false}]}
 ```
 
 Each entry's `title` is the operator label; it falls back to the `name` when the
@@ -808,8 +825,14 @@ current name: it re-initialises the live machine to the saved device set,
 dropping any device enabled since the last save.
 
 ```json
-{"ok": true, "errors": []}
+{"ok": true, "errors": [], "warnings": []}
 ```
+
+`errors` is the configuration failing to take: a parameter a device refused, a
+device that does not exist. `warnings` is the opposite — the configuration
+taking, and doing something the operator is owed a word about, such as putting
+an emulated processor on a bus the board does not know it owns. `ok` reflects
+`errors` alone, so a call can succeed and still carry warnings.
 
 Applied to a machine whose power is off, the snapshot becomes what that machine
 carries and the emulation is left dark (see
@@ -853,6 +876,25 @@ holds is refused with `409`; a value outside `1`..`15` with `422`. Setting 0
 brings back the machine that was last running and cannot be claimed. Answers
 `{"ok": true, "dip_value": <value or -1>}`; `404` for an unknown configuration.
 
+### `PUT /api/configs/<name>/autostart`
+
+```json
+{"value": true}
+```
+
+Whether the board switches this machine on by itself when it loads it at
+power-on, instead of leaving it dark for `dc_on`. Absent or `false` is the
+default, so every configuration written before this existed comes up dark. It is
+file metadata: neither the current pointer nor the running machine is touched.
+Answers `{"ok": true, "autostart": <bool>}`; `404` for an unknown configuration,
+`400` for a value that is not a boolean.
+
+The flag is a standing instruction, and no standing instruction can be safe: a
+configuration that was right on one backplane may name cards — or a processor —
+that the next one already has, and the board cannot read the backplane it was
+fitted to. What the flag buys instead is that the board says what it did. It
+does not travel: an import drops it, and says so in `autostart_note`.
+
 ### `PUT /api/configs/<name>/layout`
 
 ```json
@@ -886,6 +928,31 @@ configuration — switch the current away first.
 Sets the medium a drive in the stored configuration starts with, without
 disturbing the running machine. An empty value detaches. Refused with `409`
 when another drive in the same configuration already names the file.
+
+## The standing notice
+
+One thing the board did on its own that no request of the operator's would show
+them. Today that is a configuration marked
+[`autostart`](#put-apiconfigsnameautostart) coming up running at boot: cards, and
+possibly an emulated processor, went onto a bus with nobody watching. It travels
+in the `state` frame as `notice`, so it reaches a page that connects long
+afterwards, and it stands until it is dismissed.
+
+The dismissal is the point: it is the acknowledgement that a person read the
+warning, and the only record of that. It is therefore a request to the board
+rather than a flag in one browser.
+
+### `GET /api/notice`
+
+```json
+{"notice": "autostarted \"rt11\" unattended: RL11 rl0 DL11"}
+```
+
+`null` when there is none.
+
+### `POST /api/notice/dismiss`
+
+Clears it, and answers the same body (with `notice` now `null`).
 
 ## Logging
 
@@ -1059,7 +1126,7 @@ Text frames, one JSON event each, pushed to every connected client:
 | `{"t":"param","dev":…,"param":…,"value":…}` | committed parameter change (includes enable/disable, image attach, panel lamps) |
 | `{"t":"status","dev":…,"status":…}` | a disk drive's verbal state — the same word [`GET /api/devices`](#get-apidevices) reports as `status`, published on change (10 Hz poll) so a state the machine reaches by itself (a pack spinning down, a transfer starting) reaches the client without a refetch |
 | `{"t":"log","id":n,"time":…,"level":n,"label":…,"text":…}` | log message; levels 1 FATAL … 5 DEBUG. `id` and `time` (server clock) match the journal ([`GET /api/log`](#get-apilogbeforeidlimitn)), so a client merges live lines with a fetched page by `id` |
-| `{"t":"state","halt":…,"powered":…,"leds":[…],"switches":[…],"init":…,"dcok":…,"pok":…,"held_by":…}` | activity LEDs, DIP switches, HALT, the logical power flag, bus INIT/DCOK/POK, and what holds the board — published on change (10 Hz poll); a full snapshot opens every connection. `powered` is the runtime power flag driven by `dc_on`/`dc_off`; the dashboard derives RUN from `!halt && powered` and PWR OK from `powered`. Transitions may arrive as partial `state` frames (e.g. `{"t":"state","powered":false}`), which the client merges onto the last snapshot. `held_by` is described below |
+| `{"t":"state","halt":…,"powered":…,"leds":[…],"switches":[…],"init":…,"dcok":…,"pok":…,"held_by":…,"notice":…}` | activity LEDs, DIP switches, HALT, the logical power flag, bus INIT/DCOK/POK, and what holds the board — published on change (10 Hz poll); a full snapshot opens every connection. `powered` is the runtime power flag driven by `dc_on`/`dc_off`; the dashboard derives RUN from `!halt && powered` and PWR OK from `powered`. Transitions may arrive as partial `state` frames (e.g. `{"t":"state","powered":false}`), which the client merges onto the last snapshot. `held_by` is described below. `notice` is the standing notice (see [the standing notice](#the-standing-notice)), a string or `null` |
 | `{"t":"config","current":…,"modified":…}` | current configuration and the live modified flag — published on apply, save, rename, and whenever the modified flag flips (10 Hz poll); a snapshot opens every connection |
 | `{"t":"update", …}` | the update status, the same object [`GET /api/update`](#get-apiupdate) answers. Published whenever the updater's status file changes (the service stats it once a second), and as a snapshot on every new connection — so a second tab, and a tab opened during an install, both know what is going on |
 

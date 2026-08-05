@@ -88,7 +88,7 @@ public:
 	// as the devices menu does on entry; used at startup in web mode
 	// internal_bus: load the firmware that keeps the bus inside the PRU, for a
 	// board that is a machine by itself rather than a card in a backplane
-	void devices_startup(bool with_emulated_CPU, bool internal_bus);
+	void devices_startup(bool internal_bus);
 	void devices_shutdown(void);
 
 	// QUniBone should emulate this address range
@@ -115,7 +115,7 @@ public:
 	void menu_ddrmem_slave_only(const char *menu_code);
 	void menu_masterslave(const char *menu_code, bool with_CPU);
 	void menu_interrupts(const char *menu_code);
-	void menu_devices(const char *menu_code, bool with_CPU);
+	void menu_devices(const char *menu_code);
 	void menu_device_exercisers(const char *menu_code);
 
 	void menu_main(void);
