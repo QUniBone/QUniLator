@@ -210,6 +210,7 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/inputline.o	\
 	$(OBJDIR)/kbhit.o	\
 	$(OBJDIR)/bitcalc.o	\
+	$(OBJDIR)/pdp11disas.o	\
 	$(OBJDIR)/pru.o \
 	$(OBJDIR)/pru_backend.o \
 	$(OBJDIR)/pru_backend_prussdrv.o \
@@ -578,6 +579,9 @@ $(OBJDIR)/kbhit.o :  $(COMMON_SRC_DIR)/kbhit.c $(COMMON_SRC_DIR)/kbhit.h
 	$(CC) $(CCFLAGS) -xc++ $< -o $@
 
 $(OBJDIR)/bitcalc.o :  $(COMMON_SRC_DIR)/bitcalc.cpp $(COMMON_SRC_DIR)/bitcalc.h
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/pdp11disas.o :  $(COMMON_SRC_DIR)/pdp11disas.cpp $(COMMON_SRC_DIR)/pdp11disas.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/bytebuffer.o :  $(BASE_SRC_DIR)/bytebuffer.cpp $(BASE_SRC_DIR)/bytebuffer.hpp
