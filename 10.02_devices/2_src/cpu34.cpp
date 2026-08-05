@@ -137,3 +137,34 @@ void cpu34_c::core_publish_status(void)
     mmr2.value = kd11ea->mmu.mmr2;
     mmu_enabled.value = (kd11ea->mmu.enabled != 0);
 }
+
+// The whole KD11-EA for a reader outside it, including the two things a status
+// parameter cannot show: the general registers, and the stack pointer of the
+// mode the CPU is not in.
+//
+// The core keeps only the inactive stack pointer in stackpointer[] - R6 is
+// whichever one the current mode uses - so both are reassembled here from the
+// mode in PSW<15:14>. The core files every non-kernel mode under the user
+// stack pointer, which is what an 11/34 does: the KT11-D has kernel and user
+// and no supervisor mode between them.
+void cpu34_c::core_get_snapshot(state_snapshot_c *snap)
+{
+    for (unsigned i = 0; i < 8; i++)
+        snap->r[i] = kd11ea->r[i];
+    snap->psw = kd11ea->psw;
+    snap->ir = kd11ea->ir;
+    snap->bus_addr = kd11ea->ba;
+    snap->bus_data = kd11ea->bdata;
+    snap->cycle_count = cycle_count.value;
+    snap->state = (enum cpu_state_e) kd11ea->state;
+    snap->has_modes = true;
+    snap->has_stackpointers = true;
+    bool kernel = ((kd11ea->psw >> 14) & 3) == KT11D_MODE_KERNEL;
+    snap->sp_kernel = kernel ? kd11ea->r[6] : kd11ea->stackpointer[KD11EA_SP_KERNEL];
+    snap->sp_user = kernel ? kd11ea->stackpointer[KD11EA_SP_USER] : kd11ea->r[6];
+    snap->has_mmu = true;
+    snap->mmu_enabled = (kd11ea->mmu.enabled != 0);
+    snap->mmr0 = kd11ea->mmu.mmr0;
+    snap->mmr1 = kd11ea->mmu.mmr1;
+    snap->mmr2 = kd11ea->mmu.mmr2;
+}

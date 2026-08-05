@@ -284,3 +284,57 @@ export interface BusState {
 // What carries the machine's console: the ttyS2 bridge to a physical console
 // SLU, a Web Serial port in the browser, or the emulated DL11 at 777560.
 export type ConsoleSource = 'ttys2' | 'webserial' | 'dl11' | 'vax';
+
+// ---- the debug panel ----
+
+// Where a processor's state was read from: a core of the board's own, the bus,
+// or nowhere. See 10.05_web/docs/api.md on GET /api/debug/cpu.
+export type DebugSource = 'emulated' | 'bus' | 'none';
+
+export interface DebugRegister {
+  name: string;
+  value: number;
+}
+
+// One address the bus probe tried. `value` is null when the cycle timed out,
+// and `name` is there only for the points whose meaning is the same on every
+// model that answers them.
+export interface DebugProbePoint {
+  address: number;
+  name?: string;
+  value: number | null;
+}
+
+export interface DebugPsw {
+  value: number;
+  priority: number;
+  t: boolean;
+  n: boolean;
+  z: boolean;
+  v: boolean;
+  c: boolean;
+  has_modes: boolean;
+  mode?: string;
+  previous_mode?: string;
+}
+
+export interface DebugCpu {
+  source: DebugSource;
+  available: boolean;
+  reason?: string;
+  device?: string;
+  model?: string;
+  run_state?: 'halted' | 'running' | 'waiting';
+  registers?: DebugRegister[];
+  stackpointers?: DebugRegister[];
+  psw?: DebugPsw;
+  ir?: number;
+  bus_addr?: number;
+  bus_data?: number;
+  cycle_count?: number;
+  mmu?: { enabled: boolean; mmr0: number; mmr1: number; mmr2: number };
+  probe?: DebugProbePoint[];
+  powered: boolean;
+  halted: boolean;
+  addr_width: number;
+}

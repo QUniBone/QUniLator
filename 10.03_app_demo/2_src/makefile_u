@@ -292,6 +292,7 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/device_label.o	\
 	$(OBJDIR)/device_status.o	\
 	$(OBJDIR)/webcontrol.o	\
+	$(OBJDIR)/webdebug.o	\
 	$(OBJDIR)/webpower.o	\
 	$(OBJDIR)/webevents.o	\
 	$(OBJDIR)/boardclaim.o	\
@@ -691,6 +692,9 @@ $(OBJDIR)/device_status.o :  $(WEB_SRC_DIR)/device_status.cpp $(WEB_SRC_DIR)/dev
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webcontrol.o :  $(WEB_SRC_DIR)/webcontrol.cpp $(WEB_SRC_DIR)/webcontrol.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/webdebug.o :  $(WEB_SRC_DIR)/webdebug.cpp $(WEB_SRC_DIR)/webdebug.hpp $(WEB_SRC_DIR)/webbus.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webpower.o :  $(WEB_SRC_DIR)/webpower.cpp $(WEB_SRC_DIR)/webpower.hpp

@@ -132,3 +132,25 @@ void cpu20_c::core_publish_status(void)
     bus_addr.value = ka11->ba;
     bus_data.value = ka11->bdata;
 }
+
+// The whole KA11 for a reader outside it. An 11/20 is the plain case: eight
+// registers, one stack pointer in R6, and a status byte. It has no modes, no
+// second stack pointer and no memory management, so the flags that would
+// describe those stay clear and the fields behind them are left at zero.
+void cpu20_c::core_get_snapshot(state_snapshot_c *snap)
+{
+    for (unsigned i = 0; i < 8; i++)
+        snap->r[i] = ka11->r[i];
+    snap->psw = ka11->psw;
+    snap->ir = ka11->ir;
+    snap->bus_addr = ka11->ba;
+    snap->bus_data = ka11->bdata;
+    snap->cycle_count = cycle_count.value;
+    snap->state = (enum cpu_state_e) ka11->state;
+    snap->has_modes = false;
+    snap->has_stackpointers = false;
+    snap->sp_kernel = snap->sp_user = 0;
+    snap->has_mmu = false;
+    snap->mmu_enabled = false;
+    snap->mmr0 = snap->mmr1 = snap->mmr2 = 0;
+}

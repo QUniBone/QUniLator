@@ -15,6 +15,7 @@ import type {
   LogLine,
   LogLevelName,
   PackageRom,
+  DebugCpu,
 } from './types';
 
 export interface ApiResult<T = Record<string, unknown>> {
@@ -29,6 +30,32 @@ export async function apiJSON<T = Record<string, unknown>>(
   const r = await fetch(url, opts);
   const data = (await r.json().catch(() => ({}))) as T;
   return { ok: r.ok, data };
+}
+
+// What the processor holds, for the debug panel. `probe` asks the board to try
+// the bus again on a machine where nothing answered last time — the negative is
+// remembered so a polling page does not put a dozen cycles that are expected to
+// time out on a running machine's bus every second.
+export async function fetchDebugCpu(probe = false): Promise<DebugCpu | null> {
+  const r = await apiJSON<DebugCpu>('/api/debug/cpu' + (probe ? '?probe=1' : ''));
+  return r.ok ? r.data : null;
+}
+
+// A run of words out of the machine's memory, read by DMA. Both the address and
+// the count go over in octal, which is what the endpoint parses.
+//
+// A range that does not answer comes back as an error rather than a throw: for
+// a reader walking the address space a bus timeout is an ordinary outcome and
+// belongs on the pane, not in a toast.
+export async function fetchMemory(
+  address: number,
+  count: number
+): Promise<{ ok: boolean; words: number[]; error: string }> {
+  const r = await apiJSON<{ words?: number[]; error?: string }>(
+    '/api/memory?address=' + address.toString(8) + '&count=' + count.toString(8)
+  );
+  if (!r.ok) return { ok: false, words: [], error: r.data?.error || 'the board refused the read' };
+  return { ok: true, words: r.data?.words || [], error: '' };
 }
 
 export function apiSetParam(dev: string, param: string, value: string) {

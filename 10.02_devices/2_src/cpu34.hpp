@@ -80,6 +80,7 @@ public:
     void core_set_pc(uint16_t value) override;
     void core_set_switches(uint16_t value) override;
     void core_publish_status(void) override;
+    void core_get_snapshot(state_snapshot_c *snap) override;
     // no core_apply_options(): the 11/34 has no CPU feature parameters.
     // EIS and MFPS/MTPS are always executed, SWAB always clears the V bit.
 };

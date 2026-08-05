@@ -50,6 +50,8 @@
 #include "device_status.hpp"
 #include "webcontrol.hpp"
 #include "webpower.hpp"
+#include "webbus.hpp"
+#include "webdebug.hpp"
 
 #include "weblog.hpp"
 #include "webevents.hpp"
@@ -979,10 +981,10 @@ static bool parse_octal(const std::string &s, unsigned *out) {
 // worker thread after DMA() returns. A stale PRU completion (the interrupt
 // traffic of an enabled device makes these routine) can run that copy after the
 // request is thought done, so the buffer must outlive any single request. One
-// persistent, address-space-sized buffer, guarded by its own lock so only one
-// bus-master transfer is in flight, is what the demo menu uses and what keeps
-// the copy landing in valid memory.
-static std::mutex memory_mutex;
+// persistent, address-space-sized buffer, guarded by web_bus_mutex() so only
+// one bus-master transfer is in flight, is what the demo menu uses and what
+// keeps the copy landing in valid memory. That lock is shared with every other
+// handler that reaches the bus, /api/debug/cpu among them - see webbus.hpp.
 static std::vector<uint16_t> &memory_buffer() {
 	static std::vector<uint16_t> buf(QUNIBUS_MAX_WORDCOUNT, 0);
 	return buf;
@@ -1063,7 +1065,7 @@ static void memory_probe(struct mg_connection *conn) {
 	uint32_t first_invalid;
 	{
 		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
-		std::lock_guard<std::mutex> mlock(memory_mutex);
+		std::lock_guard<std::mutex> mlock(web_bus_mutex());
 		first_invalid = qunibus->test_sizer();
 
 		// The board answers its own ranges, and a sweep cannot tell those from
@@ -1136,7 +1138,7 @@ static void memory_fill(struct mg_connection *conn, const picojson::value &req) 
 		return;
 	}
 	{
-		std::lock_guard<std::mutex> mlock(memory_mutex);
+		std::lock_guard<std::mutex> mlock(web_bus_mutex());
 		ddrmem->fill_range(address, address + (uint32_t) bytes - 2, value);
 	}
 	WEB_INFO("memory: filled %u words at %06o with %06o", (unsigned) count, address, value);
@@ -1276,9 +1278,22 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		}
 		bool timeout = false;
 		std::vector<uint16_t> &mem = memory_buffer();
-		std::lock_guard<std::mutex> mlock(memory_mutex);
-		qunibus->mem_read(mem.data(), address, address + 2 * (count - 1), &timeout);
+		std::lock_guard<std::mutex> mlock(web_bus_mutex());
+		timeout_c waited;
+		waited.start_ns(0);
+		qunibus->mem_read(mem.data(), address, address + 2 * (count - 1), &timeout,
+				web_bus_timeout_ms);
 		if (timeout) {
+			// A transfer that got its cycle and found nothing is a bus timeout,
+			// microseconds long. One that ran out the whole wait never got the
+			// cycle at all - the machine is off, or nothing on the backplane is
+			// arbitrating - which is a different thing to tell the operator.
+			if (waited.elapsed_ms() >= web_bus_timeout_ms) {
+				send_error(conn, 504, "the board asked for the bus and was not granted it: "
+						"nothing on this backplane is arbitrating. A machine that is "
+						"switched off grants nothing.");
+				return 504;
+			}
 			send_error(conn, 502, "bus timeout reading memory");
 			return 502;
 		}
@@ -1327,9 +1342,10 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	}
 
 	bool timeout = false;
+	timeout_c waited;
 	{
 		std::vector<uint16_t> &mem = memory_buffer();
-		std::lock_guard<std::mutex> mlock(memory_mutex);
+		std::lock_guard<std::mutex> mlock(web_bus_mutex());
 		for (unsigned i = 0; i < n; i++) {
 			if (!warr[i].is<double>()) {
 				send_error(conn, 400, "each word must be a number");
@@ -1337,9 +1353,18 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 			}
 			mem[address / 2 + i] = (uint16_t) warr[i].get<double>();
 		}
-		qunibus->mem_write(mem.data(), address, address + 2 * (n - 1), &timeout);
+		waited.start_ns(0);
+		qunibus->mem_write(mem.data(), address, address + 2 * (n - 1), &timeout,
+				web_bus_timeout_ms);
 	}
 	if (timeout) {
+		// as on the read: a wait run out to the end is a bus never granted
+		if (waited.elapsed_ms() >= web_bus_timeout_ms) {
+			send_error(conn, 504, "the board asked for the bus and was not granted it: "
+					"nothing on this backplane is arbitrating. A machine that is "
+					"switched off grants nothing.");
+			return 504;
+		}
 		send_error(conn, 502, "bus timeout writing memory");
 		return 502;
 	}
@@ -1416,6 +1441,8 @@ void webapi_register(struct mg_context *ctx) {
 	mg_set_request_handler(ctx, "/api/devices", api_devices_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/control", api_control_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/memory", api_memory_handler, nullptr);
+	// what the processor holds, for the debug panel
+	webdebug_register(ctx);
 	mg_set_request_handler(ctx, "/api/log", api_log_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/notice", api_notice_handler, nullptr);
 	webstorage_register(ctx);

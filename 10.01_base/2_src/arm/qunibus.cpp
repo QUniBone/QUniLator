@@ -492,7 +492,7 @@ bool qunibus_c::get_arbitrator_active(void)
 // 1 = all transfered
 // A limit for time used by DMA can be compiled-in
 bool qunibus_c::dma(bool blocking, uint8_t qunibus_cycle, uint32_t startaddr, uint16_t *buffer,
-                    unsigned wordcount, bool share_bus)
+                    unsigned wordcount, bool share_bus, unsigned timeout_ms)
 {
     int dma_bandwidth_percent = 50; // use 50% of time for DMA, rest for running PDP-11 CPU
     uint64_t dmatime_ns, totaltime_ns;
@@ -500,7 +500,8 @@ bool qunibus_c::dma(bool blocking, uint8_t qunibus_cycle, uint32_t startaddr, ui
     assert(pru->emulating());
 
     timeout.start_ns(0); // no timeout, just running timer
-    qunibusadapter->DMA(*dma_request, blocking, qunibus_cycle, startaddr, buffer, wordcount);
+    qunibusadapter->DMA(*dma_request, blocking, qunibus_cycle, startaddr, buffer, wordcount,
+                        timeout_ms);
 
     dmatime_ns = timeout.elapsed_ns();
     // Wait before the next transaction, to leave the running PDP-11 the rest of
@@ -595,6 +596,22 @@ uint32_t qunibus_c::probe_range(uint32_t startaddr, uint32_t endaddr, uint32_t s
     return answered;
 }
 
+/* probe_word(): DATI one address that is allowed not to answer.
+ *
+ * probe_range() asks whether anything is there; this asks what it says. The
+ * caller wants both outcomes - a processor that puts its registers on the bus
+ * and one that does not look alike until the cycle is made - so a timeout is
+ * reported rather than logged, and the adapter is told to expect it so it does
+ * not count as a bus error of the running machine.
+ */
+bool qunibus_c::probe_word(uint32_t addr, uint16_t *w, bool share_bus, unsigned timeout_ms)
+{
+    dma_request->timeout_expected = true;
+    bool answered = dma(true, QUNIBUS_CYCLE_DATI, addr, w, 1, share_bus, timeout_ms);
+    dma_request->timeout_expected = false;
+    return answered;
+}
+
 /*
  * Test memory from 0 .. end_addr
  * mode = 1: fill every word with its address, then check endlessly,
@@ -605,12 +622,13 @@ uint32_t qunibus_c::probe_range(uint32_t startaddr, uint32_t endaddr, uint32_t s
 //
 // DMA blocksize can be choosen arbitrarily
 void qunibus_c::mem_write(uint16_t *words, unsigned unibus_start_addr, unsigned unibus_end_addr,
-                          bool *result_timeout)
+                          bool *result_timeout, unsigned timeout_ms)
 {
     unsigned wordcount = (unibus_end_addr - unibus_start_addr) / 2 + 1;
     uint16_t *buffer_start_addr = words + unibus_start_addr / 2;
     assert(pru->emulating());
-    *result_timeout = !dma(true, QUNIBUS_CYCLE_DATO, unibus_start_addr, buffer_start_addr, wordcount);
+    *result_timeout = !dma(true, QUNIBUS_CYCLE_DATO, unibus_start_addr, buffer_start_addr, wordcount,
+                           /*share_bus*/true, timeout_ms);
     if (*result_timeout) {
         printf("\nWrite result_timeout @ %s\n", qunibus->addr2text(mailbox->dma.cur_addr));
         return;
@@ -622,13 +640,14 @@ void qunibus_c::mem_write(uint16_t *words, unsigned unibus_start_addr, unsigned 
 // DMA blocksize can be choosen arbitrarily
 // arbitration_active: if 1, perform NPR/NPG/SACK resp. DMR/DMG/SACK arbitration before mem accesses
 void qunibus_c::mem_read(uint16_t *words, uint32_t unibus_start_addr, uint32_t unibus_end_addr,
-                         bool *result_timeout)
+                         bool *result_timeout, unsigned timeout_ms)
 {
     unsigned wordcount = (unibus_end_addr - unibus_start_addr) / 2 + 1;
     uint16_t *buffer_start_addr = words + unibus_start_addr / 2;
     assert(pru->emulating());
 
-    *result_timeout = !dma(true, QUNIBUS_CYCLE_DATI, unibus_start_addr, buffer_start_addr, wordcount);
+    *result_timeout = !dma(true, QUNIBUS_CYCLE_DATI, unibus_start_addr, buffer_start_addr, wordcount,
+                           /*share_bus*/true, timeout_ms);
     if (*result_timeout) {
         printf("\nRead result_timeout @ %s\n", qunibus->addr2text(mailbox->dma.cur_addr));
         return;

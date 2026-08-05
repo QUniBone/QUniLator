@@ -10,6 +10,7 @@ import { StoragePage } from './Storage';
 import { ConfigsPage } from './Configs';
 import { MachinePage } from './Machine';
 import { LogPage } from './Log';
+import { DebugPage } from './Debug';
 import { SystemPage } from './System';
 import { updateAvailable, updateRunning } from '../lib/update';
 import { dismissNotice } from '../api';
@@ -21,6 +22,7 @@ const NAV: [string, string][] = [
   ['/storage', 'Storage'],
   ['/config', 'Configurations'],
   ['/machine', 'Machine'],
+  ['/debug', 'Debug'],
   ['/diagnostics', 'Diagnostics'],
   ['/system', 'System'],
 ];
@@ -161,6 +163,7 @@ export function App() {
           <${StoragePage} path="/storage/:path*" />
           <${ConfigsPage} path="/config/:name?/:device?" />
           <${MachinePage} path="/machine" />
+          <${DebugPage} path="/debug" />
           <${LogPage} path="/diagnostics" />
           <${SystemPage} path="/system" />
           <${Redirect} default to="/dashboard" />

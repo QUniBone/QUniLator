@@ -450,7 +450,7 @@ card or an emulated range - by DMA, without the CPU. Word values and addresses
 are octal, as on the console. Loading a program this way and starting it from
 the console is far faster and more reliable than depositing it by hand.
 
-### `GET /api/memory?address=<octal>&count=<n>`
+### `GET /api/memory?address=<octal>&count=<octal>`
 
 Reads `count` words (default 1, max 4096) from `address`.
 
@@ -459,6 +459,8 @@ Reads `count` words (default 1, max 4096) from `address`.
 ```
 
 `address` is echoed as a number; the word values are decimal in the JSON.
+**Both query values are parsed as octal**, `count` included — a count carrying
+an 8 or a 9 is not a number here, and reads one word rather than failing.
 
 ### `POST /api/memory`
 
@@ -548,6 +550,78 @@ be even. `value` defaults to 0. The whole run must lie inside one range the
 board serves out of its own memory, else `409`; the words are written into that
 memory directly rather than over the bus. Answers
 `{"ok": true, "address": …, "count": …}`.
+
+## Debugging the machine
+
+### `GET /api/debug/cpu`
+
+What the processor holds. One document whichever kind of processor runs the
+machine; `source` says where the answer came from.
+
+| `source` | where it came from |
+|---|---|
+| `emulated` | a core of the board's own (CPU20, CPU34), read where its registers lie: no bus cycle, nothing disturbed, and cheap enough to poll |
+| `bus` | a processor that lays state out in the I/O page, read by DATI — a cycle per location |
+| `none` | neither; `reason` says why |
+
+An emulated processor answers whether or not the machine is switched on: a dark
+board still carries the cards its configuration names, and the registers it
+would start from are real.
+
+```json
+{"source": "emulated", "available": true, "device": "CPU34",
+ "model": "PDP-11/34", "run_state": "halted",
+ "registers": [{"name": "R0", "value": 0}, …, {"name": "SP", "value": 1000},
+               {"name": "PC", "value": 65036}],
+ "stackpointers": [{"name": "KSP", "value": 1000}, {"name": "USP", "value": 0}],
+ "psw": {"value": 224, "priority": 7, "t": false, "n": false, "z": false,
+         "v": false, "c": false, "has_modes": true, "mode": "kernel",
+         "previous_mode": "kernel"},
+ "ir": 0, "bus_addr": 0, "bus_data": 0, "cycle_count": 0,
+ "mmu": {"enabled": false, "mmr0": 0, "mmr1": 0, "mmr2": 0},
+ "powered": true, "halted": true, "addr_width": 18}
+```
+
+Every value is a number, decimal in the JSON, as elsewhere in this API.
+`registers` is R0..R5, SP and PC — SP is the stack pointer of the mode the CPU
+is in, and `stackpointers` carries one per mode so a reader wanting the other
+stack does not have to work out from the mode which of the two SP is showing.
+`psw.has_modes` is false on a model that has none: PSW\<15:12\> there are not
+bits reading as "kernel", they are bits that do not exist, and `mode` and
+`previous_mode` are absent. `mmu` is absent on a model without memory
+management, and `run_state` is one of `halted`, `running`, `waiting`.
+
+**The general registers of a real processor are not among what `bus` reports.**
+A processor decodes its own register file, and the addresses the big machines
+give it (777700..777717) are one apart — not a spacing a bus master can select
+between, since a DATI carries a word address and bit 0 is the byte select. So
+the probe reports, by address, which locations answered a cycle and with what,
+and leaves it to the reader to say which register a machine of that model keeps
+there. The processor state that *is* laid out as ordinary bus words is probed by
+name: the status word at 777776 and the memory management registers at
+777572..777576. The window itself is walked at word spacing.
+
+```json
+{"source": "none", "available": false,
+ "reason": "no processor state answered on the bus. …",
+ "probe": [{"address": 262010, "name": "MMR0", "value": null},
+           {"address": 262080, "value": null}, …],
+ "registers": [], "powered": true, "halted": false, "addr_width": 18}
+```
+
+`probe[].value` is `null` where the cycle timed out. The addresses follow the
+machine's address width, so the same points are 0777572… on an 18-bit machine
+and 017777572… on a 22-bit one.
+
+A negative probe is remembered, so a page polling this does not put a dozen
+cycles that are expected to time out on a running machine's bus every second;
+`?probe=1` asks again. A switched-off machine is not probed at all — nothing
+would answer, and the cycles would be made against a bus with no arbitrator,
+which is where a probe waits rather than fails.
+
+Registers of a real Q-bus processor are reachable over its console micro-ODT
+(halt the CPU, read `R0/`…`R7/`, `RS/`), and of a real UNIBUS machine from its
+front panel. Neither is driven from here.
 
 ## Disk images
 
