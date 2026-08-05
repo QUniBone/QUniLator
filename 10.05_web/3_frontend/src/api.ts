@@ -44,14 +44,20 @@ export async function fetchDebugCpu(probe = false): Promise<DebugCpu | null> {
 // A run of words out of the machine's memory, read by DMA. Both the address and
 // the count go over in octal, which is what the endpoint parses.
 //
-// A range that does not answer comes back as an error rather than a throw: for
-// a reader walking the address space a bus timeout is an ordinary outcome and
-// belongs on the pane, not in a toast.
+// A word no address answered comes back as null rather than failing the run:
+// walking the I/O page, or the top of a machine's memory, means walking past
+// addresses that belong to nobody, and which ones those are is the answer
+// rather than the error. The whole read still fails where the request itself
+// was refused — past the end of the address space, or a bus never granted —
+// and that error belongs on the pane, not in a toast.
+//
+// The count may come back short: a run reaching past the end of the machine's
+// address space is shortened to the words that are there.
 export async function fetchMemory(
   address: number,
   count: number
-): Promise<{ ok: boolean; words: number[]; error: string }> {
-  const r = await apiJSON<{ words?: number[]; error?: string }>(
+): Promise<{ ok: boolean; words: (number | null)[]; error: string }> {
+  const r = await apiJSON<{ words?: (number | null)[]; error?: string }>(
     '/api/memory?address=' + address.toString(8) + '&count=' + count.toString(8)
   );
   if (!r.ok) return { ok: false, words: [], error: r.data?.error || 'the board refused the read' };

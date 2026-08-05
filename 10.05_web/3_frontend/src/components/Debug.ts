@@ -159,18 +159,34 @@ function CpuCard({
 // The memory pane. Rows of eight words with the bytes of each shown beside
 // them, which is how a dump is read: the words are what the machine stores and
 // the characters are what a person recognises.
-function dumpRows(base: number, words: number[], width: number): ComponentChildren {
+//
+// A word that nothing answered is a hole in the row rather than a missing row:
+// walking the I/O page or the top of a machine's memory means walking past
+// addresses that belong to nobody, and where those are is what the operator is
+// reading the dump to find out.
+function dumpRows(
+  base: number,
+  words: (number | null)[],
+  width: number
+): ComponentChildren {
   const rows = [];
   for (let i = 0; i < words.length; i += WORDS_PER_ROW) {
     const chunk = words.slice(i, i + WORDS_PER_ROW);
     // low byte first: a PDP-11 word holds its first character in the low half
     const text = chunk
-      .flatMap((w) => [w & 0xff, (w >> 8) & 0xff])
-      .map((b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : '·'))
+      .flatMap((w) => (w === null ? [null, null] : [w & 0xff, (w >> 8) & 0xff]))
+      .map((b) => (b === null ? ' ' : b >= 32 && b < 127 ? String.fromCharCode(b) : '·'))
       .join('');
     rows.push(html`<tr>
       <td class="dbg-addr">${octalStr(base + i * 2, width)}</td>
-      ${chunk.map((w) => html`<td>${octalStr(w, 16)}</td>`)}
+      ${chunk.map((w) =>
+        w === null
+          ? // as wide as the six octal digits it stands in for, in plain
+            // characters: the cell is preformatted, so this keeps the columns
+            // lined up whatever font the page falls back to
+            html`<td class="dbg-silent" title="nothing answered this address">------</td>`
+          : html`<td>${octalStr(w, 16)}</td>`
+      )}
       ${Array.from({ length: WORDS_PER_ROW - chunk.length }, () => html`<td></td>`)}
       <td class="dbg-text">${text}</td>
     </tr>`);
@@ -188,7 +204,7 @@ export function DebugPage() {
   const [countQ, setCountQ] = useQueryParam('n');
   const [addrText, setAddrText] = useState(addrQ || '0');
   const count = parseInt(countQ || '', 10) || 64;
-  const [words, setWords] = useState<number[]>([]);
+  const [words, setWords] = useState<(number | null)[]>([]);
   const [memBase, setMemBase] = useState(0);
   const [memError, setMemError] = useState('');
   const [memBusy, setMemBusy] = useState(false);

@@ -227,13 +227,6 @@ static std::mutex probe_mutex;
 static bool probe_done = false;
 static bool probe_answered = false;
 
-// What one cycle of the probe may take before the board gives up on it. A bus
-// timeout is measured in microseconds, so anything near this is not a slave
-// failing to answer but the board never being granted the bus at all - which
-// is what a backplane with nothing arbitrating on it looks like. Without a
-// bound the request would park its web worker for good.
-static const unsigned probe_cycle_timeout_ms = 250;
-
 // Where a probed word lands. A bounded DMA that times out stays scheduled - the
 // PRU may still be working on it - so the buffer it writes into has to outlive
 // the call that asked for it. A static one does; a local would be a piece of
@@ -254,12 +247,12 @@ static unsigned probe_bus_locked(std::vector<bool> *answered, std::vector<uint16
 		timeout_c cycle;
 		cycle.start_ns(0);
 		bool ok = qunibus->probe_word(addr, &probe_words[i], /*share_bus*/true,
-				probe_cycle_timeout_ms);
+				web_bus_probe_timeout_ms);
 		if (ok) {
 			(*answered)[i] = true;
 			(*values)[i] = probe_words[i];
 			hits++;
-		} else if (cycle.elapsed_ms() >= probe_cycle_timeout_ms) {
+		} else if (cycle.elapsed_ms() >= web_bus_probe_timeout_ms) {
 			// nothing granted the bus; the remaining points would each wait
 			// out the same quarter second to learn the same thing
 			*no_grant = true;
@@ -318,7 +311,7 @@ static picojson::value bus_json(bool force) {
 	// its registers, the other a backplane that is not running.
 	if (no_grant) {
 		WEB_INFO("debug: the bus was not granted within %u ms, nothing arbitrates",
-				probe_cycle_timeout_ms);
+				web_bus_probe_timeout_ms);
 		o["source"] = picojson::value(std::string("none"));
 		o["available"] = picojson::value(false);
 		o["reason"] = picojson::value(std::string(

@@ -1291,30 +1291,52 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		unsigned words_left = (space - address) / 2;
 		if (count > words_left)
 			count = words_left;
-		bool timeout = false;
 		std::vector<uint16_t> &mem = memory_buffer();
+		uint16_t *words = mem.data() + address / 2;
+		std::vector<bool> answered(count, true);
 		std::lock_guard<std::mutex> mlock(web_bus_mutex());
+
+		// One transfer for the whole run, which is what the PRU is good at and
+		// what a range backed by memory costs. A timeout is not an error here:
+		// the range may cross the end of what a card answers, or be the I/O
+		// page where most addresses belong to nobody. So the adapter is told
+		// the timeout is expected - it neither logs it nor counts it against
+		// the machine - and the read falls back to one cycle per word to find
+		// out exactly which addresses answered.
+		qunibus->dma_request->timeout_expected = true;
 		timeout_c waited;
 		waited.start_ns(0);
-		qunibus->mem_read(mem.data(), address, address + 2 * (count - 1), &timeout,
-				web_bus_timeout_ms);
-		if (timeout) {
-			// A transfer that got its cycle and found nothing is a bus timeout,
-			// microseconds long. One that ran out the whole wait never got the
-			// cycle at all - the machine is off, or nothing on the backplane is
-			// arbitrating - which is a different thing to tell the operator.
+		bool whole_run = qunibus->dma(true, QUNIBUS_CYCLE_DATI, address, words, count,
+				/*share_bus*/true, web_bus_timeout_ms);
+		qunibus->dma_request->timeout_expected = false;
+
+		if (!whole_run) {
+			// A cycle that was never granted takes the whole wait; a slave that
+			// did not answer takes microseconds. Only the first is worth
+			// refusing over - and walking a hundred words that each wait out
+			// the bus would take a minute of them.
 			if (waited.elapsed_ms() >= web_bus_timeout_ms) {
 				send_error(conn, 504, "the board asked for the bus and was not granted it: "
 						"nothing on this backplane is arbitrating. A machine that is "
 						"switched off grants nothing.");
 				return 504;
 			}
-			send_error(conn, 502, "bus timeout reading memory");
-			return 502;
+			for (unsigned i = 0; i < count; i++) {
+				timeout_c cycle;
+				cycle.start_ns(0);
+				answered[i] = qunibus->probe_word(address + 2 * i, &words[i],
+						/*share_bus*/true, web_bus_probe_timeout_ms);
+				if (!answered[i] && cycle.elapsed_ms() >= web_bus_probe_timeout_ms) {
+					send_error(conn, 504, "the board asked for the bus and was not granted "
+							"it: nothing on this backplane is arbitrating. A machine that "
+							"is switched off grants nothing.");
+					return 504;
+				}
+			}
 		}
 		picojson::array arr;
 		for (unsigned i = 0; i < count; i++)
-			arr.push_back(picojson::value((double) mem[address / 2 + i]));
+			arr.push_back(answered[i] ? picojson::value((double) words[i]) : picojson::value());
 		picojson::object res;
 		res["address"] = picojson::value((double) address);
 		res["words"] = picojson::value(arr);

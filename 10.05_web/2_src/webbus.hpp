@@ -42,4 +42,11 @@ inline std::mutex &web_bus_mutex(void) {
 // a timed-out request stays scheduled and the PRU may still write into it.
 static const unsigned web_bus_timeout_ms = 2000;
 
+// The same bound for a single cycle that is *expected* to find nothing: a probe
+// of the processor registers, or a word of a dump walking addresses no card
+// answers. Shorter, because a caller making one of these per word would
+// otherwise wait out the whole transfer bound for each of them - and anything
+// near even this is not a slave failing to answer but the bus never granted.
+static const unsigned web_bus_probe_timeout_ms = 250;
+
 #endif // _WEBBUS_HPP_

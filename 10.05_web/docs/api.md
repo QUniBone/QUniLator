@@ -462,6 +462,13 @@ Reads `count` words (default 1, max 4096) from `address`.
 **Both query values are parsed as octal**, `count` included — a count carrying
 an 8 or a 9 is not a number here, and reads one word rather than failing.
 
+**A word no address answered is `null`**, not an error. Walking the I/O page or
+the top of a machine's memory means walking past addresses that belong to
+nobody, and which ones those are is the answer rather than a failure of the
+read. The run is made as one transfer, which is what a range backed by memory
+costs; only a run that hit a hole is re-read a cycle per word to find out where
+the holes are, so the common case pays nothing for this.
+
 `address` must lie inside the machine's own address space — 18 bit on a UNIBUS
 machine, 16, 18 or 22 on a QBUS one — and a `count` reaching past the end of it
 is shortened to the words that are there, so the answer may be shorter than
