@@ -564,9 +564,20 @@ machine; `source` says where the answer came from.
 | `bus` | a processor that lays state out in the I/O page, read by DATI — a cycle per location |
 | `none` | neither; `reason` says why |
 
+**Registers are reported only while the CPU is halted**, and `available` is
+false with a `reason` while it runs or sits in a WAIT. Read one at a time out of
+a processor executing millions of instructions a second, they would be a set of
+numbers that were never all true at once; and answering is not free, because the
+emulation runs one instruction per pass of a worker taking whatever processor
+time is left on the board, so a caller asking repeatedly slows the machine it is
+watching. `run_state` and `cycle_count` are there either way — the second is a
+rate rather than a value, and is how a caller sees the machine is getting on
+without asking it anything else. This is a property of the API, not of the panel:
+poll it and you will slow the machine down whatever is reading.
+
 An emulated processor answers whether or not the machine is switched on: a dark
-board still carries the cards its configuration names, and the registers it
-would start from are real.
+board still carries the cards its configuration names, its CPU is halted, and
+the registers it would start from are real.
 
 ```json
 {"source": "emulated", "available": true, "device": "CPU34",
@@ -590,6 +601,15 @@ stack does not have to work out from the mode which of the two SP is showing.
 bits reading as "kernel", they are bits that do not exist, and `mode` and
 `previous_mode` are absent. `mmu` is absent on a model without memory
 management, and `run_state` is one of `halted`, `running`, `waiting`.
+
+A running processor answers with the identity and the counter alone:
+
+```json
+{"source": "emulated", "available": false, "device": "CPU34",
+ "model": "PDP-11/34", "run_state": "running", "cycle_count": 19448491,
+ "reason": "the processor is running: its registers change with every instruction…",
+ "powered": true, "halted": false, "addr_width": 18}
+```
 
 **The general registers of a real processor are not among what `bus` reports.**
 A processor decodes its own register file, and the addresses the big machines

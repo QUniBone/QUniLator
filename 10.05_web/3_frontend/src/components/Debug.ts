@@ -7,7 +7,7 @@
 // than showing an empty panel. The memory pane is the same for either: the
 // board is bus master, so it DMAs the words out without the CPU.
 import { html } from '../html';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { fetchDebugCpu, fetchMemory } from '../api';
 import { useQueryParam } from '../router';
@@ -15,12 +15,12 @@ import { octalStr } from '../lib/util';
 import type { DebugCpu, DebugRegister } from '../types';
 import { Bit } from './widgets/base';
 
-// How often the register readout is re-read while "live" is on. Only an
-// emulated processor is polled: its registers are read where they lie, so a
-// poll costs nothing and disturbs nothing. Reading a real machine costs a bus
-// cycle per register, which is not something to do five times a second behind
-// the operator's back.
-const POLL_MS = 500;
+// Nothing here polls. The registers a running processor holds change with every
+// instruction, so a repeated readout shows numbers that were never all true at
+// once — and it is not free: the emulation runs on whatever processor time is
+// left over on the board, so anything asking it questions in the background
+// slows the machine down. The board reports registers only while the CPU is
+// halted, and this page reads them when it is opened or told to.
 
 const WORD_COUNTS = [8, 16, 32, 64, 128, 256];
 const WORDS_PER_ROW = 8;
@@ -117,14 +117,10 @@ function ProbeTable({ cpu }: { cpu: DebugCpu }) {
 // own account of why there is not.
 function CpuCard({
   cpu,
-  live,
-  setLive,
   onProbe,
   busy,
 }: {
   cpu: DebugCpu | null;
-  live: boolean;
-  setLive: (v: boolean) => void;
   onProbe: () => void;
   busy: boolean;
 }) {
@@ -142,14 +138,9 @@ function CpuCard({
       ${state &&
       html`<span class=${'disk-status ' + (state === 'running' ? 'ok' : 'idle')}>${state}</span>`}
       <span class="pill">${cpu.source}</span>
-      <div style="margin-left:auto; display:flex; gap:8px; align-items:center">
-        ${emulated &&
-        html`<label class="radio"
-          ><input type="checkbox" checked=${live} onChange=${(e: Event) =>
-            setLive((e.target as HTMLInputElement).checked)} /> live</label
-        >`}
+      <div style="margin-left:auto">
         <button class="btn small" disabled=${busy} onClick=${onProbe}>
-          ${emulated ? 'Refresh' : 'Probe the bus'}
+          ${emulated ? 'Read again' : 'Probe the bus'}
         </button>
       </div>
     </div>
@@ -158,8 +149,7 @@ function CpuCard({
         ? html`<${Registers} cpu=${cpu} />`
         : html`<p class="muted dbg-reason">${cpu.reason || 'no processor state is readable'}</p>`}
       ${!cpu.available && html`<${ProbeTable} cpu=${cpu} />`}
-      ${cpu.available &&
-      cpu.cycle_count !== undefined &&
+      ${cpu.cycle_count !== undefined &&
       html`<p class="muted dbg-note">${cpu.cycle_count.toLocaleString()} instructions since the
         last halt${cpu.powered ? '' : ' · the machine is switched off'}</p>`}
     </div>
@@ -190,7 +180,6 @@ function dumpRows(base: number, words: number[], width: number): ComponentChildr
 
 export function DebugPage() {
   const [cpu, setCpu] = useState<DebugCpu | null>(null);
-  const [live, setLive] = useState(true);
   const [busy, setBusy] = useState(false);
 
   // The screen reproduces from its URL: where the dump starts and how much of
@@ -211,22 +200,11 @@ export function DebugPage() {
     setBusy(false);
   };
 
-  // The first read is made on open; after that only an emulated processor is
-  // polled, and only while "live" is on. A processor read over the bus is
-  // re-read when the operator asks for it.
+  // Once, when the page opens. Every later read is one the operator asked for.
   useEffect(() => {
     read();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const liveRef = useRef(live);
-  liveRef.current = live;
-  useEffect(() => {
-    if (!live || cpu?.source !== 'emulated') return;
-    const t = setInterval(() => {
-      if (liveRef.current) fetchDebugCpu().then((c) => c && setCpu(c));
-    }, POLL_MS);
-    return () => clearInterval(t);
-  }, [live, cpu?.source]);
 
   const readMemory = async (text: string, n: number) => {
     const addr = parseOctal(text);
@@ -270,11 +248,12 @@ export function DebugPage() {
 
   const width = cpu?.addr_width || 18;
   return html`<section class="page active" data-page="debug">
-    <p class="lede">What the processor holds and what is in memory. The registers are read from the
-      processor itself where the board emulates one, and probed on the bus otherwise; memory is read
-      by DMA either way, so it works whichever kind of processor runs the machine.</p>
+    <p class="lede">What the processor holds and what is in memory. Registers are read while the CPU
+      is halted — of a running one they would be numbers that were never all true at once, and
+      asking repeatedly costs the machine speed. Memory is read by DMA whether the machine runs or
+      not, so the pane works whichever kind of processor it has.</p>
 
-    <${CpuCard} cpu=${cpu} live=${live} setLive=${setLive} onProbe=${() => read(true)} busy=${busy} />
+    <${CpuCard} cpu=${cpu} onProbe=${() => read(true)} busy=${busy} />
 
     <div class="card" style="margin-top:14px">
       <div class="card-head"><h3>Memory</h3>

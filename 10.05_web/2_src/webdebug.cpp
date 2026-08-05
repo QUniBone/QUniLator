@@ -129,17 +129,41 @@ static const char *run_state_name(enum cpu_base_c::cpu_state_e state) {
 }
 
 // A core of the board's own, read where its registers lie.
+//
+// Registers are reported only while the CPU is halted. Of a running processor
+// they would be a set of numbers that were never all true at once - each read
+// separately, out of values changing every instruction - and asking for them
+// repeatedly is not free either: the emulation runs one instruction per pass of
+// a worker holding whatever processor time is left over, so answering costs the
+// machine speed. A halted CPU's registers are what a debugger is after anyway.
 static picojson::value emulated_json(cpu_base_c *cpu) {
+	picojson::object o;
+	o["source"] = picojson::value(std::string("emulated"));
+	o["device"] = picojson::value(cpu->name.value);
+	o["model"] = picojson::value(cpu->type_name.value);
+
+	enum cpu_base_c::cpu_state_e state = cpu->core_get_state();
+	o["run_state"] = picojson::value(std::string(run_state_name(state)));
+	// what the machine has got through, which is a rate rather than a value
+	// and stays readable while it runs
+	o["cycle_count"] = num(cpu->cycle_count.value);
+
+	if (state != cpu_base_c::cpu_state_halted) {
+		o["available"] = picojson::value(false);
+		o["reason"] = picojson::value(std::string(
+				state == cpu_base_c::cpu_state_waiting
+				? "the processor is in a WAIT: it resumes on the next interrupt, so its "
+				  "registers are not being held still. Halt it to read them."
+				: "the processor is running: its registers change with every instruction, "
+				  "and reading them one at a time would only produce numbers that were "
+				  "never all true at once. Halt it to read them."));
+		return picojson::value(o);
+	}
+
 	cpu_base_c::state_snapshot_c s;
 	memset(&s, 0, sizeof s);
 	cpu->core_get_snapshot(&s);
-
-	picojson::object o;
-	o["source"] = picojson::value(std::string("emulated"));
 	o["available"] = picojson::value(true);
-	o["device"] = picojson::value(cpu->name.value);
-	o["model"] = picojson::value(cpu->type_name.value);
-	o["run_state"] = picojson::value(std::string(run_state_name(s.state)));
 
 	static const char *reg_names[8] = { "R0", "R1", "R2", "R3", "R4", "R5", "SP", "PC" };
 	picojson::array regs;
@@ -161,7 +185,6 @@ static picojson::value emulated_json(cpu_base_c *cpu) {
 	o["ir"] = num(s.ir);
 	o["bus_addr"] = num(s.bus_addr);
 	o["bus_data"] = num(s.bus_data);
-	o["cycle_count"] = num(s.cycle_count);
 	if (s.has_mmu) {
 		picojson::object mmu;
 		mmu["enabled"] = picojson::value(s.mmu_enabled);

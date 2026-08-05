@@ -153,10 +153,14 @@ public:
 	// zeroes that read like real values.
 	//
 	// Filling one costs no bus cycle and changes nothing: the core's registers
-	// are read where they lie. Taken from a foreign thread, so a snapshot of a
-	// *running* processor is a handful of word-wide reads that need not agree
-	// with one another - the same thing a front panel shows of a running
-	// machine. Halt the CPU for a consistent one.
+	// are read where they lie.
+	//
+	// It is only worth taking of a *halted* processor. Read from a foreign
+	// thread while the core is executing, these are a handful of word-wide
+	// reads of values changing every instruction: what comes back is a set of
+	// numbers that were never all true at once. The web API therefore publishes
+	// registers only while the CPU is halted, and any other caller wanting them
+	// of a running machine has to know what it is looking at.
 	struct state_snapshot_c {
 		uint16_t r[8];		// R0..R5, SP of the current mode, PC
 		uint16_t psw;
