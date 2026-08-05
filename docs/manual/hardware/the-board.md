@@ -1,9 +1,9 @@
 ---
-title: The board
+title: What is on the card
 description: What is on the PCB and why — bus drivers, the PRU datapath, power, panels, and the mechanics of fitting a BeagleBone into a Flip-Chip slot.
 ---
 
-The board looks retro, and that is not coincidence. It deliberately mimics a
+The card looks retro, and that is not coincidence. It deliberately mimics a
 1980s quad card: through-hole parts wherever possible, silver tantalums at the
 slot fingers — sometimes taken off old boards — and that green. Standard TTL, no
 FPGAs. No white or blue LEDs. BERG-style connectors, big transistors and
@@ -13,13 +13,13 @@ resistors. Later revisions carry more SMD and a different BeagleBone mount.
 
 ## What is on it
 
-![Block diagram of the board's functions](../assets/photos/hardware.jpg)
+![Block diagram of the card's functions](../assets/photos/hardware.jpg)
 
 **Bus interface.** Every bus signal line is connected bidirectionally through
 DS8641 drivers, so the card can be a **slave** (answering as a memory location or
 device register) and a **master** (arbitrating, interrupting, doing DMA). Even
 ACLO and DCLO can be driven, which is how the card commands the processor through
-a power-cycle reset. A global *driver enable* effectively unplugs the whole board
+a power-cycle reset. A global *driver enable* effectively unplugs the whole card
 from the bus. On driver substitutes, see [Bus drivers](bus-drivers.md).
 
 > **UNIBUS · UniBone**
@@ -40,12 +40,12 @@ only forwards data to its GPIO outputs.
 
 **Level conversion.** Old 5 V logic accepts 3.3 V drive, losing some noise
 margin. The other direction needs care: 5 V-tolerant 74LVTH-family latches
-protect the bone's inputs.
+protect the BeagleBone's inputs.
 
-**Power.** +5 V comes from the slot; the bone makes its own 3.3 V. Because a
+**Power.** +5 V comes from the slot; the BeagleBone makes its own 3.3 V. Because a
 vintage DEC supply can behave arbitrarily on power-on and the DCLO "power good"
 signal is under application control, a **relay delays +5 V by about a second** to
-give the bone a clean ramp. The slot's other rails are routed to a power
+give the BeagleBone a clean ramp. The slot's other rails are routed to a power
 connector, so the card can feed a standalone backplane.
 
 **ARM↔PRU communication** runs over shared memory. The small PRU-local RAM is

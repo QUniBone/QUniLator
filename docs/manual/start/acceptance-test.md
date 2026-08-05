@@ -32,7 +32,7 @@ terminator is enough and it must be **passive: resistors only, no boot ROM**.
 
 > **QBUS · QBone**
 >
-> Any quad QBUS backplane works. Some have terminators on board already; otherwise
+> Any quad QBUS backplane works. Some have terminators fitted already; otherwise
 > add a QProbe or an M9400 REV11 with resistors only.
 >
 > No G9047 grant continuity cards are needed.
@@ -43,27 +43,27 @@ terminator is enough and it must be **passive: resistors only, no boot ROM**.
 > **The BeagleBone must be on the card to boot**
 >
 > Even to play with the BeagleBone alone, it has to be plugged into the card —
-> the cape overlay disables the eMMC, and off the card the bone boots whatever
+> the cape overlay disables the eMMC, and off the card the BeagleBone boots whatever
 > Debian is on the internal eMMC instead of your SD image.
 
 ## 1. Power
 
-Apply +5 V. The power relay must switch after about a second's delay; the bone
+Apply +5 V. The power relay must switch after about a second's delay; the BeagleBone
 then produces 3.3 V and the green LED comes on. That one-second delay exists to
-give the bone's reset circuit a clean power-on ramp regardless of how oddly a
+give the BeagleBone's reset circuit a clean power-on ramp regardless of how oddly a
 vintage DEC supply comes up.
 
 ## 2. Boot and network
 
-The blue LEDs flicker while Debian boots. After 30–90 seconds the board should
+The blue LEDs flicker while Debian boots. After 30–90 seconds QUniLator should
 answer on the network — see
 [Find it on the network](install.md#find-it-on-the-network).
 
 If it boots but never answers:
 
-- Is the bone actually plugged into the card? (See the warning above.)
+- Is the BeagleBone actually plugged into the card? (See the warning above.)
 - Are the yellow and green Ethernet LEDs active?
-- Try repowering. There is a long-standing bug in the bone's Ethernet interface
+- Try repowering. There is a long-standing bug in the BeagleBone's Ethernet interface
   that occasionally prevents it coming up.
 - Fall back to the serial console.
 
@@ -88,7 +88,7 @@ which lights the second green LED.
 
 ![The card's user LEDs and switches](../assets/photos/leds-switches.jpg)
 
-The board also carries a small I²C EEPROM holding the cape name, which is what
+The card also carries a small I²C EEPROM holding the cape name, which is what
 tells the kernel which pin configuration to load. Reading it exercises the same
 I²C bus the add-on panels use:
 
@@ -141,7 +141,7 @@ stop it with `^C`.
 Two things worth doing while it runs:
 
 - **Test the test.** Pull one loopback jumper; the run should stop with an error.
-- **Bend and knock the board** gently. That is what exposes a bad joint.
+- **Bend and knock the card** gently. That is what exposes a bad joint.
 
 > [!TIP]
 > **It doubles as a backplane test**

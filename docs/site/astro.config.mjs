@@ -68,7 +68,7 @@ export default defineConfig({
 				{
 					label: 'The card',
 					items: [
-						{ label: 'The board', slug: 'hardware/the-board' },
+						{ label: 'What is on the card', slug: 'hardware/the-board' },
 						{ label: 'Fitting it to a backplane', slug: 'hardware/fitting-the-card' },
 						{ label: 'Bus drivers', slug: 'hardware/bus-drivers' },
 					],
@@ -90,6 +90,7 @@ export default defineConfig({
 				{
 					label: 'Project',
 					items: [
+						{ label: 'Glossary', slug: 'project/glossary' },
 						{ label: 'FAQ', slug: 'project/faq' },
 						{ label: 'What is coming', slug: 'project/roadmap' },
 						{ label: 'Credits and licence', slug: 'project/credits' },

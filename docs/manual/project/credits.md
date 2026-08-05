@@ -18,7 +18,7 @@ Device emulations contributed by others include the RK11/RK05 subsystem, the MSC
 disk subsystem, the RS11/RF11 DECdisk and the KE11 EAE, all by **Josh Dersch**,
 and the PDP-11/20 processor emulation by **Angelo Papenhoff**.
 
-The KiCad symbol for the quad Flip-Chip board came from Malcolm at
+The KiCad symbol for the quad Flip-Chip card came from Malcolm at
 [avitech.com.au](http://avitech.com.au/).
 
 ## How the software is maintained

@@ -1,9 +1,9 @@
 ---
 title: Catalogue format
-description: How to publish a catalogue of configurations that any QUniLator board can subscribe to.
+description: How to publish a catalogue of configurations that any QUniLator can subscribe to.
 ---
 
-A board subscribes to a **list** of catalogues — the project's own, a user
+A QUniLator subscribes to a **list** of catalogues — the project's own, a user
 group's, an operator's private one — so publishing your own is a first-class
 thing to do, not a fork of this site.
 
@@ -13,11 +13,11 @@ run.
 > [!WARNING]
 > **Not settled yet**
 >
-> The board-side implementation of catalogue subscription is
+> Catalogue subscription in QUniLator is
 > [in progress](../project/roadmap.md). What follows is the shape this site
 > publishes today at
 > [`/catalog/v1/index.json`](https://qunilator.com/catalog/v1/index.json); it is
-> the proposal the board will be built against, and it may still move before it
+> the proposal QUniLator will be built against, and it may still move before it
 > is final.
 
 ## The index
@@ -47,11 +47,11 @@ run.
 }
 ```
 
-| Field | Why the board needs it |
+| Field | Why QUniLator needs it |
 |---|---|
-| `bus` | A UNIBUS configuration names devices a QBUS board does not have. The board offers only what it can run. |
+| `bus` | A UNIBUS configuration names devices a QBone does not have. QUniLator offers only what it can run. |
 | `devices` | Shown before download, so an operator sees what the machine carries. |
-| `bytes` | Media runs to hundreds of megabytes. The board reports progress against this rather than downloading blind. |
+| `bytes` | Media runs to hundreds of megabytes. QUniLator reports progress against this rather than downloading blind. |
 | `sha256` | Verified before import. A truncated bundle must fail loudly, not half-import. |
 | `page` | Where a human reads the full documentation. |
 | `doc` | The structured documentation below. |
@@ -77,21 +77,21 @@ else wrote.
 
 A configuration arriving **without** documentation, or short a field, is still
 imported and marked *undocumented* — every configuration that exists today is
-one, and refusing them would make this a wall rather than a habit. The board says
+one, and refusing them would make this a wall rather than a habit. QUniLator says
 what is missing, and a catalogue may too.
 
 ## Serving it
 
 Two requirements beyond putting the file somewhere:
 
-**CORS.** A board on an isolated LAN has no route to your web server, but the
+**CORS.** A QUniLator on an isolated LAN has no route to your web server, but the
 operator's browser usually does — in that case the browser fetches the index and
-the bundle and posts what it got to the board. That only works if the catalogue
+the bundle and posts what it got to QUniLator. That only works if the catalogue
 is served with `Access-Control-Allow-Origin: *`. This site does; so should yours.
 
-**Stable URLs for bundles.** The board records what it has imported by `id` and
+**Stable URLs for bundles.** QUniLator records what it has imported by `id` and
 checksum. Re-publishing a bundle at the same URL with different contents makes
-the board's record wrong — give the new one a new `id`, or a versioned URL.
+QUniLator's record wrong — give the new one a new `id`, or a versioned URL.
 
 ## Where the bundles live
 

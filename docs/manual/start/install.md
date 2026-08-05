@@ -1,6 +1,6 @@
 ---
 title: Installing the software
-description: Write the card image, fit the card, power on, and find the board on your network.
+description: Write the card image, fit the card, power on, and find QUniLator on your network.
 sidebar:
   order: 4
 ---
@@ -56,7 +56,7 @@ Try these in order:
 2. **A service browser** — the interface advertises over DNS-SD as
    *\<hostname\> (QBone ddeeff)*, so it shows up in Safari's Bonjour
    bookmarks and in `avahi-browse -rt _http._tcp`.
-3. **A USB cable** — the bone appears as a network interface at a fixed
+3. **A USB cable** — the BeagleBone appears as a network interface at a fixed
    **192.168.7.2** and hands your machine an address on the same subnet. No
    LAN needed: `http://192.168.7.2/`.
 4. **Your router's lease table** — the uplink MAC is pinned, so the lease is
@@ -68,7 +68,7 @@ Try these in order:
 
 The web interface binds port 80 and asks you to create the operator identity on
 first use. That one name and password serve **both** the web login and the
-board's own Linux account — so the same credentials get you `ssh` in later.
+Linux account behind it — so the same credentials get you `ssh` in later.
 
 ## Reading the LEDs
 
@@ -90,27 +90,27 @@ and the serial console is how to find out why. `usr3` is SD-card activity.
 
 ## The machine comes up dark
 
-A board that has just started serves a machine that is **switched off**. The
+A QUniLator that has just started serves a machine that is **switched off**. The
 service loads the configuration the DIP switches name, but puts none of it on
 the bus: no card is installed, no register window answers, no emulated processor
 takes the bus over.
 
-That is deliberate. A board is fitted to a machine and configured afterwards, and
+That is deliberate. A QUniLator is fitted to a machine and configured afterwards, and
 what it carries may describe a backplane it is no longer in. Switching the
 machine on is an explicit act in the web interface. A configuration marked
 **autostart** switches itself on at startup instead, and says so afterwards in the
 standing notice.
 
-## More than one board on the network
+## More than one QUniLator on the network
 
-Addresses never collide: each board's DHCP lease is keyed to its own uplink MAC,
+Addresses never collide: each QUniLator's DHCP lease is keyed to its own uplink MAC,
 and each emulated Ethernet controller derives its station address from that MAC
 as well.
 
-Names would. Each board carries an identifier taken from its uplink MAC and
-advertises as **`qbone (QBone ddeeff)`**, so two boards are told apart in a
-service browser out of the box. The hostname is still shared, so a second board
-finds `qbone` taken and mDNS renames it `qbone-2.local`. Which board gets which
+Names would. Each QUniLator carries an identifier taken from its uplink MAC and
+advertises as **`qbone (QBone ddeeff)`**, so two QUniLators are told apart in a
+service browser out of the box. The hostname is still shared, so a second QUniLator
+finds `qbone` taken and mDNS renames it `qbone-2.local`. Which QUniLator gets which
 suffix follows boot order and can change — give each its own name instead:
 
 ```sh
@@ -123,7 +123,7 @@ advertisement, and the DHCP lease.
 ## Keeping it current
 
 The image ships with an apt source configured, and the interface can check for
-and install updates itself. An update returns the board to its DIP-selected
+and install updates itself. An update returns QUniLator to its DIP-selected
 configuration, so a configuration applied by hand needs re-applying afterwards.
 
 > **UNIBUS · UniBone**

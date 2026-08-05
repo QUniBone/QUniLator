@@ -26,7 +26,7 @@ is in [`../site/`](../site/); [STRUCTURE.md](../site/STRUCTURE.md) describes it.
 
 **The card**
 
-- [The board](hardware/the-board.md)
+- [What is on the card](hardware/the-board.md)
 - [Fitting it to a backplane](hardware/fitting-the-card.md)
 - [Bus drivers](hardware/bus-drivers.md)
 
@@ -42,6 +42,7 @@ is in [`../site/`](../site/); [STRUCTURE.md](../site/STRUCTURE.md) describes it.
 
 **Project**
 
+- [Glossary](project/glossary.md)
 - [FAQ](project/faq.md)
 - [What is coming](project/roadmap.md)
 - [Credits and licence](project/credits.md)

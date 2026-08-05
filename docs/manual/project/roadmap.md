@@ -11,7 +11,7 @@ says honestly where it has got to.
 
 - **Start here** — what QUniLator is, choosing a card, getting one, installing the
   software, the acceptance test.
-- **The card** — the board itself, fitting it to a backplane, bus drivers.
+- **The card** — the card itself, fitting it to a backplane, bus drivers.
 - **Background** — the PDP-11, UNIBUS and QBUS.
 - **Configurations** — the catalogue and the format a catalogue is published in.
 
@@ -25,7 +25,7 @@ a migration, covering:
 the web interface · configurations and autostart · disk and tape images, and
 sharing them over SMB, FTP and SFTP · the console, emulated and bridged ·
 emulated memory and the address map · networking · booting a guest · running
-XXDP diagnostics · updating the board
+XXDP diagnostics · updating QUniLator
 
 ## Planned
 
@@ -50,14 +50,14 @@ anything not yet migrated here.
 
 ## The configuration catalogue
 
-The catalogue on this site is ahead of the board software. Two pieces are in
+The catalogue on this site is ahead of QUniLator. Two pieces are in
 progress in the QUniLator repository:
 
 - **[#81](https://github.com/QUniBone/QUniLator/issues/81)** — a configuration
   carries its own documentation, in named fields, travelling inside the
   `.qcfg.zip` as `readme.md`. This site already stores and renders exactly those
   fields.
-- **[#64](https://github.com/QUniBone/QUniLator/issues/64)** — the board
+- **[#64](https://github.com/QUniBone/QUniLator/issues/64)** — QUniLator
   subscribes to catalogues and imports from them, instead of an operator finding
   a URL and downloading a bundle by hand.
 

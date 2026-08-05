@@ -24,10 +24,10 @@ consumption rises sharply when it is driving bus terminator arrays.
 |---|---|
 | Bus +5 V — the silver capacitor leads or the `5VUB` pins | **Best.** Everything is powered and you should hear the delay relay click. |
 | The BeagleBone's 5 V jack | Works, but the driver chips and the I²C panel power stay dead — they are fed from bus +5 V. |
-| A strong (>2 A) USB supply into the bone's USB port | Works. |
+| A strong (>2 A) USB supply into the BeagleBone's USB port | Works. |
 | A PC's USB port | **No.** USB 2.0 data ports supply about 500 mA, enough for a bare bone but not for bone plus card. |
 
-The green power LED indicates the bone's 3.3 V is good.
+The green power LED indicates the BeagleBone's 3.3 V is good.
 
 ## Which backplanes take the card?
 
@@ -63,7 +63,7 @@ The green power LED indicates the bone's 3.3 V is good.
 ## Will it be damaged if I pull the power without shutting down?
 
 In practice, no. The journalled filesystem tolerates it and SD cards have some
-protection of their own; boards have been power-cycled hundreds of times without
+protection of their own; QUniLators have been power-cycled hundreds of times without
 harm. A clean shutdown is still tidier.
 
 ## It boots, but I do not see the QUniLator software
@@ -71,8 +71,8 @@ harm. A clean shutdown is still tidier.
 The BeagleBone has an on-board eMMC carrying a factory Debian, and if anything is
 wrong with the SD card or the boot selection it will come up on that instead.
 
-**When the bone is unplugged from the card it loses the resistors that encode the
-boot device, and will always boot from eMMC.** So the bone must be on the card to
+**When the BeagleBone is unplugged from the card it loses the resistors that encode the
+boot device, and will always boot from eMMC.** So the BeagleBone must be on the card to
 boot your image at all. Holding the **S2** button while applying power forces SD
 boot.
 

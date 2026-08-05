@@ -36,7 +36,7 @@ thresholds, faster switching produces more ringing. On specification the 75138 i
 the closer match; on availability the AM26S10 wins — it is still in production
 and stocked in DIP and SMD.
 
-The chips can be mixed freely on the board. You will not want to.
+The chips can be mixed freely on the card. You will not want to.
 
 ![Driver socket schematic](../assets/photos/qbone-bus-drivers-schematic.jpg)
 

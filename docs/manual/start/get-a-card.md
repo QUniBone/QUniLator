@@ -32,7 +32,7 @@ Contact Jörg through [retrocmp.com](https://retrocmp.com/) to order.
 
 ## Build your own
 
-Blank boards are not sold, but the Gerbers are yours to send to a fabricator. The
+Blank PCBs are not sold, but the Gerbers are yours to send to a fabricator. The
 whole KiCad project — schematic, PCB, the two CPLD projects and the 3D-printable
 BeagleBone mount — is published:
 

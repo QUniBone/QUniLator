@@ -38,7 +38,7 @@ Several device-emulator projects exist. QUniLator differs in a few deliberate wa
   drive hanging off a genuine DEC controller card. Nothing between the machine and
   the emulation but the backplane.
 - It is **configurable**: arbitrary devices in parallel, up to a whole system.
-- A **full Linux sits behind it**, so the board can run SimH, complex diagnostic
+- A **full Linux sits behind it**, so the BeagleBone can run SimH, complex diagnostic
   software, or a network service alongside the emulation.
 - Emulated devices can drive **real hardware** — the BeagleBone is full of
   interfaces, and the card carries patch fields and a powered I²C bus for
@@ -68,7 +68,7 @@ generated from the source, is [still to come](../project/roadmap.md).
 | **Bootstrap** | M9312 · MRV11-D · MXV11-B2 |
 | **Clocks** | KW11-L line clock · KW11-P programmable clock |
 | **Graphics** | VCB01 / QVSS framebuffer |
-| **Other** | KE11 EAE · a "demo" device exposing the board's own LEDs and switches · lamps-and-switches panels over I²C |
+| **Other** | KE11 EAE · a "demo" device exposing the card's own LEDs and switches · lamps-and-switches panels over I²C |
 
 > **UNIBUS · UniBone**
 >
@@ -113,6 +113,9 @@ compiles its own software in minutes rather than synthesising a bitstream.
 | **UniBone** | the UNIBUS card |
 | **QBone** | the QBUS card |
 | **QUniBone** | the GitHub organisation, and the older combined name for the two cards |
+
+The [glossary](../project/glossary.md) carries these and the other words this
+manual uses narrowly — device, machine, configuration, bundle.
 
 The project is BSD-licensed — hardware and software both. See
 [Credits and licence](../project/credits.md).
