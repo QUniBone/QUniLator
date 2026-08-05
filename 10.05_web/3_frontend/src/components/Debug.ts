@@ -308,17 +308,19 @@ function MemoryView({
 
   return html`<div class="card dbg-view">
     <${ViewHead} title="Memory" onClose=${onClose}>
-      <label class="dbg-field">address<input class="mono" value=${addrText} size="9"
+      <input class="mono dbg-input" value=${addrText} size="9"
+        title="start address, octal" aria-label="start address, octal"
         onInput=${(e: Event) => setAddrText((e.target as HTMLInputElement).value)}
         onBlur=${() => commit(addrText)}
         onKeyDown=${(e: KeyboardEvent) => {
           if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
-        }} /></label>
-      <label class="dbg-field">words<select class="mono" value=${String(spec.words)}
+        }} />
+      <select class="mono dbg-input" value=${String(spec.words)}
+        title="words to read" aria-label="words to read"
         onChange=${(e: Event) =>
           onChange({ words: parseInt((e.target as HTMLSelectElement).value, 10) })}>
         ${WORD_COUNTS.map((n) => html`<option value=${String(n)}>${n}</option>`)}
-      </select></label>
+      </select>
       <button class="btn small" onClick=${() => step(-spec.words * 2)} disabled=${busy}>−</button>
       <button class="btn small" onClick=${() => step(spec.words * 2)} disabled=${busy}>+</button>
       ${pc && html`<button class="btn small" onClick=${() => commit(octalStr(pc.value, 16))}
@@ -423,12 +425,13 @@ function DisassemblyView({
 
   return html`<div class="card dbg-view">
     <${ViewHead} title=${'Disassembly' + (model ? ' · ' + model : '')} onClose=${onClose}>
-      <label class="dbg-field">address<input class="mono" value=${addrText} size="9"
+      <input class="mono dbg-input" value=${addrText} size="9"
+        title="start address, octal" aria-label="start address, octal"
         onInput=${(e: Event) => setAddrText((e.target as HTMLInputElement).value)}
         onBlur=${() => commit(addrText)}
         onKeyDown=${(e: KeyboardEvent) => {
           if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
-        }} /></label>
+        }} />
       ${pc && html`<button class="btn small" onClick=${() => commit(octalStr(pc.value, 16))}
         >at PC</button>`}
       <button class="btn small" disabled=${busy || next === null}

@@ -1309,13 +1309,14 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
 .dbg-regs { gap: 10px; }
 .dbg-reg { align-items: flex-start; }
 
-.dbg-field {
-  display: flex; flex-direction: column; gap: 3px;
-  font-size: var(--fs-0); color: var(--ink-muted);
-}
-.dbg-field input, .dbg-field select {
+/* The inputs of a view carry no printed label: what they are is obvious from
+   what they hold - an octal address, a word count - and a caption above each
+   one pushed the whole row out of line with the panel's title. The name is in
+   the tooltip, and in aria-label for a reader that cannot hover. */
+.dbg-input {
   padding: 3px 7px; border: 1px solid var(--line); border-radius: 4px;
   background: var(--surface); color: var(--ink); font-size: var(--fs-1);
+  line-height: 1.4;
 }
 
 /* A dump is read down the address column and across the words, so the rows are
@@ -1367,7 +1368,7 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
 .dbg-view .card-body { overflow-x: auto; }
 .dbg-empty { max-width: 60ch; margin: 4px 0 0; }
 .dbg-view .card-head { flex-wrap: wrap; gap: 8px; }
-.dbg-view-ctl { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+.dbg-view-ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dbg-close { margin-left: auto; line-height: 1; }
 
 /* A listing grows as it is followed, so it scrolls in place rather than pushing
