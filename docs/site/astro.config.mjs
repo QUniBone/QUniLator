@@ -26,6 +26,12 @@ export default defineConfig({
 	site: SITE,
 	base: BASE || undefined,
 	trailingSlash: 'always',
+	// Addresses the site has served under a name it no longer uses. Astro prefixes
+	// the base to neither half, and the built file lands where the key says, so the
+	// key stays root-relative and the target carries the base itself.
+	redirects: {
+		'/hardware/the-board/': `${BASE}/hardware/the-card/`,
+	},
 	markdown: {
 		// These run before Starlight's own transforms, so an alert has become a
 		// `:::` directive by the time Starlight looks for one.
@@ -68,7 +74,7 @@ export default defineConfig({
 				{
 					label: 'The card',
 					items: [
-						{ label: 'What is on the card', slug: 'hardware/the-board' },
+						{ label: 'What is on the card', slug: 'hardware/the-card' },
 						{ label: 'Fitting it to a backplane', slug: 'hardware/fitting-the-card' },
 						{ label: 'Bus drivers', slug: 'hardware/bus-drivers' },
 					],

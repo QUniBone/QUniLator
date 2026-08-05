@@ -39,8 +39,16 @@ const problems = [];
 for (const page of pages) {
 	const html = readFileSync(page, 'utf8');
 
-	for (const match of html.matchAll(/(?:href|src)="([^"]+)"/g)) {
-		const raw = match[1];
+	// A redirect page carries its destination twice: the `<meta http-equiv=refresh>`
+	// that performs it, and an anchor for a reader whose browser does not. Check the
+	// meta as well, so the redirect is verified by what actually redirects rather
+	// than by the anchor Astro happens to render beside it.
+	const targets = [
+		...[...html.matchAll(/(?:href|src)="([^"]+)"/g)].map((m) => m[1]),
+		...[...html.matchAll(/content="\d+\s*;\s*url=([^"]+)"/gi)].map((m) => m[1]),
+	];
+
+	for (const raw of targets) {
 
 		// Pages link to each other by file, and the build turns those into the paths
 		// the site serves. One that still names a `.md` file was not converted — the
@@ -74,6 +82,15 @@ for (const page of pages) {
 		});
 	}
 }
+
+// A redirect names its destination twice, so report each broken target once.
+const seen = new Set();
+const unique = problems.filter((p) => {
+	const key = `${p.from} ${p.link}`;
+	return seen.has(key) ? false : seen.add(key);
+});
+problems.length = 0;
+problems.push(...unique);
 
 if (problems.length === 0) {
 	const links = pages.length;
