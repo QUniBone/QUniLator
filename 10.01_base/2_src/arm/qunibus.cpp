@@ -499,6 +499,17 @@ bool qunibus_c::dma(bool blocking, uint8_t qunibus_cycle, uint32_t startaddr, ui
     // can access bus with DMA when there's a Bus Arbitrator
     assert(pru->emulating());
 
+    // A transfer running past the end of the machine's address space is a
+    // programming error to the adapter, which asserts - and an assert takes the
+    // whole emulator down, machine and all, over an address somebody typed.
+    // Refuse it here instead: the caller sees a transfer that did not happen,
+    // which is also what it would have seen from a bus that did not answer.
+    if ((uint64_t) startaddr + 2 * (uint64_t) wordcount > (uint64_t) addr_space_byte_count) {
+        ERROR("DMA of %u words at %s runs past the end of the %u bit address space",
+              wordcount, addr2text(startaddr), addr_width);
+        return false;
+    }
+
     timeout.start_ns(0); // no timeout, just running timer
     qunibusadapter->DMA(*dma_request, blocking, qunibus_cycle, startaddr, buffer, wordcount,
                         timeout_ms);

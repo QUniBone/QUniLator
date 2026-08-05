@@ -462,6 +462,12 @@ Reads `count` words (default 1, max 4096) from `address`.
 **Both query values are parsed as octal**, `count` included — a count carrying
 an 8 or a 9 is not a number here, and reads one word rather than failing.
 
+`address` must lie inside the machine's own address space — 18 bit on a UNIBUS
+machine, 16, 18 or 22 on a QBUS one — and a `count` reaching past the end of it
+is shortened to the words that are there, so the answer may be shorter than
+asked for. A read starting past the end answers `400` naming the last address
+the machine has.
+
 ### `POST /api/memory`
 
 ```json

@@ -1271,11 +1271,26 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		if (mg_get_var(ri->query_string, ri->query_string ? strlen(ri->query_string) : 0,
 				"count", buf, sizeof(buf)) > 0)
 			parse_octal(buf, &count);
-		if (count < 1 || count > 4096
-				|| (uint64_t) address + 2 * count > 2 * (uint64_t) QUNIBUS_MAX_WORDCOUNT) {
-			send_error(conn, 400, "address/count out of range");
+		// The machine's own space, not the largest one the board could drive.
+		// A transfer running past the end of it is a programming error to the
+		// bus adapter, which asserts and takes the whole emulator down with it:
+		// 64 words from 777776 is past the top of an 18-bit machine, and that
+		// is one keystroke away in the debug panel's dump.
+		uint32_t space = qunibus->addr_space_byte_count;
+		if (count < 1 || count > 4096 || address >= space) {
+			char msg[128];
+			snprintf(msg, sizeof msg,
+					"address/count out of range: the machine's address space is %u bit, "
+					"ending at %06o", qunibus->addr_width, space - 2);
+			send_error(conn, 400, msg);
 			return 400;
 		}
+		// A reader asking for a screenful at the top of the space gets the
+		// words that are there rather than an error: what it wanted to know is
+		// what those addresses hold.
+		unsigned words_left = (space - address) / 2;
+		if (count > words_left)
+			count = words_left;
 		bool timeout = false;
 		std::vector<uint16_t> &mem = memory_buffer();
 		std::lock_guard<std::mutex> mlock(web_bus_mutex());
@@ -1331,9 +1346,16 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	}
 	const picojson::array &warr = req.get("words").get<picojson::array>();
 	unsigned n = (unsigned) warr.size();
+	// against the machine's own space, as on the read - past its end the bus
+	// adapter asserts and the emulator dies. A write is refused rather than
+	// shortened: half of what the caller sent is not what it asked for.
 	if (n < 1 || n > 4096
-			|| (uint64_t) address + 2 * n > 2 * (uint64_t) QUNIBUS_MAX_WORDCOUNT) {
-		send_error(conn, 400, "address/word count out of range");
+			|| (uint64_t) address + 2 * n > (uint64_t) qunibus->addr_space_byte_count) {
+		char msg[128];
+		snprintf(msg, sizeof msg,
+				"address/word count out of range: the machine's address space is %u bit, "
+				"ending at %06o", qunibus->addr_width, qunibus->addr_space_byte_count - 2);
+		send_error(conn, 400, msg);
 		return 400;
 	}
 	if (address & 1) {
