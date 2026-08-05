@@ -1,0 +1,108 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import { getCollection } from 'astro:content';
+
+const entries = (await getCollection('configurations')).sort((a, b) =>
+	a.data.title.localeCompare(b.data.title)
+);
+
+const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
+const catalogUrl = `${base}/catalog/v1/index.json`;
+
+const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(0)} MB`;
+const busLabel = { unibus: 'UNIBUS', qbus: 'QBUS' } as const;
+---
+
+<StarlightPage
+	frontmatter={{
+		title: 'Configuration catalogue',
+		description:
+			'Whole machines — a device layout plus the media its drives name — packaged so a board can fetch and import one.',
+	}}
+>
+	<p>
+		A configuration is a whole machine: the cards it carries, how they are jumpered,
+		and the media its drives name. Packaged as a <code>.qcfg.zip</code>, it travels
+		between operators as one file.
+	</p>
+
+	<p>
+		This is the project's own catalogue. A board subscribes to it — and to any other
+		catalogue you point it at — and imports from it directly, so you need not download
+		anything by hand.
+	</p>
+
+	<div class="catalog-url">
+		<p><strong>Catalogue URL</strong>, to paste into a board's catalogue list:</p>
+		<pre><code>{new URL(catalogUrl, Astro.site).href}</code></pre>
+	</div>
+
+	{
+		entries.length === 0 ? (
+			<p>
+				<em>No configurations published yet.</em>
+			</p>
+		) : (
+			<ul class="config-list">
+				{entries.map((entry) => (
+					<li>
+						<h3>
+							<a href={`${base}/configurations/${entry.id}/`}>{entry.data.title}</a>
+						</h3>
+						<p class="config-meta">
+							<span class="badge">{busLabel[entry.data.bus]}</span>
+							{entry.data.guest && <span class="badge">{entry.data.guest}</span>}
+							<span>{mb(entry.data.download.bytes)}</span>
+						</p>
+						<p>{entry.data.summary}</p>
+						<p class="config-devices">{entry.data.devices.join(' · ')}</p>
+					</li>
+				))}
+			</ul>
+		)
+	}
+
+	<h2>Publishing your own</h2>
+	<p>
+		A catalogue is a static JSON file on any web server. The format is documented under{' '}
+		<a href={`${base}/configurations/format/`}>Catalogue format</a>.
+	</p>
+</StarlightPage>
+
+<style>
+	.catalog-url pre {
+		margin-top: 0.25rem;
+	}
+	.config-list {
+		list-style: none;
+		padding: 0;
+	}
+	.config-list > li {
+		border-top: 1px solid var(--sl-color-gray-5);
+		padding-top: 1rem;
+		margin-top: 1.5rem;
+	}
+	.config-list h3 {
+		margin-top: 0;
+	}
+	.config-meta {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: var(--sl-text-sm);
+		color: var(--sl-color-gray-3);
+		margin: 0.25rem 0;
+	}
+	.badge {
+		border: 1px solid var(--sl-color-gray-5);
+		border-radius: 0.25rem;
+		padding: 0.05rem 0.4rem;
+		font-size: var(--sl-text-xs);
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+	}
+	.config-devices {
+		font-size: var(--sl-text-sm);
+		color: var(--sl-color-gray-3);
+	}
+</style>

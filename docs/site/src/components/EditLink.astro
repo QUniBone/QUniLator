@@ -1,0 +1,42 @@
+---
+/**
+ * "Edit this page", pointing at the manual beside this generator.
+ *
+ * Starlight builds this link from `editLink.baseUrl` and the entry's file path.
+ * That path is relative to this project, so for a manual one directory up the
+ * link climbs out of the repository rather than into `docs/manual/`.
+ *
+ * Pages the site generates rather than reads — the catalogue, the 404 — report a
+ * path no file stands behind, and get no link at all.
+ */
+import { Icon } from '@astrojs/starlight/components';
+import { DOCS_ROOT_RELATIVE, MANUAL_EDIT_BASE } from '../../docs-root.mjs';
+
+const { filePath } = Astro.locals.starlightRoute.entry;
+const page = filePath?.startsWith(DOCS_ROOT_RELATIVE)
+	? filePath.slice(DOCS_ROOT_RELATIVE.length)
+	: undefined;
+---
+
+{
+	page && (
+		<a href={MANUAL_EDIT_BASE + page} class="sl-flex print:hidden">
+			<Icon name="pencil" size="1.2em" />
+			{Astro.locals.t('page.editLink')}
+		</a>
+	)
+}
+
+<style>
+	@layer starlight.core {
+		a {
+			gap: 0.5rem;
+			align-items: center;
+			text-decoration: none;
+			color: var(--sl-color-gray-3);
+		}
+		a:hover {
+			color: var(--sl-color-white);
+		}
+	}
+</style>

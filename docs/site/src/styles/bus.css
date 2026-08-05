@@ -1,0 +1,87 @@
+/* Bus variance: one manual, two readings.
+ *
+ * The reader's board is on `html[data-bus]`. Sidebar entries for the other bus are
+ * dropped from the navigation; passages inside a page are only de-emphasised, never
+ * hidden, so a deep link always shows everything and site search always finds it.
+ */
+
+/* --- the "I have a" control, at the top of the sidebar --- */
+
+.bus-select {
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: 0.5rem;
+	padding: 0.5rem 0.75rem 0.6rem;
+	margin-bottom: 1rem;
+}
+
+.bus-select legend {
+	font-size: var(--sl-text-xs);
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--sl-color-gray-3);
+	padding: 0 0.35rem;
+}
+
+.bus-select__options {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.15rem 0.9rem;
+}
+
+.bus-select label {
+	display: flex;
+	align-items: center;
+	gap: 0.3rem;
+	font-size: var(--sl-text-sm);
+	cursor: pointer;
+}
+
+/* --- sidebar filtering --- */
+
+html[data-bus='unibus'] .sidebar-content li:has(> a[data-bus='qbus']),
+html[data-bus='qbus'] .sidebar-content li:has(> a[data-bus='unibus']) {
+	display: none;
+}
+
+/* --- in-page bus-specific passages --- */
+
+.bus-note {
+	border-inline-start: 3px solid var(--sl-color-accent);
+	border-radius: 0 0.35rem 0.35rem 0;
+	background: var(--sl-color-gray-7, var(--sl-color-gray-6));
+	padding: 0.6rem 1rem 0.15rem;
+	margin: 1rem 0;
+}
+
+.bus-note__label {
+	font-size: var(--sl-text-xs);
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--sl-color-accent-high);
+	margin: 0 0 0.35rem;
+}
+
+/* Not your board: still legible, visibly not addressed to you. */
+html[data-bus='unibus'] .bus-note[data-bus='qbus'],
+html[data-bus='qbus'] .bus-note[data-bus='unibus'] {
+	border-inline-start-color: var(--sl-color-gray-5);
+	opacity: 0.6;
+}
+
+html[data-bus='unibus'] .bus-note[data-bus='qbus'] .bus-note__label,
+html[data-bus='qbus'] .bus-note[data-bus='unibus'] .bus-note__label {
+	color: var(--sl-color-gray-3);
+}
+
+/* --- a whole page that applies to one bus only --- */
+
+.bus-page-banner {
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: 0.5rem;
+	padding: 0.6rem 1rem;
+	margin-bottom: 1.5rem;
+	font-size: var(--sl-text-sm);
+	color: var(--sl-color-gray-2);
+}

@@ -1,0 +1,16 @@
+---
+import Default from '@astrojs/starlight/components/Head.astro';
+---
+
+<Default><slot /></Default>
+
+{/* Apply the reader's board before first paint, so the sidebar does not flicker. */}
+<script is:inline>
+	try {
+		const bus = localStorage.getItem('qunilator:bus');
+		if (bus === 'unibus' || bus === 'qbus') document.documentElement.dataset.bus = bus;
+		else document.documentElement.dataset.bus = 'both';
+	} catch {
+		document.documentElement.dataset.bus = 'both';
+	}
+</script>

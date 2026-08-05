@@ -1,0 +1,44 @@
+title: XXDP 2.5 on an RL02
+summary: >-
+  DEC's diagnostic monitor on an emulated RL11 with four RL02 drives. The
+  quickest way to prove a freshly built card actually works in a machine.
+bus: qbus
+guest: XXDP 2.5
+
+devices:
+  - MEM
+  - MRV11-D
+  - DL11
+  - RL11
+  - RL02
+
+doc:
+  motivation: >-
+    XXDP is the monitor DEC's field diagnostics run under, so this configuration
+    is both the smallest useful machine and the one that tells you whether the
+    rest of the backplane is healthy. It is the resident sample on the card
+    image for that reason.
+  # Plain text: these fields carry lists and links, not markdown, because the
+  # board renders them without sanitising a document somebody else wrote.
+  usage:
+    - Switch the machine on, then boot DL0 from the bootstrap prompt.
+    - At the XXDP monitor prompt, .DIR lists the diagnostics on the pack.
+    - Run one with .R ZRLGE0 — the RL subsystem test is a good first choice.
+    - No login; XXDP is a single-user monitor.
+  bugs:
+    - Tests that need a programmable clock report a P-CLOCK skip unless a KW11-P
+      is enabled alongside.
+  links:
+    - label: XXDP diagnostic listing
+      url: https://github.com/QUniBone/QUniLator/blob/main/10.06_cputest/3_tapes/README.md
+    - label: RL01/RL02 maintenance manual (EK-RL012-TM-PRE)
+      url: http://www.bitsavers.org/pdf/dec/disc/rl01/
+  maintainer:
+    name: QUniLator project
+    contact: https://github.com/QUniBone/QUniLator/issues
+  added: 2026-08-05
+
+download:
+  url: https://github.com/QUniBone/QUniLator/releases/latest/download/xxdp-rl02.qcfg.zip
+  bytes: 11534336
+  sha256: "0000000000000000000000000000000000000000000000000000000000000000"

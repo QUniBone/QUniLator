@@ -33,6 +33,15 @@ dist/
 # simh scratch working dir (1GB disk image, driver scripts)
 images/211bsd/work/
 
+# documentation site (docs/site): dependencies and generated types. Its build
+# output lands in docs/site/dist/, which the `dist/` rule above already covers.
+node_modules/
+.astro/
+# raw scraped HTML, regenerable with docs/site/tools/scrape-retrocmp.py
+docs/site/migration/raw/
+# staging copies of images that now live with the manual
+docs/site/migration/images/
+
 # python bytecode cache
 tools/__pycache__/
 

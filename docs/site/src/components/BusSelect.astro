@@ -1,0 +1,36 @@
+---
+/**
+ * "I have a:" — the reader's board, remembered across pages.
+ *
+ * Sets `data-bus` on the document element; CSS in src/styles/bus.css does the rest.
+ * The choice narrows the sidebar and de-emphasises passages for the other bus. It is
+ * a reading aid: every page stays reachable and every passage stays on the page.
+ */
+---
+
+<fieldset class="bus-select">
+	<legend>I have a</legend>
+	<div class="bus-select__options">
+		<label><input type="radio" name="bus" value="unibus" /> UniBone</label>
+		<label><input type="radio" name="bus" value="qbus" /> QBone</label>
+		<label><input type="radio" name="bus" value="both" /> Both</label>
+	</div>
+</fieldset>
+
+<script is:inline>
+	// Applied before paint by the head script; this only wires the control up.
+	(() => {
+		const stored = document.documentElement.dataset.bus || 'both';
+		for (const input of document.querySelectorAll('.bus-select input[name="bus"]')) {
+			input.checked = input.value === stored;
+			input.addEventListener('change', () => {
+				document.documentElement.dataset.bus = input.value;
+				try {
+					localStorage.setItem('qunilator:bus', input.value);
+				} catch {
+					// private browsing: the choice holds for this page only
+				}
+			});
+		}
+	})();
+</script>

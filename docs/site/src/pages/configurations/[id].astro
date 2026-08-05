@@ -1,0 +1,75 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import { getCollection } from 'astro:content';
+
+export async function getStaticPaths() {
+	const entries = await getCollection('configurations');
+	return entries.map((entry) => ({ params: { id: entry.id }, props: { entry } }));
+}
+
+const { entry } = Astro.props;
+const c = entry.data;
+const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
+
+const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(0)} MB`;
+const busLabel = { unibus: 'UNIBUS · UniBone', qbus: 'QBUS · QBone' } as const;
+---
+
+<StarlightPage frontmatter={{ title: c.title, description: c.summary }}>
+	<p>{c.summary}</p>
+
+	<table>
+		<tbody>
+			<tr><th align="left">Bus</th><td>{busLabel[c.bus]}</td></tr>
+			{c.guest && <tr><th align="left">Guest</th><td>{c.guest}</td></tr>}
+			<tr><th align="left">Cards</th><td>{c.devices.join(' · ')}</td></tr>
+			<tr><th align="left">Download</th><td>{mb(c.download.bytes)}</td></tr>
+			<tr><th align="left">Added</th><td>{c.doc.added.toISOString().slice(0, 10)}</td></tr>
+			<tr><th align="left">Maintainer</th><td>{c.doc.maintainer.name} — <a href={c.doc.maintainer.contact}>contact</a></td></tr>
+		</tbody>
+	</table>
+
+	<h2>Why it exists</h2>
+	<p>{c.doc.motivation}</p>
+
+	<h2>Using it</h2>
+	<ul>{c.doc.usage.map((step) => <li>{step}</li>)}</ul>
+
+	{
+		c.doc.bugs.length > 0 && (
+			<>
+				<h2>Known problems</h2>
+				<ul>{c.doc.bugs.map((bug) => <li>{bug}</li>)}</ul>
+			</>
+		)
+	}
+
+	{
+		c.doc.links.length > 0 && (
+			<>
+				<h2>Links</h2>
+				<ul>
+					{c.doc.links.map((link) => (
+						<li>
+							<a href={link.url}>{link.label}</a>
+						</li>
+					))}
+				</ul>
+			</>
+		)
+	}
+
+	<h2>Getting it onto a board</h2>
+	<p>
+		The board imports this itself once it subscribes to{' '}
+		<a href={`${base}/configurations/`}>the catalogue</a> — it fetches, verifies the
+		checksum and imports, which is the route to prefer for a bundle this size.
+	</p>
+	<p>To download it by hand and use the import dialog instead:</p>
+	<ul>
+		<li><a href={c.download.url}>{entry.id}.qcfg.zip</a> — {mb(c.download.bytes)}</li>
+	</ul>
+	<p>
+		<code>sha256 {c.download.sha256}</code>
+	</p>
+</StarlightPage>

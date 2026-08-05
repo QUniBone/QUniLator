@@ -1,0 +1,115 @@
+name: Documentation site
+
+# Only the manual and its generator affect the published site, so a change to
+# the software leaves it alone.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/manual/**'
+      - 'docs/site/**'
+      - '.github/workflows/docs-site.yml'
+  pull_request:
+    paths:
+      - 'docs/manual/**'
+      - 'docs/site/**'
+      - '.github/workflows/docs-site.yml'
+  workflow_dispatch:
+
+# One deploy at a time. A second push while the first is still rsyncing would
+# interleave two file trees in the same directory.
+concurrency:
+  group: docs-site-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '24'
+  # Where main is published for now. Both halves matter: the base path is baked
+  # into every absolute link at build time, so a build for the wrong one is wrong
+  # everywhere rather than visibly broken in one place.
+  SITE_URL: https://vaxbusters.org
+  SITE_BASE: /qunilator
+  DEPLOY_USER: hans
+  DEPLOY_HOST: vaxbusters.org
+  DEPLOY_PORT: '2222'
+
+jobs:
+  check:
+    name: Type-check and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs/site
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: docs/site/package-lock.json
+
+      - run: npm ci
+
+      # Catches a malformed catalogue entry, a bad `bus:` value and any broken
+      # component prop before anything is published — the content schema fails
+      # the build rather than shipping a page that silently renders wrong.
+      - name: astro check
+        run: npx astro check
+
+      - name: Build
+        run: npm run build
+
+      - name: Check every internal link resolves
+        run: node tools/check-links.mjs dist "$SITE_BASE"
+
+      - name: Upload site
+        uses: actions/upload-artifact@v7
+        with:
+          name: site
+          path: docs/site/dist/
+          retention-days: 7
+
+  deploy:
+    name: Deploy to vaxbusters.org
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: vaxbusters
+      url: https://vaxbusters.org/qunilator/
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: site
+          path: dist
+
+      - name: Deploy
+        env:
+          DEPLOY_KEY: ${{ secrets.VAXBUSTERS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Pinned, so a substituted host cannot collect the key.
+          cat > ~/.ssh/known_hosts <<'EOF'
+          [vaxbusters.org]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE41kYCtseXJI/f+xfcHL92R95mcShg258KcqLMsXlVK
+          EOF
+          chmod 600 ~/.ssh/known_hosts
+          # The key is restricted to rrsync over one directory, so the remote path
+          # is the root of that directory rather than an absolute server path.
+          rsync -a --delete \
+            -e "ssh -i ~/.ssh/deploy_key -p $DEPLOY_PORT -o IdentitiesOnly=yes" \
+            dist/ "$DEPLOY_USER@$DEPLOY_HOST":/
+
+      - name: Verify what is live
+        run: |
+          set -euo pipefail
+          fail=0
+          for path in / /start/what-it-is/ /configurations/ /catalog/v1/index.json; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' "https://vaxbusters.org/qunilator$path")
+            printf '%-32s %s\n' "$path" "$code"
+            [ "$code" = 200 ] || fail=1
+          done
+          exit $fail
