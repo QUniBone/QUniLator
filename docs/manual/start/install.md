@@ -71,8 +71,44 @@ first use — a name and a password, and it will not go further without both. Th
 one pair serves **both** the web login and the Linux account behind it, so the
 same credentials get you into the file shares and `ssh` in later.
 
-A card can be prepared with that identity already in it, in which case no dialog
-appears; see `packaging/personalize-image.sh` in the source tree.
+## Or set it up before it ever boots
+
+A card can carry its identity from the start, in which case no dialog appears.
+Write `qunilator.toml` onto the card's first partition — the small FAT one
+labelled **BOOT**, which is what macOS and Windows mount when you insert the
+card, so a text editor is the only tool needed:
+
+```toml
+config_version = 1
+
+[system]
+hostname = "shed-11"
+
+[user]
+name = "hans"
+password = "a long enough one"
+
+[ssh]
+authorized_keys = "ssh-ed25519 AAAA… you@workstation"
+```
+
+`[user]` is required and the rest is optional. The first boot creates the
+account, applies the host name and the key, and **deletes the file**.
+
+> [!NOTE]
+> **Why the password stands in the clear**
+>
+> One identity opens three doors that each want the password in a different
+> shape — a PBKDF2 digest for the web interface, an NT hash for the file shares,
+> a `crypt(3)` hash for the Linux account — and no one hash yields the other
+> two. A file carrying a hash would set up a third of a QUniLator. Whoever holds
+> the card can read its root filesystem anyway, and the file is gone after the
+> boot that reads it.
+
+The same file dropped on the BOOT partition later is the way back in when the
+password is lost: shut down, put the card in your workstation, write the file,
+and boot. A file this refuses is left where it is, with the reason in the
+journal — `journalctl -u qunilator-seed`.
 
 ## Reading the LEDs
 

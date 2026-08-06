@@ -126,6 +126,11 @@ install -m 755 $BINARY $STAGE/usr/bin/$NAME
 install -m 755 $BINARY_DEMO $STAGE/usr/bin/$NAME-cli
 # its unit, the one that names the binary
 rebrand < packaging/debian/qbone.service > $STAGE/lib/systemd/system/$NAME.service
+# the seed unit runs that binary and orders itself before that unit, so it
+# carries the board's name too
+rebrand < packaging/debian/qunilator-seed.service \
+    > $STAGE/lib/systemd/system/qunilator-seed.service
+chmod 644 $STAGE/lib/systemd/system/qunilator-seed.service
 # the web root, branded for this board
 stage_frontend $STAGE/usr/share/qunilator/frontend
 
@@ -417,6 +422,11 @@ if [ "$1" = configure ]; then
         # updated by hand. The timer only reads a version and writes a status
         # file; nothing is installed without an operator asking for it.
         systemctl enable --now qunilator-update-check.timer || true
+        # The seed reader, enabled on an upgrade as well: it is what lets an
+        # operator whose password is gone write a file onto the card's boot
+        # partition from any workstation and have it applied at the next boot.
+        # Its condition passes it over on every boot that finds no such file.
+        systemctl enable qunilator-seed.service || true
         # The USB gadget, enabled on an upgrade as well, so a board that
         # predates it gains the fixed address its login banner offers. Building
         # a gadget takes nothing away from a board already reachable over the

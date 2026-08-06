@@ -460,9 +460,20 @@ takes no login of its own.
 
 **The window is narrower, not closed.** Between first boot and someone setting
 the operator up, the interface is open to anyone who can reach it. Preparing
-the SD card closes it entirely: `packaging/personalize-image.sh` runs the
-emulator's own `--setup-operator` inside the image, so the card boots with the
-account already made and the first-run dialog never appears.
+the SD card closes it entirely, in either of two ways:
+
+- `packaging/personalize-image.sh` runs the emulator's own `--setup-operator`
+  inside the image on a Linux workstation, so the card is written already set
+  up.
+- A `qunilator.toml` on the card's FAT `BOOT` partition, which any workstation
+  mounts and any text editor writes. `qunilator-seed.service` applies it before
+  the emulator starts and deletes it. `webseed.cpp` reads it, and the format is
+  documented in the manual's install page; the same file written later is how
+  an operator whose password is gone gets back in.
+
+The seed carries the password in the clear, because the one identity is checked
+in three shapes — a PBKDF2 digest for the web interface, an NT hash for Samba, a
+`crypt(3)` hash for the Linux account — and no one hash yields the other two.
 
 ## Open questions
 

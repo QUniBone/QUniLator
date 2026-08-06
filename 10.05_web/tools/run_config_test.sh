@@ -58,6 +58,13 @@ $CXX -std=c++11 -Wall -Wextra $INCLUDES \
 	"$OUT/civetweb.o" \
 	-lpthread -o "$OUT/auth_test"
 
+# The seed file an SD card carries. It reads a small part of TOML and nothing
+# else, so it links against its own translation unit alone.
+$CXX -std=c++11 -Wall -Wextra -I "$WEB" \
+	"$TOOLS/seed_test.cpp" \
+	"$WEB/webseed.cpp" \
+	-o "$OUT/seed_test"
+
 # The console channel is civetweb-free, so it links against nothing but its own
 # translation unit.
 $CXX -std=c++11 -Wall -Wextra -I "$WEB" \
@@ -99,6 +106,7 @@ $CXX -std=c++11 -Wall -Wextra -I "$DEV" \
 
 "$OUT/config_test"
 "$OUT/auth_test"
+"$OUT/seed_test"
 "$OUT/console_channel_test"
 "$OUT/recording_test"
 "$OUT/status_power_test"

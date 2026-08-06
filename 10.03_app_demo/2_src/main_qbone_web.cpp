@@ -46,6 +46,7 @@
 #include "webshares.hpp"
 #include "websystem.hpp"
 #include "webversion.hpp"
+#include "webseed.hpp"
 #include "boardclaim.hpp"
 #include "device_configuration.hpp"
 
@@ -95,43 +96,34 @@ static bool read_whole_file(const char *path, std::string *out)
 	return true;
 }
 
-// Create the operator - the one account that opens the web interface, the file
-// shares and ssh - and exit. Preparing an SD card runs this inside the image so
-// the card boots ready to use, and it is what gives an operator a way in again
-// when the password is gone. The password is read from stdin, where a process
-// listing cannot see it.
-//
-// Nothing here touches the bus, and the logger is the only singleton it needs.
-static int setup_operator(const std::string &user, const std::string &keyfile,
-		const std::string &hostname, bool adopt)
+// Setting up writes the credentials the service holds in memory, so it belongs
+// to root and to a moment when the service is not running - it would write its
+// own over them at the next settings change.
+static bool setup_is_possible(void)
 {
 	if (geteuid() != 0) {
-		fprintf(stderr, "--setup-operator creates an account, so it must run as root\n");
-		return 1;
+		fprintf(stderr, "setting up creates an account, so it must run as root\n");
+		return false;
 	}
-	// The running service holds the credentials in memory and writes them out
-	// again whenever a setting changes, so a second process writing the same
-	// file would be overwritten. Its runtime directory says whether it is up.
 	struct stat st;
-	if (stat("/run/qunilator/version", &st) == 0) {
-		std::string unit = webversion_package() + ".service";
-		fprintf(stderr, "%s is running, and would write its own credentials over "
-				"these.\n  systemctl stop %s\n  <this command>\n  systemctl start %s\n",
-				unit.c_str(), unit.c_str(), unit.c_str());
-		return 1;
-	}
-	std::string password;
-	if (!read_line(stdin, &password) || password.empty()) {
-		fprintf(stderr, "--setup-operator reads the password from stdin, and read none\n");
-		return 1;
-	}
-	std::string key;
-	if (!keyfile.empty() && !read_whole_file(keyfile.c_str(), &key)) {
-		fprintf(stderr, "cannot read the ssh key in %s: %s\n", keyfile.c_str(),
-				strerror(errno));
-		return 1;
-	}
+	if (stat("/run/qunilator/version", &st) != 0)
+		return true; // the unit's runtime directory is gone, so it is not up
+	std::string unit = webversion_package() + ".service";
+	fprintf(stderr, "%s is running, and would write its own credentials over "
+			"these.\n  systemctl stop %s\n  <this command>\n  systemctl start %s\n",
+			unit.c_str(), unit.c_str(), unit.c_str());
+	return false;
+}
 
+// Create the operator - the one account that opens the web interface, the file
+// shares and ssh - and exit. Preparing an SD card does this inside the image so
+// the card boots ready to use, and it is what gives an operator a way in again
+// when the password is gone.
+//
+// Nothing here touches the bus, and the logger is the only singleton it needs.
+static int setup_operator(const std::string &user, const std::string &password,
+		const std::string &key, const std::string &hostname, bool adopt)
+{
 	logger = new logger_c();
 	logger->default_level = LL_INFO;
 	logger->reset_log_levels();
@@ -172,6 +164,48 @@ static int setup_operator(const std::string &user, const std::string &keyfile,
 	return 0;
 }
 
+// Apply the setup file an SD card carries and remove it. The card is prepared
+// on a workstation that has no way to make an account inside the image, so it
+// writes what it wants and the first boot that finds the file does the work.
+// The same file dropped on the card later is how an operator whose password is
+// gone gets back in.
+static int setup_from_seed(const std::string &path)
+{
+	std::string text;
+	if (!read_whole_file(path.c_str(), &text)) {
+		fprintf(stderr, "cannot read %s: %s\n", path.c_str(), strerror(errno));
+		return 1;
+	}
+	webseed_c seed;
+	std::string error;
+	if (!webseed_parse(text, &seed, &error)) {
+		fprintf(stderr, "%s: %s\n", path.c_str(), error.c_str());
+		return 1;
+	}
+	// A card prepared with a name that is already an account here is asking for
+	// that account: there is nobody at the machine to answer the question, and
+	// the alternative is an installation that will not come up.
+	int result = setup_operator(seed.user, seed.password, seed.ssh_key, seed.hostname,
+			/*adopt*/true);
+	if (result != 0)
+		return result;
+	// The password stood in the file in the clear, so the file goes: overwritten
+	// where the filesystem allows it, and unlinked either way.
+	FILE *f = fopen(path.c_str(), "r+b");
+	if (f != nullptr) {
+		for (size_t i = 0; i < text.size(); i++)
+			fputc(0, f);
+		fflush(f);
+		fclose(f);
+	}
+	if (unlink(path.c_str()) != 0)
+		fprintf(stderr, "warning: %s is still there: %s\n", path.c_str(),
+				strerror(errno));
+	else
+		printf("%s is applied and removed\n", path.c_str());
+	return 0;
+}
+
 static void usage(const char *progname)
 {
 	printf("%s - " QUNILATOR_NAME " " QUNIBUS_NAME " emulator, served over its web interface\n\n", progname);
@@ -194,6 +228,9 @@ static void usage(const char *progname)
 	printf("  --hostname <name>        the name this " QUNILATOR_NAME " has on the network\n");
 	printf("  --adopt-account          make an account that exists already the operator's,\n");
 	printf("                           keeping its home, its files and its shell\n");
+	printf("  --seed <file>            apply a setup file an SD card carries, and\n");
+	printf("                           remove it; " WEBSEED_PATH " is where\n");
+	printf("                           the card carries one\n");
 }
 
 int main(int argc, char *argv[])
@@ -207,7 +244,7 @@ int main(int argc, char *argv[])
 #endif
 	unsigned loglevel = LL_INFO;
 	std::string startup_config;
-	std::string operator_name, ssh_key_file, hostname;
+	std::string operator_name, ssh_key_file, hostname, seed_file;
 	bool adopt_account = false;
 
 	for (int i = 1; i < argc; i++) {
@@ -229,6 +266,8 @@ int main(int argc, char *argv[])
 			hostname = argv[++i];
 		else if (!strcmp(argv[i], "--adopt-account"))
 			adopt_account = true;
+		else if (!strcmp(argv[i], "--seed") && i + 1 < argc)
+			seed_file = argv[++i];
 		else if (!strcmp(argv[i], "--help")) {
 			usage(argv[0]);
 			return 0;
@@ -241,9 +280,30 @@ int main(int argc, char *argv[])
 
 	// Setting up is a run of its own: it creates the account and returns,
 	// leaving the hardware alone, so it works in an SD-card image as well as on
-	// a machine that is running.
-	if (!operator_name.empty())
-		return setup_operator(operator_name, ssh_key_file, hostname, adopt_account);
+	// a machine that is switched off.
+	if (!seed_file.empty()) {
+		if (!setup_is_possible())
+			return 1;
+		return setup_from_seed(seed_file);
+	}
+	if (!operator_name.empty()) {
+		if (!setup_is_possible())
+			return 1;
+		// The password comes on stdin, where a process listing cannot see it.
+		std::string password;
+		if (!read_line(stdin, &password) || password.empty()) {
+			fprintf(stderr, "--setup-operator reads the password from stdin, and "
+					"read none\n");
+			return 1;
+		}
+		std::string key;
+		if (!ssh_key_file.empty() && !read_whole_file(ssh_key_file.c_str(), &key)) {
+			fprintf(stderr, "cannot read the ssh key in %s: %s\n",
+					ssh_key_file.c_str(), strerror(errno));
+			return 1;
+		}
+		return setup_operator(operator_name, password, key, hostname, adopt_account);
+	}
 	if (!ssh_key_file.empty() || !hostname.empty() || adopt_account) {
 		fprintf(stderr, "%s: --ssh-key, --hostname and --adopt-account belong to "
 				"--setup-operator\n", argv[0]);

@@ -311,6 +311,7 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/weblogging.o	\
 	$(OBJDIR)/webauth.o	\
 	$(OBJDIR)/webshares.o	\
+	$(OBJDIR)/webseed.o	\
 	$(OBJDIR)/websystem.o	\
 	$(OBJDIR)/webserialports.o	\
 	$(OBJDIR)/webversion.o	\
@@ -751,6 +752,9 @@ $(OBJDIR)/webauth.o :  $(WEB_SRC_DIR)/webauth.cpp $(WEB_SRC_DIR)/webauth.hpp $(W
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webshares.o :  $(WEB_SRC_DIR)/webshares.cpp $(WEB_SRC_DIR)/webshares.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/webseed.o :  $(WEB_SRC_DIR)/webseed.cpp $(WEB_SRC_DIR)/webseed.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/websystem.o :  $(WEB_SRC_DIR)/websystem.cpp $(WEB_SRC_DIR)/websystem.hpp $(WEB_SRC_DIR)/webshares.hpp $(WEB_SRC_DIR)/webauth.hpp

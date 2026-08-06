@@ -1,0 +1,22 @@
+[Unit]
+Description=Apply the setup file the SD card carries
+Documentation=file:/usr/share/qunilator/README.Debian
+# The file names the operator, so this runs before the emulator holds the
+# credentials in memory - it would write its own over them.
+After=local-fs.target
+Before=qbone.service
+ConditionPathExists=/boot/firmware/qunilator.toml
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment=QUNILATOR_DIR=/var/lib/qunilator
+ExecStart=/usr/bin/qbone --seed /boot/firmware/qunilator.toml
+# A card carrying a file this refuses comes up asking to be set up through the
+# web interface, with the reason in the journal, rather than not coming up.
+SuccessExitStatus=0 1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
