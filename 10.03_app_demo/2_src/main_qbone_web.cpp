@@ -96,6 +96,29 @@ static bool read_whole_file(const char *path, std::string *out)
 	return true;
 }
 
+// The ssh key and the host name, which follow the account whichever shape the
+// password arrived in. Neither is required, and a refusal of either is reported
+// without taking the account back: it is there, and the rest can be set from
+// the System page.
+static int apply_the_rest(const std::string &user, const std::string &key,
+		const std::string &hostname)
+{
+	std::string error;
+	if (!key.empty()) {
+		if (!webshares_set_ssh_key(user, key, &error))
+			fprintf(stderr, "the ssh key was not installed: %s\n", error.c_str());
+		else
+			printf("%s reaches a shell with the given ssh key\n", user.c_str());
+	}
+	if (!hostname.empty()) {
+		if (!websystem_set_hostname(hostname, &error))
+			fprintf(stderr, "the host name was not set: %s\n", error.c_str());
+		else
+			printf("the host name is %s\n", hostname.c_str());
+	}
+	return 0;
+}
+
 // Setting up writes the credentials the service holds in memory, so it belongs
 // to root and to a moment when the service is not running - it would write its
 // own over them at the next settings change.
@@ -149,20 +172,10 @@ static int setup_operator(const std::string &user, const std::string &password,
 	printf("%s is the operator: web interface, file shares and ssh\n", user.c_str());
 	printf("the credentials are in %s/settings.json\n",
 			websettings_state_dir().c_str());
-	if (!key.empty()) {
-		if (!webshares_set_ssh_key(user, key, &error))
-			fprintf(stderr, "the ssh key was not installed: %s\n", error.c_str());
-		else
-			printf("%s reaches a shell with the given ssh key\n", user.c_str());
-	}
-	if (!hostname.empty()) {
-		if (!websystem_set_hostname(hostname, &error))
-			fprintf(stderr, "the host name was not set: %s\n", error.c_str());
-		else
-			printf("the host name is %s\n", hostname.c_str());
-	}
-	return 0;
+	return apply_the_rest(user, key, hostname);
 }
+
+static int setup_operator_hashed(const webseed_c &seed, bool adopt);
 
 // Apply the setup file an SD card carries and remove it. The card is prepared
 // on a workstation that has no way to make an account inside the image, so it
@@ -185,8 +198,10 @@ static int setup_from_seed(const std::string &path)
 	// A card prepared with a name that is already an account here is asking for
 	// that account: there is nobody at the machine to answer the question, and
 	// the alternative is an installation that will not come up.
-	int result = setup_operator(seed.user, seed.password, seed.ssh_key, seed.hostname,
-			/*adopt*/true);
+	int result = seed.derived()
+			? setup_operator_hashed(seed, /*adopt*/true)
+			: setup_operator(seed.user, seed.password, seed.ssh_key, seed.hostname,
+					/*adopt*/true);
 	if (result != 0)
 		return result;
 	// The password stood in the file in the clear, so the file goes: overwritten
@@ -204,6 +219,36 @@ static int setup_from_seed(const std::string &path)
 	else
 		printf("%s is applied and removed\n", path.c_str());
 	return 0;
+}
+
+// The same from a card that carries the password already derived: three hashes
+// instead of one password, each going where only that shape is understood.
+static int setup_operator_hashed(const webseed_c &seed, bool adopt)
+{
+	logger = new logger_c();
+	logger->default_level = LL_INFO;
+	logger->reset_log_levels();
+	if (getenv("QUNILATOR_DIR") == nullptr)
+		setenv("QUNILATOR_DIR", "/var/lib/qunilator", 1);
+	websettings_startup();
+
+	std::string error;
+	std::string previous = webauth_user();
+	if (adopt && !webshares_adopt_account(seed.user, &error)) {
+		fprintf(stderr, "%s\n", error.c_str());
+		return 1;
+	}
+	if (!webauth_set_digest(seed.user, seed.web_salt, seed.web_hash,
+			seed.web_iterations, &error)) {
+		fprintf(stderr, "%s\n", error.c_str());
+		return 1;
+	}
+	webshares_apply_hashed(previous, seed.user, seed.unix_hash, seed.nt_hash);
+	printf("%s is the operator: web interface, file shares and ssh\n",
+			seed.user.c_str());
+	printf("the credentials are in %s/settings.json, and no password was read\n",
+			websettings_state_dir().c_str());
+	return apply_the_rest(seed.user, seed.ssh_key, seed.hostname);
 }
 
 static void usage(const char *progname)

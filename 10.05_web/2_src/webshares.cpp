@@ -50,6 +50,7 @@
 #include <fcntl.h>
 #include <grp.h>
 #include <pwd.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -91,6 +92,7 @@ static const char *USERMOD = "/usr/sbin/usermod";
 static const char *GROUPADD = "/usr/sbin/groupadd";
 static const char *CHPASSWD = "/usr/sbin/chpasswd";
 static const char *SMBPASSWD = "/usr/bin/smbpasswd";
+static const char *PDBEDIT = "/usr/bin/pdbedit";
 static const char *SYSTEMCTL = "/usr/bin/systemctl";
 static const char *SSHD = "/usr/sbin/sshd";
 
@@ -768,23 +770,82 @@ bool webshares_adopt_account(const std::string &name, std::string *error) {
 	return true;
 }
 
-void webshares_apply(const std::string &previous, const std::string &name,
-		const std::string &password) {
-	if (name.empty() || getuid() != 0 || getpwnam(WEBSHARES_SERVICE_USER) == nullptr)
+// chpasswd takes a crypt(3) hash as readily as a password, which is what lets a
+// prepared card set the account up without carrying the password.
+static void set_unix_password_hashed(const std::string &name, const std::string &hash) {
+	if (!have(CHPASSWD))
 		return;
+	const char *argv[] = { CHPASSWD, "--encrypted", nullptr };
+	run_fed(argv, name + ":" + hash + "\n");
+}
 
+// smbpasswd only takes a password, and refuses to add an entry without one, so
+// the entry is made with a password nobody will ever use - random bytes, read
+// here and discarded - and pdbedit then puts the real NT hash in its place.
+static void set_samba_password_hashed(const std::string &name, const std::string &nt_hash) {
+	if (!have(SMBPASSWD) || !have(PDBEDIT))
+		return;
+	uint8_t noise[24];
+	std::string throwaway;
+	FILE *f = fopen("/dev/urandom", "rb");
+	if (f != nullptr && fread(noise, 1, sizeof(noise), f) == sizeof(noise)) {
+		static const char *alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+				"abcdefghijklmnopqrstuvwxyz0123456789";
+		for (size_t i = 0; i < sizeof(noise); i++)
+			throwaway.push_back(alphabet[noise[i] % 62]);
+	}
+	if (f != nullptr)
+		fclose(f);
+	if (throwaway.empty()) {
+		WEB_WARNING("no randomness for the file shares' throwaway password");
+		return;
+	}
+	const char *add[] = { SMBPASSWD, "-s", "-a", name.c_str(), nullptr };
+	run_fed(add, throwaway + "\n" + throwaway + "\n");
+	std::string option = "--set-nt-hash=" + nt_hash;
+	const char *set[] = { PDBEDIT, "-u", name.c_str(), option.c_str(), nullptr };
+	if (run(set) != 0)
+		WEB_WARNING("the file shares did not take the NT hash for %s", name.c_str());
+}
+
+// Everything a new operator needs beyond the password itself, which the two
+// callers below hold in their own form.
+static bool shape_the_account(const std::string &name) {
 	point_smb_at_the_group();
 	point_sftp_at_the_group();
 	if (!ensure_account(name)) {
 		WEB_WARNING("the file shares have no account for %s", name.c_str());
-		return;
+		return false;
 	}
-	set_unix_password(name, password);
-	set_samba_password(name, password);
+	return true;
+}
+
+static void finish_the_account(const std::string &previous, const std::string &name) {
 	lock_onboarding_account(name);
 	lock_service_account();
 	point_ftp_at(name);
 	retire_account(previous, name);
-
 	WEB_INFO("the file shares answer %s with the web password", name.c_str());
+}
+
+void webshares_apply(const std::string &previous, const std::string &name,
+		const std::string &password) {
+	if (name.empty() || getuid() != 0 || getpwnam(WEBSHARES_SERVICE_USER) == nullptr)
+		return;
+	if (!shape_the_account(name))
+		return;
+	set_unix_password(name, password);
+	set_samba_password(name, password);
+	finish_the_account(previous, name);
+}
+
+void webshares_apply_hashed(const std::string &previous, const std::string &name,
+		const std::string &unix_hash, const std::string &nt_hash) {
+	if (name.empty() || getuid() != 0 || getpwnam(WEBSHARES_SERVICE_USER) == nullptr)
+		return;
+	if (!shape_the_account(name))
+		return;
+	set_unix_password_hashed(name, unix_hash);
+	set_samba_password_hashed(name, nt_hash);
+	finish_the_account(previous, name);
 }

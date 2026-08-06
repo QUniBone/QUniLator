@@ -377,6 +377,35 @@ bool webauth_set_credentials(const std::string &user, const std::string &passwor
 	return true;
 }
 
+bool webauth_set_digest(const std::string &user, const std::string &salt_hex,
+		const std::string &hash_hex, unsigned iterations, std::string *error) {
+	{
+		std::lock_guard<std::mutex> lock(auth_mutex);
+		if (user.empty()) {
+			*error = "a user name is required";
+			return false;
+		}
+		if (!webshares_name_acceptable(user, error))
+			return false;
+		if (from_hex(salt_hex, stored_salt, sizeof(stored_salt)) != sizeof(stored_salt)) {
+			*error = "the salt is not 16 bytes of hex";
+			return false;
+		}
+		if (from_hex(hash_hex, stored_hash, sizeof(stored_hash)) != sizeof(stored_hash)) {
+			*error = "the hash is not 32 bytes of hex";
+			return false;
+		}
+		stored_iterations = iterations != 0 ? iterations : PBKDF2_ITERATIONS;
+		// Nothing here has seen the password, so there is nothing to remember;
+		// the first request that verifies pays the derivation and fills it.
+		cache_valid = false;
+		stored_user = user;
+		configured = true;
+	}
+	websettings_save();
+	return true;
+}
+
 void webauth_load(const picojson::value &admin) {
 	if (!admin.is<picojson::object>())
 		return;

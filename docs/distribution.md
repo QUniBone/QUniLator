@@ -471,9 +471,14 @@ the SD card closes it entirely, in either of two ways:
   documented in the manual's install page; the same file written later is how
   an operator whose password is gone gets back in.
 
-The seed carries the password in the clear, because the one identity is checked
-in three shapes — a PBKDF2 digest for the web interface, an NT hash for Samba, a
-`crypt(3)` hash for the Linux account — and no one hash yields the other two.
+The seed carries the password either in the clear, which is what a hand-written
+card does, or already derived into the three shapes the one identity is checked
+in — a PBKDF2 digest for the web interface, a `crypt(3)` hash for the Linux
+account, an NT hash for Samba. No single hash yields the other two, so the
+derived form carries all three or the file is refused. `chpasswd --encrypted`
+takes the first, and Samba takes the third through an entry made with a
+throwaway password and then `pdbedit --set-nt-hash`, since `smbpasswd` will not
+add an entry without one.
 
 ## Open questions
 

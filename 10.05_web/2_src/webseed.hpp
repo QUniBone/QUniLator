@@ -10,13 +10,30 @@
 
 #include <string>
 
-// What a seed file says. Everything but the operator's name and password is
-// optional, and an absent field is empty.
+// What a seed file says. The operator's name and one form of the password are
+// required; everything else is optional, and an absent field is empty.
+//
+// The password comes either in the clear, which is what somebody typing the
+// file by hand writes, or already derived - which is what a tool preparing a
+// card writes, so the password itself never lands on the card. The three
+// derived forms are all needed, because the one identity is checked in three
+// places that each want it in their own shape.
 struct webseed_c {
 	std::string user;
-	std::string password;
 	std::string hostname;
 	std::string ssh_key;
+
+	std::string password;    // in the clear, empty when the file carries digests
+
+	std::string web_salt;    // hex, what the web interface checks against
+	std::string web_hash;    // hex, PBKDF2-HMAC-SHA256 over the salt
+	unsigned web_iterations;
+	std::string unix_hash;   // crypt(3), the Linux account and ssh
+	std::string nt_hash;     // hex, the file shares
+
+	bool derived(void) const { return password.empty(); }
+
+	webseed_c() : web_iterations(0) {}
 };
 
 // Read a seed file's text. True with the fields in *out; false with the reason

@@ -95,17 +95,39 @@ authorized_keys = "ssh-ed25519 AAAA… you@workstation"
 `[user]` is required and the rest is optional. The first boot creates the
 account, applies the host name and the key, and **deletes the file**.
 
-> [!NOTE]
-> **Why the password stands in the clear**
->
-> One identity opens three doors that each want the password in a different
-> shape — a PBKDF2 digest for the web interface, an NT hash for the file shares,
-> a `crypt(3)` hash for the Linux account — and no one hash yields the other
-> two. A file carrying a hash would set up a third of a QUniLator. Whoever holds
-> the card can read its root filesystem anyway, and the file is gone after the
-> boot that reads it.
+### Without writing the password down
 
-The same file dropped on the BOOT partition later is the way back in when the
+The one identity is checked in three places that each want the password in their
+own shape, so a file can carry all three derived forms instead of the password —
+which is what a tool preparing a card writes, and it means the password itself
+never lands on the card:
+
+```toml
+config_version = 1
+
+[user]
+name = "hans"
+
+[credentials]
+salt = "fc49f2bb3c943b7edb12dcb50eef0312"   # the web interface: PBKDF2-HMAC-SHA256
+hash = "0dfa3601b4e4…"                       # 32 bytes, over that salt
+iterations = 120000
+unix = "$6$NHIZxjEzBoO5…"                    # the Linux account and ssh: crypt(3)
+nt   = "6FDF46CE329CD2664FB6EF1E3B2DD817"    # the file shares: MD4 of UTF-16LE
+```
+
+All three or none: a file carrying one of them would set up a third of a
+QUniLator, and one carrying both a plaintext `password` and a `[credentials]`
+block is refused as two ways of saying the same thing.
+
+Whoever holds the card can read its root filesystem either way, so this is not
+about protecting the machine — it is about the password, which people reuse, and
+which a plaintext file on a partition your workstation mounts may follow into an
+unrelated backup.
+
+## Getting back in
+
+The same file dropped on the BOOT partition later is the way back when the
 password is lost: shut down, put the card in your workstation, write the file,
 and boot. A file this refuses is left where it is, with the reason in the
 journal — `journalctl -u qunilator-seed`.

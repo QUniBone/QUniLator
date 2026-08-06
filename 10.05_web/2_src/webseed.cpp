@@ -23,13 +23,29 @@
      [ssh]
      authorized_keys = "ssh-ed25519 AAAA… you@workstation"
 
-   The password stands in the clear because one identity opens three doors that
-   take it in three different shapes: a PBKDF2 digest for the web interface, an
-   NT hash for the file shares, and a crypt(3) hash for the Linux account. A
-   hash of any one of them cannot produce the other two, so a file carrying one
-   would set up a third of an installation. The card is readable by whoever
-   holds it either way - the root filesystem is on the same card - and the file
-   is gone after the first boot that reads it.
+   The one identity is checked in three places that each want the password in
+   their own shape: a PBKDF2 digest for the web interface, a crypt(3) hash for
+   the Linux account and ssh, an NT hash for the file shares. No one of them
+   yields the other two, so a file carrying a single hash would set up a third
+   of an installation.
+
+   A file therefore carries either the password in the clear, which is what
+   somebody writing the file in a text editor does, or all three derived forms
+   at once, which is what a tool preparing a card writes so that the password
+   never lands on the card at all:
+
+     [credentials]
+     salt = "9bb2135aaf8d06fb6e5a5618cbd173fb"
+     hash = "da59e70ef3d6dd8cf9265fa32685cb05a281a2f23485b6043f163b759418920a"
+     iterations = 120000
+     unix = "$6$rnQmlCfefZtUUe1v$mmsA45vDNARA61iHRprXuUdHw75WwnEl0gq…"
+     nt = "6D16D76889C203AD076B704E89526B9B"
+
+   A card is readable by whoever holds it either way - the root filesystem is on
+   it - so the derived form protects the password rather than the installation:
+   passwords are reused, and a file in the clear on a partition a workstation
+   mounts is one an unrelated backup may carry off. The file is gone after the
+   boot that reads it, in both forms.
 
    The format is a small part of TOML: comments, sections, and a key with a
    quoted string or a bare number. That is all this file needs, and a reader in
@@ -46,7 +62,8 @@
 #include "webseed.hpp"
 
 // what the current version of the file may say
-static const char *KNOWN_SECTIONS[] = { "system", "user", "ssh", nullptr };
+static const char *KNOWN_SECTIONS[] = { "system", "user", "ssh", "credentials",
+		nullptr };
 
 static std::string trimmed(const std::string &s) {
 	size_t b = 0, e = s.size();
@@ -85,6 +102,27 @@ static bool unquote(const std::string &in, std::string *out, std::string *error)
 			return false;
 		}
 	}
+	return true;
+}
+
+// A run of hex digits of exactly the length a digest of that kind has, so a
+// truncated paste is refused here rather than after the account exists.
+static bool hex_of_length(const std::string &s, size_t chars) {
+	if (s.size() != chars)
+		return false;
+	for (size_t i = 0; i < s.size(); i++)
+		if (!isxdigit((unsigned char) s[i]))
+			return false;
+	return true;
+}
+
+static bool bare_number(const std::string &s, unsigned *out) {
+	if (s.empty())
+		return false;
+	for (size_t i = 0; i < s.size(); i++)
+		if (!isdigit((unsigned char) s[i]))
+			return false;
+	*out = (unsigned) strtoul(s.c_str(), nullptr, 10);
 	return true;
 }
 
@@ -155,6 +193,13 @@ bool webseed_parse(const std::string &text, webseed_c *out, std::string *error) 
 			*error = "\"" + key + "\" stands before any section" + std::string(where);
 			return false;
 		}
+		if (section == "credentials" && key == "iterations") {
+			if (!bare_number(raw, &out->web_iterations) || out->web_iterations == 0) {
+				*error = "iterations is a count" + std::string(where);
+				return false;
+			}
+			continue;
+		}
 		if (!unquote(raw, &value, error)) {
 			*error += std::string(where);
 			return false;
@@ -168,6 +213,14 @@ bool webseed_parse(const std::string &text, webseed_c *out, std::string *error) 
 			out->password = value;
 		else if (section == "ssh" && key == "authorized_keys")
 			out->ssh_key = value;
+		else if (section == "credentials" && key == "salt")
+			out->web_salt = value;
+		else if (section == "credentials" && key == "hash")
+			out->web_hash = value;
+		else if (section == "credentials" && key == "unix")
+			out->unix_hash = value;
+		else if (section == "credentials" && key == "nt")
+			out->nt_hash = value;
 		else {
 			*error = "\"" + key + "\" is not a key of [" + section + "]"
 					+ std::string(where);
@@ -175,9 +228,46 @@ bool webseed_parse(const std::string &text, webseed_c *out, std::string *error) 
 		}
 	}
 
-	if (out->user.empty() || out->password.empty()) {
-		*error = "a seed file names the operator: [user] name and password";
+	if (out->user.empty()) {
+		*error = "a seed file names the operator: [user] name";
 		return false;
+	}
+	bool any_derived = !out->web_salt.empty() || !out->web_hash.empty()
+			|| out->web_iterations != 0 || !out->unix_hash.empty()
+			|| !out->nt_hash.empty();
+	if (out->password.empty() && !any_derived) {
+		*error = "a seed file carries a password: [user] password, or the "
+				"derived forms in [credentials]";
+		return false;
+	}
+	if (!out->password.empty() && any_derived) {
+		*error = "a password in the clear and derived forms are two ways of "
+				"saying the same thing; give one";
+		return false;
+	}
+	if (any_derived) {
+		// All three, or an installation would come up with one door open and
+		// two shut, which is worse than one that asks to be set up.
+		if (!hex_of_length(out->web_salt, 32)) {
+			*error = "[credentials] salt is 32 hex digits";
+			return false;
+		}
+		if (!hex_of_length(out->web_hash, 64)) {
+			*error = "[credentials] hash is 64 hex digits";
+			return false;
+		}
+		if (!hex_of_length(out->nt_hash, 32)) {
+			*error = "[credentials] nt is 32 hex digits";
+			return false;
+		}
+		if (out->unix_hash.size() < 2 || out->unix_hash[0] != '$') {
+			*error = "[credentials] unix is a crypt(3) hash, which opens with $";
+			return false;
+		}
+		if (out->web_iterations == 0) {
+			*error = "[credentials] iterations says how many rounds the hash took";
+			return false;
+		}
 	}
 	return true;
 }

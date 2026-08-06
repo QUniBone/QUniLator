@@ -26,6 +26,14 @@ bool webshares_name_acceptable(const std::string &name, std::string *error);
 void webshares_apply(const std::string &previous, const std::string &name,
 		const std::string &password);
 
+// The same, from hashes somebody else derived: a card prepared by a tool
+// carries the Linux account's crypt(3) hash and the file shares' NT hash, so
+// the password itself never reaches the card. Same shaping of the account and
+// the share configuration as above, and the same best-effort silence off a
+// board.
+void webshares_apply_hashed(const std::string &previous, const std::string &name,
+		const std::string &unix_hash, const std::string &nt_hash);
+
 // Take an account that exists already and make it the operator's, keeping its
 // home, its files and its shell. This is the name that was a personal login
 // before an operator was a thing; the interface refuses such a name, because

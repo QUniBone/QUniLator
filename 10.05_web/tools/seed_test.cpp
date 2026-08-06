@@ -57,6 +57,22 @@ static const char *A_WHOLE_FILE =
 		"[ssh]\n"
 		"authorized_keys = \"ssh-ed25519 AAAAC3Nz you@workstation\"\n";
 
+static const char *SALT = "9bb2135aaf8d06fb6e5a5618cbd173fb";
+static const char *HASH =
+		"da59e70ef3d6dd8cf9265fa32685cb05a281a2f23485b6043f163b759418920a";
+static const char *NT = "6D16D76889C203AD076B704E89526B9B";
+
+// what a tool preparing a card writes: the password derived three ways, and
+// never itself
+static std::string derived_file(const std::string &extra = "") {
+	return std::string("config_version = 1\n[user]\nname = \"hans\"\n"
+			"[credentials]\n") + "salt = \"" + SALT + "\"\n"
+			+ "hash = \"" + HASH + "\"\n"
+			+ "iterations = 120000\n"
+			+ "unix = \"$6$rnQmlCfefZtUUe1v$mmsA45vDNARA61iHRprXuUdHw75\"\n"
+			+ "nt = \"" + NT + "\"\n" + extra;
+}
+
 int main(void) {
 	webseed_c seed;
 
@@ -106,6 +122,36 @@ int main(void) {
 			"a password carrying a quote and a backslash");
 	check(refuses("[user]\nname = \"op\"\npassword = \"bell \\a\"\n", "escape"),
 			"an escape this does not read is refused");
+
+	printf("--- a file a tool wrote, carrying no password\n");
+	check(takes(derived_file(), &seed), "the derived forms are read");
+	check(seed.derived(), "and the file says so");
+	check(seed.password.empty(), "with no password in it");
+	check(seed.web_salt == SALT && seed.web_hash == HASH
+			&& seed.web_iterations == 120000, "the web digest, salt and rounds");
+	check(seed.nt_hash == NT, "the NT hash for the file shares");
+	check(seed.unix_hash.compare(0, 3, "$6$") == 0, "the crypt hash for the account");
+
+	check(refuses(derived_file("[user]\npassword = \"also this\"\n"), "one"),
+			"a file carrying both a password and digests is refused");
+	check(refuses("[user]\nname = \"h\"\n[credentials]\nsalt = \"abcd\"\n"
+			"hash = \"ff\"\niterations = 1\nunix = \"$6$x\"\nnt = \"ff\"\n",
+			"32 hex digits"),
+			"a salt of the wrong length is refused");
+	check(refuses("[user]\nname = \"h\"\n[credentials]\nsalt = \"" + std::string(SALT)
+			+ "\"\nhash = \"" + HASH + "\"\niterations = 120000\n"
+			"unix = \"plain\"\nnt = \"" + NT + "\"\n", "crypt(3)"),
+			"a unix hash that is not a crypt hash is refused");
+	check(refuses("[user]\nname = \"h\"\n[credentials]\nsalt = \"" + std::string(SALT)
+			+ "\"\nhash = \"" + HASH + "\"\nunix = \"$6$x\"\nnt = \"" + NT + "\"\n",
+			"iterations"),
+			"digests with no round count are refused");
+	check(refuses("[user]\nname = \"h\"\n[credentials]\nnt = \"" + std::string(NT)
+			+ "\"\n", "hex"),
+			"one digest on its own is refused: three doors, three shapes");
+	check(refuses(derived_file() + "[credentials]\niterations = \"120000\"\n",
+			"count"),
+			"a quoted round count is refused");
 
 	printf("\n%s\n", failures == 0 ? "seed_test: all checks passed"
 			: "seed_test: FAILURES");

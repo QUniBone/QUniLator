@@ -40,6 +40,14 @@ bool webauth_verify(const std::string &user, const std::string &password);
 bool webauth_set_credentials(const std::string &user, const std::string &password,
 		std::string *error);
 
+// The same, from a digest somebody else derived: a card prepared by a tool
+// carries the password already hashed, so the password itself never reaches the
+// card. The salt and hash are hex of the lengths this file works in. The file
+// shares are not touched here - they take their own hashes, through
+// webshares_apply_hashed - so this is the web half alone.
+bool webauth_set_digest(const std::string &user, const std::string &salt_hex,
+		const std::string &hash_hex, unsigned iterations, std::string *error);
+
 // Persistence, called from websettings.cpp: the "admin" member of settings.json.
 void webauth_load(const picojson::value &admin);
 picojson::value webauth_json(void);
