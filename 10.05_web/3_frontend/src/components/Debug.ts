@@ -44,21 +44,26 @@ function parseOctal(s: string): number | null {
 
 /* ---- the processor ------------------------------------------------------ */
 
-// One labelled octal readout, laid out like the console card's.
+// One register: its name, and what it holds. A register is read as a line —
+// name, then value — and the lines stand in columns, so a column is scanned
+// downward the way a register dump is written rather than sideways along a row
+// of captions the eye has to keep counting across.
 function Reg({ name, value, width }: { name: string; value: number; width?: number }) {
-  return html`<label class="dbg-reg">${name}<span class="cpu-oct">${octalStr(
-    value,
-    width || 16
-  )}</span></label>`;
+  return html`<div class="dbg-regrow">
+    <span class="dbg-regname">${name}</span>
+    <span class="cpu-oct">${octalStr(value, width || 16)}</span>
+  </div>`;
 }
 
-// The status word: the mode the CPU runs in, what it interrupts at, and the
-// four condition codes. A model without modes has no mode to show — the bits
-// are not zero there, they do not exist — which is what `has_modes` decides.
+// The status word: its value, the mode the CPU runs in, what it interrupts at,
+// and the four condition codes — one line, because they are one register. A
+// model without modes has no mode to show — the bits are not zero there, they
+// do not exist — which is what `has_modes` decides.
 function PswRow({ cpu }: { cpu: DebugCpu }) {
   const p = cpu.psw;
   if (!p) return null;
-  return html`<div class="cpu-flags">
+  return html`<div class="cpu-flags dbg-psw">
+    <${Reg} name="PSW" value=${p.value} />
     ${p.has_modes &&
     html`<span class="cpu-mode" title="current mode / previous mode"
       >${(p.mode || '?')[0].toUpperCase()}<span class="cpu-prev"
@@ -75,30 +80,208 @@ function PswRow({ cpu }: { cpu: DebugCpu }) {
   </div>`;
 }
 
-// The registers of a processor the board emulates: the eight the program sees,
-// then the stack pointer of the mode the CPU is *not* in and the state a
-// debugger reads around them.
+/* ---- the memory management status registers, spelled out ----------------- */
+
+// MMR0..MMR2 are the only registers here that are not simply a number: each is
+// a set of fields, and reading one off the octal is arithmetic the operator
+// should not have to do. So they are the registers that answer when clicked.
+//
+// IR, BA and BD are not shown at all. They are internal to the emulation and a
+// real machine puts none of them where anyone can see them, so a debugger that
+// reported them would be describing the emulator rather than the PDP-11.
+interface MmrField {
+  bits: string;
+  name: string;
+  value: string;
+}
+interface MmrDecoded {
+  fields: MmrField[];
+  note: string;
+}
+
+// PSW<15:14> as MMR0 records it. The KT11-D has kernel and user and nothing
+// between: the two middle encodings are the 11/45's supervisor mode and a mode
+// that never existed, and a reference made in either aborts.
+const MMR0_MODES = ['kernel', 'supervisor — not on this model', 'nonexistent mode', 'user'];
+
+function decodeMmr0(v: number): MmrDecoded {
+  const aborts: string[] = [];
+  if (v & 0o100000) aborts.push('non-resident page');
+  if (v & 0o40000) aborts.push('page length');
+  if (v & 0o20000) aborts.push('read-only violation');
+  return {
+    fields: [
+      { bits: '15:13', name: 'abort', value: aborts.length ? aborts.join(', ') : 'none' },
+      { bits: '8', name: 'maintenance mode', value: v & 0o400 ? 'on' : 'off' },
+      { bits: '6:5', name: 'mode of the reference', value: MMR0_MODES[(v >> 5) & 3] },
+      { bits: '3:1', name: 'page of the reference', value: String((v >> 1) & 7) },
+      { bits: '0', name: 'relocation', value: v & 1 ? 'on' : 'off' },
+    ],
+    note: aborts.length
+      ? 'An abort is recorded: MMR0, MMR1 and MMR2 are frozen at the reference that caused it ' +
+        'and stay so until <15:13> are written clear.'
+      : 'No abort is recorded, so <6:1> follow the references the processor is making and MMR1 ' +
+        'and MMR2 follow the instruction it is executing.',
+  };
+}
+
+// One byte of MMR1: how much a register was changed by, and which one. The
+// amount is a 5-bit two's complement count of bytes, so a word autoincrement
+// reads +2 and a byte autodecrement −1.
+function mmr1Entry(b: number): string {
+  let amount = (b >> 3) & 0o37;
+  if (amount > 15) amount -= 32;
+  return 'R' + (b & 7) + ' ' + (amount < 0 ? '−' : '+') + Math.abs(amount);
+}
+
+function decodeMmr1(v: number): MmrDecoded {
+  const first = v & 0o377;
+  const second = (v >> 8) & 0o377;
+  return {
+    fields: [
+      { bits: '7:0', name: 'first change', value: first ? mmr1Entry(first) : 'none' },
+      { bits: '15:8', name: 'second change', value: second ? mmr1Entry(second) : 'none' },
+    ],
+    note:
+      'MMR1 records the autoincrements and autodecrements of the instruction being executed, so ' +
+      'an abort handler can undo them before restarting it. The PC is never logged: the ' +
+      'instruction is re-entered from MMR2 and from the stacked PC, and backing it out here as ' +
+      'well would move it twice.',
+  };
+}
+
+function decodeMmr2(v: number): MmrDecoded {
+  return {
+    fields: [{ bits: '15:0', name: 'instruction address', value: octalStr(v, 16) }],
+    note:
+      'MMR2 takes the virtual address of every instruction fetch that succeeds. A fetch that ' +
+      'aborts leaves it alone, so after an abort it addresses the instruction to restart.',
+  };
+}
+
+const MMR_DECODERS: Record<string, (v: number) => MmrDecoded> = {
+  MMR0: decodeMmr0,
+  MMR1: decodeMmr1,
+  MMR2: decodeMmr2,
+};
+
+// A field's bits the way a handbook writes them. The angle brackets are text
+// rather than markup, and an HTML entity would be passed through as the
+// characters it is spelled with, so they are interpolated.
+function bits(f: MmrField): string {
+  return '<' + f.bits + '>';
+}
+
+// What the clicked register says, over the column it was clicked in. The PDR
+// and PAR of a page fit in a tooltip; these do not — a field, its bits and what
+// the two mean is a table — and a panel that stays open can also be read beside
+// the value it belongs to while the operator works out what happened.
+function MmrPopup({
+  name,
+  value,
+  onClose,
+}: {
+  name: string;
+  value: number;
+  onClose: () => void;
+}) {
+  const d = MMR_DECODERS[name](value);
+  return html`<div class="dbg-pop" role="dialog" aria-label=${name + ', decoded'}>
+    <div class="dbg-pop-head">
+      <span class="mono">${name} = ${octalStr(value, 16)}</span>
+      <button class="btn small dbg-close" title="close" onClick=${onClose}>✕</button>
+    </div>
+    <table class="dbg-pop-tab">
+      ${d.fields.map(
+        (f) => html`<tr>
+          <td class="dbg-pop-bits mono">${bits(f)}</td>
+          <td class="dbg-pop-name">${f.name}</td>
+          <td class="dbg-pop-val">${f.value}</td>
+        </tr>`
+      )}
+    </table>
+    <p class="dbg-pop-note">${d.note}</p>
+  </div>`;
+}
+
+// A status register: the same line as any other register, but it answers when
+// it is clicked. The name carries the mark that says so, since the value is
+// what the eye is on.
+function MmrReg({
+  name,
+  value,
+  open,
+  onToggle,
+}: {
+  name: string;
+  value: number;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return html`<div class=${'dbg-regrow dbg-regrow-info' + (open ? ' dbg-regrow-open' : '')}>
+    <button class="dbg-reginfo" aria-expanded=${open}
+      title="click for what this register says" onClick=${onToggle}>
+      <span class="dbg-regname">${name}</span>
+      <span class="cpu-oct">${octalStr(value, 16)}</span>
+    </button>
+    ${open && html`<${MmrPopup} name=${name} value=${value} onClose=${onToggle} />`}
+  </div>`;
+}
+
+// The registers of a processor the board emulates: the status word over the
+// whole block, then the eight the program sees, the stack pointer of the mode
+// the CPU is *not* in, and the memory management registers.
+//
+// The columns are short so the block is: eight registers in a row with their
+// names above them took the width of the card and read like a table of numbers,
+// where what an operator actually does is look one register up.
 function Registers({ cpu }: { cpu: DebugCpu }) {
   const regs: DebugRegister[] = cpu.registers || [];
   const sps: DebugRegister[] = cpu.stackpointers || [];
-  return html`<div>
-    <div class="cpu-regs dbg-regs">
-      ${regs.map((r) => html`<${Reg} name=${r.name} value=${r.value} />`)}
-    </div>
+  const mmu = cpu.mmu;
+  const [open, setOpen] = useState<string | null>(null);
+  const block = useRef<HTMLDivElement | null>(null);
+
+  // An open panel closes on Escape and on a click outside it, the way anything
+  // laid over the page does; leaving it to its own ✕ makes it litter.
+  useEffect(() => {
+    if (open === null) return;
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(null);
+    const down = (e: MouseEvent) => {
+      if (block.current && !block.current.contains(e.target as Node)) setOpen(null);
+    };
+    document.addEventListener('keydown', key);
+    document.addEventListener('mousedown', down);
+    return () => {
+      document.removeEventListener('keydown', key);
+      document.removeEventListener('mousedown', down);
+    };
+  }, [open]);
+
+  const toggle = (name: string) => setOpen((cur) => (cur === name ? null : name));
+  return html`<div ref=${block}>
     <${PswRow} cpu=${cpu} />
-    <div class="cpu-regs dbg-regs">
-      ${cpu.psw && html`<${Reg} name="PSW" value=${cpu.psw.value} />`}
-      ${sps.map((r) => html`<${Reg} name=${r.name} value=${r.value} />`)}
-      ${cpu.ir !== undefined && html`<${Reg} name="IR" value=${cpu.ir} />`}
-      ${cpu.bus_addr !== undefined && html`<${Reg} name="BA" value=${cpu.bus_addr} />`}
-      ${cpu.bus_data !== undefined && html`<${Reg} name="BD" value=${cpu.bus_data} />`}
+    <div class="dbg-regcols">
+      <div class="dbg-regcol">
+        ${regs.slice(0, 4).map((r) => html`<${Reg} name=${r.name} value=${r.value} />`)}
+      </div>
+      <div class="dbg-regcol">
+        ${regs.slice(4).map((r) => html`<${Reg} name=${r.name} value=${r.value} />`)}
+      </div>
+      ${sps.length > 0 &&
+      html`<div class="dbg-regcol">
+        ${sps.map((r) => html`<${Reg} name=${r.name} value=${r.value} />`)}
+      </div>`}
+      ${mmu &&
+      html`<div class="dbg-regcol">
+        <${MmrReg} name="MMR0" value=${mmu.mmr0} open=${open === 'MMR0'}
+          onToggle=${() => toggle('MMR0')} />
+        <${MmrReg} name="MMR1" value=${mmu.mmr1} open=${open === 'MMR1'}
+          onToggle=${() => toggle('MMR1')} />
+        <${MmrReg} name="MMR2" value=${mmu.mmr2} open=${open === 'MMR2'}
+          onToggle=${() => toggle('MMR2')} />
+      </div>`}
     </div>
-    ${cpu.mmu &&
-    html`<div class="cpu-regs dbg-regs">
-      <${Reg} name="MMR0" value=${cpu.mmu.mmr0} />
-      <${Reg} name="MMR1" value=${cpu.mmu.mmr1} />
-      <${Reg} name="MMR2" value=${cpu.mmu.mmr2} />
-    </div>`}
   </div>`;
 }
 
@@ -670,12 +853,11 @@ export function DebugPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // No standing explanation above the card: what the page is for is plain from
+  // what it shows, and the reasons — registers only while halted, memory by DMA
+  // either way — are in the file header for whoever works on it and in the
+  // board's own words in the card when a read cannot be made.
   return html`<section class="page active" data-page="debug">
-    <p class="lede">What the processor holds and what is in its memory. Registers are read while the
-      CPU is halted — of a running one they would be numbers that were never all true at once, and
-      asking repeatedly costs the machine speed. Memory is read by DMA whether the machine runs or
-      not, so the views below work whichever kind of processor it has.</p>
-
     <${CpuCard} cpu=${cpu} onProbe=${() => read(true)} busy=${busy} />
 
     <div class="dbg-toolbar">

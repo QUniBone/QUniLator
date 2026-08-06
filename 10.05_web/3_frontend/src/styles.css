@@ -1303,11 +1303,63 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
 
 /* ---- the debug panel ---------------------------------------------------- */
 
-/* The register block reuses the console card's readouts (.cpu-regs, .cpu-oct),
-   but a page has room a card does not: the registers are laid out in a row that
-   wraps rather than being squeezed into a panel's width. */
-.dbg-regs { gap: 10px; }
-.dbg-reg { align-items: flex-start; }
+/* The register block. The readouts are the console card's (.cpu-oct), but they
+   are stacked rather than laid in a row under a line of captions: a register is
+   read as a line - its name, then what it holds - and a column of them is
+   scanned downward, which is how a register dump is written and how an operator
+   looks one register up. Short columns side by side keep the block from running
+   the width of the card.
+
+   The status word sits above the columns rather than in one: its value and the
+   bits spelled out beside it are one register, so they are one line. */
+.dbg-psw { align-items: center; gap: 5px; margin: 0 0 12px; }
+.dbg-psw .dbg-regrow { margin-right: 9px; }
+.dbg-regcols { display: flex; flex-wrap: wrap; gap: 8px 30px; }
+.dbg-regcol { display: flex; flex-direction: column; gap: 5px; }
+.dbg-regrow { display: flex; align-items: center; gap: 8px; position: relative; }
+.dbg-regname {
+  font-family: var(--font-mono); font-size: var(--fs-0); font-weight: 700;
+  letter-spacing: .08em; color: var(--sw-legend);
+  min-width: 4.5ch; text-align: right;
+}
+/* A status register answers when it is clicked, so its row is a button - reset
+   to the row it replaces, with the name marked to say the click is there. */
+.dbg-reginfo {
+  display: flex; align-items: center; gap: 8px;
+  background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
+  font: inherit; color: inherit; text-align: left;
+}
+.dbg-reginfo .dbg-regname { text-decoration: underline dotted; text-underline-offset: 3px; }
+.dbg-reginfo:hover .dbg-regname, .dbg-regrow-open .dbg-regname { color: var(--accent); }
+.dbg-reginfo:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* What a status register says: a field, the bits it lives in, and what the two
+   mean. It lies over the page rather than pushing the block apart, so the value
+   it explains stays where it was - and it stands beside its row rather than
+   under it, or it would cover the two registers below and the operator could
+   not click the next one without closing this one first. Where there is no room
+   beside it, on a narrow screen, under is what is left. */
+.dbg-pop {
+  position: absolute; top: -8px; left: calc(100% + 14px); z-index: 20;
+  width: max(340px, 30vw); max-width: min(560px, 90vw);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+  padding: 10px 12px 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+}
+.dbg-pop-head {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  font-weight: 700; font-size: var(--fs-1);
+}
+.dbg-pop-tab { border-collapse: collapse; font-size: var(--fs-0); width: 100%; }
+.dbg-pop-tab td { padding: 2px 10px 2px 0; vertical-align: top; }
+.dbg-pop-bits { color: var(--ink-faint); white-space: nowrap; }
+.dbg-pop-name { color: var(--ink-muted); white-space: nowrap; }
+.dbg-pop-val { color: var(--ink); width: 100%; }
+.dbg-pop-note {
+  margin: 10px 0 0; font-size: var(--fs-0); line-height: 1.45; color: var(--ink-muted);
+}
+@media (max-width: 900px) {
+  .dbg-pop { top: calc(100% + 6px); left: 0; width: min(90vw, 420px); }
+}
 
 /* The inputs of a view carry no printed label: what they are is obvious from
    what they hold - an octal address, a word count - and a caption above each
