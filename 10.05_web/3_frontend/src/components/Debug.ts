@@ -224,7 +224,6 @@ function MmrReg({
       <span class="dbg-regname">${name}</span>
       <span class="cpu-oct">${octalStr(value, 16)}</span>
     </button>
-    ${open && html`<${MmrPopup} name=${name} value=${value} onClose=${onToggle} />`}
   </div>`;
 }
 
@@ -259,7 +258,14 @@ function Registers({ cpu }: { cpu: DebugCpu }) {
   }, [open]);
 
   const toggle = (name: string) => setOpen((cur) => (cur === name ? null : name));
-  return html`<div ref=${block}>
+  const mmrValue = (name: string) =>
+    name === 'MMR0' ? mmu!.mmr0 : name === 'MMR1' ? mmu!.mmr1 : mmu!.mmr2;
+  // The explanation hangs under the whole block rather than off the register it
+  // belongs to: beside the row it would cover whatever panel stands next to the
+  // processor, and under the row it would cover the two registers below it.
+  // Under the block it covers neither, and the register it explains stays in
+  // sight with its name marked.
+  return html`<div class="dbg-regblock" ref=${block}>
     <${PswRow} cpu=${cpu} />
     <div class="dbg-regcols">
       <div class="dbg-regcol">
@@ -282,6 +288,8 @@ function Registers({ cpu }: { cpu: DebugCpu }) {
           onToggle=${() => toggle('MMR2')} />
       </div>`}
     </div>
+    ${open !== null &&
+    html`<${MmrPopup} name=${open} value=${mmrValue(open)} onClose=${() => setOpen(null)} />`}
   </div>`;
 }
 
@@ -857,8 +865,17 @@ export function DebugPage() {
   // what it shows, and the reasons — registers only while halted, memory by DMA
   // either way — are in the file header for whoever works on it and in the
   // board's own words in the card when a read cannot be made.
+  // The page registers stand beside the processor rather than under it: neither
+  // panel is wide - one is four columns of octal, the other five - and the two
+  // are read together, since which map a reference goes through is the mode in
+  // the status word. They wrap onto their own lines where there is no room.
+  const otherViews = views.filter((v) => v.kind !== 'mmu');
   return html`<section class="page active" data-page="debug">
-    <${CpuCard} cpu=${cpu} onProbe=${() => read(true)} busy=${busy} />
+    <div class="dbg-top">
+      <${CpuCard} cpu=${cpu} onProbe=${() => read(true)} busy=${busy} />
+      ${mmuOpen &&
+      html`<${MmuView} key=${mmuOpen.id} cpu=${cpu} onClose=${() => close(mmuOpen.id)} />`}
+    </div>
 
     <div class="dbg-toolbar">
       <button class="btn" onClick=${() => add('mem')}>New Memory View</button>
@@ -872,18 +889,16 @@ export function DebugPage() {
     </div>
 
     <div class="dbg-views">
-      ${views.map((v) =>
+      ${otherViews.map((v) =>
         v.kind === 'mem'
           ? html`<${MemoryView} key=${v.id} spec=${v} cpu=${cpu}
               onChange=${(p: Partial<ViewSpec>) => change(v.id, p)}
               onClose=${() => close(v.id)} />`
-          : v.kind === 'dis'
-            ? html`<${DisassemblyView} key=${v.id} spec=${v} cpu=${cpu}
-                onChange=${(p: Partial<ViewSpec>) => change(v.id, p)}
-                onClose=${() => close(v.id)} />`
-            : html`<${MmuView} key=${v.id} cpu=${cpu} onClose=${() => close(v.id)} />`
+          : html`<${DisassemblyView} key=${v.id} spec=${v} cpu=${cpu}
+              onChange=${(p: Partial<ViewSpec>) => change(v.id, p)}
+              onClose=${() => close(v.id)} />`
       )}
-      ${views.length === 0 &&
+      ${otherViews.length === 0 &&
       html`<p class="muted dbg-empty">No views open. Open as many as the work needs — following a
         data structure and the code that walks it means looking at two places at once.</p>`}
     </div>
