@@ -1,3 +1,21 @@
+qbone (1.18.0-1) trixie; urgency=low
+
+  * A setup file may carry several ssh keys, as the authorized_keys file it is
+    named after does: somebody with a workstation and a laptop has two. Every
+    line is checked before any of them is written, so a file with one bad line
+    among four changes nothing.
+  * A setup file may say what address the machine takes - address with its
+    prefix, router, and the servers to ask - and saying nothing about it is what
+    leaves a machine on DHCP, so the usual case has no setting and nothing to
+    get wrong. An address with no prefix, or a router with no address beside it,
+    is refused while the SD card is still in somebody's hand rather than after a
+    boot nobody can reach. The address is written beside the bridge's own
+    configuration rather than into it, so the provisioning tool copying its
+    files back does not put the machine on DHCP again; removing that one file is
+    what returns it to DHCP.
+
+ -- Hans Huebner <hans.huebner@gmail.com>  Thu, 06 Aug 2026 19:15:00 +0200
+
 qbone (1.17.0-1) trixie; urgency=low
 
   * A QUniLator carries one operator: a user name and a password together, which
