@@ -11,24 +11,37 @@ Who reaches this QUniLator, what it runs, and updating it.
 
 ## Access
 
-The name and password from the first-run dialog — one identity for the web
-interface, the file shares and `ssh`. Changing either takes effect on the next
-request, so the browser will ask again.
+There is one account. Its name and password open the web interface, the SMB, FTP
+and SFTP shares of the image library, and an `ssh` login — change them here and
+they change everywhere. The next request asks for the new ones, so the browser
+will prompt again.
 
-Changing the **user name** also moves the board's file-share account to the new
-name. A name is 1 to 32 characters: a lower-case letter or underscore, then
-lower-case letters, digits, underscores and hyphens.
+Changing the **user name** renames that account rather than adding a second one:
+the file shares and the ssh login follow it. A name is 1 to 32 characters: a
+lower-case letter or underscore, then lower-case letters, digits, underscores
+and hyphens.
+
+**Current password** is the one you are logged in with, and any change here
+takes it — a change of name as much as of password.
 
 > [!NOTE]
-> **A board set up another way**
+> **A name that is already an account**
 >
-> If the credentials came from `WEBUI_PASSWORD` in the environment rather than
-> from this page, the page says so and will not change them — that setting
-> outranks it and is managed outside the interface.
+> A name belonging to a Linux account this service did not create is refused,
+> because taking one over is not a decision to make in a browser. Adopt it at
+> the machine instead, with the service stopped:
+>
+> ```
+> sudo systemctl stop qbone.service
+> sudo qbone --setup-operator <name> --adopt-account
+> sudo systemctl start qbone.service
+> ```
+>
+> The account keeps its home, its files and its shell.
 
-## Board
+## Network and shell
 
-**Name** is what this QUniLator answers to on the network. Renaming it moves
+**Host name** is the name this QUniLator has on the network. Renaming it moves
 `qbone.local`, the DNS-SD advertisement, the DHCP lease and the login banner
 together. Letters, digits and inner hyphens, up to 63 characters.
 

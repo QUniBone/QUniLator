@@ -557,10 +557,10 @@ export function pickDevice(
 
 // One DNS label: letters, digits and inner hyphens, at most 63 characters.
 // <name>.local, the DNS-SD entry, the DHCP lease and the login banner all
-// follow it, so several boards on a network are told apart by it.
+// follow it, so several QUniLators on a network are told apart by it.
 export const HOST_NAME_RULE = /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
 export const HOST_NAME_REFUSAL =
-  'A board name is letters, digits and inner hyphens, up to 63 characters.';
+  'A host name is letters, digits and inner hyphens, up to 63 characters.';
 
 // The types OpenSSH offers, which is what a .pub file opens with.
 export const SSH_KEY_RULE =
@@ -568,8 +568,8 @@ export const SSH_KEY_RULE =
 export const SSH_KEY_REFUSAL =
   'That is not an ssh public key — paste one line, the contents of a .pub file.';
 
-// The one pair of credentials this board answers to: the browser's basic-auth
-// prompt and the SMB, FTP and SFTP shares all take it.
+// The operator's account: the browser's basic-auth prompt, the SMB, FTP and
+// SFTP shares and an ssh login all take the same name and password.
 export const USER_NAME_RULE = /^[a-z_][a-z0-9_-]{0,31}$/;
 export const USER_NAME_HELP =
   'A user name is 1 to 32 characters: a lower case letter or underscore, then lower case ' +
@@ -582,13 +582,14 @@ function setCredentialsModal(minLength: number, hostname: string): Promise<boole
     const host = document.createElement('div');
     host.className = 'modal-overlay';
     host.innerHTML =
-      '<div class="card modal-card"><div class="card-head"><h3>Set this board up</h3></div>' +
+      '<div class="card modal-card"><div class="card-head"><h3>Set this QUniLator up</h3></div>' +
       '<div class="card-body"><p class="muted" style="margin:0 0 16px; font-size:var(--fs-1)">' +
-      'This interface controls the machine and is open to anyone who can reach it until ' +
-      'credentials are set. The name and password chosen here are what the browser asks for, ' +
-      'and what the SMB, FTP and SFTP shares of the image library take. At least ' +
+      'This interface controls the machine, and until an account exists anyone who can reach it ' +
+      'can drive it. The name and password set here make that one account: the browser asks for ' +
+      'it, and so do the SMB, FTP and SFTP shares of the image library and an ssh login. The ' +
+      'password is at least ' +
       minLength +
-      ' characters for the password.</p>' +
+      ' characters.</p>' +
       '<div class="set-grid">' +
       '<label class="set-name" for="pw-user">User name</label>' +
       '<input class="set-val" id="pw-user" type="text" autocomplete="username" ' +
@@ -597,7 +598,7 @@ function setCredentialsModal(minLength: number, hostname: string): Promise<boole
       '<input class="set-val" id="pw1" type="password" autocomplete="new-password">' +
       '<label class="set-name" for="pw2">Repeat</label>' +
       '<input class="set-val" id="pw2" type="password" autocomplete="new-password">' +
-      '<label class="set-name" for="pw-host">Board name</label>' +
+      '<label class="set-name" for="pw-host">Host name</label>' +
       '<input class="set-val" id="pw-host" type="text" autocapitalize="off" ' +
       'spellcheck="false" value="' +
       esc(hostname) +
@@ -608,9 +609,9 @@ function setCredentialsModal(minLength: number, hostname: string): Promise<boole
       '</div>' +
       '<p class="muted" style="margin:12px 0 0; font-size:var(--fs-1)">' +
       esc(USER_NAME_HELP) +
-      ' The board name is what it answers to on the network, as ' +
+      ' The host name is the name this QUniLator has on the network, as ' +
       '<span class="mono">&lt;name&gt;.local</span>. An ssh public key is optional: give one and ' +
-      'the same account reaches a shell on the board, with sudo.</p>' +
+      'the same account reaches a shell, with sudo.</p>' +
       '<p id="pw-err" class="muted" style="margin:12px 0 0; font-size:var(--fs-1); color:var(--err); min-height:1.2em"></p>' +
       '<div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">' +
       '<button class="btn primary" data-pw-set><span data-pw-label>Set up</span></button>' +
@@ -618,9 +619,9 @@ function setCredentialsModal(minLength: number, hostname: string): Promise<boole
     const err = (msg: string) => {
       (host.querySelector('#pw-err') as HTMLElement).textContent = msg || '';
     };
-    // Creating the account, renaming the board and installing the key take a
-    // few seconds on the board, so the button says the work is under way and
-    // the dialog takes no second submission while it runs.
+    // Creating the account, setting the host name and installing the key take
+    // a few seconds, so the button says the work is under way and the dialog
+    // takes no second submission while it runs.
     let busy = false;
     const setBusy = (on: boolean) => {
       busy = on;

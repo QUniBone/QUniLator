@@ -3,13 +3,17 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-// The dev server talks to the live board. Board access is HTTP basic auth with
-// any user name and the password in ~/.qbone-pw; forward it on the proxied
-// /api and /ws requests so the app runs against real data while developing.
+// The dev server talks to a live QUniLator. Access is HTTP basic auth with the
+// operator's name and password — the name in QBONE_USER or ~/.qbone-user, the
+// password in ~/.qbone-pw — forwarded on the proxied /api and /ws requests so
+// the app runs against real data while developing.
 function boardAuth(): string {
   try {
     const pw = readFileSync(join(homedir(), '.qbone-pw'), 'utf8').trim();
-    return 'Basic ' + Buffer.from(':' + pw).toString('base64');
+    const user = (
+      process.env.QBONE_USER ?? readFileSync(join(homedir(), '.qbone-user'), 'utf8')
+    ).trim();
+    return 'Basic ' + Buffer.from(user + ':' + pw).toString('base64');
   } catch {
     return '';
   }

@@ -4,12 +4,12 @@ The service - `/usr/bin/<name>`, run by `<name>.service` - serves this API on
 port 80. All request and response bodies are JSON unless noted. Errors use HTTP
 status codes with a body of `{"error": "message"}`.
 
-With a credential set - the first-run dialog creates one, and `PUT /api/auth`
-changes it - every request requires HTTP basic auth. **The user name is part of
-it**: a board provisioned through that dialog carries one identity that is both
-the operator's account and the web login, and answers `401` to the right
-password under the wrong name. Browsers replay the credentials on the WebSocket
-handshakes. A board carrying no credential answers everything.
+Once an operator is set up - preparing the SD card does it, or the first-run
+dialog, and `PUT /api/auth` changes it afterwards - every request requires HTTP
+basic auth. **The user name is part of it**: one identity is both the operator's
+account and the web login, and the right password under another name answers
+`401`. Browsers replay the credentials on the WebSocket handshakes. A QUniLator
+nobody has set up answers everything.
 
 ## State
 
@@ -23,7 +23,7 @@ Identifies the bridge.
 
 ### `GET /api/version`
 
-What this board runs.
+What this QUniLator runs.
 
 ```json
 {"package": "qbone", "version": "1.13.0-1", "built": "2026-07-30T09:12:00",
@@ -47,29 +47,28 @@ when they differ, so an upgrade — through the interface or a hand-run
 
 ## Admin credentials
 
-Every request needs HTTP basic auth once a password is set - static files and
-the WebSocket handshakes included. A board with no password answers everything,
-which is how a new one is reached in order to set some.
+Every request needs HTTP basic auth once an operator is set up - static files
+and the WebSocket handshakes included, and the user name is half of it: the
+right password under another name answers 401. An installation nobody has set
+up answers everything, which is how a new one is reached in order to set it up.
 
-The user name is an account on the board as well: setting one creates it beside
-the `qunilator` service account, with a home under `/home` and a login shell, and
-gives it the web password, so the same pair reaches the image library over SMB,
-FTP and SFTP. What it may do follows two group memberships - `qunilator` carries
-the image tree, `qunilator-admin` carries sudo and the shell sshd would otherwise
-confine to an SFTP session. Changing the name creates the new account and removes
-the old one. While no name is set, any user name is accepted and the shares
-answer to `qunilator` - which is what an installation made before the name
-existed keeps doing until one is set.
+The operator is created either when the SD card is prepared (`--setup-operator`
+on the emulator binary) or in the first-run dialog, and there is exactly one.
+The name is an OS account as well, made beside the `qunilator` service account
+with a home under `/home` and a login shell, and given the web password, so the
+same pair reaches the image library over SMB, FTP and SFTP and a shell over ssh.
+What it may do follows two group memberships - `qunilator` carries the image
+tree, `qunilator-admin` carries sudo and the shell sshd would otherwise confine
+to an SFTP session. The service account takes no login of its own. Changing the
+name creates the new account and removes the old one.
 
 ### `GET /api/auth`
 
 ```json
-{"configured": true, "source": "settings", "user": "operators", "min_length": 8}
+{"configured": true, "user": "operators", "min_length": 8}
 ```
 
-`source` is `none`, `settings` for credentials set through this endpoint, or
-`environment` for a password given as `WEBUI_PASSWORD`. `user` is the configured
-name, empty when any name is accepted.
+`configured` is false until an operator exists, and `user` is empty with it.
 
 ### `PUT /api/auth`
 
@@ -78,18 +77,20 @@ name, empty when any name is accepted.
  "hostname": "shed-11", "ssh_key": "ssh-ed25519 AAAA… you@workstation"}
 ```
 
-At least one of `user` and `password` is required. A body without `user` leaves
-the name in force; `"user": ""` clears it, which puts the shares back on
-`qunilator` and removes the operator's account. A body without `password` keeps
-the password, so a name changes on its own.
+Both `user` and `password` are required while nothing is set up. Afterwards, at
+least one of them: a body without `user` leaves the name in force, one without
+`password` keeps the password, so either half changes on its own. An empty
+`user` is refused - there is no state in which this endpoint leaves an
+installation without an operator.
 
-`current` is required once a password exists, and refused with 403 if it does
-not match - changing either half takes the password in force. A password shorter
-than `min_length` is refused with 422, as is a user name that is not a portable
-one (1 to 32 characters: a lower case letter or underscore, then lower case
-letters, digits, underscores and hyphens), one the board reserves, or one that
-already belongs to an account the service did not create. Credentials that came
-from the environment refuse both halves with 422.
+`current` is required once an operator exists, and refused with 403 if it does
+not match, which holds for a change of name as much as of password. A password
+shorter than `min_length` is refused with 422, as is a user name that is not a
+portable one (1 to 32 characters: a lower case letter or underscore, then lower
+case letters, digits, underscores and hyphens), one this QUniLator reserves, or
+one that already belongs to an account the service did not create - that last
+one is adopted deliberately at the machine, with `--setup-operator <name>
+--adopt-account`, rather than over the API.
 
 `hostname` and `ssh_key` are what the first-run dialog asks for beside the
 credentials, and are applied after the account exists - the key has nowhere to go
@@ -99,10 +100,10 @@ again by their own endpoints below.
 
 Answers `{"ok": true, "user": "operators", "warnings": []}`.
 
-## The board itself
+## The installation itself
 
-The appliance around the emulator: what the board is called on the network, and
-the key that reaches its shell.
+The appliance around the emulator: the host name, and the key that reaches a
+shell.
 
 ### `GET /api/hostname`
 
@@ -110,8 +111,8 @@ the key that reaches its shell.
 {"hostname": "shed-11"}
 ```
 
-The first label of the board's name. `<name>.local`, the DNS-SD entry, the DHCP
-lease and the login banner all follow it, so several boards on one network are
+The first label of the host name. `<name>.local`, the DNS-SD entry, the DHCP
+lease and the login banner all follow it, so several QUniLators on one network are
 told apart by it rather than by the mDNS suffix boot order hands out.
 
 ### `PUT /api/hostname`
@@ -144,10 +145,10 @@ Answers `{"ok": true, "hostname": "shed-11"}`.
 ```
 
 Writes the key as the operator account's only `authorized_keys` line, so what the
-interface offers and what the board answers to are the same thing. The line is
+interface offers and what the account answers to are the same thing. The line is
 one an OpenSSH `.pub` file carries - a type, a base64 key and an optional
 comment; options before the type are refused, as is a type OpenSSH does not
-offer, both with 422. A board with no user name set answers 409.
+offer, both with 422. An installation with no operator answers 409.
 
 Answers `{"ok": true, "user": "operators"}`.
 

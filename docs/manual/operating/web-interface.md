@@ -12,12 +12,14 @@ workstation and nothing to keep running there.
 
 ## Getting in
 
-The first-run dialog creates **one identity that is both your account on the
-BeagleBone and your web login**, so the same name and password reach the web
-interface, the file shares of the image library, and an `ssh` session.
+A QUniLator carries **one identity, which is both your account on the
+BeagleBone and your web login**: the same name and password reach the web
+interface, the file shares of the image library, and an `ssh` session. It is
+created when the SD card is prepared, or in the first-run dialog the first time
+the interface is opened.
 
 Every request takes it, and **the name is part of it** — the right password under
-the wrong name is refused. [System](system.md) is where it is changed.
+another name is refused. [System](system.md) is where it is changed.
 
 ## The status bar
 

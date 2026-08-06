@@ -5,11 +5,11 @@
  * password: the password is read once from ~/.qbone-pw, and the name from
  * QBONE_USER or ~/.qbone-user.
  *
- * The name is part of the credential. A board provisioned through the
- * first-run dialog carries one identity that is both the operator's account
- * and the web login, and it answers 401 to the right password under the wrong
- * name. A board set up before that dialog existed carries only a password and
- * takes any name, which is what the empty name below still serves.
+ * The name is part of the credential: a QUniLator carries one identity that is
+ * both the operator's account and the web login, and it answers 401 to the
+ * right password under another name. A password with no name beside it is
+ * therefore half a credential, and this says so rather than letting every call
+ * fail with 401.
  *
  * QBONE_PW_FILE and QBONE_USER_FILE override the file locations, which the
  * test suite points at stubbed credentials.
@@ -33,7 +33,7 @@ function userFile(): string {
   return process.env.QBONE_USER_FILE ?? join(homedir(), ".qbone-user");
 }
 
-/** The board account's name: QBONE_USER, else ~/.qbone-user, else empty. */
+/** The operator's name: QBONE_USER, else ~/.qbone-user, else empty. */
 function boardUser(): string {
   const fromEnv = process.env.QBONE_USER?.trim();
   if (fromEnv) return fromEnv;
@@ -49,11 +49,16 @@ export function loadConfig(): BoardConfig {
   let authHeader = "";
   try {
     const pw = readFileSync(passwordFile(), "utf8").trim();
-    if (pw.length > 0)
-      authHeader =
-        "Basic " + Buffer.from(boardUser() + ":" + pw).toString("base64");
+    const user = boardUser();
+    if (pw.length > 0) {
+      if (user.length === 0)
+        process.stderr.write(
+          `no operator name: set QBONE_USER or write it to ${userFile()}\n`,
+        );
+      authHeader = "Basic " + Buffer.from(user + ":" + pw).toString("base64");
+    }
   } catch {
-    // A board with no password answers everything; leave the header empty.
+    // An installation nobody has set up answers everything; no header needed.
   }
   return {
     host,

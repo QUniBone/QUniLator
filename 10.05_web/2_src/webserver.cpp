@@ -55,12 +55,10 @@ static void *webserver_init_thread(const struct mg_context *ctx, int thread_type
 	return nullptr;
 }
 
-/*** HTTP basic auth against the credentials webauth.cpp holds - set through
-     the web interface, or a password given as WEBUI_PASSWORD in the
-     environment. Any user name is accepted while none is configured, which is
-     what an installation made before the name existed keeps doing. A board
-     with no password yet is open, which is how the frontend reaches /api/auth
-     to set one.
+/*** HTTP basic auth against the operator webauth.cpp holds - a user name and a
+     password, both of which a request must carry. An installation nobody has
+     set up yet is open, which is how the frontend reaches /api/auth to set it
+     up.
      Browsers replay the credentials on the WebSocket handshakes, so /ws/
      is covered as well. ***/
 
@@ -278,7 +276,7 @@ bool webserver_c::start(void) {
 			"extra_mime_types", ".webmanifest=application/manifest+json", //
 			nullptr };
 
-	// before the settings file is read, so WEBUI_PASSWORD outranks what it holds
+	// the cache salt exists before any credential is verified against it
 	webauth_init();
 
 	struct mg_callbacks callbacks;
@@ -299,7 +297,7 @@ bool webserver_c::start(void) {
 	webapi_register(ctx);
 	INFO("web server listening on port %u, document root %s, %s", port, docroot.c_str(),
 			webauth_configured() ? "basic auth enabled"
-					: "open until an admin password is set");
+					: "open until an operator is set up");
 	return true;
 }
 

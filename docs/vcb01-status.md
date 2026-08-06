@@ -62,7 +62,7 @@ pattern fills the window exactly. The renderer's untimed default is 864.
 ## Board / workflow reference
 
 - Drive the board through the web API (docs in `10.05_web/docs/api.md`); auth is
-  HTTP basic, password in `~/.qbone-pw`, any user name.
+  HTTP basic, the operator's name and the password in `~/.qbone-pw`.
 - Console is the 11/73's on-board SLU on the bone's `/dev/ttyS2`, carried by
   `/ws/console/ext`. DL11 stays disabled. Micro-ODT is reachable there;
   register examine (`R7/`) did not work, so progress markers in low memory are

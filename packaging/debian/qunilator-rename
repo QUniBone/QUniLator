@@ -1,15 +1,15 @@
 #!/bin/sh
-# Give this board its own name.
+# Give this QUniLator its own name.
 #
-# Boards ship with one hostname, so several on a network collide: mDNS keeps
-# them all reachable by renaming the later ones with a numeric suffix, but
-# which board gets which suffix follows boot order and can change. Naming a
-# board settles which is which.
+# Every card ships with one hostname, so several on a network collide: mDNS
+# keeps them all reachable by renaming the later ones with a numeric suffix,
+# but which one gets which suffix follows boot order and can change. Naming
+# each settles which is which.
 #
 # The name propagates by itself once set - <name>.local, the DNS-SD entry, the
 # DHCP lease in the router's table and the login banner all follow the system
-# hostname. Nothing in the emulator reads it: the board name in the unit
-# and the package is the board type, not this machine's name.
+# hostname. Nothing in the emulator reads it: the name in the unit and the
+# package is the bus the card drives, not this machine's name.
 #
 # usage: qunilator-rename <name>
 #        qunilator-rename            show the current name
@@ -31,7 +31,7 @@ new=$1
 
 # A hostname is one DNS label: letters, digits and hyphens, not starting or
 # ending with a hyphen, at most 63 characters. Anything else and avahi, the
-# DHCP client and the resolver disagree about what the board is called.
+# DHCP client and the resolver disagree about what it is called.
 echo "$new" | grep -qE '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$' \
     || die "\"$new\" is not a valid hostname: letters, digits and inner hyphens, up to 63 characters"
 
@@ -42,11 +42,10 @@ if [ "$new" = "$current" ]; then
     exit 0
 fi
 
-if command -v hostnamectl >/dev/null 2>&1; then
-    hostnamectl set-hostname "$new"
-else
-    # running name first: a failure here leaves nothing changed
-    hostname "$new"
+# hostnamectl needs systemd on the other end of dbus, which an image being
+# prepared on a workstation has not got; there the files are the whole job.
+if ! command -v hostnamectl >/dev/null 2>&1 || ! hostnamectl set-hostname "$new" 2>/dev/null; then
+    hostname "$new" 2>/dev/null || true
     echo "$new" > /etc/hostname
 fi
 

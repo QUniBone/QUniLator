@@ -1,7 +1,7 @@
-// The System page: who reaches this board, what it runs, and updating it.
+// The System page: who reaches this QUniLator, what it runs, and updating it.
 //
-// Access comes first: the one pair of credentials that reaches the board, by the
-// browser and by the file shares alike.
+// Access comes first: the one account that reaches it, over the web, the file
+// shares and ssh alike.
 //
 // The two update rows are kept apart because they promise different things. The
 // emulator update is reversible - the board watches the new version come up and
@@ -180,15 +180,14 @@ function OsRow({ u }: { u: UpdateStatus }) {
 
 type AuthStatus = {
   configured: boolean;
-  source: string;
   user: string;
   min_length: number;
 };
 
-// The credentials this board answers to. The user name is an account on the
-// board as well, so the same pair reaches the image library over SMB, FTP and
-// SFTP; a board that carries only a password takes whatever name the browser
-// offers, and says so until one is set.
+// The operator's account: one name and one password, which the web interface,
+// the file shares and ssh all take. It is created when this QUniLator is set up
+// — when the SD card is prepared, or in the first-run dialog — so this card
+// changes an account that is already there rather than making one.
 function AccessCard() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [user, setUser] = useState('');
@@ -213,11 +212,10 @@ function AccessCard() {
 
   if (!auth) return null;
   const min = auth.min_length || 8;
-  const fromEnvironment = auth.source === 'environment';
 
   async function save() {
     const name = user.trim();
-    if (name !== '' && !USER_NAME_RULE.test(name)) return setError(USER_NAME_REFUSAL);
+    if (!USER_NAME_RULE.test(name)) return setError(USER_NAME_REFUSAL);
     if (next !== '') {
       if (next.length < min) return setError('A password is at least ' + min + ' characters.');
       if (next !== repeat) return setError('The two password entries do not match.');
@@ -230,84 +228,72 @@ function AccessCard() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    }).catch(() => ({ ok: false, data: { error: 'The board did not answer.' } }));
+    }).catch(() => ({ ok: false, data: { error: 'No answer.' } }));
     setSaving(false);
     if (!res.ok) return setError(res.data.error || 'The credentials could not be changed.');
     setCurrent('');
     setNext('');
     setRepeat('');
-    toast('auth', name ? 'The board answers to ' + name : 'The board takes any user name');
+    toast('auth', 'The account is now ' + name);
     load();
   }
 
   return html`<div class="card" style="max-width:720px">
     <div class="card-head"><h3>Access</h3>
-      ${auth.user
-        ? html`<span class="chip ok mono">${auth.user}</span>`
-        : html`<span class="chip warn">any user name</span>`}
+      <span class="chip ok mono">${auth.user}</span>
     </div>
     <div class="card-body">
-      ${fromEnvironment
-        ? html`<p class="muted">The credentials come from <span class="mono">WEBUI_PASSWORD</span>
-            in the service environment, so they are set outside this interface and any user name is
-            accepted. Remove that setting and restart the service to set a name here.</p>`
-        : html`
-        <div class="set-grid">
-          <div class="set-name">User name</div>
-          <div class="set-val">
-            <input type="text" autocapitalize="off" spellcheck="false" autocomplete="username"
-              value=${user} disabled=${saving}
-              onInput=${(e: Event) => setUser((e.target as HTMLInputElement).value)} />
-          </div>
-          <div class="set-info">${
-            auth.user
-              ? html`The browser prompt takes this name, and so do the SMB, FTP and SFTP shares of
-                  the image library. Changing it moves the board's file-share account to the new
-                  name.`
-              : html`No user name is set, so the browser prompt takes any name and the file shares
-                  answer to <span class="mono">qunilator</span>. Setting one here makes a single pair
-                  of credentials reach the board by every route.`
-          } ${USER_NAME_HELP}</div>
-
-          <div class="set-name">Current password</div>
-          <div class="set-val">
-            <input type="password" autocomplete="current-password" value=${current}
-              disabled=${saving}
-              onInput=${(e: Event) => setCurrent((e.target as HTMLInputElement).value)} />
-          </div>
-          <div class="set-info">Changing either half takes the password in force.</div>
-
-          <div class="set-name">New password</div>
-          <div class="set-val">
-            <input type="password" autocomplete="new-password" value=${next} disabled=${saving}
-              onInput=${(e: Event) => setNext((e.target as HTMLInputElement).value)} />
-          </div>
-          <div class="set-info">Leave empty to keep the password and change the name alone.</div>
-
-          ${next !== ''
-            ? html`<div class="set-name">Repeat</div>
-              <div class="set-val">
-                <input type="password" autocomplete="new-password" value=${repeat}
-                  disabled=${saving}
-                  onInput=${(e: Event) => setRepeat((e.target as HTMLInputElement).value)} />
-              </div>
-              <div class="set-info">At least ${min} characters.</div>`
-            : null}
+      <p class="muted" style="margin:0 0 14px">There is one account. Its name and password open
+        this interface, the SMB, FTP and SFTP shares of the image library, and an${' '}
+        <span class="mono">ssh</span> login. Changing them here changes them everywhere.</p>
+      <div class="set-grid">
+        <div class="set-name">User name</div>
+        <div class="set-val">
+          <input type="text" autocapitalize="off" spellcheck="false" autocomplete="username"
+            value=${user} disabled=${saving}
+            onInput=${(e: Event) => setUser((e.target as HTMLInputElement).value)} />
         </div>
-        ${error ? html`<p class="upd-warn">${error}</p>` : null}
-        <p class="muted" style="margin:12px 0 0">The browser holds the old credentials until it is
-          asked again, so the next request after a change brings up its prompt.</p>
-        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px">
-          <button class="btn primary" disabled=${saving || current === ''}
-            onClick=${save}>Save</button>
-        </div>`}
+        <div class="set-info">Renames the account. It does not add a second one. ${USER_NAME_HELP}</div>
+
+        <div class="set-name">Current password</div>
+        <div class="set-val">
+          <input type="password" autocomplete="current-password" value=${current}
+            disabled=${saving}
+            onInput=${(e: Event) => setCurrent((e.target as HTMLInputElement).value)} />
+        </div>
+        <div class="set-info">The password you are logged in with. Required for any change here,
+          including a change of name.</div>
+
+        <div class="set-name">New password</div>
+        <div class="set-val">
+          <input type="password" autocomplete="new-password" value=${next} disabled=${saving}
+            onInput=${(e: Event) => setNext((e.target as HTMLInputElement).value)} />
+        </div>
+        <div class="set-info">Leave empty to change the name only.</div>
+
+        ${next !== ''
+          ? html`<div class="set-name">Repeat</div>
+            <div class="set-val">
+              <input type="password" autocomplete="new-password" value=${repeat}
+                disabled=${saving}
+                onInput=${(e: Event) => setRepeat((e.target as HTMLInputElement).value)} />
+            </div>
+            <div class="set-info">At least ${min} characters.</div>`
+          : null}
+      </div>
+      ${error ? html`<p class="upd-warn">${error}</p>` : null}
+      <p class="muted" style="margin:12px 0 0">Your browser will ask for the name and password
+        again on the next request.</p>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px">
+        <button class="btn primary" disabled=${saving || current === ''}
+          onClick=${save}>Save</button>
+      </div>
     </div></div>`;
 }
 
-// The board's own name and the ssh key that reaches its shell — the two the
+// The host name and the ssh key that reaches a shell — the two the first-run
 // first-run dialog asks for beside the credentials, offered again here for a
-// board that is already set up. The key goes on the operator's account, so a
-// board with no user name set has nowhere to put one and says so.
+// installation that is already set up. The key goes on the operator's account.
 function BoardCard() {
   const [hostname, setHostname] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -349,10 +335,10 @@ function BoardCard() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hostname: wanted }),
-    }).catch(() => ({ ok: false, data: { error: 'The board did not answer.' } }));
+    }).catch(() => ({ ok: false, data: { error: 'No answer.' } }));
     setBusy(false);
-    if (!res.ok) return setError(res.data.error || 'The board could not be renamed.');
-    toast('hostname', 'The board is now named ' + wanted);
+    if (!res.ok) return setError(res.data.error || 'The host name could not be changed.');
+    toast('hostname', 'The host name is now ' + wanted);
     load();
   }
 
@@ -365,21 +351,21 @@ function BoardCard() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: k }),
-    }).catch(() => ({ ok: false, data: { error: 'The board did not answer.' } }));
+    }).catch(() => ({ ok: false, data: { error: 'No answer.' } }));
     setBusy(false);
     if (!res.ok) return setError(res.data.error || 'The key could not be installed.');
     setKey('');
-    toast('sshkey', 'The board answers that key');
+    toast('sshkey', 'The key is installed');
     load();
   }
 
   return html`<div class="card" style="max-width:720px; margin-bottom:14px">
-    <div class="card-head"><h3>Board</h3>
+    <div class="card-head"><h3>Network and shell</h3>
       <span class="chip ok mono">${hostname || '—'}</span>
     </div>
     <div class="card-body">
       <div class="set-grid">
-        <div class="set-name">Name</div>
+        <div class="set-name">Host name</div>
         <div class="set-val" style="display:flex; gap:8px">
           <input type="text" autocapitalize="off" spellcheck="false" value=${name}
             disabled=${busy}
@@ -387,9 +373,9 @@ function BoardCard() {
           <button class="btn small" disabled=${busy || name.trim() === hostname}
             onClick=${rename}>Rename</button>
         </div>
-        <div class="set-info">What the board answers to on the network —
+        <div class="set-info">The name this QUniLator has on the network. Renaming it moves${' '}
           <span class="mono">${(name.trim() || hostname) + '.local'}</span>, the DNS-SD entry, the
-          DHCP lease and the login banner all follow it. ${HOST_NAME_REFUSAL}</div>
+          DHCP lease and the login banner together. ${HOST_NAME_REFUSAL}</div>
 
         <div class="set-name">SSH key</div>
         <div class="set-val">
@@ -399,12 +385,12 @@ function BoardCard() {
         </div>
         <div class="set-info">${
           keyUser
-            ? html`A public key pasted here is what${' '}
-                <span class="mono">${keyUser}</span> reaches a shell on this board with, and sudo
-                once there. ${hasKey
+            ? html`Paste a public key and${' '}
+                <span class="mono">${keyUser}</span> reaches a shell over ssh, with sudo once
+                there. ${hasKey
                   ? 'A key is installed; a new one replaces it.'
                   : 'No key is installed, so the account has no shell login yet.'}`
-            : html`Set a user name under Access first — the key goes on that account.`
+            : html`The key goes on the operator's account, and there is none yet.`
         }</div>
       </div>
       ${error ? html`<p class="upd-warn">${error}</p>` : null}
@@ -573,7 +559,7 @@ export function SystemPage() {
   const u = s.update;
   if (!u)
     return html`<section class="page active" data-page="system">
-      <p class="lede">Who reaches this board, what it runs, and updating it.</p>
+      <p class="lede">Who reaches this QUniLator, what it runs, and updating it.</p>
       <${AccessCard} />
       <${BoardCard} />
       <${SerialPortsCard} />
@@ -582,7 +568,7 @@ export function SystemPage() {
   const busy = updateRunning(u);
   const last = u.last || {};
   return html`<section class="page active" data-page="system">
-    <p class="lede">Who reaches this board, what it runs, and updating it.</p>
+    <p class="lede">Who reaches this QUniLator, what it runs, and updating it.</p>
 
     <${AccessCard} />
 

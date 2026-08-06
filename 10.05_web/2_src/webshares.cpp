@@ -9,30 +9,32 @@
    account, created here beside the qunilator service account when the name is
    set and removed again when it changes.
 
-   The service account keeps owning the tree and running the emulator. The
-   operator's account is the one account a board has: the web interface, the
-   file shares and an ssh login all answer to it. It has a home of its own under
-   /home and a login shell, and every right it holds comes from a group - the
-   image tree from qunilator, its primary group, and sudo from qunilator-admin,
-   whose sudoers rule and group the package ships. Samba's "force user" keeps
-   every file the share writes owned by qunilator, so a name change costs one
-   account and no walk over the tree.
+   The service account keeps owning the tree and running the emulator, and takes
+   no login: its password is locked here, so the operator's account is the one
+   account a QUniLator answers to, over the web interface, the file shares and
+   ssh alike. It has a home of its own under /home and a login shell, and every
+   right it holds comes from a group - the image tree from qunilator, its
+   primary group, and sudo from qunilator-admin, whose sudoers rule and group
+   the package ships. Samba's "force user" keeps every file the share writes
+   owned by qunilator, so a name change costs one account and no walk over the
+   tree.
 
    The three share configurations name the qunilator *group*, which both
    accounts belong to, so a name change touches accounts rather than
    configuration. sshd confines an account that is in that group and not in
    qunilator-admin to an SFTP session in the image tree, which is what keeps a
-   share-only account out of a shell. A board installed before this rewrites its
-   files once, on the first name that is set, and checks its ssh configuration
-   with sshd -t before asking sshd to read it.
+   share-only account out of a shell. An installation predating this rewrites
+   its files once, on the first name that is set, and checks its ssh
+   configuration with sshd -t before asking sshd to read it.
 
    An ssh public key set through the interface is what makes the login usable
    from a workstation; the account holds nothing else that a share login does
    not already have.
 
    The base image is onboarded with a shared account whose password is the same
-   on every board of that image. Creating the operator's account is what makes
-   that one unnecessary, so its password is locked at the same moment.
+   on every SD card written from that image. Creating the operator's account is
+   what makes that one unnecessary, so its password is locked at the same
+   moment.
 
    Everything here is root-only and best effort. A development host has no
    useradd to run and no shares to serve, and does nothing.
@@ -75,9 +77,9 @@ static const char *HOME_BASE = "/home";
 static const char *OPERATOR_MARK = "QUniLator operator";
 
 // The account the BeagleBone base image is onboarded with. Its password is the
-// same on every board of that image and is printed in that image's
-// documentation, so it is a way in for anyone who can reach the board. It is
-// the way onto a board nobody has set up yet, and it stops being needed the
+// same on every SD card written from that image and is printed in that image's
+// documentation, so it is a way in for anyone who can reach it. It is the way
+// onto an installation nobody has set up yet, and it stops being needed the
 // moment the operator has an account of their own; the password is locked then,
 // leaving the account, its home and its groups where they are. "sudo usermod
 // --unlock debian" puts it back.
@@ -97,9 +99,10 @@ static const char *SMB_CONF = "/etc/samba/smb.conf";
 static const char *FTP_USERLIST = "/etc/vsftpd.userlist";
 static const char *SSHD_CONF_DIR = "/etc/ssh/sshd_config.d";
 
-// Names this board keeps for itself, refused whether or not the account
+// Names a QUniLator keeps for itself, refused whether or not the account
 // happens to exist here. Accounts that do exist are refused by the ownership
-// check below, so this only has to cover the ones a board might be missing.
+// check below, so this only has to cover the ones an installation might be
+// missing.
 static const char *RESERVED_NAMES[] = {
 	"root", WEBSHARES_SERVICE_USER, "admin", "administrator", "adm", "daemon",
 	"bin", "sys", "sync", "games", "man", "lp", "mail", "news", "uucp",
@@ -164,7 +167,8 @@ static bool have(const char *path) {
 }
 
 // Ask a unit to read its configuration again. Missing units and missing
-// systemd are both fine; a board that serves no shares has nothing to reload.
+// systemd are both fine; an installation that serves no shares has nothing to
+// reload.
 static void reload_unit(const char *verb, const char *unit) {
 	if (!have(SYSTEMCTL))
 		return;
@@ -213,13 +217,15 @@ bool webshares_name_acceptable(const std::string &name, std::string *error) {
 	}
 	for (int i = 0; RESERVED_NAMES[i] != nullptr; i++) {
 		if (name == RESERVED_NAMES[i]) {
-			*error = "\"" + name + "\" is a name this board keeps for itself";
+			*error = "\"" + name + "\" is a name this QUniLator keeps for itself";
 			return false;
 		}
 	}
 	struct passwd *pw = getpwnam(name.c_str());
 	if (pw != nullptr && !is_operator_account(pw)) {
-		*error = "\"" + name + "\" is already an account on this board";
+		*error = "\"" + name + "\" is already an account here, and not one this "
+				"service created; choose another name, or adopt that account with "
+				"\"--setup-operator " + name + " --adopt-account\" on the card itself";
 		return false;
 	}
 	return true;
@@ -301,7 +307,7 @@ static void point_smb_at_the_group(void) {
 }
 
 // The Match line sshd confines an SFTP session with, and the earlier forms a
-// board may still carry. Applied in order, so a board at any of them arrives at
+// installation may still carry. Applied in order, so one at any of them arrives at
 // the last: the session of a qunilator-group member is confined to the image
 // tree unless the account is also an admin, which is what leaves the operator
 // a shell while a share-only account keeps none.
@@ -312,7 +318,7 @@ static const char *SFTP_MATCH_STEPS[][2] = {
 	  "Match Group " WEBSHARES_SERVICE_USER ",!" WEBSHARES_ADMIN_GROUP },
 };
 
-// A configuration sshd refuses to parse would take the board off ssh at the
+// A configuration sshd refuses to parse would take the QUniLator off ssh at the
 // next restart, so the change is checked and dropped if it fails.
 static void point_sftp_at_the_group(void) {
 	DIR *dir = opendir(SSHD_CONF_DIR);
@@ -353,18 +359,16 @@ static void point_sftp_at_the_group(void) {
 }
 
 // vsftpd admits the names its user list holds, and reads the list when it
-// starts, so the list is written and the daemon restarted.
+// starts, so the list is written and the daemon restarted. The operator is the
+// only name on it.
 static void point_ftp_at(const std::string &name) {
-	std::string list = std::string(WEBSHARES_SERVICE_USER) + "\n";
-	if (!name.empty())
-		list += name + "\n";
+	std::string list = name + "\n";
 	std::string current;
 	if (!read_file(FTP_USERLIST, &current) || current == list)
 		return;
 	if (!write_file(FTP_USERLIST, list))
 		return;
-	WEB_INFO("the FTP user list now admits %s",
-			name.empty() ? WEBSHARES_SERVICE_USER : name.c_str());
+	WEB_INFO("the FTP user list now admits %s", name.c_str());
 	reload_unit("restart", "vsftpd");
 }
 
@@ -384,7 +388,7 @@ static void set_samba_password(const std::string &name, const std::string &passw
 	run_fed(argv, password + "\n" + password + "\n");
 }
 
-// The group whose members may sudo. The package creates it; a board whose
+// The group whose members may sudo. The package creates it; an installation whose
 // package predates it gets it here, so the account is never put in a group that
 // is not there.
 static void ensure_admin_group(void) {
@@ -413,28 +417,43 @@ static void link_images_into(const std::string &home, const struct passwd *pw) {
 		WEB_WARNING("could not give %s to %s", link.c_str(), pw->pw_name);
 }
 
-// Bring an account created before the operator had a shell to the shape
-// described at the top of this file: a home of its own, a login shell and
-// membership of the admin group.
+// True when a shell reaches no session: the operator needs one that does, and
+// any other shell is a choice already made and left alone.
+static bool no_login_shell(const char *shell) {
+	if (shell == nullptr || *shell == 0)
+		return true;
+	static const char *refuses[] = { "/usr/sbin/nologin", "/sbin/nologin",
+			"/bin/false", "/usr/bin/false", nullptr };
+	for (int i = 0; refuses[i] != nullptr; i++)
+		if (strcmp(shell, refuses[i]) == 0)
+			return true;
+	return false;
+}
+
+// Bring an account to the shape described at the top of this file: a home of
+// its own, a shell that reaches a session, and membership of the group that
+// carries the image tree and of the one that carries sudo.
 static void adopt_account(const struct passwd *pw, const std::string &name,
 		const std::string &home) {
 	bool wrong_home = pw->pw_dir == nullptr || home != pw->pw_dir;
-	bool wrong_shell = pw->pw_shell == nullptr || strcmp(pw->pw_shell, OPERATOR_SHELL) != 0;
+	bool wrong_shell = no_login_shell(pw->pw_shell);
 	if (!have(USERMOD))
 		return;
 	if (wrong_home || wrong_shell) {
 		// --home without --move: the home this account had is the image tree,
 		// which stays where it is and belongs to the service account.
+		const char *shell = wrong_shell ? OPERATOR_SHELL : pw->pw_shell;
 		const char *argv[] = { USERMOD, "--home", home.c_str(),
-				"--shell", OPERATOR_SHELL, name.c_str(), nullptr };
+				"--shell", shell, name.c_str(), nullptr };
 		if (run(argv) != 0) {
 			WEB_WARNING("could not give %s a home and a shell", name.c_str());
 			return;
 		}
 		WEB_INFO("%s now has a login shell and a home of its own", name.c_str());
 	}
-	const char *argv[] = { USERMOD, "--append", "--groups",
-			WEBSHARES_ADMIN_GROUP, name.c_str(), nullptr };
+	static const char *both_groups = WEBSHARES_SERVICE_USER "," WEBSHARES_ADMIN_GROUP;
+	const char *argv[] = { USERMOD, "--append", "--groups", both_groups,
+			name.c_str(), nullptr };
 	run(argv);
 }
 
@@ -517,7 +536,7 @@ static bool password_is_locked(const char *name) {
 }
 
 // Withdraw the shared onboarding password once the operator has a login of
-// their own. Called from where that login is created, so the board is never
+// their own. Called from where that login is created, so there is never
 // left with neither.
 static void lock_onboarding_account(const std::string &operator_name) {
 	if (operator_name == ONBOARDING_ACCOUNT || !have(USERMOD))
@@ -533,6 +552,25 @@ static void lock_onboarding_account(const std::string &operator_name) {
 	WEB_INFO("%s now has a login of its own, so the shared %s password is "
 			"locked; \"sudo usermod --unlock %s\" restores it",
 			operator_name.c_str(), ONBOARDING_ACCOUNT, ONBOARDING_ACCOUNT);
+}
+
+// The service account owns the image tree and runs the emulator, and nobody
+// logs in as it: the operator's account is what every route answers. An
+// installation that gave it the web password before is brought to that here, so
+// one credential names one account.
+static void lock_service_account(void) {
+	if (have(SMBPASSWD)) {
+		const char *drop[] = { SMBPASSWD, "-x", WEBSHARES_SERVICE_USER, nullptr };
+		run(drop); // no entry to drop is a refusal, and says all is well
+	}
+	if (!have(USERMOD) || password_is_locked(WEBSHARES_SERVICE_USER))
+		return;
+	const char *argv[] = { USERMOD, "--lock", WEBSHARES_SERVICE_USER, nullptr };
+	if (run(argv) != 0) {
+		WEB_WARNING("could not lock the " WEBSHARES_SERVICE_USER " account's password");
+		return;
+	}
+	WEB_INFO("the " WEBSHARES_SERVICE_USER " account no longer takes a login of its own");
 }
 
 // Remove an account this service created. A name that is not ours, or is the
@@ -551,7 +589,7 @@ static void retire_account(const std::string &name, const std::string &keep) {
 	if (have(USERDEL)) {
 		// The home goes with the account only when it is the account's own,
 		// below /home. An account made before the operator had a shell has the
-		// image tree as its home, and that tree is the point of the board.
+		// image tree as its home, and that tree is the point of the machine.
 		std::string own_home = std::string(HOME_BASE) + "/" + name;
 		bool remove_home = pw->pw_dir != nullptr && own_home == pw->pw_dir;
 		const char *argv[] = { USERDEL, remove_home ? "--remove" : name.c_str(),
@@ -579,7 +617,7 @@ static const char *KEY_TYPES[] = {
 // One authorized_keys line: a type, a base64 blob and an optional comment.
 // Options before the type are not accepted - a key from a workstation's
 // .pub file carries none, and what they can express (command=, tunnel=) is not
-// something an operator should be pasting into a board unseen.
+// something an operator should be pasting in unseen.
 static bool acceptable_ssh_key(const std::string &key, std::string *cleaned,
 		std::string *error) {
 	std::string k = key;
@@ -633,7 +671,7 @@ static bool acceptable_ssh_key(const std::string &key, std::string *cleaned,
 bool webshares_set_ssh_key(const std::string &name, const std::string &key,
 		std::string *error) {
 	if (getuid() != 0) {
-		*error = "only a board can be given an ssh key";
+		*error = "only an installation on a card can be given an ssh key";
 		return false;
 	}
 	struct passwd *pw = getpwnam(name.c_str());
@@ -660,7 +698,7 @@ bool webshares_set_ssh_key(const std::string &name, const std::string &key,
 		WEB_WARNING("could not give %s to %s", dir.c_str(), name.c_str());
 
 	// The key replaces whatever was there: the interface offers one key, so
-	// what it shows and what the board answers to are the same thing.
+	// what it shows and what the account answers to are the same thing.
 	std::string path = dir + "/authorized_keys";
 	std::string tmp = path + ".qunilator-new";
 	FILE *f = fopen(tmp.c_str(), "wb");
@@ -694,35 +732,59 @@ bool webshares_has_ssh_key(const std::string &name) {
 	return stat(path.c_str(), &st) == 0 && st.st_size > 0;
 }
 
-void webshares_apply(const std::string &previous, const std::string &name,
-		const std::string &password) {
-	if (getuid() != 0 || getpwnam(WEBSHARES_SERVICE_USER) == nullptr)
-		return;
-
-	// The service account's password follows the web password whatever the
-	// operator is called, so a board with no name set behaves as it always has
-	// and one with a name keeps a way in under its own account.
-	set_unix_password(WEBSHARES_SERVICE_USER, password);
-	set_samba_password(WEBSHARES_SERVICE_USER, password);
-
-	std::string in_force;
-	if (!name.empty()) {
-		point_smb_at_the_group();
-		point_sftp_at_the_group();
-		if (ensure_account(name)) {
-			set_unix_password(name, password);
-			set_samba_password(name, password);
-			in_force = name;
-			lock_onboarding_account(name);
+bool webshares_adopt_account(const std::string &name, std::string *error) {
+	if (getuid() != 0) {
+		*error = "adopting an account is root's to do";
+		return false;
+	}
+	for (int i = 0; RESERVED_NAMES[i] != nullptr; i++) {
+		if (name == RESERVED_NAMES[i]) {
+			*error = "\"" + name + "\" is a name this QUniLator keeps for itself";
+			return false;
 		}
 	}
-	point_ftp_at(in_force);
-	retire_account(previous, in_force);
+	struct passwd *pw = getpwnam(name.c_str());
+	if (pw == nullptr) {
+		*error = "there is no account called \"" + name + "\" to adopt";
+		return false;
+	}
+	if (is_operator_account(pw))
+		return true; // already ours, and the rest of the setup does the shaping
+	if (pw->pw_uid < 1000) {
+		*error = "\"" + name + "\" is a system account";
+		return false;
+	}
+	if (!have(USERMOD)) {
+		*error = "no usermod on this host";
+		return false;
+	}
+	const char *argv[] = { USERMOD, "--comment", OPERATOR_MARK, name.c_str(), nullptr };
+	if (run(argv) != 0) {
+		*error = "could not mark \"" + name + "\" as the operator's account";
+		return false;
+	}
+	WEB_INFO("%s is now the operator's account; its home and its files stay as "
+			"they are", name.c_str());
+	return true;
+}
 
-	if (in_force.empty())
-		WEB_INFO("the file shares answer " WEBSHARES_SERVICE_USER
-				" with the web password");
-	else
-		WEB_INFO("the file shares answer %s with the web password",
-				in_force.c_str());
+void webshares_apply(const std::string &previous, const std::string &name,
+		const std::string &password) {
+	if (name.empty() || getuid() != 0 || getpwnam(WEBSHARES_SERVICE_USER) == nullptr)
+		return;
+
+	point_smb_at_the_group();
+	point_sftp_at_the_group();
+	if (!ensure_account(name)) {
+		WEB_WARNING("the file shares have no account for %s", name.c_str());
+		return;
+	}
+	set_unix_password(name, password);
+	set_samba_password(name, password);
+	lock_onboarding_account(name);
+	lock_service_account();
+	point_ftp_at(name);
+	retire_account(previous, name);
+
+	WEB_INFO("the file shares answer %s with the web password", name.c_str());
 }

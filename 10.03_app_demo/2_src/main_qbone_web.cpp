@@ -17,7 +17,9 @@
 
 #include <errno.h>
 #include <signal.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -40,6 +42,10 @@
 #include "webconsole.hpp"
 #include "webpower.hpp"
 #include "webconsole_ext.hpp"
+#include "webauth.hpp"
+#include "webshares.hpp"
+#include "websystem.hpp"
+#include "webversion.hpp"
 #include "boardclaim.hpp"
 #include "device_configuration.hpp"
 
@@ -62,6 +68,110 @@ static std::string resolve_docroot(const std::string &opt_root)
 	return std::string(root ? root : ".") + "/10.05_web/3_frontend";
 }
 
+// Read one line, without the newline. Result false at end of input.
+static bool read_line(FILE *f, std::string *out)
+{
+	char buf[512];
+	if (fgets(buf, sizeof(buf), f) == nullptr)
+		return false;
+	size_t len = strlen(buf);
+	while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r'))
+		buf[--len] = 0;
+	*out = buf;
+	return true;
+}
+
+static bool read_whole_file(const char *path, std::string *out)
+{
+	FILE *f = fopen(path, "rb");
+	if (f == nullptr)
+		return false;
+	char buf[4096];
+	size_t n;
+	out->clear();
+	while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+		out->append(buf, n);
+	fclose(f);
+	return true;
+}
+
+// Create the operator - the one account that opens the web interface, the file
+// shares and ssh - and exit. Preparing an SD card runs this inside the image so
+// the card boots ready to use, and it is what gives an operator a way in again
+// when the password is gone. The password is read from stdin, where a process
+// listing cannot see it.
+//
+// Nothing here touches the bus, and the logger is the only singleton it needs.
+static int setup_operator(const std::string &user, const std::string &keyfile,
+		const std::string &hostname, bool adopt)
+{
+	if (geteuid() != 0) {
+		fprintf(stderr, "--setup-operator creates an account, so it must run as root\n");
+		return 1;
+	}
+	// The running service holds the credentials in memory and writes them out
+	// again whenever a setting changes, so a second process writing the same
+	// file would be overwritten. Its runtime directory says whether it is up.
+	struct stat st;
+	if (stat("/run/qunilator/version", &st) == 0) {
+		std::string unit = webversion_package() + ".service";
+		fprintf(stderr, "%s is running, and would write its own credentials over "
+				"these.\n  systemctl stop %s\n  <this command>\n  systemctl start %s\n",
+				unit.c_str(), unit.c_str(), unit.c_str());
+		return 1;
+	}
+	std::string password;
+	if (!read_line(stdin, &password) || password.empty()) {
+		fprintf(stderr, "--setup-operator reads the password from stdin, and read none\n");
+		return 1;
+	}
+	std::string key;
+	if (!keyfile.empty() && !read_whole_file(keyfile.c_str(), &key)) {
+		fprintf(stderr, "cannot read the ssh key in %s: %s\n", keyfile.c_str(),
+				strerror(errno));
+		return 1;
+	}
+
+	logger = new logger_c();
+	logger->default_level = LL_INFO;
+	logger->reset_log_levels();
+	// The unit is given QUNILATOR_DIR by a drop-in; a command line has no such
+	// thing, and the digest belongs in the state directory the service reads
+	// rather than in the home of whoever ran this.
+	if (getenv("QUNILATOR_DIR") == nullptr)
+		setenv("QUNILATOR_DIR", "/var/lib/qunilator", 1);
+	websettings_startup();
+
+	std::string error;
+	// An account of that name that nobody made the operator is refused, which
+	// is what --adopt-account settles: it keeps the home and the files where
+	// they are and makes that account the one.
+	if (adopt && !webshares_adopt_account(user, &error)) {
+		fprintf(stderr, "%s\n", error.c_str());
+		return 1;
+	}
+	if (!webauth_set_credentials(user, password, &error)) {
+		fprintf(stderr, "%s\n", error.c_str());
+		return 1;
+	}
+	printf("%s is the operator: web interface, file shares and ssh\n", user.c_str());
+	printf("the credentials are in %s/settings.json\n",
+			websettings_state_dir().c_str());
+	if (!key.empty()) {
+		if (!webshares_set_ssh_key(user, key, &error))
+			fprintf(stderr, "the ssh key was not installed: %s\n", error.c_str());
+		else
+			printf("%s reaches a shell with the given ssh key\n", user.c_str());
+	}
+	if (!hostname.empty()) {
+		if (!websystem_set_hostname(hostname, &error))
+			fprintf(stderr, "the host name was not set: %s\n", error.c_str());
+		else
+			printf("the host name is %s\n", hostname.c_str());
+	}
+	return 0;
+}
+
 static void usage(const char *progname)
 {
 	printf("%s - " QUNILATOR_NAME " " QUNIBUS_NAME " emulator, served over its web interface\n\n", progname);
@@ -77,6 +187,13 @@ static void usage(const char *progname)
 	printf("  --loglevel <n>      %d fatal, %d error, %d warning, %d info (default), %d debug\n",
 			LL_FATAL, LL_ERROR, LL_WARNING, LL_INFO, LL_DEBUG);
 	printf("  --help              this text\n");
+	printf("\nsetting up, instead of serving:\n");
+	printf("  --setup-operator <name>  create the operator account, reading its password\n");
+	printf("                           from stdin, and exit\n");
+	printf("  --ssh-key <file>         public key the operator reaches a shell with\n");
+	printf("  --hostname <name>        the name this " QUNILATOR_NAME " has on the network\n");
+	printf("  --adopt-account          make an account that exists already the operator's,\n");
+	printf("                           keeping its home, its files and its shell\n");
 }
 
 int main(int argc, char *argv[])
@@ -90,6 +207,8 @@ int main(int argc, char *argv[])
 #endif
 	unsigned loglevel = LL_INFO;
 	std::string startup_config;
+	std::string operator_name, ssh_key_file, hostname;
+	bool adopt_account = false;
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--port") && i + 1 < argc)
@@ -102,6 +221,14 @@ int main(int argc, char *argv[])
 			loglevel = strtoul(argv[++i], nullptr, 10);
 		else if (!strcmp(argv[i], "--config") && i + 1 < argc)
 			startup_config = argv[++i];
+		else if (!strcmp(argv[i], "--setup-operator") && i + 1 < argc)
+			operator_name = argv[++i];
+		else if (!strcmp(argv[i], "--ssh-key") && i + 1 < argc)
+			ssh_key_file = argv[++i];
+		else if (!strcmp(argv[i], "--hostname") && i + 1 < argc)
+			hostname = argv[++i];
+		else if (!strcmp(argv[i], "--adopt-account"))
+			adopt_account = true;
 		else if (!strcmp(argv[i], "--help")) {
 			usage(argv[0]);
 			return 0;
@@ -110,6 +237,17 @@ int main(int argc, char *argv[])
 			usage(argv[0]);
 			return 2;
 		}
+	}
+
+	// Setting up is a run of its own: it creates the account and returns,
+	// leaving the hardware alone, so it works in an SD-card image as well as on
+	// a machine that is running.
+	if (!operator_name.empty())
+		return setup_operator(operator_name, ssh_key_file, hostname, adopt_account);
+	if (!ssh_key_file.empty() || !hostname.empty() || adopt_account) {
+		fprintf(stderr, "%s: --ssh-key, --hostname and --adopt-account belong to "
+				"--setup-operator\n", argv[0]);
+		return 2;
 	}
 
 	qunibone_factory();

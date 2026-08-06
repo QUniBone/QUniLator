@@ -19,12 +19,19 @@
 // create.
 bool webshares_name_acceptable(const std::string &name, std::string *error);
 
-// Make name the account SMB, FTP and SFTP answer to, with password, retiring
-// previous when it names a different operator account. An empty name puts the
-// shares back on the service account alone. Root-only and best effort, so a
-// development host and a board without the shares installed both do nothing.
+// Make name the account the web interface, SMB, FTP, SFTP and ssh answer to,
+// with password, retiring previous when it names a different operator account.
+// Root-only and best effort, so a development host and an installation without
+// the shares both do nothing.
 void webshares_apply(const std::string &previous, const std::string &name,
 		const std::string &password);
+
+// Take an account that exists already and make it the operator's, keeping its
+// home, its files and its shell. This is the name that was a personal login
+// before an operator was a thing; the interface refuses such a name, because
+// taking over an account is a decision to make at the machine rather than in a
+// browser. On refusal, false with the reason in *error.
+bool webshares_adopt_account(const std::string &name, std::string *error);
 
 // Make key the ssh public key the operator's account answers to, replacing any
 // it held. On refusal, false with the reason in *error: a key OpenSSH would not

@@ -67,8 +67,12 @@ Try these in order:
 ## Open it and create your identity
 
 The web interface binds port 80 and asks you to create the operator identity on
-first use. That one name and password serve **both** the web login and the
-Linux account behind it — so the same credentials get you `ssh` in later.
+first use — a name and a password, and it will not go further without both. That
+one pair serves **both** the web login and the Linux account behind it, so the
+same credentials get you into the file shares and `ssh` in later.
+
+A card can be prepared with that identity already in it, in which case no dialog
+appears; see `packaging/personalize-image.sh` in the source tree.
 
 ## Reading the LEDs
 

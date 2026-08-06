@@ -4,24 +4,27 @@
    hans@huebner.org
    MIT license, see webserver.hpp for the full text.
 
-   The interface is open until a password is set, which is what makes a fresh
-   board reachable at all. The frontend asks for a user name and a password on
-   first contact and PUTs them here; from then on every request needs them,
+   The interface is open until a QUniLator is set up, which is what makes a
+   fresh one reachable at all. The frontend asks for a user name and a password
+   on first contact and PUTs them here; from then on every request needs them,
    static files and WebSocket handshakes included (see begin_request_handler in
    webserver.cpp).
 
-     GET /api/auth   {configured, source, user, min_length}
+     GET /api/auth   {configured, user, min_length}
      PUT /api/auth   {user?, password?, current?, hostname?, ssh_key?}
 
-   The first-run dialog settles the board's name and the operator's ssh key at
-   the same time as the credentials, so those two travel with this request and
-   are applied once the account exists; websystem.cpp serves each on its own for
-   a board already set up.
+   The first-run dialog settles the host name and the operator's ssh key at the
+   same time as the credentials, so those two travel with this request and are
+   applied once the account exists; websystem.cpp serves each on its own for an
+   installation already set up.
 
-   The user name is what the file shares answer to as well, so setting it
-   creates the matching OS account through webshares.cpp. A board that carries
-   only a password takes any name, which is what an installation made before
-   the name existed keeps doing until one is set.
+   A QUniLator carries one operator, and the name is half of what identifies
+   them: it reaches an OS account through webshares.cpp, so the same pair opens
+   the web interface, the file shares and ssh. Credentials are therefore a name
+   and a password together, set up when the SD card is prepared or on first
+   contact with the web interface. A stored record carrying only a password
+   comes from before that and names no account, so it is dropped and the
+   first-run dialog replaces it.
 
    The password is stored as a PBKDF2-HMAC-SHA256 digest over a random salt.
    The build links no crypto library - it is static and civetweb is compiled
@@ -258,9 +261,8 @@ static bool random_bytes(uint8_t *out, size_t len) {
 #define MIN_PASSWORD_LEN 8
 
 static std::mutex auth_mutex; // guards everything below
-static webauth_source_e source = webauth_source_none;
-static std::string env_password;     // WEBUI_PASSWORD, verified as given
-static std::string stored_user;      // the operator's name, empty to take any
+static bool configured = false;      // a name and a password are in force
+static std::string stored_user;      // the operator's name
 static uint8_t stored_salt[SALT_LEN];
 static uint8_t stored_hash[SHA256_LEN];
 static unsigned stored_iterations = PBKDF2_ITERATIONS;
@@ -301,26 +303,16 @@ void webauth_init(void) {
 		// go without it and pay PBKDF2 on every request instead.
 		memset(cache_salt, 0, sizeof(cache_salt));
 	}
-	const char *env = getenv("WEBUI_PASSWORD");
-	if (env != nullptr && *env != 0) {
-		env_password = env;
-		source = webauth_source_environment;
-	}
-}
-
-webauth_source_e webauth_source(void) {
-	std::lock_guard<std::mutex> lock(auth_mutex);
-	return source;
 }
 
 bool webauth_configured(void) {
 	std::lock_guard<std::mutex> lock(auth_mutex);
-	return source != webauth_source_none;
+	return configured;
 }
 
 std::string webauth_user(void) {
 	std::lock_guard<std::mutex> lock(auth_mutex);
-	return source == webauth_source_settings ? stored_user : std::string();
+	return configured ? stored_user : std::string();
 }
 
 bool webauth_verify(const std::string &user, const std::string &password) {
@@ -328,8 +320,7 @@ bool webauth_verify(const std::string &user, const std::string &password) {
 		std::lock_guard<std::mutex> lock(auth_mutex);
 		// The name is not a secret, so it is compared plainly; the password
 		// below is what the constant-time comparison protects.
-		if (source == webauth_source_settings && !stored_user.empty()
-				&& user != stored_user)
+		if (configured && user != stored_user)
 			return false;
 	}
 	return webauth_verify_password(password);
@@ -337,16 +328,8 @@ bool webauth_verify(const std::string &user, const std::string &password) {
 
 bool webauth_verify_password(const std::string &password) {
 	std::lock_guard<std::mutex> lock(auth_mutex);
-	switch (source) {
-	case webauth_source_none:
-		return true;
-	case webauth_source_environment:
-		return password.size() == env_password.size()
-				&& equal_constant_time((const uint8_t *) password.data(),
-						(const uint8_t *) env_password.data(), password.size());
-	case webauth_source_settings:
-		break;
-	}
+	if (!configured)
+		return true; // an installation nobody has set up yet answers anything
 	if (cache_matches(password))
 		return true;
 	uint8_t derived[SHA256_LEN];
@@ -362,8 +345,8 @@ bool webauth_set_credentials(const std::string &user, const std::string &passwor
 	std::string previous_user;
 	{
 		std::lock_guard<std::mutex> lock(auth_mutex);
-		if (source == webauth_source_environment) {
-			*error = "the credentials come from WEBUI_PASSWORD and are set outside the interface";
+		if (user.empty()) {
+			*error = "a user name is required";
 			return false;
 		}
 		if (password.size() < MIN_PASSWORD_LEN) {
@@ -373,7 +356,7 @@ bool webauth_set_credentials(const std::string &user, const std::string &passwor
 			*error = msg;
 			return false;
 		}
-		if (!user.empty() && !webshares_name_acceptable(user, error))
+		if (!webshares_name_acceptable(user, error))
 			return false;
 		if (!random_bytes(stored_salt, sizeof(stored_salt))) {
 			*error = "no randomness available for a salt";
@@ -385,7 +368,7 @@ bool webauth_set_credentials(const std::string &user, const std::string &passwor
 		cache_store(password);
 		previous_user = stored_user;
 		stored_user = user;
-		source = webauth_source_settings;
+		configured = true;
 	}
 	websettings_save();
 	// The shares authenticate against the OS, so the password reaches the
@@ -404,30 +387,35 @@ void webauth_load(const picojson::value &admin) {
 		return;
 	if (from_hex(admin.get("hash").get<std::string>(), hash, sizeof(hash)) != sizeof(hash))
 		return;
-	std::lock_guard<std::mutex> lock(auth_mutex);
-	// WEBUI_PASSWORD is the machine's own setting and outranks the file
-	if (source == webauth_source_environment)
+	// A password with no name beside it is a record from before an operator
+	// account existed. There is no account it could name, so it is dropped and
+	// the first-run dialog asks for both halves - which is the one moment the
+	// interface can say so.
+	if (!admin.get("user").is<std::string>()
+			|| admin.get("user").get<std::string>().empty()) {
+		WEB_WARNING("the stored password carries no user name, so it is not in force: "
+				"open the web interface to set this QUniLator up");
 		return;
+	}
+	std::lock_guard<std::mutex> lock(auth_mutex);
 	memcpy(stored_salt, salt, sizeof(stored_salt));
 	memcpy(stored_hash, hash, sizeof(stored_hash));
-	stored_user = admin.get("user").is<std::string>()
-			? admin.get("user").get<std::string>() : std::string();
+	stored_user = admin.get("user").get<std::string>();
 	stored_iterations = admin.get("iterations").is<double>()
 			? (unsigned) admin.get("iterations").get<double>() : PBKDF2_ITERATIONS;
 	if (stored_iterations == 0)
 		stored_iterations = PBKDF2_ITERATIONS;
-	source = webauth_source_settings;
+	configured = true;
 	cache_valid = false;
 }
 
 picojson::value webauth_json(void) {
 	std::lock_guard<std::mutex> lock(auth_mutex);
-	if (source != webauth_source_settings)
+	if (!configured)
 		return picojson::value(); // null: nothing of ours to persist
 	picojson::object o;
 	o["algorithm"] = picojson::value("pbkdf2-sha256");
-	if (!stored_user.empty())
-		o["user"] = picojson::value(stored_user);
+	o["user"] = picojson::value(stored_user);
 	o["iterations"] = picojson::value((double) stored_iterations);
 	o["salt"] = picojson::value(to_hex(stored_salt, sizeof(stored_salt)));
 	o["hash"] = picojson::value(to_hex(stored_hash, sizeof(stored_hash)));
@@ -463,22 +451,9 @@ static bool read_json_body(struct mg_connection *conn, picojson::value *out) {
 	return parse_err.empty() && out->is<picojson::object>();
 }
 
-static const char *source_name(webauth_source_e s) {
-	switch (s) {
-	case webauth_source_settings:
-		return "settings";
-	case webauth_source_environment:
-		return "environment";
-	default:
-		return "none";
-	}
-}
-
 static void auth_get(struct mg_connection *conn) {
-	webauth_source_e s = webauth_source();
 	picojson::object o;
-	o["configured"] = picojson::value(s != webauth_source_none);
-	o["source"] = picojson::value(source_name(s));
+	o["configured"] = picojson::value(webauth_configured());
 	o["user"] = picojson::value(webauth_user());
 	o["min_length"] = picojson::value((double) MIN_PASSWORD_LEN);
 	send_json(conn, 200, picojson::value(o));
@@ -507,8 +482,10 @@ static void auth_put(struct mg_connection *conn) {
 			return;
 		}
 		current = body.get("current").get<std::string>();
-	} else if (!have_password) {
-		send_error(conn, 400, "password is required");
+	} else if (!have_user || !have_password) {
+		// A first setup settles both halves at once: the name is an account,
+		// and an account is made with a password.
+		send_error(conn, 400, "a user name and a password are required");
 		return;
 	}
 	// A request that changes only the name keeps the password in force, and
@@ -522,7 +499,7 @@ static void auth_put(struct mg_connection *conn) {
 		send_error(conn, 422, error);
 		return;
 	}
-	// The first-run dialog asks for the board's name and an ssh public key
+	// The first-run dialog asks for the host name and an ssh public key
 	// beside the credentials and sends all of it in this one request: the key
 	// belongs to the operator account, which the credentials are what create,
 	// and this is the last request the browser makes before it has to
@@ -534,7 +511,7 @@ static void auth_put(struct mg_connection *conn) {
 		std::string name = body.get("hostname").get<std::string>();
 		std::string why;
 		if (!name.empty() && !websystem_set_hostname(name, &why))
-			warnings.push_back(picojson::value("the board was not renamed: " + why));
+			warnings.push_back(picojson::value("the host name was not changed: " + why));
 	}
 	if (body.get("ssh_key").is<std::string>()) {
 		std::string key = body.get("ssh_key").get<std::string>();

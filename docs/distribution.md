@@ -435,11 +435,11 @@ the kernel held, and never reboots the board.
 
 ## Web interface authentication, done
 
-A board with no password answers every request, which is what makes a fresh
-one reachable. The frontend now asks for an admin password the first time it
-reaches a board that has none, in a dialog with no cancel, and PUTs it to
-`/api/auth`; from then on every request needs it, static files and WebSocket
-handshakes included.
+An installation nobody has set up answers every request, which is what makes a
+fresh one reachable. The frontend asks for the operator's name and password the
+first time it reaches one in that state, in a dialog with no cancel, and PUTs
+them to `/api/auth`; from then on every request needs both, static files and
+WebSocket handshakes included.
 
 The password is kept in `settings.json` as a PBKDF2-HMAC-SHA256 digest over a
 random salt, at 120000 iterations. The build links no crypto library - it is
@@ -453,15 +453,16 @@ serving the page, so a password that verifies once is remembered as a single
 SHA-256 over a salt generated afresh at each start. One request per run of
 the process pays the full derivation.
 
-`WEBUI_PASSWORD` still works and outranks the file; a board set up that way
-reports its password as coming from the environment and refuses to change it
-through the interface.
+Credentials are a name and a password together, and settings.json is the only
+place they come from. The name is an OS account as well, so one identity opens
+the web interface, the file shares and ssh; the `qunilator` service account
+takes no login of its own.
 
-**The window is narrower, not closed.** Between first boot and someone
-setting a password, the board is open to anyone who can reach it - the same
-exposure as before, now bounded by how quickly the first page is opened. An
-image that generated a password at first boot and printed it on the serial
-console would close it completely.
+**The window is narrower, not closed.** Between first boot and someone setting
+the operator up, the interface is open to anyone who can reach it. Preparing
+the SD card closes it entirely: `packaging/personalize-image.sh` runs the
+emulator's own `--setup-operator` inside the image, so the card boots with the
+account already made and the first-run dialog never appears.
 
 ## Open questions
 

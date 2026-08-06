@@ -60,11 +60,9 @@ either card; a UniBone goes in `QBONE_HOST` like anything else.
 > [!IMPORTANT]
 > **The name is part of the credential**
 >
-> A QUniLator set up through the first-run dialog carries one identity that is
-> both your account on the BeagleBone and your web login. It answers `401` to the
-> right password under the wrong name, so set `QBONE_USER` to the name you
-> created. An installation predating that dialog carries only a password and
-> takes any name.
+> A QUniLator carries one identity that is both your account on the BeagleBone
+> and your web login. It answers `401` to the right password under another name,
+> so set `QBONE_USER` to the name you created when you set it up.
 
 ## Wiring it into a client
 

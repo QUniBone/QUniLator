@@ -5,16 +5,11 @@
    MIT license, see any source file header for the full text.
 
    Drives webauth.cpp and the name rules of webshares.cpp on the development
-   host: what a user name may be, what basic auth accepts once one is set, what
-   survives a round trip through settings.json, and what credentials taken from
-   the environment refuse.
+   host: what a user name may be, what basic auth accepts once an operator is
+   set, and what survives a round trip through settings.json.
 
    The account provisioning inside webshares.cpp is root-only and does nothing
    here, so a name can be set and changed without an account being created.
-
-   The environment case needs a process that has never seen anything else -
-   webauth_init reads WEBUI_PASSWORD once, and the source it decides on cannot
-   be unwound - so it runs in a forked child before the parent's own phase.
 
    Built and run by run_config_test.sh. Exit status is the test result.
 */
@@ -24,7 +19,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #include <string>
@@ -135,36 +129,32 @@ static void name_rules(void) {
 				"an account this service did not create is refused");
 }
 
-static void open_board(void) {
+static void not_set_up(void) {
 	webauth_init();
-	check(!webauth_configured(), "a board with no credentials is not configured");
+	check(!webauth_configured(), "an installation with no operator is not configured");
 	check(webauth_user().empty(), "and reports no user name");
 	check(webauth_verify("anyone", "anything"), "and lets anyone in");
 }
 
-static void password_only(void) {
+// A name is half of the credential, so there is no way to set one without it.
+static void a_name_is_required(void) {
 	std::string why;
-	check(!webauth_set_credentials("", "short", &why),
+	check(!webauth_set_credentials("", "opensesame", &why),
+			"a password with no name is refused");
+	check(!webauth_configured(), "which leaves the installation not set up");
+	check(!webauth_set_credentials("operators", "short", &why),
 			"a password under the minimum is refused");
-	check(webauth_set_credentials("", "opensesame", &why),
-			"a password on its own is accepted");
-	check(webauth_configured(), "the board is configured");
-	check(webauth_user().empty(), "with no user name");
-	check(webauth_verify("anyone", "opensesame"),
-			"an installation with only a password takes any name");
-	check(webauth_verify("", "opensesame"), "including an empty one");
-	check(!webauth_verify("anyone", "wrong"), "and refuses the wrong password");
+	check(!webauth_set_credentials("root", "opensesame", &why),
+			"a reserved name is refused");
+	check(!webauth_configured(), "and none of that set anything up");
 }
 
 static void with_a_name(void) {
 	std::string why;
-	check(!webauth_set_credentials("root", "opensesame", &why),
-			"a reserved name is refused as a credential");
-	check(webauth_user().empty(), "and leaves the board without a name");
-
 	check(webauth_set_credentials("operators", "opensesame", &why),
-			"a name is set alongside the password");
-	check(webauth_user() == "operators", "and is reported back");
+			"a name and a password set the operator");
+	check(webauth_configured(), "which is what being set up means");
+	check(webauth_user() == "operators", "and the name is reported back");
 	check(webauth_verify("operators", "opensesame"), "that pair is accepted");
 	check(!webauth_verify("anyone", "opensesame"), "another name is refused");
 	check(!webauth_verify("", "opensesame"), "an empty name is refused");
@@ -174,18 +164,17 @@ static void with_a_name(void) {
 	check(webauth_set_credentials("dispatch", "opensesame", &why),
 			"the name is changed with the password in force");
 	check(webauth_user() == "dispatch", "and the new one answers");
-	check(!webauth_verify("operators", "opensesame"), "the old one no longer does");
+	check(!webauth_verify("operators", "opensesame"), "the name it replaced does not");
 	check(webauth_verify("dispatch", "opensesame"), "the new one does");
 
 	check(webauth_set_credentials("dispatch", "anotherlongone", &why),
 			"the password is changed with the name in force");
 	check(webauth_verify("dispatch", "anotherlongone"), "the new password is accepted");
-	check(!webauth_verify("dispatch", "opensesame"), "the old one is not");
+	check(!webauth_verify("dispatch", "opensesame"), "the one it replaced is not");
 
-	check(webauth_set_credentials("", "anotherlongone", &why),
-			"the name is cleared");
-	check(webauth_user().empty(), "and the board reports none");
-	check(webauth_verify("anyone", "anotherlongone"), "so any name is taken again");
+	check(!webauth_set_credentials("", "anotherlongone", &why),
+			"the name cannot be cleared");
+	check(webauth_user() == "dispatch", "so the operator stands");
 }
 
 static void persistence(void) {
@@ -207,69 +196,30 @@ static void persistence(void) {
 	check(webauth_verify("archivist", "anotherlongone"),
 			"and the credentials still verify");
 
-	// An installation made before the name existed: the admin object of an
-	// older settings.json, which carries no user member.
-	picojson::object older = stored.get<picojson::object>();
-	older.erase("user");
-	webauth_load(picojson::value(older));
-	check(webauth_user().empty(), "an admin object with no user name loads without one");
-	check(webauth_verify("anyone", "anotherlongone"), "and the board takes any name");
-}
+	// A record from before an operator existed: an admin object with no user
+	// member. It names no account, so it does not put anyone in force.
+	picojson::object nameless = stored.get<picojson::object>();
+	nameless.erase("user");
+	webauth_load(picojson::value(nameless));
+	check(webauth_user() == "archivist",
+			"an admin object with no user name leaves the operator alone");
 
-// WEBUI_PASSWORD owns the credentials, so the interface changes neither half.
-static int environment_phase(void) {
-	setenv("WEBUI_PASSWORD", "fromtheenvironment", 1);
-	webauth_init();
-	check(webauth_configured(), "WEBUI_PASSWORD configures the board");
-	check(webauth_source() == webauth_source_environment, "and owns the credentials");
-	check(webauth_user().empty(), "which carry no user name");
-	check(webauth_verify("anyone", "fromtheenvironment"), "so any name is taken");
-	check(!webauth_verify("anyone", "wrong"), "with that password only");
-
-	std::string why;
-	check(!webauth_set_credentials("operators", "anotherlongone", &why),
-			"a name change is refused");
-	check(!webauth_set_credentials("", "anotherlongone", &why),
-			"a password change is refused");
-	check(webauth_user().empty(), "and the board still carries no name");
-
-	// A settings.json holding a name is outranked as well, which is what makes
-	// WEBUI_PASSWORD the way back into a board whose name was mistyped.
-	picojson::object admin;
-	admin["algorithm"] = picojson::value("pbkdf2-sha256");
-	admin["user"] = picojson::value(std::string("someoneelse"));
-	admin["iterations"] = picojson::value((double) 120000);
-	admin["salt"] = picojson::value(std::string(32, '0'));
-	admin["hash"] = picojson::value(std::string(64, '0'));
-	webauth_load(picojson::value(admin));
-	check(webauth_user().empty(), "a stored name does not outrank the environment");
-	check(webauth_verify("anyone", "fromtheenvironment"),
-			"and the environment password still lets anyone in");
-	return failures;
+	picojson::object empty_name = stored.get<picojson::object>();
+	empty_name["user"] = picojson::value(std::string());
+	webauth_load(picojson::value(empty_name));
+	check(webauth_user() == "archivist", "and so does an empty one");
 }
 
 int main(void) {
 	logger = new logger_c();
 
-	printf("--- credentials from the environment\n");
-	fflush(stdout); // the child inherits this buffer, and would print it twice
-	pid_t child = fork();
-	if (child == 0)
-		exit(environment_phase() == 0 ? 0 : 1);
-	int status = 1;
-	if (child < 0 || waitpid(child, &status, 0) < 0 || !WIFEXITED(status)
-			|| WEXITSTATUS(status) != 0) {
-		printf("the environment phase failed\n");
-		failures++;
-	}
-
 	printf("--- user names\n");
 	name_rules();
-	printf("--- a board with no credentials\n");
-	open_board();
-	printf("--- a password on its own\n");
-	password_only();
-	printf("--- a user name alongside the password\n");
+	printf("--- before anyone is set up\n");
+	not_set_up();
+	printf("--- half a credential\n");
+	a_name_is_required();
+	printf("--- the operator\n");
 	with_a_name();
 	printf("--- settings.json\n");
 	persistence();

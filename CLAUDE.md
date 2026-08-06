@@ -31,17 +31,18 @@ whichever bus the board is), serving the web interface and API on port 80.
 **Drive the board through that API.** The API is documented in
 `10.05_web/docs/api.md` — read it rather than guessing endpoints.
 
-Authentication is HTTP basic, and **the user name is part of it**: the first-run
-dialog creates one identity that is both the BeagleBone account and the web
-login, so the name is the one in `QUNILATOR_HOST` and the password is in
-`~/.qbone-pw` on the workstation.
+Authentication is HTTP basic, and **the user name is part of it**: one identity
+is both the BeagleBone account and the web login, so the name is the one in
+`QUNILATOR_HOST` and the password is in `~/.qbone-pw` on the workstation.
 
     curl -s -u "$BOARD_USER:$(cat ~/.qbone-pw)" http://$BOARD_HOST/api/devices
 
-Requests without it answer `401`, and so does the right password under the wrong
-name. (A board set up before the name existed carries only a password and takes
-any name; that is what the old "any user name" here meant, and it does not hold
-for a board set up through the first-run dialog.)
+Requests without it answer `401`, and so does the right password under another
+name. Both halves are mandatory: a board carries exactly one operator, created
+either when its SD card was prepared or in the first-run dialog, and a stored
+password with no name beside it is not in force — such a board asks to be set
+up. `<name> --setup-operator <user>` on the board (service stopped, password on
+stdin) is the way in when the credentials are gone.
 
 `~/.qbone-pw` is the web password. It is also the account password, which only
 matters where no key is installed — with the key in place nothing should ask
