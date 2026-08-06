@@ -101,40 +101,54 @@ CPU is swapped from time to time. Read `GET /api/devices` and
 `GET /api/settings` before assuming either channel — a silent channel usually
 means the console is on the other one, not that the machine is dead.
 
-### The KDJ11-A, which is what `qbone` carries now
+### A CPU with its own SLU — the 11/53 `qbone` carries now, and the 11/73
 
-The KDJ11-A has **no on-board console SLU**, so `/dev/ttyS2` reaches nothing
-and `/ws/console/ext` stays silent. The console is QBone's **emulated `DL11`**
-at 777560, and the WebSocket that carries it is **`/ws/console/0`**:
-
-    node -e 'const w=new (require("ws"))("ws://qbone/ws/console/0",
-      {headers:{Authorization:AUTH}}); w.on("message",d=>process.stdout.write(d))'
-
-So on this rig `DL11` is **enabled**, with `serialport=ttyS2` (an empty
-serialport refuses to enable), and `external_console.source` is **`off`** in
-`PUT /api/settings` so the bridge releases the port for it. The card carries no
-memory and no boot ROM either, so `MEM` and `MRV11D` are enabled beside it; see
-the hardware notes at the end.
-
-### A CPU with its own SLU, such as the 11/73
-
-There the console is real hardware on `/dev/ttyS2`, carried by `/ws/console/ext`
-— the raw tty bridge, with no emulated device behind it:
+The console is real hardware on `/dev/ttyS2`, carried by `/ws/console/ext` — the
+raw tty bridge, with no emulated device behind it:
 
     AUTH=$(printf "%s:%s" "$BOARD_USER" "$(cat ~/.qbone-pw)" | base64)
     websocat --binary -H="Authorization: Basic $AUTH" ws://$BOARD_HOST/ws/console/ext
 
 `external_console.source` is `ttys2` (its other values are `webserial` and
-`off`), and **`DL11` stays disabled**: its `serialport` is `ttyS2` too, so
-enabling it both duplicates the CPU's own SLU at 777560 and fights the bridge
-for the port. `211bsd.json` lists DL11 as enabled, but applying it silently
-leaves the device off because the bridge already holds `ttyS2` — which is the
-only reason that configuration works.
+`off`) and the baud must match what the CPU's own line is jumpered for — **38400
+on the 11/53 here**. **`DL11` stays disabled**: its `serialport` is `ttyS2` too,
+so enabling it both duplicates the CPU's own SLU at 777560 and fights the bridge
+for the port. Asking for it anyway **answers `200` with `"value": false`** — the
+bridge holds the port, the device stays off, and only the journal says so
+(`Another process has locked the comport`). A configuration that lists `DL11` as
+enabled on such a rig works only because the enable quietly fails.
+
+The CPU's console connector has to be **cabled to the cape's UART2** for any of
+this to reach the board; only GND, TXD and RXD are connected, so it takes a
+null-modem.
+
+### A CPU with no SLU, such as the KDJ11-A
+
+There `/dev/ttyS2` reaches nothing and `/ws/console/ext` stays silent. The
+console is QBone's **emulated `DL11`** at 777560, carried by **`/ws/console/0`**:
+
+    node -e 'const w=new (require("ws"))("ws://qbone/ws/console/0",
+      {headers:{Authorization:AUTH}}); w.on("message",d=>process.stdout.write(d))'
+
+So `DL11` is **enabled**, with `serialport=ttyS2` (an empty serialport refuses to
+enable), and `external_console.source` is **`off`** in `PUT /api/settings` so the
+bridge releases the port for it.
+
+### Telling a dead line from a wrong one
+
+A **baud mismatch still produces characters** — `ôôôôWWô` and the like. Total
+silence in every CPU state means the line is not connected.
+
+Waiting for the machine to speak first is the slow way to find out. Assert HALT
+and send CR instead: micro-ODT answers `?\r\n@`, and `R0/` then examines a
+register and proves the whole path. That test works at any moment, with no boot
+and no guest.
 
 Either way, nothing else may hold `/dev/ttyS2`: a stray reader steals the bytes
 and makes the bridge fail to open with "Another process has locked the comport".
 
-`/ws/console/1` taps the second emulated DL11 at 776500.
+`/ws/console/1` taps the second emulated DL11 at 776500, and `/ws/console/vax`
+the emulated VAX-11/780's own console.
 
 ## Building
 
@@ -273,17 +287,30 @@ compiler warnings or spurious language-server errors behind.
 shows the address space; ask them rather than working from this section, which
 records what the rig held when it was written.
 
-`qbone` currently holds a **KDJ11-A** and no other Q-bus cards. That card carries
-no memory, so the probe answers `first_invalid: 0` and nothing runs until the
-**`MEM`** device supplies it. It carries no boot ROM either — it answers neither
-17773000 nor 17777520 — which is what the emulated **`MRV11-D`** bootstrap card
-is for; its power-up mode jumps to 173000, so a `restart` with that card enabled
-runs the bootstrap with no console input.
+`qbone` currently holds an **11/53 (KDJ11-D)** and no other Q-bus cards. That
+card brings three things the emulation therefore need not:
 
-A CPU board with a Q-bus memory card beside it behaves the other way round: with
-a **2 MB card** the low 2 MB of the 22-bit space is backed by it and the range
-from 2 MB up to the I/O page answers with a bus timeout until something claims
-it. A different-sized card moves that boundary.
+- **1.5 MB of on-board memory.** The probe answers `first_invalid: 1572864,
+  physical_end: 1572862`, and a booted 2.11BSD agrees from the other side with
+  `phys mem = 1572864`. **No `MEM` device.**
+- **Its own boot ROM.** On power-up it prints a countdown `9 8 7 6 5 4 3 2 1`
+  and then the device it is booting (`DL0`, `DU0`). **No `MRV11-D`.**
+- **Its own console SLU** at 777560 — see the console section above.
+
+So a configuration on this rig is just the peripherals: `rl`+`rl0` for XXDP,
+`uda`+`uda0`+`delqa` for 2.11BSD. Both are saved on the board as `xxdp` and
+`211bsd`.
+
+A **KDJ11-A** brings none of them: the probe answers `first_invalid: 0`, nothing
+runs until `MEM` supplies memory, and it answers neither 17773000 nor 17777520,
+which is what the emulated **`MRV11-D`** bootstrap card is for — its power-up
+mode jumps to 173000, so a `restart` with that card enabled runs the bootstrap
+with no console input.
+
+A CPU board with a separate Q-bus memory card beside it behaves differently
+again: with a **2 MB card** the low 2 MB of the 22-bit space is backed by it and
+the range from 2 MB up to the I/O page answers with a bus timeout until something
+claims it. A different-sized card moves that boundary.
 
 The board can supply memory itself: the **`MEM` device** (type `MSV11`) has the
 PRU answer one address range out of the board's DDR, with `startaddr`/`size`

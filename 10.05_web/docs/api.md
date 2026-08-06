@@ -191,6 +191,62 @@ it as done.
 Answers the same body as the GET, with a `warnings` array for any unit that did
 not start or stop.
 
+## Machine settings
+
+Settings that belong to the whole machine rather than to any one device, and are
+therefore not part of a configuration snapshot: the CPU's address width, where
+the real machine's console line is read from, and which bus the card drives.
+`external_console` and `internal_bus` are persisted in the board's
+`settings.json`; `address_width` is a live property of the bus whose boot value
+comes from the launch flag.
+
+### `GET /api/settings`
+
+```json
+{"platform": "QBUS", "address_width": 22, "internal_bus": false,
+ "external_console": {"source": "ttys2", "port": "ttyS2", "baud": 38400}}
+```
+
+`platform` is `QBUS`, `UNIBUS` or `HOST`, fixed at build time and read-only.
+
+| `external_console.source` | |
+|---|---|
+| `ttys2` | the BeagleBone's own UART backs the console, carried by [`/ws/console/ext`](#wsconsoleext) |
+| `webserial` | a serial port on the machine running the browser backs it instead |
+| `off` | nothing does, and the port is free for an emulated `DL11` to take |
+
+`port` is a bare tty name — `rs232_c` prepends `/dev/`, matching the SLU
+convention. `baud` is the line speed, and must match what the CPU's own console
+line is jumpered for.
+
+### `PUT /api/settings`
+
+```json
+{"address_width": 22, "internal_bus": false,
+ "external_console": {"source": "ttys2", "port": "ttyS2", "baud": 38400}}
+```
+
+Every member is optional; only those present are applied. Answers
+`{"ok": true, "warnings": [...]}`.
+
+**`address_width`** must be 18, or 16 or 22 on QBUS — anything else is `422`.
+Changing it re-bases the I/O page, so it is applied **only while the bus is
+halted**. Asked for on a running machine, the request still answers `200` and the
+width is left alone, with the reason in `warnings`.
+
+**`external_console`** takes `source` (validated against the three values above;
+anything else is `422`), `port` and `baud`. Applying it opens or closes the
+`ttyS2` bridge, and a refusal — most often the port being held by something else
+— comes back in `warnings` rather than as an error.
+
+**`internal_bus`** chooses what the machine's peripherals are: the cards in a
+real backplane, or the board's own emulated devices. It is settled when the PRU
+firmware is loaded, so it is stored and **takes effect at the next start of the
+service**, which the warning says.
+
+A change that is actually applied raises a `settings` event on
+[`/ws/events`](#wsevents); a PUT that changes nothing does not.
+
 ## Devices and parameters
 
 Devices are the emulated hardware — controllers, drives, serial lines.
@@ -568,6 +624,32 @@ memory directly rather than over the bus. Answers
 `{"ok": true, "address": …, "count": …}`.
 
 ## Debugging the machine
+
+### `GET /api/latency`, `POST /api/latency`
+
+How long the PRU was left holding the bus. The PRU leaves RPLY asserted from
+raising a device register event until the ARM acknowledges it, so a bus cycle is
+stretched for exactly as long as Linux takes to schedule the bus worker — the one
+place where the emulation depends on the kernel rather than on its own code.
+
+```json
+{"available": true, "count": 38817, "max_us": 810, "mean_us": 75,
+ "histogram": [{"from_us": 16, "count": 13602}, {"from_us": 32, "count": 14562},
+               {"from_us": 256, "count": 2382}, {"from_us": 512, "count": 50}]}
+```
+
+**The maximum is the number that matters**, not the mean: one late wakeup
+stretches a QBUS cycle far enough for the processor to call it a timeout, and an
+average buries it. The histogram says whether the tail is a cliff or a slope.
+Buckets double — under 1 µs, 1–2, 2–4, and so on to "16 seconds or more" — and
+`from_us` is a bucket's lower edge. Empty buckets are omitted.
+
+`available` is false when the backend cannot reach PRU1's cycle counter, in which
+case nothing is recorded and every field reads zero.
+
+A passing diagnostic on an idle board says nothing about this: the tail only
+appears under load and over hours. **`POST`** resets the counters and starts a
+fresh measurement, then answers the same body.
 
 ### `GET /api/debug/cpu`
 
@@ -1278,6 +1360,7 @@ Text frames, one JSON event each, pushed to every connected client:
 | `{"t":"log","id":n,"time":…,"level":n,"label":…,"text":…}` | log message; levels 1 FATAL … 5 DEBUG. `id` and `time` (server clock) match the journal ([`GET /api/log`](#get-apilogbeforeidlimitn)), so a client merges live lines with a fetched page by `id` |
 | `{"t":"state","halt":…,"powered":…,"leds":[…],"switches":[…],"init":…,"dcok":…,"pok":…,"held_by":…,"notice":…}` | activity LEDs, DIP switches, HALT, the logical power flag, bus INIT/DCOK/POK, and what holds the board — published on change (10 Hz poll); a full snapshot opens every connection. `powered` is the runtime power flag driven by `dc_on`/`dc_off`; the dashboard derives RUN from `!halt && powered` and PWR OK from `powered`. Transitions may arrive as partial `state` frames (e.g. `{"t":"state","powered":false}`), which the client merges onto the last snapshot. `held_by` is described below. `notice` is the standing notice (see [the standing notice](#the-standing-notice)), a string or `null` |
 | `{"t":"config","current":…,"modified":…}` | current configuration and the live modified flag — published on apply, save, rename, and whenever the modified flag flips (10 Hz poll); a snapshot opens every connection |
+| `{"t":"settings"}` | a machine setting changed. **No payload** — a client rereads [`GET /api/settings`](#get-apisettings), which is the one description of what the settings now are. This is how a page follows a change it did not make itself, and in particular how a console whose port has moved re-points itself instead of going quietly dead |
 | `{"t":"update", …}` | the update status, the same object [`GET /api/update`](#get-apiupdate) answers. Published whenever the updater's status file changes (the service stats it once a second), and as a snapshot on every new connection — so a second tab, and a tab opened during an install, both know what is going on |
 
 #### The board held
