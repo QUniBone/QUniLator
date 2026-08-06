@@ -153,6 +153,36 @@ int main(void) {
 			"count"),
 			"a quoted round count is refused");
 
+	printf("--- several keys, which is what an authorized_keys file holds\n");
+	check(takes("[user]\nname = \"op\"\npassword = \"longenough\"\n[ssh]\n"
+			"authorized_keys = \"ssh-ed25519 AAAA one\\nssh-rsa BBBB two\"\n", &seed),
+			"a value carrying two keys is read");
+	check(seed.ssh_key.find('\n') != std::string::npos,
+			"and arrives as two lines");
+
+	printf("--- the network, which a file mentions only when it is not DHCP\n");
+	check(takes("[user]\nname = \"op\"\npassword = \"longenough\"\n", &seed),
+			"a file saying nothing about the network is read");
+	check(seed.address.empty(), "and leaves the address empty, which is DHCP");
+
+	check(takes("[user]\nname = \"op\"\npassword = \"longenough\"\n[network]\n"
+			"address = \"192.168.1.50/24\"\nrouter = \"192.168.1.1\"\n"
+			"dns = \"192.168.1.1 9.9.9.9\"\n", &seed),
+			"a static address is read");
+	check(seed.address == "192.168.1.50/24", "with its prefix");
+	check(seed.router == "192.168.1.1", "the router");
+	check(seed.dns == "192.168.1.1 9.9.9.9", "and the servers to ask");
+
+	check(refuses("[user]\nname = \"op\"\npassword = \"longenough\"\n[network]\n"
+			"address = \"192.168.1.50\"\n", "prefix"),
+			"an address without its prefix is refused");
+	check(refuses("[user]\nname = \"op\"\npassword = \"longenough\"\n[network]\n"
+			"router = \"192.168.1.1\"\n", "no address"),
+			"a router with no address is refused");
+	check(refuses("[user]\nname = \"op\"\npassword = \"longenough\"\n[network]\n"
+			"gateway = \"192.168.1.1\"\n", "gateway"),
+			"a key of another name for it is refused by name");
+
 	printf("\n%s\n", failures == 0 ? "seed_test: all checks passed"
 			: "seed_test: FAILURES");
 	return failures == 0 ? 0 : 1;

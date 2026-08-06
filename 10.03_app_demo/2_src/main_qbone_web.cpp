@@ -106,7 +106,7 @@ static int apply_the_rest(const std::string &user, const std::string &key,
 	std::string error;
 	if (!key.empty()) {
 		if (!webshares_set_ssh_key(user, key, &error))
-			fprintf(stderr, "the ssh key was not installed: %s\n", error.c_str());
+			fprintf(stderr, "the ssh keys were not installed: %s\n", error.c_str());
 		else
 			printf("%s reaches a shell with the given ssh key\n", user.c_str());
 	}
@@ -204,6 +204,14 @@ static int setup_from_seed(const std::string &path)
 					/*adopt*/true);
 	if (result != 0)
 		return result;
+	// Addressing, which the file carries only when it is not DHCP.
+	if (!seed.address.empty()) {
+		std::string why;
+		if (!websystem_set_static_address(seed.address, seed.router, seed.dns, &why))
+			fprintf(stderr, "the address was not set: %s\n", why.c_str());
+		else
+			printf("the machine takes the address %s\n", seed.address.c_str());
+	}
 	// The password stood in the file in the clear, so the file goes: overwritten
 	// where the filesystem allows it, and unlinked either way.
 	FILE *f = fopen(path.c_str(), "r+b");

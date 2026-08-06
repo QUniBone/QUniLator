@@ -682,9 +682,30 @@ bool webshares_set_ssh_key(const std::string &name, const std::string &key,
 				"name first";
 		return false;
 	}
-	std::string cleaned;
-	if (!acceptable_ssh_key(key, &cleaned, error))
+	// One key or several: an authorized_keys file is a list, and somebody with
+	// a workstation and a laptop has two. Every line is checked before any of
+	// them is written, so a file with one bad line among four changes nothing.
+	std::vector<std::string> cleaned;
+	size_t at = 0;
+	while (at <= key.size()) {
+		size_t eol = key.find('\n', at);
+		std::string line = key.substr(at, eol == std::string::npos
+				? std::string::npos : eol - at);
+		at = eol == std::string::npos ? key.size() + 1 : eol + 1;
+		// blank lines and comments are what an authorized_keys file carries
+		// besides keys
+		size_t first = line.find_first_not_of(" \t\r");
+		if (first == std::string::npos || line[first] == '#')
+			continue;
+		std::string one;
+		if (!acceptable_ssh_key(line, &one, error))
+			return false;
+		cleaned.push_back(one);
+	}
+	if (cleaned.empty()) {
+		*error = "no ssh key in what was given";
 		return false;
+	}
 
 	std::string home = pw->pw_dir != nullptr ? pw->pw_dir : "";
 	if (home.empty() || home == IMAGES_DIR) {
@@ -699,8 +720,8 @@ bool webshares_set_ssh_key(const std::string &name, const std::string &key,
 	if (chown(dir.c_str(), pw->pw_uid, pw->pw_gid) != 0)
 		WEB_WARNING("could not give %s to %s", dir.c_str(), name.c_str());
 
-	// The key replaces whatever was there: the interface offers one key, so
-	// what it shows and what the account answers to are the same thing.
+	// The keys replace whatever was there: what the interface shows and what
+	// the account answers to are the same thing.
 	std::string path = dir + "/authorized_keys";
 	std::string tmp = path + ".qunilator-new";
 	FILE *f = fopen(tmp.c_str(), "wb");
@@ -708,7 +729,9 @@ bool webshares_set_ssh_key(const std::string &name, const std::string &key,
 		*error = std::string("could not write ") + path + ": " + strerror(errno);
 		return false;
 	}
-	std::string line = cleaned + "\n";
+	std::string line;
+	for (size_t i = 0; i < cleaned.size(); i++)
+		line += cleaned[i] + "\n";
 	bool ok = fwrite(line.data(), 1, line.size(), f) == line.size();
 	if (fclose(f) != 0)
 		ok = false;
@@ -721,7 +744,8 @@ bool webshares_set_ssh_key(const std::string &name, const std::string &key,
 		*error = std::string("could not write ") + path;
 		return false;
 	}
-	WEB_INFO("%s answers an ssh key", name.c_str());
+	WEB_INFO("%s answers %u ssh key%s", name.c_str(), (unsigned) cleaned.size(),
+			cleaned.size() == 1 ? "" : "s");
 	return true;
 }
 

@@ -25,6 +25,13 @@ struct webseed_c {
 
 	std::string password;    // in the clear, empty when the file carries digests
 
+	// Addressing. An empty address is DHCP, which is what an installation does
+	// when the file says nothing about it - so the usual case has no setting
+	// and nothing to get wrong.
+	std::string address;     // with its prefix, e.g. 192.168.1.50/24
+	std::string router;
+	std::string dns;         // one or more, separated by spaces
+
 	std::string web_salt;    // hex, what the web interface checks against
 	std::string web_hash;    // hex, PBKDF2-HMAC-SHA256 over the salt
 	unsigned web_iterations;

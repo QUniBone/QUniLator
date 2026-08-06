@@ -90,10 +90,23 @@ password = "a long enough one"
 
 [ssh]
 authorized_keys = "ssh-ed25519 AAAA… you@workstation"
+
+[network]
+address = "192.168.1.50/24"
+router = "192.168.1.1"
+dns = "192.168.1.1 9.9.9.9"
 ```
 
 `[user]` is required and the rest is optional. The first boot creates the
-account, applies the host name and the key, and **deletes the file**.
+account, applies the host name, the keys and the address, and **deletes the
+file**.
+
+`authorized_keys` may hold several keys, one per line, as the file it is named
+after does. **Saying nothing about `[network]` is what leaves a QUniLator on
+DHCP** — there is no setting for the usual case. A static address is written as
+a drop-in beside the bridge's own configuration, so removing
+`/etc/systemd/network/br0.network.d/10-qunilator-address.conf` puts the machine
+back on DHCP.
 
 ### Without writing the password down
 

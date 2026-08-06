@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -39,6 +40,13 @@
 #include "websystem.hpp"
 
 static const char *RENAME_TOOL = "/usr/sbin/qunilator-rename";
+
+// systemd-networkd reads drop-ins beside the file they belong to, and applies
+// them after it. The bridge is where the host's address lives, so that is the
+// file this extends.
+static const char *NETWORK_DROPIN_DIR = "/etc/systemd/network/br0.network.d";
+static const char *NETWORK_DROPIN =
+		"/etc/systemd/network/br0.network.d/10-qunilator-address.conf";
 
 /*** plumbing ***/
 
@@ -173,6 +181,93 @@ bool websystem_set_hostname(const std::string &name, std::string *error) {
 		return false;
 	}
 	WEB_INFO("the board is now named %s", name.c_str());
+	return true;
+}
+
+// Nothing here is a shell argument, but an address that came out of a file
+// still has to be one before it is written into a configuration systemd reads.
+static bool plausible_address(const std::string &s) {
+	if (s.empty() || s.size() > 64)
+		return false;
+	for (size_t i = 0; i < s.size(); i++) {
+		char c = s[i];
+		bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
+				|| (c >= 'A' && c <= 'F') || c == '.' || c == ':' || c == '/';
+		if (!ok)
+			return false;
+	}
+	return true;
+}
+
+bool websystem_set_static_address(const std::string &address,
+		const std::string &router, const std::string &dns, std::string *error) {
+	if (address.find('/') == std::string::npos || !plausible_address(address)) {
+		*error = "an address carries its prefix, e.g. 192.168.1.50/24";
+		return false;
+	}
+	if (!router.empty() && !plausible_address(router)) {
+		*error = "\"" + router + "\" is not an address";
+		return false;
+	}
+	std::string text = "# Written when this installation was set up. Removing this\n"
+			"# file puts the machine back on DHCP.\n"
+			"[Network]\n"
+			"DHCP=no\n"
+			"Address=" + address + "\n";
+	if (!router.empty())
+		text += "Gateway=" + router + "\n";
+	// One DNS server per line, from a value that holds them separated by
+	// spaces; a name that is not an address is refused rather than written.
+	size_t at = 0;
+	while (at < dns.size()) {
+		size_t end = dns.find(' ', at);
+		std::string one = dns.substr(at, end == std::string::npos
+				? std::string::npos : end - at);
+		at = end == std::string::npos ? dns.size() : end + 1;
+		if (one.empty())
+			continue;
+		if (!plausible_address(one)) {
+			*error = "\"" + one + "\" is not an address";
+			return false;
+		}
+		text += "DNS=" + one + "\n";
+	}
+
+	if (mkdir(NETWORK_DROPIN_DIR, 0755) != 0 && errno != EEXIST) {
+		*error = std::string("could not create ") + NETWORK_DROPIN_DIR + ": "
+				+ strerror(errno);
+		return false;
+	}
+	std::string tmp = std::string(NETWORK_DROPIN) + ".new";
+	FILE *f = fopen(tmp.c_str(), "wb");
+	if (f == nullptr) {
+		*error = std::string("could not write ") + NETWORK_DROPIN + ": "
+				+ strerror(errno);
+		return false;
+	}
+	bool ok = fwrite(text.data(), 1, text.size(), f) == text.size();
+	if (fclose(f) != 0)
+		ok = false;
+	// networkd reads its configuration as its own user, so the file has to be
+	// readable by more than root.
+	if (ok)
+		ok = chmod(tmp.c_str(), 0644) == 0
+				&& rename(tmp.c_str(), NETWORK_DROPIN) == 0;
+	if (!ok) {
+		*error = std::string("could not write ") + NETWORK_DROPIN + ": "
+				+ strerror(errno);
+		unlink(tmp.c_str());
+		return false;
+	}
+	WEB_INFO("the machine takes the address %s%s%s", address.c_str(),
+			router.empty() ? "" : ", router ", router.c_str());
+
+	// A machine that has already come up on a lease moves to the address when
+	// networkd reads this; one still booting finds it there.
+	const char *reload[] = { "/usr/bin/networkctl", "reload", nullptr };
+	std::string said;
+	if (access(reload[0], X_OK) == 0)
+		run_capturing(reload, &said);
 	return true;
 }
 

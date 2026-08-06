@@ -34,6 +34,13 @@
    at once, which is what a tool preparing a card writes so that the password
    never lands on the card at all:
 
+     [network]
+     address = "192.168.1.50/24"
+     router = "192.168.1.1"
+     dns = "192.168.1.1 9.9.9.9"
+
+   Saying nothing about the network is what leaves an installation on DHCP.
+
      [credentials]
      salt = "9bb2135aaf8d06fb6e5a5618cbd173fb"
      hash = "da59e70ef3d6dd8cf9265fa32685cb05a281a2f23485b6043f163b759418920a"
@@ -63,7 +70,7 @@
 
 // what the current version of the file may say
 static const char *KNOWN_SECTIONS[] = { "system", "user", "ssh", "credentials",
-		nullptr };
+		"network", nullptr };
 
 static std::string trimmed(const std::string &s) {
 	size_t b = 0, e = s.size();
@@ -213,6 +220,12 @@ bool webseed_parse(const std::string &text, webseed_c *out, std::string *error) 
 			out->password = value;
 		else if (section == "ssh" && key == "authorized_keys")
 			out->ssh_key = value;
+		else if (section == "network" && key == "address")
+			out->address = value;
+		else if (section == "network" && key == "router")
+			out->router = value;
+		else if (section == "network" && key == "dns")
+			out->dns = value;
 		else if (section == "credentials" && key == "salt")
 			out->web_salt = value;
 		else if (section == "credentials" && key == "hash")
@@ -243,6 +256,17 @@ bool webseed_parse(const std::string &text, webseed_c *out, std::string *error) 
 	if (!out->password.empty() && any_derived) {
 		*error = "a password in the clear and derived forms are two ways of "
 				"saying the same thing; give one";
+		return false;
+	}
+	// An address without its prefix is one systemd-networkd would refuse, and
+	// finding that out means a machine nobody can reach.
+	if (!out->address.empty() && out->address.find('/') == std::string::npos) {
+		*error = "[network] address carries its prefix, e.g. " + out->address + "/24";
+		return false;
+	}
+	if (out->address.empty() && (!out->router.empty() || !out->dns.empty())) {
+		*error = "[network] has a router or a dns but no address, so it says "
+				"nothing about how to reach either";
 		return false;
 	}
 	if (any_derived) {
