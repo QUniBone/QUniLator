@@ -10,8 +10,10 @@ you care about. The tests below go from cheapest to most revealing, and the last
 one — the bus loopback — is the one that actually proves the card.
 
 This is hardware-level work, so it runs from the interactive menu application
-(`qbone-demo` or `unibone-demo`) rather than the web interface. Stop the service
-first; it holds the bus otherwise.
+(`qbone-cli` or `unibone-cli`) rather than the web interface. Start it and it
+takes the board from the running service for the length of the session — see
+[Running the scripts you have](from-qunibone.md#running-the-scripts-you-have)
+for what that costs and who is allowed to do it.
 
 ## What you need
 

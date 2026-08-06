@@ -10,10 +10,12 @@ says honestly where it has got to.
 ## Written
 
 - **Start here** — what QUniLator is, choosing a card, getting one, installing the
-  software, the acceptance test.
+  software, the acceptance test, and what changes for an operator arriving from
+  QUniBone Classic.
 - **The card** — the card itself, fitting it to a backplane, bus drivers.
 - **Background** — the PDP-11, UNIBUS and QBUS.
 - **Configurations** — the catalogue and the format a catalogue is published in.
+- **Tools** — the MCP server, which gives a model the run of a machine.
 
 ## Being written
 

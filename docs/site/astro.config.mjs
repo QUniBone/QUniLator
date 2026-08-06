@@ -69,6 +69,7 @@ export default defineConfig({
 						{ label: 'Getting a card', slug: 'start/get-a-card' },
 						{ label: 'Installing the software', slug: 'start/install' },
 						{ label: 'Acceptance test', slug: 'start/acceptance-test' },
+						{ label: 'Coming from QUniBone Classic', slug: 'start/from-qunibone' },
 					],
 				},
 				{
@@ -85,6 +86,12 @@ export default defineConfig({
 						// Starlight prefixes the base itself; do not prefix it here.
 						{ label: 'Catalogue', link: '/configurations/' },
 						{ label: 'Catalogue format', slug: 'configurations/format' },
+					],
+				},
+				{
+					label: 'Tools',
+					items: [
+						{ label: 'The MCP server', slug: 'tools/mcp-server' },
 					],
 				},
 				{

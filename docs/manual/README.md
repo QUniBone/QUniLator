@@ -23,6 +23,7 @@ is in [`../site/`](../site/); [STRUCTURE.md](../site/STRUCTURE.md) describes it.
 3. [Getting a card](start/get-a-card.md)
 4. [Installing the software](start/install.md)
 5. [Acceptance test](start/acceptance-test.md)
+6. [Coming from QUniBone Classic](start/from-qunibone.md)
 
 **The card**
 
@@ -35,6 +36,10 @@ is in [`../site/`](../site/); [STRUCTURE.md](../site/STRUCTURE.md) describes it.
 - [Catalogue](https://qunilator.com/configurations/) — generated from the entries
   in `../site/src/content/configurations/`, so it has no page here.
 - [Catalogue format](configurations/format.md)
+
+**Tools**
+
+- [The MCP server](tools/mcp-server.md)
 
 **Background**
 

@@ -29,7 +29,12 @@ Control is always exposed; there is no read-only mode.
 
 ## Build and run
 
+`qcon`, the console harness in `../console-harness`, is a `file:` dependency
+resolved to its `dist/`, so it is built first — a fresh clone has no `dist/` and
+the build fails on `Cannot find module 'qcon'`.
+
 ```sh
+(cd ../console-harness && npm install && npm run build)
 npm install
 npm run build      # tsc, emits dist/
 npm start          # serve over stdio (QBONE_HOST=qbone by default)
@@ -71,6 +76,19 @@ Observation:
 | `console_read` | connects `/ws/console/<ch>`, collects the replayed ring, returns it |
 | `console_send` | sends bytes to `/ws/console/<ch>` |
 
+Console sessions — one connection held for a whole dialog, with matching anchored
+where the last step ended. This is what anything with more than one prompt uses;
+`console_read`/`console_send` are the one-shot pair.
+
+| tool | |
+|---|---|
+| `console_session_open` | opens the session and returns its id. Takes `record_path` for an asciicast v3 recording, and `deviations` — patterns or a `halt`/`power-loss` event that fail a step the moment they appear. Idle sessions close after 15 minutes |
+| `console_expect` | waits for one of several patterns (fixed text, or `/regex/flags`) and reports which matched. Fails early on a deviation, on a halt, and when the console falls quiet at a prompt none of the patterns match |
+| `console_send_line` | types a line and terminates it with CR. `echo` (default) paces each character on the guest's echo; `no-echo` sends on a fixed delay and records redacted, for a password prompt; `raw` writes unpaced |
+| `console_send_break` | asserts a line BREAK, which is a line condition rather than a character |
+| `console_session_close` | releases the connection and finishes the recording |
+| `console_sessions` | lists the open sessions |
+
 Control:
 
 | tool | wraps |
@@ -104,8 +122,8 @@ Wait-for (client-side on the existing streams, no board endpoint blocks):
 | `wait_for_running` | same, resolves when a `state` event reports the CPU running (powered with HALT released); counterpart to `wait_for_halt` |
 | `wait_for_console` | connects `/ws/console/<channel>`, which replays its ring then streams live, resolves when the accumulated output matches a regex `pattern`, or times out |
 
-Channels are `0` (DL11 @777560), `1` (@776500), and `ext` (the real console SLU
-on `/dev/ttyS2`).
+Channels are `0` (DL11 @777560), `1` (@776500), `ext` (the real console SLU on
+`/dev/ttyS2`) and `vax` (the emulated VAX-11/780's own console).
 
 ### Note on `get_log`
 

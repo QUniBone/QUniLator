@@ -38,4 +38,4 @@ BeagleBone is what it plugs into.
 |---|---|
 | **QUniBone** | The GitHub organisation, and the older combined name for the two cards, from when the software had no name of its own. |
 | **board** | Older issues, mailing-list postings and the original retrocmp articles use this for a running QUniLator, and sometimes for the bare PCB. |
-| **demo** | The interactive menu application (`unibone-demo`, `qbone-demo`) that the web interface replaced. The [acceptance test](../start/acceptance-test.md) still uses it, because that is hardware-level work. |
+| **demo** | What QUniBone Classic called the interactive menu application. It is installed as `qbone-cli` / `unibone-cli` and still does the hardware-level work — the [acceptance test](../start/acceptance-test.md) runs on it, and it still reads the `.cmd` scripts an operator already has. See [Coming from QUniBone Classic](../start/from-qunibone.md). |
