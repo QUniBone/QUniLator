@@ -1,12 +1,15 @@
-# QBone Web API
+# QUniLator Web API
 
-The `demo` application serves this API when started with `--web [port]`
-(default port 80). All request and response bodies are JSON unless noted.
-Errors use HTTP status codes with a body of `{"error": "message"}`.
+The service - `/usr/bin/<name>`, run by `<name>.service` - serves this API on
+port 80. All request and response bodies are JSON unless noted. Errors use HTTP
+status codes with a body of `{"error": "message"}`.
 
-With credentials set - through `PUT /api/auth` or as `WEBUI_PASSWORD` in the
-environment - every request requires HTTP basic auth. Browsers replay the
-credentials on the WebSocket handshakes. With none set, access is open.
+With a credential set - the first-run dialog creates one, and `PUT /api/auth`
+changes it - every request requires HTTP basic auth. **The user name is part of
+it**: a board provisioned through that dialog carries one identity that is both
+the operator's account and the web login, and answers `401` to the right
+password under the wrong name. Browsers replay the credentials on the WebSocket
+handshakes. A board carrying no credential answers everything.
 
 ## State
 

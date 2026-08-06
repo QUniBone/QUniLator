@@ -81,6 +81,18 @@ export default defineConfig({
 					],
 				},
 				{
+					label: 'Operating',
+					items: [
+						{ label: 'The web interface', slug: 'operating/web-interface' },
+					],
+				},
+				{
+					label: 'Walkthroughs',
+					items: [
+						{ label: 'Boot XXDP from an emulated RL02', slug: 'walkthroughs/xxdp-rl02' },
+					],
+				},
+				{
 					label: 'Configurations',
 					items: [
 						// Starlight prefixes the base itself; do not prefix it here.

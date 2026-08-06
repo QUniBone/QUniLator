@@ -6,7 +6,7 @@ device and parameter management, disk image handling, the PDP-11 serial
 console, emulation configurations, and live machine state.
 
 The visual and interaction design is fixed by the clickable mockup in
-[`mockup.html`](mockup.html) — dashboard (tiles, 80×24 console, control row,
+[`web-interface-mockup.html`](web-interface-mockup.html) — dashboard (tiles, 80×24 console, control row,
 RL02 panels, log), devices page generated from parameter metadata, storage,
 configurations, and diagnostics pages.
 
@@ -49,7 +49,7 @@ binary is unchanged.
   README.md
   docs/
     plan.md              this document
-    mockup.html          clickable UI mockup (design reference)
+    (the mockup moved to docs/plans/web-interface-mockup.html)
     api.md               REST/WS reference (written with phase 1)
   2_src/                 C++ server sources, compiled into demo
     webserver.hpp/.cpp   webserver_c: civetweb lifecycle, routing, static files
@@ -261,4 +261,3 @@ Development happens on one feature branch in a fork of `j-hoppe/QUniBone`.
 The branch lands upstream as three pull requests — core enablers (registry
 mutex, parameter/logger/rs232adapter observer hooks, device-set
 extraction), the web interface itself, and cross-compilation support.
-File-level scope and mechanics: [upstream.md](upstream.md).

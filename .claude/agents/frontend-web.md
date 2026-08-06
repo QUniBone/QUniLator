@@ -19,7 +19,7 @@ backend over `/api` (REST) and `/ws/events`, `/ws/console/*`, `/ws/vcb01`
   bundled on the dev machine; civetweb still serves the static output as-is, so
   nothing new runs on the board.
 - `10.05_web/docs/api.md` — the REST/WS contract. Read it; do not guess endpoints.
-- `10.05_web/docs/plan.md` — the shipped web design.
+- `docs/plans/web-interface-plan.md` — the shipped web design.
 
 ## Plans you implement
 `docs/plans/web-navigation-plan.md` (History API routing, path segments for selection, query

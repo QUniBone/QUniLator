@@ -8,7 +8,7 @@ section that drives the next round of refinement.
 These are requirements, not designs. They say what the software must do and
 why. Implementation plans (the `*-plan.md` files in [`docs/plans/`](../plans),
 e.g. [`vcb01-plan.md`](../plans/vcb01-plan.md)) come after an area's requirements
-settle. The shipped web design lives in [`10.05_web/docs/plan.md`](../../10.05_web/docs/plan.md).
+settle. The shipped web design lives in [`web-interface-plan.md`](../plans/web-interface-plan.md).
 
 ## How we work here
 
@@ -38,6 +38,7 @@ Status legend, shown at the top of each document:
 | Logging control | [logging.md](logging.md) | Ready — [plan](../plans/logging-plan.md) |
 | RSX-11M+ over DELQA | [rsx-delqa.md](rsx-delqa.md) | Ready — [plan](../plans/rsx-delqa-plan.md) |
 | MCP server | [mcp-server.md](mcp-server.md) | Ready — [plan](../plans/mcp-server-plan.md) |
+| Configuration repository | [configuration-repository.md](configuration-repository.md) | Gathering |
 | Device implementation standard | [device-implementation-standard.md](device-implementation-standard.md) | Standing |
 
 ## Cross-cutting decisions

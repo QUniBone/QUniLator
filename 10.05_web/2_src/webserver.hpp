@@ -22,7 +22,7 @@
 
    The server (civetweb) runs in its own worker threads. It serves the static
    frontend from the document root and the JSON API under /api/. See
-   10.05_web/docs/plan.md for the architecture.
+   docs/plans/web-interface-plan.md for the architecture.
 */
 #ifndef _WEBSERVER_HPP_
 #define _WEBSERVER_HPP_

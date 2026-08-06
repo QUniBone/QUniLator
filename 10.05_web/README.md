@@ -1,79 +1,73 @@
 # 10.05_web — QUniLator web interface
 
-Browser UI for the `demo` application: device and parameter management,
-the PDP-11 serial console, disk image handling, configuration snapshots
-and live machine state — daily operation without a terminal session. The
-HTTP/WebSocket server (civetweb) is embedded in the demo binary and
-enabled with `demo --web [port]`.
+The whole of operating a machine, in a browser: the dashboard and its widgets,
+disk and tape images, saved configurations, machine control, the serial console,
+the debug workbench, the log, and the system page that updates the software in
+place. It is what an operator uses; the interactive menu (`<name>-cli`) covers
+the hardware-level work below it.
 
-- `2_src/` — C++ server sources, compiled into `demo` (`WEBUI=1`, default)
-- `3_frontend/` — single-page frontend, served as-is; vendored xterm.js
-- [`docs/plan.md`](docs/plan.md) — implementation plan (architecture, phases)
-- [`docs/api.md`](docs/api.md) — REST/WebSocket reference
-- [`docs/mockup.html`](docs/mockup.html) — clickable UI mockup, the design
-  reference for the frontend
-- `tools/` — host-side fixture server for frontend work without a BeagleBone
+The HTTP/WebSocket server is civetweb, embedded in the emulator binary. Both
+binaries carry it — the service `/usr/bin/<name>` serves it as its whole job,
+and `<name>-cli` can serve it too with `--web [port]`.
 
-## Running
+- `2_src/` — the C++ server: REST endpoints, the event and console WebSockets,
+  the configuration model, settings, logging control and self-update
+- `3_frontend/` — the single-page frontend, Vite + Preact + TypeScript
+- [`docs/api.md`](docs/api.md) — the REST/WebSocket reference. It is a contract:
+  update it with every shape change.
+- `tools/` — host-side tests and a fixture server for frontend work without a
+  BeagleBone
 
-```sh
-sudo QUNILATOR_DIR=$HOME/QUniBone ./10.03_app_demo/4_deploy_q/demo --web --addresswidth 22
-```
+The implementation plan this was built to is
+[`docs/plans/web-interface-plan.md`](../docs/plans/web-interface-plan.md),
+kept as a record rather than as current documentation.
 
-`--web` takes an optional port (default 80). The application brings up the
-emulated device set at startup and enters the usual menu — the CLI and the
-web interface operate the same devices side by side; web actions echo on
-the terminal as `web: ...` lines. The hardware test menus are unavailable
-while the web interface owns the devices.
+## Running it
 
-Disk images live in `$QUNILATOR_DIR/images/`, configuration snapshots in
-`$QUNILATOR_DIR/configs/`.
+On a card flashed from the release image there is nothing to start: the package
+installs `<name>.service` and it serves port 80 from boot. `systemctl status
+qbone` (or `unibone`) says whether it is up.
+
+State lives in `/var/lib/qunilator` — `images/` for disk and tape images,
+`configs/` for saved configurations, `settings.json` for board settings the
+service applies at startup. The frontend is served from disk, out of
+`/usr/share/qunilator/frontend`.
 
 ## Access control
 
-Set `WEBUI_PASSWORD` to require HTTP basic auth (any user name, this
-password). The natural place is `qunibone-platform.env`:
+The first-run dialog creates one identity that is both the operator's account on
+the BeagleBone and the web login, so the same name and password reach the web
+interface, the file shares and an ssh session. Every request then takes HTTP
+basic auth, and **the name is part of the credential**: the right password under
+the wrong name answers `401`. `PUT /api/auth` changes it.
+
+A board that carries no credential answers everything, which suits a bench and
+nothing else.
+
+## Building the frontend
 
 ```sh
-export WEBUI_PASSWORD=secret
+cd 3_frontend
+npm install
+npm run build      # tsc --noEmit, then vite build
+npm run dev        # Vite dev server, proxying /api to a board
 ```
 
-Unset, access is open — appropriate only on a trusted bench LAN.
+`crossbuild.sh -d` from the repository root deploys the binary;
+`QUNILATOR_DEPLOY_FRONTEND=1 ./crossbuild.sh -d` deploys the built bundle with
+it. There is no frontend-only deploy — the swap happens inside the appliance
+deploy, after the binary is replaced and the service bounced, so a UI change
+costs the running machine.
 
-## Autostart
+## Working without hardware
 
-A systemd unit runs the web interface headless at boot:
+`tools/host_test.cpp` runs `webserver_c` on the development host against stubbed
+logger and hardware interfaces, serving `3_frontend` and the `/api/` endpoints.
+Build and run instructions are in its header. The other files in `tools/` are
+host tests for the configuration model, the console channel, authentication,
+recordings, the serial TCP line and SimH tape handling; `run_config_test.sh`
+drives the configuration one.
 
-```ini
-# /etc/systemd/system/qunibone-web.service
-[Unit]
-Description=QUniBone web interface
-After=network.target
-
-[Service]
-Environment=QUNILATOR_DIR=/home/hans/QUniBone
-EnvironmentFile=-/home/hans/QUniBone/qunibone-platform.env
-WorkingDirectory=/home/hans/QUniBone
-ExecStart=/home/hans/QUniBone/10.03_app_demo/4_deploy_q/demo --web --addresswidth 22
-StandardInput=null
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```sh
-sudo systemctl enable --now qunibone-web
-```
-
-With stdin from `/dev/null` the menu loop idles and all operation happens
-through the browser. For interactive use, run in `tmux` instead so the CLI
-stays reachable.
-
-## Development
-
-`crossbuild.sh` (repository root) cross-compiles the binary in a Docker
-container in under a minute and deploys it to the device with `-d` — see
-the script header. Frontend work runs against the fixture server on the
-development machine (`tools/host_test.cpp`, build instructions in its
-header); it serves `3_frontend` with canned API responses.
+Every change to the web interface is verified in a real browser against a board
+before it is called done — `tsc --noEmit` and `vite build` say nothing about
+layout, focus, drag behaviour or whether a widget draws at all.
