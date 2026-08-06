@@ -30,7 +30,10 @@ env:
   # domain, so there is no base path; SITE_BASE stays empty.
   SITE_URL: https://qunilator.com
   SITE_BASE: ''
-  DEPLOY_USER: hans
+  # The site's own account on the host. It owns the docroot, and its key is
+  # pinned to a write-only rrsync over that one directory — so this credential
+  # reaches the published tree and nothing else.
+  DEPLOY_USER: qunilator
   # The host the rsync lands on, which is outpost. Named by the host rather than
   # by the site so the deploy does not wait on the site's own DNS.
   DEPLOY_HOST: outpost.netzhansa.com
