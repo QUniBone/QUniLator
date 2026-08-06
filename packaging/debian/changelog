@@ -1,3 +1,53 @@
+qbone (1.17.0-1) trixie; urgency=low
+
+  * A QUniLator carries one operator: a user name and a password together, which
+    open the web interface, the SMB, FTP and SFTP shares of the image library
+    and an ssh login alike. The name is half of the credential, so the right
+    password under another name is refused, and the service account that owns
+    the image tree takes no login of its own. An installation whose stored
+    password carries no user name is one from before this, and comes up asking
+    to be set up, saying so in the journal; the first-run dialog settles it in
+    the same breath as the host name and an ssh key.
+  * A card can carry its setup, so a QUniLator is ready the first time it boots.
+    qunilator.toml on the card's FAT partition names the operator, the host
+    name and an ssh key; the first boot applies it and deletes it. The password
+    stands in the file, or in the three shapes it is checked in - a PBKDF2
+    digest for the web interface, a crypt(3) hash for the Linux account, an NT
+    hash for the file shares - so a tool preparing a card need not put the
+    password on it. The same file written later is the way back in when a
+    password is lost.
+  * "<name> --setup-operator" creates that account from a command line, reading
+    the password from stdin, and "--adopt-account" makes an account that was
+    there before the operator's own, keeping its home, its files and its shell.
+  * A debug panel shows what the processor holds and what is in memory:
+    registers read from a halted CPU, memory dumped with the words nothing
+    answered marked as such, and disassembly of either kind of machine, since
+    the card is bus master and asks the processor nothing. As many views as the
+    work needs, held in the URL so a screen comes back on reload.
+  * A QUniLator comes up dark. The configuration the switches name is loaded
+    without being put on the bus, because a card is fitted to a machine and
+    configured afterwards, and what it carries may describe a backplane it is no
+    longer in. A configuration that starts itself says so afterwards, in the
+    journal and in a standing notice, and asking for that is a question the
+    interface puts before it is set. An apply now says what it did as well as
+    what it refused.
+  * An empty RL drive slot answers with no status lines. Drive Ready and Drive
+    Error are lines a drive asserts over the cable, so a select field naming a
+    slot with nothing in it reads clean and a function addressed there ends in
+    Operation Incomplete - which is how a program finds out which drives a
+    machine carries. CZRLG reads 001200 where it expects it.
+  * A read past the top of the address space is answered rather than fatal.
+  * On UNIBUS the emulated processors are always present, and enabling one takes
+    the bus.
+  * The manual is published at qunilator.com: a page for each screen of the web
+    interface, walkthroughs that were each run on hardware first, a page for
+    operators coming from QUniBone Classic, and a glossary that settles what the
+    four names mean.
+  * Each release image is published with its SHA-256 beside it, so a download
+    can be checked before it is written to a card.
+
+ -- Hans Huebner <hans.huebner@gmail.com>  Thu, 06 Aug 2026 16:30:00 +0200
+
 qbone (1.16.0-1) trixie; urgency=low
 
   * An image file's mode is the medium's write ring. Clearing a file's write
