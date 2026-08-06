@@ -25,9 +25,15 @@ is in [`../site/`](../site/); [STRUCTURE.md](../site/STRUCTURE.md) describes it.
 5. [Acceptance test](start/acceptance-test.md)
 6. [Coming from QUniBone Classic](start/from-qunibone.md)
 
-**Operating**
+**Operating** — the web interface, screen by screen.
 
-- [The web interface](operating/web-interface.md)
+- [The web interface](operating/web-interface.md) — getting in, the status bar, what each screen is for
+- [Dashboard](operating/dashboard.md)
+- [Storage](operating/storage.md)
+- [Configurations](operating/configurations.md)
+- [Machine](operating/machine.md)
+- [Diagnostics](operating/diagnostics.md)
+- [System](operating/system.md)
 
 **Walkthroughs** — one machine, one goal, start to finish.
 

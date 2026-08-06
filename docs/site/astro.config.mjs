@@ -84,6 +84,12 @@ export default defineConfig({
 					label: 'Operating',
 					items: [
 						{ label: 'The web interface', slug: 'operating/web-interface' },
+						{ label: 'Dashboard', slug: 'operating/dashboard' },
+						{ label: 'Storage', slug: 'operating/storage' },
+						{ label: 'Configurations', slug: 'operating/configurations' },
+						{ label: 'Machine', slug: 'operating/machine' },
+						{ label: 'Diagnostics', slug: 'operating/diagnostics' },
+						{ label: 'System', slug: 'operating/system' },
 					],
 				},
 				{

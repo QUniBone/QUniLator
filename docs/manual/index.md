@@ -33,7 +33,8 @@ It runs on two cards, and the card is what your backplane sees:
 The cards differ in the bus they drive and very little else: the same BeagleBone,
 the same software, the same web interface, the same disk images. So this is one
 manual. Where UNIBUS and QBUS genuinely part company the page says so, and the
-**I have a** control in the sidebar keeps the navigation to the card you own.
+**I have a** control in the sidebar dims the passages meant for the other card —
+a reading aid, so nothing is ever hidden from a deep link or from search.
 
 > [!NOTE]
 > **Where the other names come from**
