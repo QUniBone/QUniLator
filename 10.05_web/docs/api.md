@@ -450,7 +450,7 @@ card or an emulated range - by DMA, without the CPU. Word values and addresses
 are octal, as on the console. Loading a program this way and starting it from
 the console is far faster and more reliable than depositing it by hand.
 
-### `GET /api/memory?address=<octal>&count=<n>`
+### `GET /api/memory?address=<octal>&count=<octal>`
 
 Reads `count` words (default 1, max 4096) from `address`.
 
@@ -459,6 +459,21 @@ Reads `count` words (default 1, max 4096) from `address`.
 ```
 
 `address` is echoed as a number; the word values are decimal in the JSON.
+**Both query values are parsed as octal**, `count` included — a count carrying
+an 8 or a 9 is not a number here, and reads one word rather than failing.
+
+**A word no address answered is `null`**, not an error. Walking the I/O page or
+the top of a machine's memory means walking past addresses that belong to
+nobody, and which ones those are is the answer rather than a failure of the
+read. The run is made as one transfer, which is what a range backed by memory
+costs; only a run that hit a hole is re-read a cycle per word to find out where
+the holes are, so the common case pays nothing for this.
+
+`address` must lie inside the machine's own address space — 18 bit on a UNIBUS
+machine, 16, 18 or 22 on a QBUS one — and a `count` reaching past the end of it
+is shortened to the words that are there, so the answer may be shorter than
+asked for. A read starting past the end answers `400` naming the last address
+the machine has.
 
 ### `POST /api/memory`
 
@@ -548,6 +563,138 @@ be even. `value` defaults to 0. The whole run must lie inside one range the
 board serves out of its own memory, else `409`; the words are written into that
 memory directly rather than over the bus. Answers
 `{"ok": true, "address": …, "count": …}`.
+
+## Debugging the machine
+
+### `GET /api/debug/cpu`
+
+What the processor holds. One document whichever kind of processor runs the
+machine; `source` says where the answer came from.
+
+| `source` | where it came from |
+|---|---|
+| `emulated` | a core of the board's own (CPU20, CPU34), read where its registers lie: no bus cycle, nothing disturbed, and cheap enough to poll |
+| `bus` | a processor that lays state out in the I/O page, read by DATI — a cycle per location |
+| `none` | neither; `reason` says why |
+
+**Registers are reported only while the CPU is halted**, and `available` is
+false with a `reason` while it runs or sits in a WAIT. Read one at a time out of
+a processor executing millions of instructions a second, they would be a set of
+numbers that were never all true at once; and answering is not free, because the
+emulation runs one instruction per pass of a worker taking whatever processor
+time is left on the board, so a caller asking repeatedly slows the machine it is
+watching. `run_state` and `cycle_count` are there either way — the second is a
+rate rather than a value, and is how a caller sees the machine is getting on
+without asking it anything else. This is a property of the API, not of the panel:
+poll it and you will slow the machine down whatever is reading.
+
+An emulated processor answers whether or not the machine is switched on: a dark
+board still carries the cards its configuration names, its CPU is halted, and
+the registers it would start from are real.
+
+```json
+{"source": "emulated", "available": true, "device": "CPU34",
+ "model": "PDP-11/34", "run_state": "halted",
+ "registers": [{"name": "R0", "value": 0}, …, {"name": "SP", "value": 1000},
+               {"name": "PC", "value": 65036}],
+ "stackpointers": [{"name": "KSP", "value": 1000}, {"name": "USP", "value": 0}],
+ "psw": {"value": 224, "priority": 7, "t": false, "n": false, "z": false,
+         "v": false, "c": false, "has_modes": true, "mode": "kernel",
+         "previous_mode": "kernel"},
+ "ir": 0, "bus_addr": 0, "bus_data": 0, "cycle_count": 0,
+ "mmu": {"enabled": false, "mmr0": 0, "mmr1": 0, "mmr2": 0},
+ "powered": true, "halted": true, "addr_width": 18}
+```
+
+Every value is a number, decimal in the JSON, as elsewhere in this API.
+`registers` is R0..R5, SP and PC — SP is the stack pointer of the mode the CPU
+is in, and `stackpointers` carries one per mode so a reader wanting the other
+stack does not have to work out from the mode which of the two SP is showing.
+`psw.has_modes` is false on a model that has none: PSW\<15:12\> there are not
+bits reading as "kernel", they are bits that do not exist, and `mode` and
+`previous_mode` are absent. `mmu` is absent on a model without memory
+management, and `run_state` is one of `halted`, `running`, `waiting`.
+
+A running processor answers with the identity and the counter alone:
+
+```json
+{"source": "emulated", "available": false, "device": "CPU34",
+ "model": "PDP-11/34", "run_state": "running", "cycle_count": 19448491,
+ "reason": "the processor is running: its registers change with every instruction…",
+ "powered": true, "halted": false, "addr_width": 18}
+```
+
+**The general registers of a real processor are not among what `bus` reports.**
+A processor decodes its own register file, and the addresses the big machines
+give it (777700..777717) are one apart — not a spacing a bus master can select
+between, since a DATI carries a word address and bit 0 is the byte select. So
+the probe reports, by address, which locations answered a cycle and with what,
+and leaves it to the reader to say which register a machine of that model keeps
+there. The processor state that *is* laid out as ordinary bus words is probed by
+name: the status word at 777776 and the memory management registers at
+777572..777576. The window itself is walked at word spacing.
+
+```json
+{"source": "none", "available": false,
+ "reason": "no processor state answered on the bus. …",
+ "probe": [{"address": 262010, "name": "MMR0", "value": null},
+           {"address": 262080, "value": null}, …],
+ "registers": [], "powered": true, "halted": false, "addr_width": 18}
+```
+
+`probe[].value` is `null` where the cycle timed out. The addresses follow the
+machine's address width, so the same points are 0777572… on an 18-bit machine
+and 017777572… on a 22-bit one.
+
+A negative probe is remembered, so a page polling this does not put a dozen
+cycles that are expected to time out on a running machine's bus every second;
+`?probe=1` asks again. A switched-off machine is not probed at all — nothing
+would answer, and the cycles would be made against a bus with no arbitrator,
+which is where a probe waits rather than fails.
+
+Registers of a real Q-bus processor are reachable over its console micro-ODT
+(halt the CPU, read `R0/`…`R7/`, `RS/`), and of a real UNIBUS machine from its
+front panel. Neither is driven from here.
+
+`probe[].info` and the disassembler's `known_addresses` come from the same map
+of what an address means on a PDP-11 (`pdp11disas_address_info()`), so a bare
+number is named wherever one is shown.
+
+### `GET /api/debug/disassemble?address=<octal>&count=<n>&model=<name>`
+
+The machine's memory read over the bus and turned back into instructions. Works
+whichever kind of processor runs the machine: the board is bus master, so this
+asks the processor nothing.
+
+`count` is **decimal** — it counts instructions rather than naming a place in
+the machine, and `count=10` meaning eight is a trap not worth setting. 1..200,
+default 10. `address` is octal and even.
+
+```json
+{"address": 261638, "next": 261672, "model": "11/34",
+ "options": "eis mmu mfps sxs mark rtt", "complete": true,
+ "instructions": [
+   {"address": 261638, "words": [5313, 63744], "mnemonic": "mov",
+    "operands": "#174400,r1", "known": true, "available": true,
+    "truncated": false,
+    "known_addresses": [{"address": 63744, "info": "rl11 rlcs (control/status)"}]},
+   {"address": 261652, "words": [62980], "mnemonic": "subf", "operands": "ac4,ac0",
+    "known": true, "available": false, "truncated": false,
+    "comment": "fp11 not on pdp-11/34"}]}
+```
+
+**Which machine it is decoded for matters.** An 11/20 has fewer instructions
+than an 11/70, and a disassembler told the wrong model invents instructions the
+CPU would trap on. The default is the processor the machine carries — its device
+type, so an emulated 11/34 needs no saying — and `model` overrides it
+(`11/34`, `1134` and `34` all name the same machine; `cpu_model_list()` has the
+rest). An instruction outside the model's set is still disassembled, with
+`available: false` and a `comment` saying what it would need.
+
+`next` is where a following listing continues, which is what a "more" button
+asks for. `complete` is false when memory stopped answering before the count was
+met — a listing running into the end of what a card answers ends there, with
+`reason` saying where.
 
 ## Disk images
 

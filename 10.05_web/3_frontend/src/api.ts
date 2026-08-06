@@ -15,6 +15,8 @@ import type {
   LogLine,
   LogLevelName,
   PackageRom,
+  DebugCpu,
+  DebugListing,
 } from './types';
 
 export interface ApiResult<T = Record<string, unknown>> {
@@ -29,6 +31,59 @@ export async function apiJSON<T = Record<string, unknown>>(
   const r = await fetch(url, opts);
   const data = (await r.json().catch(() => ({}))) as T;
   return { ok: r.ok, data };
+}
+
+// What the processor holds, for the debug panel. `probe` asks the board to try
+// the bus again on a machine where nothing answered last time — the negative is
+// remembered so a polling page does not put a dozen cycles that are expected to
+// time out on a running machine's bus every second.
+export async function fetchDebugCpu(probe = false): Promise<DebugCpu | null> {
+  const r = await apiJSON<DebugCpu>('/api/debug/cpu' + (probe ? '?probe=1' : ''));
+  return r.ok ? r.data : null;
+}
+
+// A run of words out of the machine's memory, read by DMA. Both the address and
+// the count go over in octal, which is what the endpoint parses.
+//
+// A word no address answered comes back as null rather than failing the run:
+// walking the I/O page, or the top of a machine's memory, means walking past
+// addresses that belong to nobody, and which ones those are is the answer
+// rather than the error. The whole read still fails where the request itself
+// was refused — past the end of the address space, or a bus never granted —
+// and that error belongs on the pane, not in a toast.
+//
+// The count may come back short: a run reaching past the end of the machine's
+// address space is shortened to the words that are there.
+export async function fetchMemory(
+  address: number,
+  count: number
+): Promise<{ ok: boolean; words: (number | null)[]; error: string }> {
+  const r = await apiJSON<{ words?: (number | null)[]; error?: string }>(
+    '/api/memory?address=' + address.toString(8) + '&count=' + count.toString(8)
+  );
+  if (!r.ok) return { ok: false, words: [], error: r.data?.error || 'the board refused the read' };
+  return { ok: true, words: r.data?.words || [], error: '' };
+}
+
+// A code listing read out of the machine's memory. The count is decimal, unlike
+// the octal address: it counts instructions rather than naming a place in the
+// machine. The board picks the CPU model from the processor the machine carries
+// unless one is named.
+export async function fetchDisassembly(
+  address: number,
+  count = 10,
+  model?: string
+): Promise<{ ok: boolean; listing: DebugListing | null; error: string }> {
+  const q =
+    '/api/debug/disassemble?address=' +
+    address.toString(8) +
+    '&count=' +
+    count +
+    (model ? '&model=' + encodeURIComponent(model) : '');
+  const r = await apiJSON<DebugListing & { error?: string }>(q);
+  if (!r.ok)
+    return { ok: false, listing: null, error: r.data?.error || 'the board refused the listing' };
+  return { ok: true, listing: r.data, error: '' };
 }
 
 export function apiSetParam(dev: string, param: string, value: string) {

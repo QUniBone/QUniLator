@@ -284,3 +284,85 @@ export interface BusState {
 // What carries the machine's console: the ttyS2 bridge to a physical console
 // SLU, a Web Serial port in the browser, or the emulated DL11 at 777560.
 export type ConsoleSource = 'ttys2' | 'webserial' | 'dl11' | 'vax';
+
+// ---- the debug panel ----
+
+// Where a processor's state was read from: a core of the board's own, the bus,
+// or nowhere. See 10.05_web/docs/api.md on GET /api/debug/cpu.
+export type DebugSource = 'emulated' | 'bus' | 'none';
+
+export interface DebugRegister {
+  name: string;
+  value: number;
+}
+
+// One address the bus probe tried. `value` is null when the cycle timed out,
+// and `name` is there only for the points whose meaning is the same on every
+// model that answers them.
+export interface DebugProbePoint {
+  address: number;
+  name?: string;
+  // what the address means on a PDP-11, where it means anything
+  info?: string;
+  value: number | null;
+}
+
+export interface DebugPsw {
+  value: number;
+  priority: number;
+  t: boolean;
+  n: boolean;
+  z: boolean;
+  v: boolean;
+  c: boolean;
+  has_modes: boolean;
+  mode?: string;
+  previous_mode?: string;
+}
+
+// One disassembled instruction. `words` is as long as the instruction is: on a
+// PDP-11 an instruction is only as long as its operands make it.
+export interface DebugInstruction {
+  address: number;
+  words: number[];
+  mnemonic: string;
+  operands: string;
+  known: boolean; // an instruction on some PDP-11
+  available: boolean; // ... and on this model
+  truncated: boolean; // a word of it could not be read
+  comment?: string;
+  // addresses the operands name which mean something: device registers, the
+  // processor and memory management registers, trap and interrupt vectors
+  known_addresses?: { address: number; info: string }[];
+}
+
+export interface DebugListing {
+  address: number;
+  next: number; // where a following listing continues
+  model: string;
+  options: string;
+  instructions: DebugInstruction[];
+  complete: boolean; // false: memory stopped answering before the count was met
+  reason?: string;
+}
+
+export interface DebugCpu {
+  source: DebugSource;
+  available: boolean;
+  reason?: string;
+  device?: string;
+  model?: string;
+  run_state?: 'halted' | 'running' | 'waiting';
+  registers?: DebugRegister[];
+  stackpointers?: DebugRegister[];
+  psw?: DebugPsw;
+  ir?: number;
+  bus_addr?: number;
+  bus_data?: number;
+  cycle_count?: number;
+  mmu?: { enabled: boolean; mmr0: number; mmr1: number; mmr2: number };
+  probe?: DebugProbePoint[];
+  powered: boolean;
+  halted: boolean;
+  addr_width: number;
+}

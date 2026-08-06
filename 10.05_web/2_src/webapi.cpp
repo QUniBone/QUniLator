@@ -50,6 +50,8 @@
 #include "device_status.hpp"
 #include "webcontrol.hpp"
 #include "webpower.hpp"
+#include "webbus.hpp"
+#include "webdebug.hpp"
 
 #include "weblog.hpp"
 #include "webevents.hpp"
@@ -979,10 +981,10 @@ static bool parse_octal(const std::string &s, unsigned *out) {
 // worker thread after DMA() returns. A stale PRU completion (the interrupt
 // traffic of an enabled device makes these routine) can run that copy after the
 // request is thought done, so the buffer must outlive any single request. One
-// persistent, address-space-sized buffer, guarded by its own lock so only one
-// bus-master transfer is in flight, is what the demo menu uses and what keeps
-// the copy landing in valid memory.
-static std::mutex memory_mutex;
+// persistent, address-space-sized buffer, guarded by web_bus_mutex() so only
+// one bus-master transfer is in flight, is what the demo menu uses and what
+// keeps the copy landing in valid memory. That lock is shared with every other
+// handler that reaches the bus, /api/debug/cpu among them - see webbus.hpp.
 static std::vector<uint16_t> &memory_buffer() {
 	static std::vector<uint16_t> buf(QUNIBUS_MAX_WORDCOUNT, 0);
 	return buf;
@@ -1063,7 +1065,7 @@ static void memory_probe(struct mg_connection *conn) {
 	uint32_t first_invalid;
 	{
 		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
-		std::lock_guard<std::mutex> mlock(memory_mutex);
+		std::lock_guard<std::mutex> mlock(web_bus_mutex());
 		first_invalid = qunibus->test_sizer();
 
 		// The board answers its own ranges, and a sweep cannot tell those from
@@ -1136,7 +1138,7 @@ static void memory_fill(struct mg_connection *conn, const picojson::value &req) 
 		return;
 	}
 	{
-		std::lock_guard<std::mutex> mlock(memory_mutex);
+		std::lock_guard<std::mutex> mlock(web_bus_mutex());
 		ddrmem->fill_range(address, address + (uint32_t) bytes - 2, value);
 	}
 	WEB_INFO("memory: filled %u words at %06o with %06o", (unsigned) count, address, value);
@@ -1269,22 +1271,72 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		if (mg_get_var(ri->query_string, ri->query_string ? strlen(ri->query_string) : 0,
 				"count", buf, sizeof(buf)) > 0)
 			parse_octal(buf, &count);
-		if (count < 1 || count > 4096
-				|| (uint64_t) address + 2 * count > 2 * (uint64_t) QUNIBUS_MAX_WORDCOUNT) {
-			send_error(conn, 400, "address/count out of range");
+		// The machine's own space, not the largest one the board could drive.
+		// A transfer running past the end of it is a programming error to the
+		// bus adapter, which asserts and takes the whole emulator down with it:
+		// 64 words from 777776 is past the top of an 18-bit machine, and that
+		// is one keystroke away in the debug panel's dump.
+		uint32_t space = qunibus->addr_space_byte_count;
+		if (count < 1 || count > 4096 || address >= space) {
+			char msg[128];
+			snprintf(msg, sizeof msg,
+					"address/count out of range: the machine's address space is %u bit, "
+					"ending at %06o", qunibus->addr_width, space - 2);
+			send_error(conn, 400, msg);
 			return 400;
 		}
-		bool timeout = false;
+		// A reader asking for a screenful at the top of the space gets the
+		// words that are there rather than an error: what it wanted to know is
+		// what those addresses hold.
+		unsigned words_left = (space - address) / 2;
+		if (count > words_left)
+			count = words_left;
 		std::vector<uint16_t> &mem = memory_buffer();
-		std::lock_guard<std::mutex> mlock(memory_mutex);
-		qunibus->mem_read(mem.data(), address, address + 2 * (count - 1), &timeout);
-		if (timeout) {
-			send_error(conn, 502, "bus timeout reading memory");
-			return 502;
+		uint16_t *words = mem.data() + address / 2;
+		std::vector<bool> answered(count, true);
+		std::lock_guard<std::mutex> mlock(web_bus_mutex());
+
+		// One transfer for the whole run, which is what the PRU is good at and
+		// what a range backed by memory costs. A timeout is not an error here:
+		// the range may cross the end of what a card answers, or be the I/O
+		// page where most addresses belong to nobody. So the adapter is told
+		// the timeout is expected - it neither logs it nor counts it against
+		// the machine - and the read falls back to one cycle per word to find
+		// out exactly which addresses answered.
+		qunibus->dma_request->timeout_expected = true;
+		timeout_c waited;
+		waited.start_ns(0);
+		bool whole_run = qunibus->dma(true, QUNIBUS_CYCLE_DATI, address, words, count,
+				/*share_bus*/true, web_bus_timeout_ms);
+		qunibus->dma_request->timeout_expected = false;
+
+		if (!whole_run) {
+			// A cycle that was never granted takes the whole wait; a slave that
+			// did not answer takes microseconds. Only the first is worth
+			// refusing over - and walking a hundred words that each wait out
+			// the bus would take a minute of them.
+			if (waited.elapsed_ms() >= web_bus_timeout_ms) {
+				send_error(conn, 504, "the board asked for the bus and was not granted it: "
+						"nothing on this backplane is arbitrating. A machine that is "
+						"switched off grants nothing.");
+				return 504;
+			}
+			for (unsigned i = 0; i < count; i++) {
+				timeout_c cycle;
+				cycle.start_ns(0);
+				answered[i] = qunibus->probe_word(address + 2 * i, &words[i],
+						/*share_bus*/true, web_bus_probe_timeout_ms);
+				if (!answered[i] && cycle.elapsed_ms() >= web_bus_probe_timeout_ms) {
+					send_error(conn, 504, "the board asked for the bus and was not granted "
+							"it: nothing on this backplane is arbitrating. A machine that "
+							"is switched off grants nothing.");
+					return 504;
+				}
+			}
 		}
 		picojson::array arr;
 		for (unsigned i = 0; i < count; i++)
-			arr.push_back(picojson::value((double) mem[address / 2 + i]));
+			arr.push_back(answered[i] ? picojson::value((double) words[i]) : picojson::value());
 		picojson::object res;
 		res["address"] = picojson::value((double) address);
 		res["words"] = picojson::value(arr);
@@ -1316,9 +1368,16 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	}
 	const picojson::array &warr = req.get("words").get<picojson::array>();
 	unsigned n = (unsigned) warr.size();
+	// against the machine's own space, as on the read - past its end the bus
+	// adapter asserts and the emulator dies. A write is refused rather than
+	// shortened: half of what the caller sent is not what it asked for.
 	if (n < 1 || n > 4096
-			|| (uint64_t) address + 2 * n > 2 * (uint64_t) QUNIBUS_MAX_WORDCOUNT) {
-		send_error(conn, 400, "address/word count out of range");
+			|| (uint64_t) address + 2 * n > (uint64_t) qunibus->addr_space_byte_count) {
+		char msg[128];
+		snprintf(msg, sizeof msg,
+				"address/word count out of range: the machine's address space is %u bit, "
+				"ending at %06o", qunibus->addr_width, qunibus->addr_space_byte_count - 2);
+		send_error(conn, 400, msg);
 		return 400;
 	}
 	if (address & 1) {
@@ -1327,9 +1386,10 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	}
 
 	bool timeout = false;
+	timeout_c waited;
 	{
 		std::vector<uint16_t> &mem = memory_buffer();
-		std::lock_guard<std::mutex> mlock(memory_mutex);
+		std::lock_guard<std::mutex> mlock(web_bus_mutex());
 		for (unsigned i = 0; i < n; i++) {
 			if (!warr[i].is<double>()) {
 				send_error(conn, 400, "each word must be a number");
@@ -1337,9 +1397,18 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 			}
 			mem[address / 2 + i] = (uint16_t) warr[i].get<double>();
 		}
-		qunibus->mem_write(mem.data(), address, address + 2 * (n - 1), &timeout);
+		waited.start_ns(0);
+		qunibus->mem_write(mem.data(), address, address + 2 * (n - 1), &timeout,
+				web_bus_timeout_ms);
 	}
 	if (timeout) {
+		// as on the read: a wait run out to the end is a bus never granted
+		if (waited.elapsed_ms() >= web_bus_timeout_ms) {
+			send_error(conn, 504, "the board asked for the bus and was not granted it: "
+					"nothing on this backplane is arbitrating. A machine that is "
+					"switched off grants nothing.");
+			return 504;
+		}
 		send_error(conn, 502, "bus timeout writing memory");
 		return 502;
 	}
@@ -1416,6 +1485,8 @@ void webapi_register(struct mg_context *ctx) {
 	mg_set_request_handler(ctx, "/api/devices", api_devices_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/control", api_control_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/memory", api_memory_handler, nullptr);
+	// what the processor holds, for the debug panel
+	webdebug_register(ctx);
 	mg_set_request_handler(ctx, "/api/log", api_log_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/notice", api_notice_handler, nullptr);
 	webstorage_register(ctx);

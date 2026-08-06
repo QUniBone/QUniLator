@@ -25,6 +25,14 @@ int os_kbhit(void)
 	else
 		return _getch() ; // return the char
 }
+
+/*
+ * Wait for a single key. See kbhit.h.
+ */
+int os_getkey(void)
+{
+	return _getch() ;
+}
 #else
 
 #include <stdio.h>
@@ -90,6 +98,34 @@ int os_kbhit(void)
   }
    return 0;
 */
+}
+
+/*
+ * Wait for a single key. Same terminal handling as os_kbhit(), but without
+ * O_NONBLOCK, so getchar() waits instead of returning EOF at once.
+ * See kbhit.h.
+ */
+int os_getkey(void)
+{
+  struct termios oldt, newt;
+  int ch;
+
+  if (!isatty(STDIN_FILENO))
+	  return -1 ; // no terminal to switch to raw mode: do not hang
+
+  tcgetattr(STDIN_FILENO, &oldt);
+  newt = oldt;
+  newt.c_lflag &= ~(ICANON | ECHO);
+  /* deliver every single character, do not wait for a full line */
+  newt.c_cc[VMIN] = 1;
+  newt.c_cc[VTIME] = 0;
+  tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+
+  ch = getchar();
+
+  tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+
+  return ch == EOF ? -1 : ch ;
 }
 
 #endif

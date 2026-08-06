@@ -126,6 +126,7 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/menu_buslatches.o	\
 	$(OBJDIR)/menu_qunibus_signals.o	\
 	$(OBJDIR)/menu_masterslave.o	\
+	$(OBJDIR)/menu_disassemble.o	\
 	$(OBJDIR)/menu_interrupts.o	\
 	$(OBJDIR)/menu_ddrmem_slave_only.o \
 	$(OBJDIR)/menu_devices.o \
@@ -210,6 +211,7 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/inputline.o	\
 	$(OBJDIR)/kbhit.o	\
 	$(OBJDIR)/bitcalc.o	\
+	$(OBJDIR)/pdp11disas.o	\
 	$(OBJDIR)/pru.o \
 	$(OBJDIR)/pru_backend.o \
 	$(OBJDIR)/pru_backend_prussdrv.o \
@@ -236,6 +238,7 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/device_label.o	\
 	$(OBJDIR)/device_status.o	\
 	$(OBJDIR)/webcontrol.o	\
+	$(OBJDIR)/webdebug.o	\
 	$(OBJDIR)/webpower.o	\
 	$(OBJDIR)/webevents.o	\
 	$(OBJDIR)/boardclaim.o	\
@@ -328,6 +331,9 @@ $(OBJDIR)/menu_qunibus_signals.o :  menu_qunibus_signals.cpp application.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/menu_masterslave.o :  menu_masterslave.cpp application.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/menu_disassemble.o :  menu_disassemble.cpp application.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/menu_interrupts.o :  menu_interrupts.cpp application.hpp
@@ -579,6 +585,9 @@ $(OBJDIR)/kbhit.o :  $(COMMON_SRC_DIR)/kbhit.c $(COMMON_SRC_DIR)/kbhit.h
 $(OBJDIR)/bitcalc.o :  $(COMMON_SRC_DIR)/bitcalc.cpp $(COMMON_SRC_DIR)/bitcalc.h
 	$(CC) $(CCFLAGS) $< -o $@
 
+$(OBJDIR)/pdp11disas.o :  $(COMMON_SRC_DIR)/pdp11disas.cpp $(COMMON_SRC_DIR)/pdp11disas.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
 $(OBJDIR)/bytebuffer.o :  $(BASE_SRC_DIR)/bytebuffer.cpp $(BASE_SRC_DIR)/bytebuffer.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
@@ -626,6 +635,9 @@ $(OBJDIR)/device_status.o :  $(WEB_SRC_DIR)/device_status.cpp $(WEB_SRC_DIR)/dev
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webcontrol.o :  $(WEB_SRC_DIR)/webcontrol.cpp $(WEB_SRC_DIR)/webcontrol.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/webdebug.o :  $(WEB_SRC_DIR)/webdebug.cpp $(WEB_SRC_DIR)/webdebug.hpp $(WEB_SRC_DIR)/webbus.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webpower.o :  $(WEB_SRC_DIR)/webpower.cpp $(WEB_SRC_DIR)/webpower.hpp

@@ -200,14 +200,25 @@ public:
 
 	// share_bus leaves the running machine bus bandwidth by pausing as long as
 	// the transfer took; a cycle the board makes for itself asks for none.
+	// timeout_ms bounds the wait for the transfer, see qunibusadapter_c::DMA():
+	// 0 waits for good, which is what a caller that cannot go on without the
+	// data wants. A caller that can - a probe - bounds it, and must then give a
+	// buffer that outlives the call, because a timed-out request stays
+	// scheduled and the PRU may still write into it.
 	bool dma(bool blocking,
 			uint8_t qunibus_cycle, uint32_t startaddr, uint16_t *buffer, unsigned wordcount,
-			bool share_bus = true);
+			bool share_bus = true, unsigned timeout_ms = 0);
 
+	// timeout_ms as for dma(): 0 waits for good. A caller that must not be
+	// parked by a backplane which never grants the bus - a machine switched
+	// off, or one whose processor is not arbitrating - gives a bound, and
+	// then `words` has to outlive the call.
 	void mem_read(uint16_t *words,
-			uint32_t unibus_start_addr, uint32_t unibus_end_addr, bool *timeout);
+			uint32_t unibus_start_addr, uint32_t unibus_end_addr, bool *timeout,
+			unsigned timeout_ms = 0);
 	void mem_write(uint16_t *words,
-			unsigned unibus_start_addr, unsigned unibus_end_addr, bool *timeout);
+			unsigned unibus_start_addr, unsigned unibus_end_addr, bool *timeout,
+			unsigned timeout_ms = 0);
 
 	void mem_access_random(
 			uint8_t unibus_control, uint16_t *words, uint32_t unibus_start_addr,
@@ -219,6 +230,19 @@ public:
 	// QUNIBUS_PROBE_NONE when nothing does.
 	uint32_t probe_range(uint32_t startaddr, uint32_t endaddr,
 			uint32_t step = QUNIBUS_PROBE_STEP);
+
+	// DATI one address that may not answer: true with *w set when a slave did,
+	// false when the cycle timed out. Unlike mem_read() a timeout is an answer
+	// here rather than an error, so it is neither logged nor counted against
+	// the bus. share_bus leaves a running machine its bandwidth, which a read
+	// aimed at a live machine wants and a read of empty space does not.
+	//
+	// timeout_ms also bounds the wait for the *bus*, which a bus timeout does
+	// not: on a backplane where nothing arbitrates, the board asks for a cycle
+	// it is never granted, and an unbounded probe parks its caller for good.
+	// With a timeout given, `w` must point at storage outliving the call.
+	bool probe_word(uint32_t addr, uint16_t *w, bool share_bus = true,
+			unsigned timeout_ms = 0);
 
 	uint16_t testwords[QUNIBUS_MAX_WORDCOUNT];
 
