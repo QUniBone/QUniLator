@@ -25,6 +25,16 @@ is in [`../site/`](../site/); [STRUCTURE.md](../site/STRUCTURE.md) describes it.
 5. [Acceptance test](start/acceptance-test.md)
 6. [Coming from QUniBone Classic](start/from-qunibone.md)
 
+**Operating**
+
+- [The web interface](operating/web-interface.md)
+
+**Walkthroughs** — one machine, one goal, start to finish.
+
+1. [Boot XXDP from an emulated RL02](walkthroughs/xxdp-rl02.md) — real 11/53, QBUS
+2. [2.11BSD on an MSCP disk, on the LAN](walkthroughs/211bsd-network.md) — real 11/53, QBUS
+3. [VMS on an emulated VAX-11/780](walkthroughs/vax-vms.md) — emulated processor, UNIBUS
+
 **The card**
 
 - [What is on the card](hardware/the-card.md)

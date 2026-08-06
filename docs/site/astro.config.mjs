@@ -90,6 +90,8 @@ export default defineConfig({
 					label: 'Walkthroughs',
 					items: [
 						{ label: 'Boot XXDP from an emulated RL02', slug: 'walkthroughs/xxdp-rl02' },
+						{ label: '2.11BSD on an MSCP disk, on the LAN', slug: 'walkthroughs/211bsd-network' },
+						{ label: 'VMS on an emulated VAX-11/780', slug: 'walkthroughs/vax-vms' },
 					],
 				},
 				{

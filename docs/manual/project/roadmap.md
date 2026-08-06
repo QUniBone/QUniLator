@@ -15,19 +15,26 @@ says honestly where it has got to.
 - **The card** — the card itself, fitting it to a backplane, bus drivers.
 - **Background** — the PDP-11, UNIBUS and QBUS.
 - **Configurations** — the catalogue and the format a catalogue is published in.
+- **Operating** — the web interface, screen by screen.
+- **Walkthroughs** — three machines taken from a bare card to a running system,
+  each verified on hardware and carrying the version it was checked against.
 - **Tools** — the MCP server, which gives a model the run of a machine.
 
 ## Being written
 
-**The operator's guide.** The largest gap. The retrocmp articles document the
-`demo` menu application; what an operator uses now is the web interface, DIP-selected
-configurations, the image library and the REST API. That is a rewrite rather than
-a migration, covering:
+**The operator's guide.** The tour of the web interface and the three
+walkthroughs are written. What each walkthrough had to explain in passing wants
+a page of its own, and those come next:
 
-the web interface · configurations and autostart · disk and tape images, and
-sharing them over SMB, FTP and SFTP · the console, emulated and bridged ·
-emulated memory and the address map · networking · booting a guest · running
-XXDP diagnostics · updating QUniLator
+configurations and autostart · disk and tape images, and sharing them over SMB,
+FTP and SFTP · the console, emulated and bridged · emulated memory and the
+address map · networking · running XXDP diagnostics · updating QUniLator
+
+More walkthroughs follow the same rule as the first three: written from a run on
+real hardware, and re-run from the written text before they are published.
+
+**The debug workbench** — memory and disassembly views — is in the source but
+not yet in a release, so it has no page here. It gets one when it ships.
 
 ## Planned
 
