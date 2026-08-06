@@ -146,16 +146,18 @@ the metadata, the documentation and the bundle's checksum.
 cannot reach this site but the operator's browser can. Where that is configured
 depends on the host: `public/_headers` covers Netlify and Cloudflare Pages, while
 the current deployment on Caddy takes it from `header_paths` on the
-`vaxbusters.org` static site in the `netzhansa-infra` repository. Both are in
+`qunilator.com` static site in the `netzhansa-infra` repository. Both are in
 place; a change to one wants the same change to the other.
 
 ## Deploying to a subdirectory
 
-The base path is environment-driven, so pages need no edits:
+The site is served at the root of `qunilator.com`, which is what a plain build
+produces. The base path is environment-driven all the same, so a subdirectory
+deployment needs no edits to the pages:
 
 ```sh
 npm run build                                    # https://qunilator.com/
-SITE_URL=https://vaxbusters.org SITE_BASE=/qunilator npm run build
+SITE_URL=https://example.org SITE_BASE=/docs npm run build
 ```
 
 `remark-doc-links.mjs` applies the base to every link a page carries. Two things

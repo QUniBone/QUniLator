@@ -24,13 +24,16 @@ concurrency:
 
 env:
   NODE_VERSION: '24'
-  # Where main is published for now. Both halves matter: the base path is baked
-  # into every absolute link at build time, so a build for the wrong one is wrong
-  # everywhere rather than visibly broken in one place.
-  SITE_URL: https://vaxbusters.org
-  SITE_BASE: /qunilator
+  # Where main is published. The site URL is baked into every absolute link at
+  # build time, so a build for the wrong one is wrong everywhere rather than
+  # visibly broken in one place. The site is served at the root of its own
+  # domain, so there is no base path; SITE_BASE stays empty.
+  SITE_URL: https://qunilator.com
+  SITE_BASE: ''
   DEPLOY_USER: hans
-  DEPLOY_HOST: vaxbusters.org
+  # The host the rsync lands on, which is outpost. Named by the host rather than
+  # by the site so the deploy does not wait on the site's own DNS.
+  DEPLOY_HOST: outpost.netzhansa.com
   DEPLOY_PORT: '2222'
 
 jobs:
@@ -71,13 +74,16 @@ jobs:
           retention-days: 7
 
   deploy:
-    name: Deploy to vaxbusters.org
+    name: Deploy to qunilator.com
     needs: check
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    # The environment keeps its name because the deploy key is stored against
+    # it; renaming it would mean re-creating the secret. It is the credential
+    # for outpost, which serves both sites.
     environment:
       name: vaxbusters
-      url: https://vaxbusters.org/qunilator/
+      url: https://qunilator.com/
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -94,7 +100,7 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           # Pinned, so a substituted host cannot collect the key.
           cat > ~/.ssh/known_hosts <<'EOF'
-          [vaxbusters.org]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE41kYCtseXJI/f+xfcHL92R95mcShg258KcqLMsXlVK
+          [outpost.netzhansa.com]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE41kYCtseXJI/f+xfcHL92R95mcShg258KcqLMsXlVK
           EOF
           chmod 600 ~/.ssh/known_hosts
           # The key is restricted to rrsync over one directory, so the remote path
@@ -108,7 +114,7 @@ jobs:
           set -euo pipefail
           fail=0
           for path in / /start/what-it-is/ /configurations/ /catalog/v1/index.json; do
-            code=$(curl -sS -o /dev/null -w '%{http_code}' "https://vaxbusters.org/qunilator$path")
+            code=$(curl -sS -o /dev/null -w '%{http_code}' "https://qunilator.com$path")
             printf '%-32s %s\n' "$path" "$code"
             [ "$code" = 200 ] || fail=1
           done

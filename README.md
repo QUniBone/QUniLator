@@ -12,7 +12,7 @@ that drives QBUS, and the **BeagleBone** the computer either card carries. One
 codebase serves both buses, selected at compile time via `-DUNIBUS` / `-DQBUS`.
 
 **The manual is at
-[vaxbusters.org/qunilator](https://vaxbusters.org/qunilator/)** — what QUniLator
+[qunilator.com](https://qunilator.com/)** — what QUniLator
 is, which card your machine takes, installing it, the acceptance test and the
 configuration catalogue. This page is the repository's front door.
 
@@ -130,7 +130,7 @@ It takes a DHCP address and answers on port 80 — try `http://qbone.local/` (or
 BeagleBone at a fixed `192.168.7.2`. The interface asks you to create the
 operator identity before anything else.
 
-[**Installing the software**](https://vaxbusters.org/qunilator/start/install/)
+[**Installing the software**](https://qunilator.com/start/install/)
 in the manual covers all of this properly: reading the LEDs, the five ways of
 finding it on the network, running more than one on a LAN, and renaming them.
 
@@ -167,7 +167,7 @@ For deploying and for building distributable images, see
 ## Documentation
 
 The user manual is published at
-[vaxbusters.org/qunilator](https://vaxbusters.org/qunilator/) and lives in
+[qunilator.com](https://qunilator.com/) and lives in
 [`docs/manual/`](docs/manual), readable as plain Markdown in a checkout;
 [`docs/site/`](docs/site) is the generator that publishes it. Beside it,
 [`docs/`](docs) holds the working record — requirements per area of work,

@@ -20,11 +20,13 @@ From this directory:
 
 ## Deploying
 
-    npm run build                                              # qunilator.com
-    SITE_URL=https://vaxbusters.org SITE_BASE=/qunilator npm run build
+    npm run build                                    # https://qunilator.com/
+    SITE_URL=https://example.org SITE_BASE=/docs npm run build
 
-The base path is environment-driven; nothing in the pages changes between the
-two. `.github/workflows/docs-site.yml` at the top of the repository builds and
+The site is served at the root of its own domain, which is what a plain build
+produces. The base path stays environment-driven so a subdirectory deployment
+needs no edits to the pages.
+`.github/workflows/docs-site.yml` at the top of the repository builds and
 publishes on a change under `docs/`.
 
 ## Where things are

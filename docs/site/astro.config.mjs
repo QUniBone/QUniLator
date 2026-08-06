@@ -11,9 +11,9 @@ import { remarkGithubAlerts } from './plugins/remark-github-alerts.mjs';
  * Where the build is going.
  *
  *   npm run build                     -> https://qunilator.com/
- *   SITE_BASE=/qunilator \
- *   SITE_URL=https://vaxbusters.org \
- *   npm run build                     -> https://vaxbusters.org/qunilator/
+ *   SITE_BASE=/docs \
+ *   SITE_URL=https://example.org \
+ *   npm run build                     -> https://example.org/docs/
  *
  * Everything below derives from these two, so a subdirectory deployment needs no
  * edits to the content.

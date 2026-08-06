@@ -1,10 +1,10 @@
 # Response headers for the published tree.
 #
 # Read by Netlify and Cloudflare Pages. NOT read by Caddy, which serves the
-# current deployment at vaxbusters.org/qunilator — there the same headers are
-# declared as `header_paths` on the vaxbusters.org static site in
-# netzhansa-infra (roles/caddy, inventory/group_vars/all/main.yml). Keep the two
-# in step; this file is what a move to a static host would carry.
+# current deployment at qunilator.com — there the same headers are declared as
+# `header_paths` on the qunilator.com static site in netzhansa-infra
+# (roles/caddy, inventory/group_vars/all/main.yml). Keep the two in step; this
+# file is what a move to a static host would carry.
 #
 # A board on an isolated LAN has no route to this site, but the operator's
 # browser usually does — in that case the browser fetches the catalogue and posts
