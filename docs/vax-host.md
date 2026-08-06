@@ -1,6 +1,6 @@
 # The VAX host
 
-Where the VAX UNIBUS host of [`vax-unibus-plan.md`](vax-unibus-plan.md) stands.
+Where the VAX UNIBUS host of [`vax-unibus-plan.md`](plans/vax-unibus-plan.md) stands.
 Stages 0 to 4 are done: the processor runs as a device of the application on a
 backplane-less UniBone, reaches the emulated devices' registers on the bus and
 is reached by their interrupts, and boots VMS V4.7 from the emulated UDA50 -
@@ -184,7 +184,7 @@ image does not carry. The board's ethernet is the emulated DEUNA on the bus, and
 the diagnostics that want a pattern matcher are a workstation test.
 
 A backplane-less board reaches the rest of the plan by a shorter road than the
-plan assumes, because `internal_bus` (see `unibone-bringup-issues.md` §20) makes
+plan assumes, because `internal_bus` (see `docs/unibone-bringup-issues.md` §20) makes
 the PRU answer its own bus cycles. Stages 2 to 4 exist to put device registers
 and DMA on real bus wires and to prove the map lookup fits the UNIBUS slave
 timing budget; with the bus internal the same PRU path carries them with no

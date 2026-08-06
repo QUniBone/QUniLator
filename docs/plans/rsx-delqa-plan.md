@@ -2,7 +2,7 @@
 
 Reconfigures the RSX-11M+ system to run its DECnet networking over the emulated
 DELQA, reaching the house LAN. Implements the requirements in
-[`docs/planning/rsx-delqa.md`](docs/planning/rsx-delqa.md).
+[`rsx-delqa.md`](../planning/rsx-delqa.md).
 
 ## 1. Current state
 

@@ -2,7 +2,7 @@
 
 Manages configurations, devices, and images together on one master/detail
 screen, built on the configuration model. Implements the requirements in
-[`docs/planning/web-config-management.md`](docs/planning/web-config-management.md).
+[`web-config-management.md`](../planning/web-config-management.md).
 Built on the [configuration model](configuration-model-plan.md),
 [device metadata](device-metadata-plan.md), and the Preact router
 ([web-navigation-plan.md](web-navigation-plan.md)).
@@ -87,7 +87,7 @@ Offline editing of a stored config is a **bulk write of the whole document**:
 ## 5. Image assignment picker
 
 A shared **image-assignment picker** component, used by both the detail pane and
-the dashboard disk widgets ([web-dashboard.md](docs/planning/web-dashboard.md)),
+the dashboard disk widgets ([web-dashboard.md](../planning/web-dashboard.md)),
 lists the image library (`GET /api/images`) and assigns one to a drive. Against
 the current config it calls the per-drive image endpoint (live effect); against a
 stored config it updates the staged document. Same component, same list, so the

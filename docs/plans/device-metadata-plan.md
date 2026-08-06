@@ -2,7 +2,7 @@
 
 Gives every device a plain-language **friendly name** shown in the web UI beside
 its terse handle, drawn from a static per-type table. Implements the requirements
-in [`docs/planning/device-metadata.md`](docs/planning/device-metadata.md).
+in [`device-metadata.md`](../planning/device-metadata.md).
 
 ## 1. What exists today
 
@@ -87,10 +87,10 @@ server read it from the API, so the table has one home.
 
 - **Web UI** shows the label as the primary device name with the handle beside or
   under it, across the device lists in the configuration-management screen and the
-  dashboard widgets ([web-config-management.md](docs/planning/web-config-management.md),
-  [web-dashboard.md](docs/planning/web-dashboard.md)).
+  dashboard widgets ([web-config-management.md](../planning/web-config-management.md),
+  [web-dashboard.md](../planning/web-dashboard.md)).
 - **MCP server** surfaces the label in its device-status tool
-  ([mcp-server.md](docs/planning/mcp-server.md)), reading the same API field
+  ([mcp-server.md](../planning/mcp-server.md)), reading the same API field
   rather than carrying its own copy.
 
 ## 5. Testability

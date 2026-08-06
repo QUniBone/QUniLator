@@ -1,7 +1,7 @@
 # Console
 
 **Status:** Ready — implementation plan drafted in
-[`console-plan.md`](../../console-plan.md).
+[`console-plan.md`](../plans/console-plan.md).
 
 The serial console: reliable startup, server-side history replayed to new
 connections, and its scope within the dashboard.

@@ -20,7 +20,7 @@ Nothing `-rt` exists for 6.18, 6.19 or 7.x.
 
 **uio_pruss** was removed from mainline in 6.10, so `libprussdrv` works up to
 6.6 and not beyond. That ceiling disappears once the emulator reaches the PRUs
-through remoteproc; see `remoteproc-port-plan.md`.
+through remoteproc; see `docs/plans/remoteproc-port-plan.md`.
 
 The image used here:
 

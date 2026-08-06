@@ -5,7 +5,7 @@
 
  libprussdrv over the uio_pruss kernel driver, which is how this ran before
  there was a choice. The driver was removed from mainline in 6.10, so this
- backend works up to 6.6 and not beyond; see remoteproc-port-plan.md.
+ backend works up to 6.6 and not beyond; see docs/plans/remoteproc-port-plan.md.
 
  Firmware here is raw instruction words written into instruction memory,
  with an explicit entry address. The ELF the caller also offers is ignored.

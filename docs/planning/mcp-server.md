@@ -1,7 +1,7 @@
 # MCP server
 
 **Status:** Ready — implementation plan drafted in
-[`mcp-server-plan.md`](../../mcp-server-plan.md).
+[`mcp-server-plan.md`](../plans/mcp-server-plan.md).
 
 An MCP server exposing a clear interface to the running QBone, so an agent can
 observe and control the machine through defined tools rather than raw HTTP and

@@ -3,7 +3,7 @@
 Makes the *current configuration* a first-class object: the running machine
 always represents a named configuration that can be edited, saved back, renamed,
 and designated as the default. Implements the requirements in
-[`docs/planning/configuration-model.md`](docs/planning/configuration-model.md).
+[`configuration-model.md`](../planning/configuration-model.md).
 The web UI, dashboard drive-swap, and MCP config tools all build on this, so it
 is planned and built first.
 
@@ -167,12 +167,12 @@ plan, since it is the first automated API test and there is no harness yet.
 - **Full offline editing of a stored configuration** beyond its drive images
   (device enable/disable and parameter edits without applying) — the
   configuration-management screen builds that on this model
-  ([`docs/planning/web-config-management.md`](docs/planning/web-config-management.md)).
+  ([`web-config-management.md`](../planning/web-config-management.md)).
 - **UI** — the dashboard configuration tile with its modified indicator and the
   master/detail management screen
-  ([`docs/planning/web-dashboard.md`](docs/planning/web-dashboard.md)).
+  ([`web-dashboard.md`](../planning/web-dashboard.md)).
 - **MCP config tools** — apply/save/switch over the same endpoints
-  ([`docs/planning/mcp-server.md`](docs/planning/mcp-server.md)).
+  ([`mcp-server.md`](../planning/mcp-server.md)).
 
 ## 10. Decisions and open questions
 

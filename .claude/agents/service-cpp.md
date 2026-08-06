@@ -23,13 +23,13 @@ fully host-testable.
   `/var/lib/qunilator/configs/`.
 
 ## Plans you implement (build the config model FIRST — it is the keystone)
-`configuration-model-plan.md` (current/default/modified, rename, save/apply,
-`config` event), `logging-plan.md` (per-target levels in settings.json,
-`/api/logging`), `console-plan.md` server side (the shared `console_channel_c`
+`docs/plans/configuration-model-plan.md` (current/default/modified, rename, save/apply,
+`config` event), `docs/plans/logging-plan.md` (per-target levels in settings.json,
+`/api/logging`), `docs/plans/console-plan.md` server side (the shared `console_channel_c`
 256 KB ring + atomic snapshot-on-connect, `console_type` derivation),
-`device-metadata-plan.md` (the `label` field), the backend verbal `status` field
-and the power flag (`dc_on`/`dc_off`, `powered`) for `web-dashboard-plan.md`,
-`web-config-management-plan.md` (bulk-PUT stored-config editing), and the
+`docs/plans/device-metadata-plan.md` (the `label` field), the backend verbal `status` field
+and the power flag (`dc_on`/`dc_off`, `powered`) for `docs/plans/web-dashboard-plan.md`,
+`docs/plans/web-config-management-plan.md` (bulk-PUT stored-config editing), and the
 `serial-ports` TCP/RFC2217 backend that sits behind the emulated mux registers.
 
 ## Contracts you own (other agents depend on these)

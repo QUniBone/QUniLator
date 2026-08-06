@@ -1,7 +1,7 @@
 # Console scripting and session capture
 
 **Status:** Implemented — all six phases of
-[`console-scripting-plan.md`](../../console-scripting-plan.md) are on `main`
+[`console-scripting-plan.md`](../plans/console-scripting-plan.md) are on `main`
 ([issue #38](https://github.com/QUniBone/QUniLator/issues/38)). The harness is
 `console-harness/` (`qcon`); the backend carries the end-of-replay frame, BREAK
 and the session recorder; the MCP server drives consoles through the same core.
@@ -372,6 +372,6 @@ Resolved:
 - [Issue #38 — a reliable harness for scripting guest operating systems over
   the console](https://github.com/QUniBone/QUniLator/issues/38)
 - [console.md](console.md) — channel/ring/replay requirements
-- [console-plan.md](../../console-plan.md) — `console_channel_c` design
+- [console-plan.md](../plans/console-plan.md) — `console_channel_c` design
 - [serial-ports.md](serial-ports.md) — mux lines carried on `/ws/serial/…`
 - [mcp-server.md](mcp-server.md) — the MCP server the session tools extend

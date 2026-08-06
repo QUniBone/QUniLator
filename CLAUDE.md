@@ -185,7 +185,7 @@ writes below `/usr` and restarts a unit, so the account needs sudo there.
 x86_64 Linux workstation: it stages the pinned Debian base image (downloading
 and checksum-checking it into `dist/` when it is not there), the package, and
 the sample disk images, then runs `packaging/build-image.sh`. See
-`DISTRIBUTION.md` for the options and the environment it reads.
+`docs/distribution.md` for the options and the environment it reads.
 
 Two linker settings that have to stay:
 

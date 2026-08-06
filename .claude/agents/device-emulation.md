@@ -22,9 +22,9 @@ that DEC diagnostics pass.
   and validate under **XXDP** with any loopback the diagnostic needs.
 
 ## Plans you implement
-`serial-ports-plan.md` (DZV/DZQ11, DHV/DHQ11, independent DL11 — real
+`docs/plans/serial-ports-plan.md` (DZV/DZQ11, DHV/DHQ11, independent DL11 — real
 registers/DMA per device over a shared TCP line backend; the register frontends
-are yours, the TCP/RFC2217 transport is service-cpp's), and the `vcb01-plan.md`
+are yours, the TCP/RFC2217 transport is service-cpp's), and the `docs/plans/vcb01-plan.md`
 current-round device work (the LK201 keyboard model owning auto-repeat/all-up,
 and any register-interface adjustments a 2.11BSD driver needs).
 

@@ -1,7 +1,7 @@
 # RSX-11M+ over DELQA
 
 **Status:** Ready — implementation plan drafted in
-[`rsx-delqa-plan.md`](../../rsx-delqa-plan.md).
+[`rsx-delqa-plan.md`](../plans/rsx-delqa-plan.md).
 
 Reconfigure the RSX-11M+ installation so its networking runs over the emulated
 DELQA, changing both the RSX system and the emulator configuration.

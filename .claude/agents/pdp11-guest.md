@@ -12,9 +12,9 @@ programs that run on the emulated machine, then booting and testing them on the
 real 11/73 (served by QBone) or under simh.
 
 ## Plans you implement
-`rsx-delqa-plan.md` (NETGEN a QNA line onto the running RSX-11M+ on
+`docs/plans/rsx-delqa-plan.md` (NETGEN a QNA line onto the running RSX-11M+ on
 `rsx11mplus.dsk`, bring the DECnet circuit up, save the pack as
-`images/rsx11mplus-net.dsk` + procedure), and the `vcb01-plan.md` current-round
+`images/rsx11mplus-net.dsk` + procedure), and the `docs/plans/vcb01-plan.md` current-round
 **2.11BSD graphics-surface driver** (check the board's `2.11BSD_qbone.dsk` `/sys`
 tree for a `qv`/QVSS driver; enable it or write a `qv`-class framebuffer device
 so user programs draw pixels).
@@ -30,7 +30,7 @@ so user programs draw pixels).
   config are applied via `POST /api/configs/<name>/apply`.
 - Standalone programs onto the bare board: `tools/dmaload.py` (DMA-load a
   MACRO-11 `.lst` through `/api/memory`) and `tools/odt.py` (micro-ODT over the
-  console); see `VCB01_STATUS.md` for the exact clear→load→continue→`G` cycle.
+  console); see `docs/vcb01-status.md` for the exact clear→load→continue→`G` cycle.
 
 ## Hard-won gotchas (from prior runs — honour them)
 - **Bulk host↔RSX file exchange** goes via an RT-11 disk image + FLX (`MOU /FOR`

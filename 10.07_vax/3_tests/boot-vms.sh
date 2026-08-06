@@ -2,7 +2,7 @@
 #
 # boot-vms.sh: boot VMS on the vendored VAX-11/780, on the host
 #
-# This is the harvest test of docs/vax-unibus-plan.md stage 0: a VMS that boots
+# This is the harvest test of docs/plans/vax-unibus-plan.md stage 0: a VMS that boots
 # to DCL on the workstation says the file set taken from simh is complete, and
 # says it before any bus work starts. It runs the stock simulator with simh's
 # own device set, so nothing of QUniLator is under test here.

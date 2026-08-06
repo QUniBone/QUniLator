@@ -97,4 +97,4 @@ Notes for whoever picks this up:
   indistinguishable from free space, so the probe can only refuse on a positive
   answer, never confirm that a range is safe.
 - This is the same check the VCB01 framebuffer needs before it claims its
-  256 KB bank; see `vcb01-plan.md`.
+  256 KB bank; see `docs/plans/vcb01-plan.md`.

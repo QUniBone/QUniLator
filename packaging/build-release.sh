@@ -48,7 +48,7 @@ HERE=$PWD
 # The base image the appliance is built on: Debian 13.6 with the 6.12 kernel,
 # the newest kernel an RT build exists for and the last that carries uio_pruss.
 # Pinned by date, so a rebuild of an old release gets the base it was made
-# with; see debian-installation.md for why this one.
+# with; see docs/debian-installation.md for why this one.
 BASE_IMAGE_DEFAULT=https://rcn-ee.com/rootfs/debian-armhf-13-base-v6.12/2026-07-15/am335x-debian-13.6-base-v6.12-armhf-2026-07-15-4gb.img.xz
 
 # the header comment above is the usage summary, so the options are documented

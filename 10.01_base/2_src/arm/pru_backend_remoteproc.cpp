@@ -13,7 +13,7 @@
    PRU events    a uio_pdrv_genirq device, also from the device tree
 
  The last two need device tree nodes that the cape overlay has to provide;
- see remoteproc-port-plan.md. Without them this backend still loads and runs
+ see docs/plans/remoteproc-port-plan.md. Without them this backend still loads and runs
  firmware, and says plainly what is missing rather than failing obscurely.
 
  The firmware is written out from the executable's own copy at startup, so

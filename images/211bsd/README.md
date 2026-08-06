@@ -90,7 +90,7 @@ and `/netnix.pidp11`, and carries the build tree in `/usr/src/sys/QBONE`, so
 it can rebuild itself.
 
 The image is not in this repository — it is a gigabyte of disk. See
-`DISTRIBUTION.md` for where the sample images are published.
+`docs/distribution.md` for where the sample images are published.
 
 ## QBONETS: the same machine with a TS11 instead of a TMSCP tape
 

@@ -2,7 +2,7 @@
 #
 # shim-boot-vms.sh: boot VMS on the shimmed core, with the disk inside it
 #
-# The control for the bus stages of docs/vax-unibus-plan.md. It runs the core in
+# The control for the bus stages of docs/plans/vax-unibus-plan.md. It runs the core in
 # the form it takes when embedded - shim/ in place of simh's command
 # interpreter, console and timer - and carries an operating system on it, using
 # simh's own MSCP controller as the disk rather than the emulated one on the

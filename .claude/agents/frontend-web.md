@@ -22,11 +22,11 @@ backend over `/api` (REST) and `/ws/events`, `/ws/console/*`, `/ws/vcb01`
 - `10.05_web/docs/plan.md` — the shipped web design.
 
 ## Plans you implement
-`web-navigation-plan.md` (History API routing, path segments for selection, query
-params for ephemeral state, SPA-shell fallback), `console-plan.md` (dispose-and-
+`docs/plans/web-navigation-plan.md` (History API routing, path segments for selection, query
+params for ephemeral state, SPA-shell fallback), `docs/plans/console-plan.md` (dispose-and-
 recreate xterm lifecycle, history replay — the fix for the module-state
-no-cursor bug), `web-config-management-plan.md` (master/detail, contextual
-live-vs-stored editing), `web-dashboard-plan.md` (11/03 control panel, real-LED
+no-cursor bug), `docs/plans/web-config-management-plan.md` (master/detail, contextual
+live-vs-stored editing), `docs/plans/web-dashboard-plan.md` (11/03 control panel, real-LED
 component, disk widgets with the shared image picker, serial-mux tabs).
 
 ## Contracts you depend on (owned by other agents)

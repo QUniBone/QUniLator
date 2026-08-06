@@ -109,7 +109,7 @@ call already has.
    cape's pins, and sets `ti,no-idle` on each GPIO bank's target module so
    the modules stay clocked for /dev/mem access.
 
-   `debian-installation.md` carries the details that cost time: three cells
+   `docs/debian-installation.md` carries the details that cost time: three cells
    per pin rather than two, a pin group needing a consumer device now that
    `bone-pinmux-helper` is gone, and the video and audio overlays having to
    be disabled before the cape can have its pins.

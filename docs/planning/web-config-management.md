@@ -1,7 +1,7 @@
 # Web: configuration management
 
 **Status:** Ready — implementation plan drafted in
-[`web-config-management-plan.md`](../../web-config-management-plan.md).
+[`web-config-management-plan.md`](../plans/web-config-management-plan.md).
 
 Configurations, devices, and images are managed together instead of on three
 separate screens.

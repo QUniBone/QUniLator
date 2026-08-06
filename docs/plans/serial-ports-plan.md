@@ -3,8 +3,8 @@
 Adds emulated async serial devices — a DZV11/DZQ11 4-line mux, a DHV11/DHQ11
 8-line mux, and independent DL11 lines — each line mapped to a TCP endpoint
 speaking Telnet/RFC2217. Implements the requirements in
-[`docs/planning/serial-ports.md`](docs/planning/serial-ports.md). Each device
-follows the [device implementation standard](docs/planning/device-implementation-standard.md).
+[`serial-ports.md`](../planning/serial-ports.md). Each device
+follows the [device implementation standard](../planning/device-implementation-standard.md).
 
 ## 1. What exists today
 
@@ -55,9 +55,9 @@ A `serial_tcp_line_c` behind the `rs232adapter_c` seam carries one line's bytes:
   `tcp_role` (listen/connect), `tcp_port` (listen port) or `tcp_host`/`tcp_port`
   (connect-out) per line — so it lives in the configuration model and the
   config-management editor like any other parameter
-  ([configuration-model.md](docs/planning/configuration-model.md),
-  [web-config-management.md](docs/planning/web-config-management.md)).
-- A mux gets a **dashboard widget** ([web-dashboard.md](docs/planning/web-dashboard.md)):
+  ([configuration-model.md](../planning/configuration-model.md),
+  [web-config-management.md](../planning/web-config-management.md)).
+- A mux gets a **dashboard widget** ([web-dashboard.md](../planning/web-dashboard.md)):
   a terminal with **tabs, one per port**; independent DL11 lines are single
   terminals.
 

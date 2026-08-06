@@ -2,7 +2,7 @@
 #
 # shim-rate.sh: measure how fast the shimmed core executes
 #
-# docs/vax-unibus-plan.md wants the instruction rate recorded as the baseline a
+# docs/plans/vax-unibus-plan.md wants the instruction rate recorded as the baseline a
 # later stage is measured against: a stage that moves it by an order of
 # magnitude has changed something structural. Run it on the build machine and on
 # the board, and record both.

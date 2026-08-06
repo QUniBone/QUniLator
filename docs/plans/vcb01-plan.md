@@ -210,7 +210,7 @@ carries, and the package names what it needs in its `Depends`.
   (`dpkg --add-architecture armhf` first). Done.
 - Add `-lX11` to `makefile_q` and `makefile_u` when the device is linked in.
 - Add `libx11-6` to the `Depends` written by `packaging/build-deb.sh`, and
-  `libx11-dev` to the on-bone build in `debian-installation.md`.
+  `libx11-dev` to the on-bone build in `docs/debian-installation.md`.
 
 **Do not link statically.** glibc resolves host names through name service
 modules it loads with `dlopen()` even in a static binary, and those modules
@@ -329,7 +329,7 @@ The device works on the bus and renders to a web canvas over `/ws/vcb01`
 (`webvcb01.cpp`), in addition to the X path. This round makes that web use
 reliable, gives 2.11BSD a way to draw to the board, and settles whether the
 graphics path is fast enough. Requirements in
-[`docs/planning/vcb01.md`](docs/planning/vcb01.md).
+[`vcb01.md`](../planning/vcb01.md).
 
 ### Keyboard input over the web UI
 
@@ -381,7 +381,7 @@ the framebuffer, beyond a text terminal.
    controller, and the SCN2681 DUART — adjusting the emulation to the specific
    board the driver expects where they differ.
 3. **If none exists**, write a `qv`-class driver exposing the 256 KB video bank.
-   The investigation ([`docs/vcb01-2bsd-driver.md`](docs/vcb01-2bsd-driver.md))
+   The investigation ([`vcb01-2bsd-driver.md`](../vcb01-2bsd-driver.md))
    confirms 2.11BSD carries no `qv` driver (it is a VAX-era device) and that the
    surface cannot be an `mmap` device — 2.11BSD has no `d_mmap` and a split-I/D
    process has only 64 KB of data space against the 256 KB bank. The realistic
@@ -393,7 +393,7 @@ the framebuffer, beyond a text terminal.
    as the starting material.
 
 Because the VCB01/QVSS may have no XXDP diagnostic, its stand-in validation (per
-the [device implementation standard](docs/planning/device-implementation-standard.md))
+the [device implementation standard](../planning/device-implementation-standard.md))
 is a guest program that opens the framebuffer device and draws a known pattern,
 read back over `/ws/vcb01`, plus keyboard delivery into a reading program.
 

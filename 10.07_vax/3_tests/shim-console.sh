@@ -2,7 +2,7 @@
 #
 # shim-console.sh: run a VAX program on the shimmed core
 #
-# The seam test of docs/vax-unibus-plan.md stage 0. It assembles a few
+# The seam test of docs/plans/vax-unibus-plan.md stage 0. It assembles a few
 # instructions, loads them at address 0 and runs them, and what they do reaches
 # every part of the shim that an executing processor uses:
 #

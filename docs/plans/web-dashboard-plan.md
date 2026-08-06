@@ -3,7 +3,7 @@
 Reworks the dashboard: a PDP-11/03-styled control panel, a separate activity/DIP
 front panel, verbal disk-status widgets with image selection, a serial-mux
 widget, and a unified real-LED rendering. Implements the requirements in
-[`docs/planning/web-dashboard.md`](docs/planning/web-dashboard.md). Built on the
+[`web-dashboard.md`](../planning/web-dashboard.md). Built on the
 Vite + Preact frontend, the [device metadata](device-metadata-plan.md) labels,
 and the shared image picker from the
 [config-management plan](web-config-management-plan.md).
@@ -90,7 +90,7 @@ visual language:
 
 ## 6. Serial-mux widget
 
-A serial mux ([serial-ports.md](docs/planning/serial-ports.md)) adds a widget: an
+A serial mux ([serial-ports.md](../planning/serial-ports.md)) adds a widget: an
 additional terminal with **tabs, one per port**, each a console channel with its
 own history replay ([console-plan.md](console-plan.md)); independent DL11 lines are
 single terminals.

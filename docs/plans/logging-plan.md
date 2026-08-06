@@ -3,7 +3,7 @@
 Makes the log level adjustable at runtime from the web UI: a global default plus
 per-target overrides, for devices and non-device subsystems alike, persisted in
 settings and restored on restart. Implements the requirements in
-[`docs/planning/logging.md`](docs/planning/logging.md).
+[`logging.md`](../planning/logging.md).
 
 ## 1. What exists today
 
@@ -118,7 +118,7 @@ A logging panel (reachable from the dashboard log area / a settings view) with:
 - a **global default** selector;
 - a list of **targets** from `GET /api/logging`, each a level selector, grouped
   devices vs. subsystems, showing the friendly device name
-  ([device-metadata.md](docs/planning/device-metadata.md)) for the device rows;
+  ([device-metadata.md](../planning/device-metadata.md)) for the device rows;
 - an override indicator where a target differs from the default, with a clear
   (reset-to-default) action.
 

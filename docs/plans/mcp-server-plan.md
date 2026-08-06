@@ -2,7 +2,7 @@
 
 A workstation MCP server exposing named tools for observing and controlling the
 running QBone, over its REST/WS API. Implements the requirements in
-[`docs/planning/mcp-server.md`](docs/planning/mcp-server.md).
+[`mcp-server.md`](../planning/mcp-server.md).
 
 ## 1. Shape
 

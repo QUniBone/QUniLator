@@ -4,7 +4,7 @@
    hans@huebner.org
    MIT license, see any source file header for the full text.
 
-   The verbal disk status (web-dashboard-plan.md §5) and the control-action
+   The verbal disk status (docs/plans/web-dashboard-plan.md §5) and the control-action
    power gate (§3) are pure functions of the parameters a drive publishes and
    of the logical power flag, so they run on the development host with no
    hardware. This links the real device_status.cpp and webcontrol.cpp and drives

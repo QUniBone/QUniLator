@@ -4,7 +4,7 @@
  hans@huebner.org
  MIT license, see qunibusdevice.hpp for the full text.
 
- The VAX host of docs/vax-unibus-plan.md, stage 1. A VAX-11/780 emulation runs
+ The VAX host of docs/plans/vax-unibus-plan.md, stage 1. A VAX-11/780 emulation runs
  as a device of the application, with its own memory and its own console, so
  the UNIBUS device models can eventually be driven by VMS and by the VAX
  diagnostics - software written by people who never saw this emulator.

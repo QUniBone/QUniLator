@@ -10,7 +10,7 @@
 #
 # It needs no board, no apt and no root: updater-sandbox.sh stubs the world. What
 # it does not cover is the bus, the real apt, and the flock - so a green run here
-# is a reason to try a board, not a substitute for it (see self-update-plan.md
+# is a reason to try a board, not a substitute for it (see docs/plans/self-update-plan.md
 # §14 for what the board still has to prove).
 #
 #   ./packaging/tests/updater-test.sh            run every case

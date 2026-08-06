@@ -1,7 +1,7 @@
 # Configuration model
 
 **Status:** Ready — implementation plan drafted in
-[`configuration-model-plan.md`](../../configuration-model-plan.md).
+[`configuration-model-plan.md`](../plans/configuration-model-plan.md).
 
 The concept of a *current configuration* as a first-class object, so the running
 machine's setup can be edited, saved back, named, and designated as the default.

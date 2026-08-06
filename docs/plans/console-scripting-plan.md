@@ -1,7 +1,7 @@
 # Console scripting and session capture — implementation plan
 
 Implements the requirements in
-[`docs/planning/console-scripting.md`](docs/planning/console-scripting.md)
+[`console-scripting.md`](../planning/console-scripting.md)
 ([issue #38](https://github.com/QUniBone/QUniLator/issues/38)): one
 console-session core serving scripted guest dialogs, timed session recording,
 and HTML rendering.

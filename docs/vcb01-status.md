@@ -89,4 +89,4 @@ pattern fills the window exactly. The renderer's untimed default is 864.
   cycle; QBone commits it when `INTR()` is scheduled. Two sources becoming ready
   between the schedule and the acknowledge would deliver the earlier vector.
 - **Integration.** Web UI device page, packaging (`libx11`), and documentation
-  — phase 5 of `vcb01-plan.md`.
+  — phase 5 of `docs/plans/vcb01-plan.md`.

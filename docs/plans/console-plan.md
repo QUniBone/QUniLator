@@ -3,8 +3,8 @@
 Makes the serial console start reliably, survive navigation, and replay
 server-side history to every new connection, and adds the interactive console
 setup step. Implements the requirements in
-[`docs/planning/console.md`](docs/planning/console.md). Built on the Preact
-router ([web-navigation.md](docs/planning/web-navigation.md)).
+[`console.md`](../planning/console.md). Built on the Preact
+router ([web-navigation.md](../planning/web-navigation.md)).
 
 ## 1. What exists today
 
@@ -49,13 +49,13 @@ xterm.js reconstructs the screen from the replayed raw bytes, so a fresh connect
 or a reconnect repaints without any server-side screen model.
 
 **All channels** use this uniformly — the external console, the emulated DL11s,
-and the serial-mux ports ([serial-ports.md](docs/planning/serial-ports.md)) each
+and the serial-mux ports ([serial-ports.md](../planning/serial-ports.md)) each
 own a `console_channel_c`.
 
 ### Relationship to the journal
 
 Separate artifacts. The journal is the **logger's** file sink — rendered,
-timestamped log lines ([logging.md](docs/planning/logging.md)). The console ring
+timestamped log lines ([logging.md](../planning/logging.md)). The console ring
 holds **raw tty/DL11 bytes** for screen reconstruction. They share nothing;
 neither replaces the other.
 
@@ -111,7 +111,7 @@ high-level field and the backend derives the levers:
 - `/ws/console/ext`, `/ws/console/0`, `/ws/console/1` unchanged in shape; each now
   replays its ring on connect.
 - Serial-mux channels get `/ws/console/mux<n>/<port>` on the same channel type
-  ([serial-ports.md](docs/planning/serial-ports.md)).
+  ([serial-ports.md](../planning/serial-ports.md)).
 - `console_type` is read/written through `PUT /api/settings` alongside
   `external_console`; `GET /api/settings` reports it and the derived lever state so
   the setup step can present the current arrangement. `api.md` updated.

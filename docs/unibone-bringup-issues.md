@@ -223,7 +223,7 @@ the backplane, stored on the board and never re-asked, and it travelled with the
 card exactly as a configuration does — so it was as stale as anything else after
 a move, and failed silently. The processors are now always in the device set,
 disabled, and enabling one is what tells the board it is the machine; the
-arbitration and the memory claim follow from that. See `dark-boot-plan.md`.
+arbitration and the memory claim follow from that. See `docs/plans/dark-boot-plan.md`.
 
 ### 8. The console switches were configuration
 

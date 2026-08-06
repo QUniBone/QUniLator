@@ -1,7 +1,7 @@
 # A graphics surface for 2.11BSD on the emulated VCB01
 
 Investigation for the "2.11BSD driver — a graphics surface" round of
-`vcb01-plan.md`: does the board's 2.11BSD carry a `qv`/QVSS driver, and if not,
+`docs/plans/vcb01-plan.md`: does the board's 2.11BSD carry a `qv`/QVSS driver, and if not,
 what does giving it a program-drawable framebuffer take? Investigate-first; no
 kernel was rebuilt and the system pack was not modified.
 
@@ -58,7 +58,7 @@ interface a driver expects, at base `17777200`:
 | 256 KB video bank | yes | bank 016 at `16000000`, served from DDR at bus speed |
 
 So the emulation is driver-ready. One known gap a real driver would meet, from
-`VCB01_STATUS.md`: **CRTC read-back returns a stale value** — the DATI latch is
+`docs/vcb01-status.md`: **CRTC read-back returns a stale value** — the DATI latch is
 refreshed on a data write, not when the address pointer changes, so a driver
 that reads the 18 CRTC registers back reads wrong. A driver that only writes the
 CRTC (the usual case, as `setlin.mac`/`vcbdemo.mac` do) is unaffected. Fix noted

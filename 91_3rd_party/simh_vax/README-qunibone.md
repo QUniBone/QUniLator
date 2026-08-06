@@ -1,7 +1,7 @@
 # simh VAX-11/780, vendored
 
 The VAX-11/780 simulator from Open SIMH, harvested so that a VAX host can drive
-the UNIBUS device models of `10.02_devices/2_src`. See `docs/vax-unibus-plan.md`
+the UNIBUS device models of `10.02_devices/2_src`. See `docs/plans/vax-unibus-plan.md`
 for what the host is for.
 
 ## Provenance

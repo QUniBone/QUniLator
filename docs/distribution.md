@@ -21,7 +21,7 @@ directories under `/var/lib/qunilator`.
 rewrites `/boot/uEnv.txt`, checks the hardware, bridges the uplink with an
 armed rollback, and starts the services.
 
-`debian-installation.md` records the rest - the settings and masks the cape
+`docs/debian-installation.md` records the rest - the settings and masks the cape
 needs, and the three ways a stock image wedges a board with a cape fitted.
 
 The gap between that and an image is small and specific: the fixes

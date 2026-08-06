@@ -40,7 +40,7 @@ rather than a cached one. The store carries `configModified`, and the dashboard
 derives RUN from the state frames — both are needed to warn about what an update
 interrupts.
 
-`DISTRIBUTION.md` still says only the QBUS package is published. The workflow
+`docs/distribution.md` still says only the QBUS package is published. The workflow
 pushes both; that note wants correcting when this lands.
 
 ## 2. Version and package identity
@@ -455,7 +455,7 @@ and `sh -n`, beside the maintainer-script check `build.yml` already does.
    reload that also covers a manual upgrade.
 6. **The OS-upgrade path** (§10), after the emulator update is proven.
 7. **`release-image.yml` always passing the repository variables** (§3), the
-   unattended-upgrade drop-in, the `DISTRIBUTION.md` correction, and the board
+   unattended-upgrade drop-in, the `docs/distribution.md` correction, and the board
    tests (§14).
 
 ## 16. Open questions

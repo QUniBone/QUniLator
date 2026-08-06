@@ -1,7 +1,7 @@
 # VCB01 support
 
 **Status:** Ready — implementation plan drafted in
-[`vcb01-plan.md`](../../vcb01-plan.md) (device background plus the current-round
+[`vcb01-plan.md`](../plans/vcb01-plan.md) (device background plus the current-round
 web-keyboard, 2.11BSD-driver, and performance work).
 
 Reliable VCB01 use: keyboard input from the web UI, and a working 2.11BSD driver
@@ -13,7 +13,7 @@ The VCB01 graphics device renders into the console phosphor and accepts keyboard
 input through the web UI. Keyboard input is not delivered reliably. Whether
 2.11BSD has a driver that binds the VCB01 (QVSS/`qv`-class framebuffer and its
 LK201 keyboard) is unconfirmed. Background on the device is in
-[`vcb01-plan.md`](../../vcb01-plan.md) and [`VCB01_STATUS.md`](../../VCB01_STATUS.md).
+[`vcb01-plan.md`](../plans/vcb01-plan.md) and [`vcb01-status.md`](../vcb01-status.md).
 
 ## Requirements
 

@@ -3,7 +3,7 @@
 Puts the web UI's navigation state in the URL using History API paths, with a
 civetweb SPA-shell fallback so reloads and deep links resolve, and a standalone
 console URL. Implements the requirements in
-[`docs/planning/web-navigation.md`](docs/planning/web-navigation.md). Built on the
+[`web-navigation.md`](../planning/web-navigation.md). Built on the
 Vite + Preact + TypeScript frontend (the cross-cutting decision for this round).
 
 ## 1. What exists today
@@ -14,7 +14,7 @@ returns to the default view and there is no deep link. civetweb serves static
 files from `document_root` and registers explicit handlers for `/api/*` and the
 `/ws/*` WebSockets (`webserver.cpp`); a request to `/dashboard` finds no such file
 and 404s. Switching views tears down and rebuilds them, which is how the console
-loses its WebSocket on navigation ([console.md](docs/planning/console.md)).
+loses its WebSocket on navigation ([console.md](../planning/console.md)).
 
 ## 2. Route model
 
@@ -64,7 +64,7 @@ frontend is scaffolded):
 
 Views mount and unmount on path change. The console is the one view that must
 survive navigation; its keep-alive/reconnect handling is specified in the
-[console plan](docs/planning/console.md) and uses the history replay there — the
+[console plan](../planning/console.md) and uses the history replay there — the
 router gives it a stable place to live (the standalone `/console` route and the
 dashboard-embedded instance) and predictable mount/unmount, but does not itself
 carry the console fix.
@@ -130,4 +130,4 @@ Open:
   scaffolded; does not affect the route model above.
 - Whether `/config` without a selection shows an empty detail pane or auto-selects
   the current configuration — a UI choice for the
-  [config-management plan](docs/planning/web-config-management.md).
+  [config-management plan](../planning/web-config-management.md).

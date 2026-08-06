@@ -717,7 +717,7 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
     // An emulated processor whose memory is its own - the VAX, whose memory
     // sits behind the UNIBUS adapter's map registers rather than on the bus -
     // answers a device's transfer itself. The cycles never reach the bus,
-    // which is what stage 3 of docs/vax-unibus-plan.md asks for and what
+    // which is what stage 3 of docs/plans/vax-unibus-plan.md asks for and what
     // stage 4 moves into the PRU.
     if (registered_cpu != NULL && !dma_request.is_cpu_access
             && registered_cpu->on_dma(qunibus_cycle, unibus_addr, buffer, wordcount)) {
