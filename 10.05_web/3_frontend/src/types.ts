@@ -320,6 +320,15 @@ export interface DebugPsw {
   previous_mode?: string;
 }
 
+// The page registers of one processor mode: eight page address registers and
+// the eight page descriptors beside them, page 0 first. Two arrays rather than
+// eight pairs, because that is what they are — separate registers at separate
+// addresses, which happen to be read together.
+export interface DebugMmuPages {
+  par: number[];
+  pdr: number[];
+}
+
 // One disassembled instruction. `words` is as long as the instruction is: on a
 // PDP-11 an instruction is only as long as its operands make it.
 export interface DebugInstruction {
@@ -360,7 +369,16 @@ export interface DebugCpu {
   bus_addr?: number;
   bus_data?: number;
   cycle_count?: number;
-  mmu?: { enabled: boolean; mmr0: number; mmr1: number; mmr2: number };
+  mmu?: {
+    enabled: boolean;
+    mmr0: number;
+    mmr1: number;
+    mmr2: number;
+    // the eight page registers of each mode, page 0 first. Absent from a
+    // processor read over the bus: they are internal to the CPU.
+    kernel?: DebugMmuPages;
+    user?: DebugMmuPages;
+  };
   probe?: DebugProbePoint[];
   powered: boolean;
   halted: boolean;

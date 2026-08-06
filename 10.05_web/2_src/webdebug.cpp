@@ -118,6 +118,23 @@ static picojson::value reg_json(const char *name, uint16_t value) {
 	return picojson::value(o);
 }
 
+// The eight page address and page descriptor registers of one mode, as two
+// arrays of eight, page 0 first. Kept as a pair rather than interleaved: a PAR
+// and its PDR are read together, but they are separate registers at separate
+// addresses, and pairing them in the JSON would invent a structure the machine
+// does not have.
+static picojson::value mode_pages_json(const uint16_t *par, const uint16_t *pdr) {
+	picojson::array pars, pdrs;
+	for (unsigned i = 0; i < 8; i++) {
+		pars.push_back(num(par[i]));
+		pdrs.push_back(num(pdr[i]));
+	}
+	picojson::object o;
+	o["par"] = picojson::value(pars);
+	o["pdr"] = picojson::value(pdrs);
+	return picojson::value(o);
+}
+
 // The processor the machine carries, dark or not.
 //
 // device_configuration's emulated_cpu() reads the live "enabled" flag, which
@@ -207,6 +224,12 @@ static picojson::value emulated_json(cpu_base_c *cpu) {
 		mmu["mmr0"] = num(s.mmr0);
 		mmu["mmr1"] = num(s.mmr1);
 		mmu["mmr2"] = num(s.mmr2);
+		// The page registers of each mode, page 0 first. Both sets go out
+		// whatever mode the CPU is in: which of them is in force follows from
+		// the status word, and a debugger reading a machine that has just
+		// trapped out of user mode wants the other set as much as this one.
+		mmu["kernel"] = mode_pages_json(s.kernel_par, s.kernel_pdr);
+		mmu["user"] = mode_pages_json(s.user_par, s.user_pdr);
 		o["mmu"] = picojson::value(mmu);
 	}
 	return picojson::value(o);

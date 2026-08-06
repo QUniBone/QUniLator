@@ -1344,6 +1344,28 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
 .dbg-note { font-size: var(--fs-0); margin: 12px 0 0; max-width: 80ch; }
 .dbg-error { color: var(--err); margin: 0 0 10px; }
 
+/* The page registers, one row per page and one column pair per mode. Read down
+   a column and it is a mode's map of the whole virtual space, which is why the
+   pages run vertically rather than across.
+
+   The mode the processor is in has its two columns marked: the other mode's
+   registers are as real, they are simply not what the next reference goes
+   through, so the mark is a tint and a rule rather than anything shouted. */
+.dbg-mmu { border-collapse: collapse; font-size: var(--fs-1); }
+.dbg-mmu th {
+  text-align: right; font-weight: 600; font-size: var(--fs-0);
+  color: var(--ink-muted); padding: 0 12px 4px;
+}
+.dbg-mmu thead tr:first-child th { text-align: center; padding-bottom: 2px; }
+.dbg-mmu td { padding: 1px 12px; text-align: right; white-space: pre; }
+.dbg-mmu .dbg-mmu-page {
+  color: var(--ink-muted); text-align: left; padding-left: 0; padding-right: 14px;
+}
+/* the pair of a mode is one block: the rule sits before its PAR */
+.dbg-mmu .dbg-mmu-par { border-left: 1px solid var(--line); }
+.dbg-mmu .dbg-mmu-live { background: var(--accent-soft); }
+.dbg-mmu th.dbg-mmu-mode.dbg-mmu-live { color: var(--accent); }
+
 /* The bar that opens views, and the views themselves. A view is a card of its
    own: opened, moved around by address, and closed when it has served. Two fit
    side by side on a wide screen and stack when there is no room, which is what

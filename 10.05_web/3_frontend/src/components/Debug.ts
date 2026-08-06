@@ -9,7 +9,9 @@
 // Below that the operator opens views: a memory view dumps words, a disassembly
 // view turns them back into instructions. Both are opened as often as wanted —
 // following a data structure and the code that walks it means looking at two
-// places at once, which one pane of each could not do.
+// places at once, which one pane of each could not do. A processor with memory
+// management has one more, the page registers of both its modes, and that one
+// is a single panel: there is only one set of them to show.
 //
 // Nothing here polls. The registers a running processor holds change with every
 // instruction, so a repeated readout shows numbers that were never all true at
@@ -23,7 +25,7 @@ import type { ComponentChildren } from 'preact';
 import { fetchDebugCpu, fetchDisassembly, fetchMemory } from '../api';
 import { useQueryParam } from '../router';
 import { octalStr } from '../lib/util';
-import type { DebugCpu, DebugInstruction, DebugRegister } from '../types';
+import type { DebugCpu, DebugInstruction, DebugMmuPages, DebugRegister } from '../types';
 import { Bit } from './widgets/base';
 
 const WORD_COUNTS = [8, 16, 32, 64, 128, 256];
@@ -172,28 +174,35 @@ function CpuCard({
 // can be put in the URL and come back on a reload.
 interface ViewSpec {
   id: number;
-  kind: 'mem' | 'dis';
-  addr: string; // octal, as typed
+  kind: 'mem' | 'dis' | 'mmu';
+  addr: string; // octal, as typed; memory and disassembly views only
   words: number; // memory views only
 }
 
-// The views as one query parameter: "m777560.40,d146326" — kind, address, and
+// The views as one query parameter: "m777560.40,d146326,u" — kind, address, and
 // for a memory view the word count. Short enough to read in the address bar,
-// which is the point of putting it there.
+// which is the point of putting it there. The page registers have no address of
+// their own: the whole set is one panel, so its letter stands alone.
 function encodeViews(views: ViewSpec[]): string {
   return views
-    .map((v) => (v.kind === 'mem' ? 'm' + v.addr + '.' + v.words.toString(8) : 'd' + v.addr))
+    .map((v) =>
+      v.kind === 'mem'
+        ? 'm' + v.addr + '.' + v.words.toString(8)
+        : v.kind === 'dis'
+          ? 'd' + v.addr
+          : 'u'
+    )
     .join(',');
 }
 
 function decodeViews(s: string): ViewSpec[] {
   const out: ViewSpec[] = [];
   for (const part of s.split(',')) {
-    const m = /^([md])([0-7]*)(?:\.([0-7]+))?$/.exec(part.trim());
+    const m = /^([mdu])([0-7]*)(?:\.([0-7]+))?$/.exec(part.trim());
     if (!m) continue;
     out.push({
       id: out.length + 1,
-      kind: m[1] === 'm' ? 'mem' : 'dis',
+      kind: m[1] === 'm' ? 'mem' : m[1] === 'd' ? 'dis' : 'mmu',
       addr: m[2] || '0',
       words: m[3] ? parseInt(m[3], 8) : 64,
     });
@@ -472,6 +481,144 @@ function DisassemblyView({
   </div>`;
 }
 
+/* ---- the memory management registers ------------------------------------ */
+
+// A page descriptor read out in words: every field the KT11-D has. PDR<2:1> is
+// the access field, <3> the direction the page grows in, <14:8> how far it
+// reaches, and <6> whether anything has been written into it since the
+// descriptor was last loaded. The rest of the word does not exist on this
+// model and always reads zero.
+//
+// The length is given in words rather than in the 32-word blocks PLF counts:
+// what the reader is checking is how far the page reaches, and PLF is there
+// beside it for whoever is checking the register itself.
+const ACF_NAMES = ['non-resident: any access aborts', 'read-only: a write aborts',
+  'not implemented: any access aborts', 'read/write'];
+
+function pdrTitle(pdr: number): string {
+  const plf = (pdr >> 8) & 0o177;
+  const down = (pdr & 0o10) !== 0;
+  // upward, blocks 0..PLF are inside the page; downward, PLF..127 are
+  const blocks = down ? 128 - plf : plf + 1;
+  return (
+    ACF_NAMES[(pdr >> 1) & 3] +
+    ', expands ' +
+    (down ? 'downward' : 'upward') +
+    ', ' +
+    blocks * 32 +
+    ' words (PLF ' +
+    plf +
+    ')' +
+    (pdr & 0o100 ? ', written into' : '')
+  );
+}
+
+// Where the page address register sends its page. The PAF is a physical address
+// in 64-byte units, so the page's first word lands at PAF<<6 whatever virtual
+// address the page itself covers.
+function parTitle(par: number, page: number, width: number): string {
+  return (
+    'virtual ' +
+    octalStr(page * 0o20000, 16) +
+    ' relocates to ' +
+    octalStr((par & 0o7777) * 64, width)
+  );
+}
+
+// The eight pages of both modes, one row per page, the two registers of a mode
+// beside each other. Read down a column and it is one mode's map of the whole
+// virtual address space; read across a row and it is what the two modes make of
+// the same 8K of it.
+//
+// Which pair is in force is the mode in the status word, and that column is
+// marked: the registers of the mode the CPU is not in are as real as the
+// others, they are simply not what the next reference goes through.
+function MmuTable({
+  kernel,
+  user,
+  mode,
+  width,
+}: {
+  kernel: DebugMmuPages;
+  user: DebugMmuPages;
+  mode?: string;
+  width: number;
+}) {
+  const live = (m: string) => (m === mode ? ' dbg-mmu-live' : '');
+  const cells = (p: DebugMmuPages, m: string, page: number) => [
+    html`<td class=${'dbg-mmu-par' + live(m)} title=${parTitle(p.par[page], page, width)}
+      >${octalStr(p.par[page], 16)}</td>`,
+    html`<td class=${live(m)} title=${pdrTitle(p.pdr[page])}>${octalStr(p.pdr[page], 16)}</td>`,
+  ];
+  return html`<table class="dbg-mmu mono">
+    <thead>
+      <tr>
+        <th></th>
+        <th colspan="2" class=${'dbg-mmu-mode' + live('user')}>user</th>
+        <th colspan="2" class=${'dbg-mmu-mode' + live('kernel')}>kernel</th>
+      </tr>
+      <tr>
+        <th>page</th>
+        <th class=${'dbg-mmu-par' + live('user')}>PAR</th>
+        <th class=${live('user')}>PDR</th>
+        <th class=${'dbg-mmu-par' + live('kernel')}>PAR</th>
+        <th class=${live('kernel')}>PDR</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${Array.from({ length: 8 }, (_, page) => {
+        const base = page * 0o20000;
+        return html`<tr>
+          <td class="dbg-mmu-page"
+            title=${'virtual ' + octalStr(base, 16) + ' to ' + octalStr(base + 0o17777, 16)}
+            >${page}</td>
+          ${cells(user, 'user', page)}
+          ${cells(kernel, 'kernel', page)}
+        </tr>`;
+      })}
+    </tbody>
+  </table>`;
+}
+
+// The panel: the page registers of a processor that has them, and otherwise the
+// reason there are none to show. They are internal to the CPU — no bus cycle
+// reaches them — so this is the only place they can be seen.
+function MmuView({ cpu, onClose }: { cpu: DebugCpu | null; onClose: () => void }) {
+  const mmu = cpu?.mmu;
+  const pages = mmu && mmu.kernel && mmu.user;
+  // The mode the next reference relocates through. A mode field holding one of
+  // the two encodings an 11/34 does not have marks no column, which is the
+  // truth: neither map is the one that reference would use.
+  const mode = cpu?.psw?.has_modes ? cpu.psw.mode : undefined;
+  return html`<div class="card dbg-view">
+    <${ViewHead} title="Memory management" onClose=${onClose}>
+      ${mmu &&
+      html`<span class=${'disk-status ' + (mmu.enabled ? 'ok' : 'idle')}
+        >${mmu.enabled ? 'relocating' : 'off'}</span>`}
+      ${pages && mode && html`<span class="pill">in ${mode} mode</span>`}
+    </${ViewHead}>
+    <div class="card-body">
+      ${!pages &&
+      html`<p class="muted dbg-reason">${
+        cpu === null
+          ? 'reading the processor…'
+          : cpu.mmu
+            ? 'this processor reports no page registers'
+            : cpu.reason ||
+              'no memory management registers are readable: this processor either has none or ' +
+                'is not holding still to be read'
+      }</p>`}
+      ${pages &&
+      html`<${MmuTable} kernel=${mmu!.kernel!} user=${mmu!.user!} mode=${mode}
+        width=${cpu?.addr_width || 18} />`}
+      ${pages &&
+      !mmu!.enabled &&
+      html`<p class="muted dbg-note">Relocation is off: these registers hold what was last
+        written into them, and the machine is addressing memory unmapped.</p>`}
+    </div>
+  </div>`;
+}
+
 /* ---- the page ----------------------------------------------------------- */
 
 export function DebugPage() {
@@ -503,6 +650,14 @@ export function DebugPage() {
   const change = (id: number, patch: Partial<ViewSpec>) =>
     sync(views.map((v) => (v.id === id ? { ...v, ...patch } : v)));
   const close = (id: number) => sync(views.filter((v) => v.id !== id));
+  // The page registers are one set, not a place in memory: a second panel of
+  // them would show the same eight rows, so the button opens the one and closes
+  // it again rather than adding.
+  const mmuOpen = views.find((v) => v.kind === 'mmu');
+  const toggleMmu = () => {
+    if (mmuOpen) close(mmuOpen.id);
+    else sync(views.concat({ id: nextId.current++, kind: 'mmu', addr: '0', words: 64 }));
+  };
 
   const read = async (probe = false) => {
     setBusy(true);
@@ -526,6 +681,9 @@ export function DebugPage() {
     <div class="dbg-toolbar">
       <button class="btn" onClick=${() => add('mem')}>New Memory View</button>
       <button class="btn" onClick=${() => add('dis')}>New Disassembly</button>
+      ${cpu?.mmu &&
+      html`<button class="btn" onClick=${toggleMmu}
+        >${mmuOpen ? 'Hide' : 'Show'} Memory Management</button>`}
       ${cpu?.mmu?.enabled &&
       html`<span class="dbg-warn-inline">Memory management is on: these views read physical
         addresses, and the program counter above is a virtual one.</span>`}
@@ -537,9 +695,11 @@ export function DebugPage() {
           ? html`<${MemoryView} key=${v.id} spec=${v} cpu=${cpu}
               onChange=${(p: Partial<ViewSpec>) => change(v.id, p)}
               onClose=${() => close(v.id)} />`
-          : html`<${DisassemblyView} key=${v.id} spec=${v} cpu=${cpu}
-              onChange=${(p: Partial<ViewSpec>) => change(v.id, p)}
-              onClose=${() => close(v.id)} />`
+          : v.kind === 'dis'
+            ? html`<${DisassemblyView} key=${v.id} spec=${v} cpu=${cpu}
+                onChange=${(p: Partial<ViewSpec>) => change(v.id, p)}
+                onClose=${() => close(v.id)} />`
+            : html`<${MmuView} key=${v.id} cpu=${cpu} onClose=${() => close(v.id)} />`
       )}
       ${views.length === 0 &&
       html`<p class="muted dbg-empty">No views open. Open as many as the work needs — following a
