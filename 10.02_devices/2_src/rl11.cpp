@@ -500,6 +500,11 @@ void RL11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
                     if ((get_register_dato_value(busreg_DA) & 0x02) != 0x02) { // bit<0:1> must be 1,
                         //			if ((get_register_dato_value(busreg_DA) & 0xf7) != 0x03) { // bit<0:1> must be 1,
                         do_operation_incomplete("DA bit 2 not set");
+                    } else if (!drive->enabled.value) {
+                        // Nothing in that slot answers, so the controller waits
+                        // out its timeout: an empty slot is how a program finds
+                        // which drives a machine carries.
+                        do_operation_incomplete("no drive in the selected slot");
                     } else {
                         if (get_register_dato_value(busreg_DA) & 0x08) // bit 3: reset status?
                             drive->clear_error_register();
@@ -643,10 +648,17 @@ void RL11_c::do_controller_status(bool do_intr, const char *debug_info)
 {
     RL0102_c *drive = selected_drive();
     uint16_t tmp = 0;
-    bool drive_error_any = drive->drive_error_line; // save, may change
+    // A select field naming a slot with no drive in it reaches nothing: an
+    // absent drive holds neither Drive Ready nor Drive Error, because both are
+    // lines the drive itself asserts over the cable. A function addressed there
+    // still ends in Operation Incomplete, which is the controller's own timeout
+    // rather than a report from a drive. CZRLG writes such a select field while
+    // testing the register and expects a clean read-back.
+    bool drive_installed = drive != nullptr && drive->enabled.value;
+    bool drive_error_any = drive_installed && drive->drive_error_line; // save, may change
     bool controller_ready = (state == RL11_STATE_CONTROLLER_READY);
     //bit 0: drive ready
-    if (drive->drive_ready_line)
+    if (drive_installed && drive->drive_ready_line)
         tmp |= BIT(0);
     // bits <1:3>: function code
     tmp |= (function_code << 1);
