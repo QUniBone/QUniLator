@@ -1,10 +1,20 @@
-# QUniBone
+# QUniLator
 
-Linux-to-UNIBUS and Linux-to-QBUS bridge for DEC PDP-11 systems. A BeagleBone
-Black plugged into a UNIBUS or QBUS backplane emulates peripherals, exercises
-devices, and helps diagnose and repair vintage hardware. One codebase serves
-both buses — **UniBone** for UNIBUS, **QBone** for QBUS — selected at compile
-time via `#define UNIBUS` / `#define QBUS`.
+QUniLator bridges a DEC bus and Linux. It runs on a BeagleBone Black carried by
+a card in a UNIBUS or QBUS backplane, and presents controllers, drives, memory,
+terminal lines and network interfaces to a real PDP-11, PDP-10 or VAX as cards
+that answer like the originals — device and controller together, at the bus
+level, with nothing between the machine and the emulation but the backplane.
+
+Four names run through the project: **QUniLator** is the software and a running
+installation of it, **UniBone** the card that drives UNIBUS, **QBone** the card
+that drives QBUS, and the **BeagleBone** the computer either card carries. One
+codebase serves both buses, selected at compile time via `-DUNIBUS` / `-DQBUS`.
+
+**The manual is at
+[vaxbusters.org/qunilator](https://vaxbusters.org/qunilator/)** — what QUniLator
+is, which card your machine takes, installing it, the acceptance test and the
+configuration catalogue. This page is the repository's front door.
 
 ## Heritage
 
@@ -27,177 +37,114 @@ here — Jörg Hoppe's original codebase is preserved at
 
 ## Status
 
-**QBone (QBUS)** runs on real hardware. The DELQA Ethernet emulation passes
-DEC's CZQNA diagnostic under XXDP, and 2.11BSD boots and networks over it.
+**QBone (QBUS)** runs on real hardware and is exercised continuously. 2.11BSD
+boots from an emulated MSCP volume, networks over the emulated DELQA and dumps
+to an emulated TK50. The device models are validated against DEC's own XXDP
+diagnostics — CZQNA for the DELQA, CVDZA for the DZV11, CVDHA for the DHV11,
+and the RL, TS and TMSCP families among them.
 
-**UniBone (UNIBUS)** is untested in this fork. It cross-compiles, CI builds and
-packages it, and the `unibone` image comes off the same script as `qbone` — but
-none of it has been exercised on a UniBone in a live backplane. The DEUNA
-Ethernet emulation in particular has never been run against an operating system;
-it is a port of an unfinished prototype and should be treated as a starting
-point for debugging rather than a working device. If you have UNIBUS hardware,
-reports are welcome.
+**UniBone (UNIBUS)** now runs on a UniBone card. Twenty-one bring-up issues
+were found and fixed against it, the emulated PDP-11/20 and 11/34 boot XXDP
+from an emulated RL02, and a VAX-11/780 core boots VMS V4.7 from an emulated
+UDA50 — see [`docs/unibone-bringup-issues.md`](docs/unibone-bringup-issues.md)
+and [`docs/vax-host.md`](docs/vax-host.md). What is still untried is a UniBone
+in a live, terminated backplane driving real cards: the emulated processors
+have run against the card's internal bus, and whether one on a physical bus can
+reach the card's own emulated devices is an open question. The DEUNA has been
+carried through VMS boots on the emulated VAX, with three defects fixed there;
+no guest's network stack has driven it on a real UNIBUS machine.
 
-## What's new here
+If you have UNIBUS hardware, reports are welcome.
 
-- **Web interface** — browser console (xterm.js) with configuration, panel view,
-  and log pages, served over HTTP with admin authentication.
-- **DELQA Ethernet emulation** — QBUS Ethernet controller bridged onto the host
-  LAN, with a station address derived from the bone's own MAC.
-- **DEUNA Ethernet emulation** — the UNIBUS counterpart. Untested; see Status.
+## What the machine sees
+
+| | |
+|---|---|
+| **Disk** | RL11 with RL01/RL02 · RK11 with RK05 · MSCP (UDA50 and friends) · RS11/RF11 DECdisk · RX11 and RX211 with RX01/RX02 floppies |
+| **Tape** | TM11/TS11 · TMSCP |
+| **Memory** | a card's worth of the BeagleBone's DDR, at an address range you name |
+| **Serial** | DL11-W · DZV11 · DHV11 |
+| **Network** | DELQA · DEUNA, bridged to the host LAN |
+| **Bootstrap** | M9312 · MRV11-D · MXV11-B2 |
+| **Clocks** | KW11-L line clock · KW11-P programmable clock |
+| **Graphics** | VCB01 / QVSS framebuffer |
+| **Processor** | KA11 (11/20) and KD11-EA (11/34 with KT11-D), validated against the original DEC MAINDEC diagnostics · a VAX-11/780 core — UNIBUS only, since a QBone drives a real CPU board beside it |
+| **Other** | KE11 EAE · a device exposing the card's own LEDs and switches · lamps-and-switches panels over I²C |
+
+## What this fork adds
+
+- **Web interface** — the whole of operating a machine, in a browser: a
+  dashboard of widgets (console, drives, front panel, memory, ROM), an image
+  library, saved configurations, machine control, a log stream, and a system
+  page that updates the software in place.
+- **A debug workbench** — memory and disassembly views, as many as the work
+  needs, held in the URL so a screen comes back on reload. The disassembler
+  knows which processor the machine carries and names the I/O-page addresses an
+  instruction refers to. It works on either kind of machine, because the card is
+  bus master and asks the processor nothing.
+- **Configurations** — the set of devices a machine carries, saved, applied,
+  selected by DIP switch at startup, and checked before it is written so two
+  devices cannot land on one backplane slot.
+- **A machine that comes up dark** — the configuration is loaded at startup but
+  nothing reaches the bus until the machine is switched on, because a card is
+  fitted to a machine and configured afterwards. A configuration marked
+  `autostart` overrides that, says so in the log, and raises a notice that
+  stands until somebody acknowledges it.
+- **Ethernet emulation** — DELQA on QBUS and DEUNA on UNIBUS, bridged onto the
+  host LAN, with a station address derived from the BeagleBone's own MAC.
 - **Debian 13 support** — runs on current Debian, loading the PRU firmware
   through `remoteproc`.
-- **Distributable SD-card image** — a `.deb` package and image builder that
+- **A distributable SD-card image** — a `.deb` package and image builder that
   self-configure on first boot: SSH host keys, the filesystem grown to fill the
-  card, and per-bone personalization.
+  card, and per-installation personalization. Later releases arrive over apt.
+- **One identity** — the name and password created on first use reach the web
+  interface, the SMB, FTP and SFTP shares of the image library, and an ssh
+  session.
 - **Status LEDs** — emulator state on the BeagleBone user LEDs.
-- **2.11BSD QBONE kernel configuration** for the emulated machine.
+- **2.11BSD QBONE kernel configurations** for the emulated machine.
+- **An MCP server** ([`mcp-server/`](mcp-server)) wrapping the API, so an agent
+  can drive a machine — power, devices, console, XXDP diagnostics.
 
 ## Installing
 
 The supported path is the ready-made card image. It carries Debian 13, the
 emulator, the cape overlay and the boot settings, and configures itself on first
-boot.
-
-### 1. Get the image
-
-Download the image for your bus. These links always give you the newest
-release:
+boot. These links always give the newest release:
 
 - **[qbone-dist.img.xz](https://github.com/QUniBone/QUniLator/releases/latest/download/qbone-dist.img.xz)** — QBUS
-- **[unibone-dist.img.xz](https://github.com/QUniBone/QUniLator/releases/latest/download/unibone-dist.img.xz)** — UNIBUS (untested; see Status)
+- **[unibone-dist.img.xz](https://github.com/QUniBone/QUniLator/releases/latest/download/unibone-dist.img.xz)** — UNIBUS
 
-Release notes are on the [latest release
-page](https://github.com/QUniBone/QUniLator/releases/latest).
-
-### 2. Write it to a microSD card
-
-8 GB or larger. The image is shrunk to fit the release and grows to fill the
-card on first boot.
+Write it to a microSD card of 8 GB or larger — the image grows to fill the card
+on first boot:
 
     xz -dc qbone-dist.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 
 Replace `/dev/sdX` with the card — on macOS `/dev/rdiskN`, and check it twice,
-`dd` will not ask. Raspberry Pi Imager, balenaEtcher and `bmaptool` all handle
-the `.xz` directly if you would rather not use `dd`.
+`dd` will not ask. Then fit the card, apply power, and wait out the first boot:
+it takes 2–3 minutes and includes a reboot of its own, so do not pull power in
+between. The user LEDs say how far it has got, and a bouncing sweep across
+`usr0`–`usr2` means the emulator is running.
 
-### 3. Fit the cape and power on
+It takes a DHCP address and answers on port 80 — try `http://qbone.local/` (or
+`http://unibone.local/`), a service browser, or a USB cable, which puts the
+BeagleBone at a fixed `192.168.7.2`. The interface asks you to create the
+operator identity before anything else.
 
-Fit the cape, insert the card, apply power. The image is built to run from the
-microSD; the cape occupies the eMMC data lines, so the eMMC is disabled by the
-overlay and unusable while the cape is fitted. If the bone comes up on
-something other than the card, hold the S2 boot button while applying power to
-force SD boot.
-
-### 4. Wait out the first boot
-
-**First boot takes 2–3 minutes and includes a reboot of its own.** Setup runs in
-two passes: the first applies boot settings and moves `eth0` onto a bridgeable
-driver, then reboots; the second finds everything in place and starts the
-emulator. Do not pull power in between — watch the four user LEDs next to the
-Ethernet jack instead.
-
-For the first few seconds after power-on the LEDs mean nothing in particular:
-the bootloader and then the kernel drive them with their own defaults, so you
-get brief flashes while the bootloader runs, then a double-beat heartbeat on
-`usr0` with the others flickering on card and CPU activity. The patterns below
-start once userspace is far enough along to take the LEDs over, and the whole
-sequence — bootloader flashes, kernel defaults, then the indicators — runs a
-second time after the first-boot reboot.
-
-From then on, the three LEDs `usr0`–`usr2` show how far the bone has got. A
-growing run of LEDs blinking together at half-second intervals means it is still
-working:
-
-| LEDs | Blinking | Meaning |
-|---|---|---|
-| `X··` | 0.5 s | booting |
-| `XX·` | 0.5 s | configuring |
-| `XXX` | 0.5 s | starting |
-| `X··` `·X·` `··X` `·X·` … | ~150 ms sweep | **ready** |
-
-The bouncing sweep is what you are waiting for: it means the emulator service is
-running. Anything else still blinking after about five minutes means setup did
-not finish, and the serial console below is how to find out why.
-
-`usr3` is SD-card activity, relocated there because `usr1` is now an indicator.
-
-### 5. Find its network address
-
-The bone takes a DHCP address on `br0`, the bridge carrying both the bone's own
-networking and the emulated machine. Its hostname is `qbone` (or `unibone`). In order of
-convenience:
-
-1. **`http://qbone.local/`** — the image runs an mDNS responder, so the name
-   resolves without any setup on your network. Your client has to speak mDNS
-   too: macOS does, Linux needs `libnss-mdns`, Windows needs Bonjour.
-2. **A service browser** — the web interface advertises itself over DNS-SD as
-   *\<hostname\> (QBone ddeeff)*, so it appears in Safari's Bonjour bookmarks, in
-   `avahi-browse -rt _http._tcp`, and in the network view of most file managers.
-3. **Plug a USB cable into the bone** — it appears as a network interface with
-   the bone at a fixed **192.168.7.2**, handing your machine an address on the
-   same subnet. No LAN, no DHCP server, nothing to discover:
-   `http://192.168.7.2/`.
-4. **Your router's DHCP lease table** — look for the hostname. The bridge pins
-   the bone's uplink MAC, so the lease is stable across reboots.
-5. **The serial console** — a 3.3 V USB-serial adapter on the J1 header,
-   115200 8N1. The address is printed above the login prompt, so you do not
-   need to log in. This is also the console of last resort if the bone never
-   reaches the network: the USB gadget *serial* getty is masked in the image
-   because it wedges the boot, so USB serial is not a way in — only USB
-   networking is.
-
-The address is also printed on the console and into the journal once the bone
-has one — `journalctl -u '*-announce'`, or re-run `sudo qunilator-announce` to print
-it again.
-
-Then open `http://<address>/`. The web interface binds port 80 and asks you to
-set an admin password on first use.
-
-### More than one bone on the network
-
-Addresses never collide: each bone's DHCP lease is keyed to its own uplink MAC,
-and each emulated Ethernet controller derives its station address from that MAC
-as well.
-
-Names would, so each bone carries an identifier taken from its uplink MAC and
-advertises itself as **`qbone (QBone ddeeff)`**. Two bones are told apart in a
-service browser out of the box, and the identifier stays with a bone however it
-is named.
-
-The hostname is still shared, so a second bone finds `qbone` taken and mDNS
-renames it `qbone-2.local`, a third `qbone-3.local`. They stay reachable, but
-which bone gets which suffix follows boot order and can change. Give each bone
-its own name instead:
-
-    sudo qunilator-rename pdp11-front
-
-The name then follows everywhere by itself: `pdp11-front.local`, the DNS-SD
-entry, the DHCP lease in your router's table, and the login banner. Run it with
-no argument to see the current name. Nothing in the emulator depends on the
-hostname — the name in the emulator binary, its unit and the package is the bus
-it serves, not the machine's name, and is unaffected.
-
-### Command names
-
-Only the emulator itself is built for a particular bus. Everything around it —
-the setup, network, rename, resize, announce and LED tools, their units, and the
-files under `/etc/qunilator`, `/var/lib/qunilator` and `/usr/share/qunilator` —
-manages a BeagleBone carrying a cape and is the same on either board, so all of
-it is named `qunilator`, after the software. The bus-specific name appears in
-three places: the emulator binary (`/usr/bin/qbone` or `/usr/bin/unibone`), the
-unit that runs it, and the package you install.
+[**Installing the software**](https://vaxbusters.org/qunilator/start/install/)
+in the manual covers all of this properly: reading the LEDs, the five ways of
+finding it on the network, running more than one on a LAN, and renaming them.
 
 ## Updating
 
-The card image ships with the package repository preconfigured, so a bone
-keeps itself current from later releases:
+The card image ships with the package repository preconfigured, so an
+installation keeps itself current — from the System page in the web interface,
+or from a shell:
 
     sudo apt update && sudo apt upgrade
 
 Every release also attaches the packages themselves —
 `qbone_<version>_armhf.deb` and `unibone_<version>_armhf.deb` — beside the
-images, for a bone built another way.
+images, for a BeagleBone built another way.
 
 ## Building from source
 
@@ -206,13 +153,26 @@ Cross-build with `crossbuild.sh` (Docker, no toolchain to install):
     ./crossbuild.sh        # the bus build.env records
     ./crossbuild.sh -q     # QBUS
     ./crossbuild.sh -u     # UNIBUS
+    ./crossbuild.sh -h     # every option
 
 The first run copies `build.env.example` to `build.env` and stops so it can be
-filled in: it names the board a deploy goes to and the bus to build for.
+filled in: it names the card a deploy goes to and the bus to build for. `-d`
+deploys after a successful build. A UNIBUS build runs the emulated processor
+cores against the MAINDEC diagnostics first, so a broken core stops the build.
 
-For deploying to a bone and building distributable images, see
-[`DISTRIBUTION.md`](DISTRIBUTION.md) and
-[`debian-installation.md`](debian-installation.md).
+For deploying and for building distributable images, see
+[`docs/distribution.md`](docs/distribution.md) and
+[`docs/debian-installation.md`](docs/debian-installation.md).
+
+## Documentation
+
+The user manual is published at
+[vaxbusters.org/qunilator](https://vaxbusters.org/qunilator/) and lives in
+[`docs/manual/`](docs/manual), readable as plain Markdown in a checkout;
+[`docs/site/`](docs/site) is the generator that publishes it. Beside it,
+[`docs/`](docs) holds the working record — requirements per area of work,
+implementation plans, and the findings from bringing the cards up.
+[`docs/README.md`](docs/README.md) indexes all of it.
 
 ## License
 
