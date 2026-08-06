@@ -125,11 +125,16 @@ jobs:
         run: |
           img=${{ matrix.board }}-dist.img.xz
           tag='${{ inputs.release_tag || github.ref_name }}'
+          # A half-downloaded image is the likeliest thing to go wrong between
+          # here and a card, and the cheapest to catch: the digest is published
+          # beside the image, in the shape sha256sum -c reads, and the installer
+          # checks it before it writes anything.
+          sha256sum "$img" > "$img.sha256"
           # the deb and image jobs both target this one release; create is
           # best-effort (release-deb usually makes it first), then upload the asset
           gh release create "$tag" --title "$tag" \
             --notes "qbone and unibone packages and appliance images. Image base: $BASE_VERSION." 2>/dev/null || true
-          gh release upload "$tag" "$img" --clobber
+          gh release upload "$tag" "$img" "$img.sha256" --clobber
 
       - uses: actions/upload-artifact@v7
         with:
