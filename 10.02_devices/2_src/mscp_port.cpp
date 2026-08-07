@@ -1118,15 +1118,18 @@ mscp_port_c::DMAWrite(
     uint8_t* buffer)
 {
     //
-    // A malformed transfer (odd length, or an address past the machine's
+    // A malformed transfer (odd length, or a range reaching past the machine's
     // memory) is reported to the caller as a failed DMA rather than aborting
     // the process. On the board this runs with asserts live, so an odd length
     // or a bad guest buffer pointer from a host command must not take the
     // whole controller down -- the caller turns a false return into an NXM /
-    // host-buffer-access error.
+    // host-buffer-access error. The whole range is checked, not just its start:
+    // a descriptor pointing near the top of memory with a length that runs off
+    // the end is as reachable from a guest as one pointing past it outright.
     //
     if ((lengthInBytes % 2) != 0 ||
-        address >= 2 * qunibus->addr_space_word_count)
+        static_cast<uint64_t>(address) + lengthInBytes >
+            2 * static_cast<uint64_t>(qunibus->addr_space_word_count))
     {
         DEBUG_FAST("DMAWrite rejected: address o%o length %zu", address, lengthInBytes);
         return false;
@@ -1156,14 +1159,16 @@ mscp_port_c::DMARead(
 {
     //
     // Reject a malformed transfer (odd length, buffer smaller than the
-    // transfer, or an address past the machine's memory) by returning nullptr,
-    // which the caller reports as an NXM / host-buffer-access error. With
-    // asserts live on the board, aborting here would take the controller down
-    // on a bad guest buffer pointer supplied by a host command.
+    // transfer, or a range reaching past the machine's memory) by returning
+    // nullptr, which the caller reports as an NXM / host-buffer-access error.
+    // With asserts live on the board, aborting here would take the controller
+    // down on a bad guest buffer pointer supplied by a host command. The whole
+    // range is checked, not just its start -- see DMAWrite().
     //
     if (bufferSize < lengthInBytes ||
         (lengthInBytes % 2) != 0 ||
-        address >= 2 * qunibus->addr_space_word_count)
+        static_cast<uint64_t>(address) + lengthInBytes >
+            2 * static_cast<uint64_t>(qunibus->addr_space_word_count))
     {
         DEBUG_FAST("DMARead rejected: address o%o length %zu buffer %zu",
             address, lengthInBytes, bufferSize);
@@ -1189,9 +1194,11 @@ mscp_port_c::DMARead(
     }
     else
     {
-//    ARM_DEBUG_PIN0(1) ;
-//printf("UDA.DMARead NXM: address=%07o,len=%d words, failing addr=%07o",
-//		address, lengthInBytes >> 1, dma_request.qunibus_end_addr ) ;
+        // The caller frees the buffer only when it gets one, so a failed
+        // transfer has to free it here: every NXM a guest provokes would
+        // otherwise leak the whole transfer size, and a driver probing for
+        // memory through the controller does that in a loop.
+        delete[] buffer;
         return nullptr;
     }
 }

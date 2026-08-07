@@ -697,19 +697,49 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
     assert(dma_request.priority_slot < PRIORITY_SLOT_COUNT);
     assert(dma_request.level_index == PRIORITY_LEVEL_INDEX_NPR);
 
-    // setup device request
-    assert(wordcount > 0);
-    assert((unibus_addr + 2*wordcount) <= qunibus->addr_space_byte_count);
     // lowest priority reserved for CPU
     assert(!dma_request.is_cpu_access || dma_request.priority_slot == 31);
+
+    // setup device request
+    // The extent of a transfer is not this adapter's to trust: a device gets it
+    // from a guest, out of the buffer descriptors of an MSCP command or the
+    // address registers of a disk controller, so a driver bug puts a range past
+    // the end of the machine's memory here. Asserts are live in the deployed
+    // binary, so refusing is what keeps one bad descriptor from aborting the
+    // emulator - machine, disks and console with it. The caller sees a transfer
+    // that did not happen, which is what a bus that did not answer looks like,
+    // and the devices already report that upward as NXM.
+    if (wordcount == 0
+            || (uint64_t) unibus_addr + 2 * (uint64_t) wordcount
+                    > (uint64_t) qunibus->addr_space_byte_count) {
+        ERROR("DMA %s of %u words at %s refused: %s",
+              qunibus_c::control2text(qunibus_cycle), wordcount,
+              qunibus->addr2text(unibus_addr),
+              wordcount == 0 ? "no words to transfer"
+                             : "runs past the end of the address space");
+        dma_request.success = false;
+        dma_request.qunibus_start_addr = unibus_addr;
+        dma_request.qunibus_end_addr = unibus_addr;
+        dma_request.complete = true;
+        return;
+    }
 
 #if defined(UNIBUS)
     if (!dma_request.is_cpu_access && qunibus->is_address_overlay_active())
         ERROR("UNIBUS ADDR lines overlayed (for M9312 boot) @ %s. Only CPU 24/26 access intended!", qunibus->addr2text(unibus_addr)) ;
 #endif
 
-    // ignore calls if INIT condition
+    // ignore calls if INIT condition.
+    // A device reuses one dma_request_c for every transfer it makes, so leaving
+    // success untouched here hands it the result of its *previous* transfer: a
+    // DATI refused because INIT was asserted would read as one that succeeded,
+    // and the device would consume whatever words the last transfer left in the
+    // buffer. requests_cancel_scheduled() is careful about this for the same
+    // reason - the request it releases gets success = false.
     if (line_INIT) {
+        dma_request.success = false;
+        dma_request.qunibus_start_addr = unibus_addr;
+        dma_request.qunibus_end_addr = unibus_addr;
         dma_request.complete = true;
         return;
     }
