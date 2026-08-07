@@ -688,7 +688,10 @@ the registers it would start from are real.
          "v": false, "c": false, "has_modes": true, "mode": "kernel",
          "previous_mode": "kernel"},
  "ir": 0, "bus_addr": 0, "bus_data": 0, "cycle_count": 0,
- "mmu": {"enabled": false, "mmr0": 0, "mmr1": 0, "mmr2": 0},
+ "mmu": {"enabled": false, "mmr0": 0, "mmr1": 0, "mmr2": 0,
+         "kernel": {"par": [0, 0, 0, 0, 0, 0, 0, 8128],
+                    "pdr": [0, 0, 0, 0, 0, 0, 0, 77406]},
+         "user":   {"par": [0, …], "pdr": [0, …]}},
  "powered": true, "halted": true, "addr_width": 18}
 ```
 
@@ -700,6 +703,16 @@ stack does not have to work out from the mode which of the two SP is showing.
 bits reading as "kernel", they are bits that do not exist, and `mode` and
 `previous_mode` are absent. `mmu` is absent on a model without memory
 management, and `run_state` is one of `halted`, `running`, `waiting`.
+
+`mmu.kernel` and `mmu.user` are the page registers of each mode, eight per
+array, page 0 first — a KT11-D holds one set per mode and relocates through the
+set PSW\<15:14\> names. **Both sets are reported whatever mode the CPU is in**:
+which one is in force follows from `psw.mode`, and a debugger reading a machine
+that has just trapped out of user mode wants the other set as much as this one.
+The PAR and the PDR of a page are separate registers at separate addresses and
+are reported as two arrays rather than paired, though they are read together.
+They are internal to the processor, so this is the only way to see them — the
+KT11-D window in the I/O page belongs to a real 11/34, not to an emulated one.
 
 A running processor answers with the identity and the counter alone:
 

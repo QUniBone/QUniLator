@@ -182,6 +182,15 @@ public:
 		uint16_t mmr0;
 		uint16_t mmr1;
 		uint16_t mmr2;
+		// The eight page address and page descriptor registers of each mode.
+		// A KT11-D holds one set per mode and relocates through the set the
+		// PSW names, so which of them is in force is a property of the
+		// processor rather than of the MMU: the reader gets both and reads
+		// the mode out of the status word.
+		uint16_t kernel_par[8];
+		uint16_t kernel_pdr[8];
+		uint16_t user_par[8];
+		uint16_t user_pdr[8];
 	};
 
     cpu_base_c();
