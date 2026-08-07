@@ -1,3 +1,20 @@
+qbone (1.19.1-1) trixie; urgency=low
+
+  * A board flashed from an image now reads the setup file its card carries.
+    The unit that does it was installed and never enabled: the package enables
+    it, every systemd call in the package is guarded on a running systemd, and
+    the image installs the package in a chroot where none is running. A board
+    ignored the file and came up asking to be set up by hand. The image build
+    now reads back the state of every unit the appliance needs and stops rather
+    than shipping one disabled.
+  * The bridge is configured before networkd takes a lease, so a board keeps the
+    name it registers. Two leases were taken in one boot - the base image's
+    configuration took one under networkd's default identity, this replaced it,
+    and releasing it withdrew the name from the DHCP server's DNS, including the
+    record for the address the board had settled on.
+
+ -- Hans Huebner <hans@huebner.org>  Fri, 07 Aug 2026 20:43:51 +0200
+
 qbone (1.19.0-1) trixie; urgency=low
 
   * The image is 429 MB smaller. The free space it ships with was added on top
