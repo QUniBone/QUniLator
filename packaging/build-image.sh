@@ -42,7 +42,8 @@ DIST=${DIST:-$HERE/dist}
 OUT=${OUT:-$HERE/${NAME}-dist.img}
 # room to add beyond the base while building; the image is shrunk to fit after
 GROW=${GROW:-4G}
-# margin left in the root filesystem after the shrink
+# free space the shipped root filesystem carries. The first boot grows it to
+# fill the card, so this only has to last until then.
 MARGIN_MB=${MARGIN_MB:-400}
 
 ls "$DIST"/base.img.xz >/dev/null 2>&1 || { echo "missing $DIST/base.img.xz" >&2; exit 1; }
@@ -385,10 +386,20 @@ trap - EXIT
 
 echo "-- shrinking the root filesystem to fit"
 e2fsck -pf "${LO}p3" >/dev/null 2>&1 || true
-# minimum, then add the margin
+# The margin is how much free space the image has to ship with, not an amount
+# added to whatever the shrink arrives at. resize2fs cannot pack a filesystem
+# down to what it holds - metadata it will not relocate sets a floor well above
+# that - so the floor usually leaves more free space than the margin asks for,
+# and adding the margin on top of it writes those megabytes to every card for
+# nothing. Every one of them is time somebody watches a progress bar.
 MINBLK=$(resize2fs -P "${LO}p3" 2>/dev/null | awk '{print $NF}')
 BLKSZ=$(dumpe2fs -h "${LO}p3" 2>/dev/null | awk -F: '/Block size/{print $2}' | tr -d ' ')
-TARGET=$(( MINBLK + MARGIN_MB * 1024 * 1024 / BLKSZ ))
+COUNT=$(dumpe2fs -h "${LO}p3" 2>/dev/null | awk -F: '/Block count/{print $2}' | tr -d ' ')
+FREE=$(dumpe2fs -h "${LO}p3" 2>/dev/null | awk -F: '/Free blocks/{print $2}' | tr -d ' ')
+WANTED=$(( COUNT - FREE + MARGIN_MB * 1024 * 1024 / BLKSZ ))
+TARGET=$MINBLK
+[ "$WANTED" -gt "$TARGET" ] && TARGET=$WANTED
+echo "-- holding $(( (COUNT - FREE) * BLKSZ / 1000000 )) MB, floor $(( MINBLK * BLKSZ / 1000000 )) MB, margin ${MARGIN_MB} MB: $(( TARGET * BLKSZ / 1000000 )) MB"
 resize2fs "${LO}p3" "$TARGET" >/dev/null
 e2fsck -pf "${LO}p3" >/dev/null 2>&1 || true
 

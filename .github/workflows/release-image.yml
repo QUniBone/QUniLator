@@ -22,7 +22,7 @@ on:
         required: false
         default: '4G'
       margin_mb:
-        description: 'Free space left in the root filesystem after the shrink (MARGIN_MB)'
+        description: 'Free space the shipped root filesystem carries (MARGIN_MB)'
         required: false
         default: '400'
 
