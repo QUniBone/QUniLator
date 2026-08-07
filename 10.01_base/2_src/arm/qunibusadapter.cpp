@@ -183,14 +183,27 @@ bool qunibusadapter_c::register_device(qunibusdevice_c& device)
 
     // verify: does the device implement a register address already
     // in use by another device? it happened!
+    // Two cards answering one address is something an operator arranges from
+    // the web interface - a second DL11 left at the factory address, a base
+    // address moved onto a neighbour - and a configuration is applied the same
+    // way. So it refuses, like the misconfiguration above: the device stays off
+    // the bus and install() reports it, rather than the machine going down over
+    // an address somebody typed.
     for (i = 0; i < device.register_count; i++) {
         qunibusdevice_register_t *device_reg = &(device.registers[i]);
         device_reg->addr = device.base_addr.value + 2 * i;
         uint8_t reghandle = IOPAGE_REGISTER_ENTRY(*pru_iopage_registers, device_reg->addr);
-        if (reghandle != 0 && reghandle != IOPAGE_REGISTER_HANDLE_ROM)
-            FATAL(
-                "register_device() IO page address conflict: %s implements register at %s, belongs already to other device.",
-                device.name.value.c_str(), qunibus->addr2text(device_reg->addr));
+        if (reghandle != 0 && reghandle != IOPAGE_REGISTER_HANDLE_ROM) {
+            ERROR("register_device() IO page address conflict: %s implements register at %s, "
+                  "belongs already to other device; refusing to install",
+                  device.name.value.c_str(), qunibus->addr2text(device_reg->addr));
+            // give the backplane slot back: the device is not installed, and it
+            // must look uninstalled to a later attempt (install() asserts on a
+            // device that still carries a handle).
+            devices[device_handle] = NULL;
+            device.handle = 0;
+            return false;
+        }
     }
 
     for (i = 0; i < 0x1000; i++) {
@@ -213,6 +226,8 @@ bool qunibusadapter_c::register_device(qunibusdevice_c& device)
     if (free_handles < device.register_count) {
         ERROR("register_device() can not register device %s, needs %d register, only %d left.",
               device.name.value.c_str(), device.register_count, free_handles);
+        devices[device_handle] = NULL; // see the address-conflict refusal above
+        device.handle = 0;
         return false;
     }
     register_handle++; // first free handle
@@ -239,15 +254,8 @@ bool qunibusadapter_c::register_device(qunibusdevice_c& device)
 		pru_iopage_reg->event_register_handle = 0; 
         // "active" devices are marked with controller handle
         if (device_reg->active_on_dati || device_reg->active_on_dato) {
-            if (device_reg->active_on_dati && !device_reg->active_on_dato && device_reg->writable_bits != 0x0000) {
-                FATAL(
-                    "register_device() Register configuration error for device %s, register idx %u:\n"
-                    "A writable device register may not be passive on DATO and active on DATI.\n"
-                    "Passive DATO -> value written only saved in shared " QUNIBUS_NAME " reg value\n"
-                    "Active DATI: shared " QUNIBUS_NAME " reg value updated from flipflops -> DATO value overwritten\n"
-                    "make DATO active too -> datao value saved in DATO flipflops",
-                    device.name.value.c_str(), i);
-            }
+            // a writable register active on DATI and passive on DATO was
+            // refused at the top of this function, before any state was touched
             pru_iopage_reg->event_register_handle = device_reg->register_handle;
             if (device_reg->active_on_dati)
                 pru_iopage_reg->event_flags |= IOPAGEREGISTER_EVENT_FLAG_DATI;

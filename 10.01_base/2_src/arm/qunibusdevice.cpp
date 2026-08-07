@@ -84,7 +84,18 @@ bool qunibusdevice_c::on_param_changed(parameter_c *param)
 			priority_slot.readonly = true;
 			intr_vector.readonly = true;
 			intr_level.readonly = true;
-			install(); // visible on QBUS/UNIBUS
+			if (!install()) { // visible on QBUS/UNIBUS
+				// the adapter refused it - an address another device already
+				// answers, or a full bus. Give the QBUS/UNIBUS parameters back
+				// so the operator can move the device and try again, and deny
+				// the enable: "enabled" stays false, which is what the web API
+				// reports back.
+				base_addr.readonly = false;
+				priority_slot.readonly = false;
+				intr_vector.readonly = false;
+				intr_level.readonly = false;
+				return false; // device denied enable
+			}
 			on_after_install() ;
 		} else {
 			// disable
@@ -132,14 +143,17 @@ void qunibusdevice_c::set_default_bus_params(uint32_t _default_base_addr,
 	intr_level.readonly = false;
 }
 
-void qunibusdevice_c::install(void)
+bool qunibusdevice_c::install(void)
 {
-	// registration is refused for a bad register configuration or an exhausted
-	// bus, rather than aborting; leave the device off the bus instead of
-	// powering on an unregistered device.
+	// registration is refused for a bad register configuration, an address that
+	// belongs to another device, or an exhausted bus, rather than aborting;
+	// leave the device off the bus instead of powering on an unregistered
+	// device. The refusal is passed back so the device does not end up reading
+	// as enabled while it carries no handle - it would abort on the next
+	// uninstall, which is the abort this refusal exists to avoid.
 	if (!qunibusadapter->register_device(*this)) {
 		ERROR("device %s not installed: registration refused", name.value.c_str());
-		return;
+		return false;
 	}
 	// now has handle
 	warn_on_slot_collisions();
@@ -149,6 +163,7 @@ void qunibusdevice_c::install(void)
 	on_power_changed(SIGNAL_EDGE_NONE, SIGNAL_EDGE_RAISING);
 	// ACLO active, DCLO inactive
 	on_power_changed(SIGNAL_EDGE_NONE, SIGNAL_EDGE_FALLING);
+	return true;
 }
 
 void qunibusdevice_c::uninstall(void) {
