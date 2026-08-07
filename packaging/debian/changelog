@@ -1,3 +1,15 @@
+qbone (1.19.0-1) trixie; urgency=low
+
+  * The image is 429 MB smaller. The free space it ships with was added on top
+    of what the shrink arrived at, and the shrink cannot pack a filesystem down
+    to what it holds: metadata it will not relocate sets a floor, and on the
+    last release that floor already left 684 MB free before the 400 MB margin
+    went on. Taking the margin as a floor on free space instead leaves the
+    promise where it was and writes 429 MB less to every card, which is a
+    minute or so off every write on a slow one.
+
+ -- Hans Huebner <hans@huebner.org>  Fri, 07 Aug 2026 14:02:59 +0200
+
 qbone (1.18.0-1) trixie; urgency=low
 
   * A setup file may carry several ssh keys, as the authorized_keys file it is
