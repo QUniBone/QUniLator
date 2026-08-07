@@ -73,6 +73,15 @@ private:
 
 	pthread_mutex_t requests_mutex;
 
+	// A DMA chunk the PRU is still executing, whose request was force-completed
+	// by requests_cancel_scheduled() on an INIT or power event. The transfer
+	// runs to its end and signals like any other, but nothing is waiting for it
+	// any more: until that signal arrives the PRU still owns mailbox->dma, and
+	// filling it for the next request would run two transfers together. Set on
+	// the cancel, cleared by the completion that belongs to it. Written and read
+	// only under requests_mutex.
+	bool dma_orphan_on_pru;
+
 	unibuscpu_c	*registered_cpu ; // only one unibuscpu_c may be registered
 
 	// Helper map: find register via 8bit handle
@@ -82,7 +91,9 @@ private:
 	void worker_init_event(void);
 	void worker_power_event(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge);
 	void worker_deviceregister_event(void);
-	void worker_device_dma_chunk_complete_event(void);
+	// false: the signal belonged to a transfer cancelled while the PRU ran it,
+	// and was discarded - the request standing in its place is still running
+	bool worker_device_dma_chunk_complete_event(void);
 	void worker_intr_complete_event(uint8_t level_index);
 	void worker(unsigned instance) override; // background worker function
 

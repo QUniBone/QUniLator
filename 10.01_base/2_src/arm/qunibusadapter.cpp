@@ -102,6 +102,8 @@ qunibusadapter_c::qunibusadapter_c() :     device_c()
 
     requests_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+    dma_orphan_on_pru = false;
+
     requests_init();
 
     registered_cpu = NULL;
@@ -432,6 +434,14 @@ void qunibusadapter_c::requests_cancel_scheduled(void)
         for (unsigned slot = 0; slot < PRIORITY_SLOT_COUNT; slot++)
             if ((req = prl->slot_request[slot])) {
                 dma_request_c *dmareq;
+                // A DMA chunk already handed to the PRU keeps running - the
+                // tables are cleared here, the transfer is not. It still owns
+                // mailbox->dma and will still signal when it ends, so remember
+                // it: no further chunk may be pushed until that signal has been
+                // taken, or the two transfers share one mailbox and the
+                // completion is accounted against the wrong request.
+                if (level_index == PRIORITY_LEVEL_INDEX_NPR && req->executing_on_PRU)
+                    dma_orphan_on_pru = true;
                 req->executing_on_PRU = false;
                 if ((dmareq = dynamic_cast<dma_request_c *>(req)))
                     dmareq->success = false; // device gets an DMA error, but will not understand
@@ -513,6 +523,16 @@ void qunibusadapter_c::request_execute_active_on_PRU(unsigned level_index)
 
         dma_request_c *dmareq = dynamic_cast<dma_request_c *>(prl->active);
         assert(dmareq);
+
+        // The PRU is still finishing a chunk whose request was cancelled out
+        // from under it. mailbox->dma belongs to that transfer until its signal
+        // arrives, so this request waits: it stays active and scheduled, and
+        // worker_device_dma_chunk_complete_event() pushes it as soon as the
+        // orphan's completion has been taken.
+        if (dma_orphan_on_pru) {
+            DEBUG("DMA held off: the PRU still carries a cancelled transfer");
+            return;
+        }
 
         // We do the device_DMA transfer in chunks so we can handle arbitrary buffer sizes.
         // (the PRU mailbox has limited space available.)
@@ -870,9 +890,13 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
             if ((activereq == &dma_request) && !EVENT_IS_ACKED(*mailbox, dma)) {
                 assert(activereq->is_cpu_access);
                 // transfer DATI data to buffer, set success flag, schedule next request
-                worker_device_dma_chunk_complete_event(); // do not signal, uses complete_mutex
+                // The signal may belong to a transfer cancelled while the PRU
+                // was running it, taken here because this thread dispatches the
+                // event itself. Then it says nothing about this access - which
+                // is only being pushed to the PRU now - and the spin goes on.
+                if (worker_device_dma_chunk_complete_event())
+                    completed = true;
                 EVENT_ACK(*mailbox, dma);
-                completed = true;
             } else if (activereq == NULL)
                 // request aborted by worker_power_event()
                 completed = true;
@@ -1255,13 +1279,26 @@ void qunibusadapter_c::worker_deviceregister_event()
 // called by PRU signal when DMA transmission complete
 // Called for device DMA() chunk,
 // or cpu_DATA_transfer()
-void qunibusadapter_c::worker_device_dma_chunk_complete_event() 
+bool qunibusadapter_c::worker_device_dma_chunk_complete_event()
 {
     priority_request_level_c *prl = &request_levels[PRIORITY_LEVEL_INDEX_NPR];
     bool more_chunks;
     // Must run under pthread_mutex_lock(&requests_mutex) ;
 
     dma_request_c *dmareq = dynamic_cast<dma_request_c *>(prl->active);
+
+    // The signal of a transfer that requests_cancel_scheduled() force-completed
+    // while the PRU was executing it. Whatever mailbox->dma now says describes
+    // that transfer, and the device it belonged to was released long ago, so
+    // none of it may be accounted against the request standing in its place.
+    // Take the signal, give the mailbox back, and start whatever was held off.
+    if (dma_orphan_on_pru) {
+        DEBUG("DMA <- PRU: completion of a cancelled transfer, discarded");
+        dma_orphan_on_pru = false;
+        if (prl->active)
+            request_execute_active_on_PRU(PRIORITY_LEVEL_INDEX_NPR);
+        return false;
+    }
 
     // A bus INIT or power event (worker_init_event/worker_power_event ->
     // requests_cancel_scheduled) can clear prl->active and force-complete the
@@ -1272,7 +1309,7 @@ void qunibusadapter_c::worker_device_dma_chunk_complete_event()
     // stale completion, as request_active_complete() and
     // worker_intr_complete_event() already do. The caller acks the event.
     if (dmareq == NULL)
-        return;
+        return false;
     if (!dmareq->is_cpu_access)
         DEBUG("DMA <- PRU: dev %s, status=%u, wordcount=%u, cur_addr=%s",
               dmareq->device ? dmareq->device->name.value.c_str() : "none",
@@ -1367,6 +1404,7 @@ void qunibusadapter_c::worker_device_dma_chunk_complete_event()
             request_execute_active_on_PRU(PRIORITY_LEVEL_INDEX_NPR);
 
     }
+    return true;
 }
 
 // called by PRU signal when INTR vector transmission complete
