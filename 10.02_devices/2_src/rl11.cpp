@@ -132,6 +132,7 @@ RL11_c::RL11_c(void) :    storagecontroller_c()
     unsigned i;
 
     state = RL11_STATE_CONTROLLER_READY;
+    operation_incomplete_reason = NULL;
     name.value = "rl"; // only one supported
     type_name.value = "RL11";
     log_label = "rl";
@@ -339,6 +340,9 @@ void RL11_c::reset(void)
     function_code = 0;
     interrupt_enable = 0;
     qunibus_address_msb = 0;
+    // A Get Status handed to worker() and overtaken by the reset is not owed
+    // its timeout any more; the command it belonged to is gone.
+    operation_incomplete_reason = NULL;
     clear_errors();
     intr_request.edge_detect_reset();
     change_state(RL11_STATE_CONTROLLER_READY);
@@ -499,18 +503,31 @@ void RL11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
                     // XXDP boot: seen 001217 and 00646
                     if ((get_register_dato_value(busreg_DA) & 0x02) != 0x02) { // bit<0:1> must be 1,
                         //			if ((get_register_dato_value(busreg_DA) & 0xf7) != 0x03) { // bit<0:1> must be 1,
-                        do_operation_incomplete("DA bit 2 not set");
+                        operation_incomplete_reason = "DA bit 2 not set";
                     } else if (!drive->enabled.value) {
                         // Nothing in that slot answers, so the controller waits
                         // out its timeout: an empty slot is how a program finds
                         // which drives a machine carries.
-                        do_operation_incomplete("no drive in the selected slot");
+                        operation_incomplete_reason = "no drive in the selected slot";
                     } else {
                         if (get_register_dato_value(busreg_DA) & 0x08) // bit 3: reset status?
                             drive->clear_error_register();
                         set_MP_dati_value(drive->status_word, __func__);
                     }
-                    do_command_done();
+                    if (operation_incomplete_reason)
+                        // The 200 ms an unanswering drive takes to time out may
+                        // not be waited out here. This runs on the adapter's
+                        // event thread, inside the register access, and the PRU
+                        // holds the bus cycle open until that thread comes back
+                        // - so the wait stops the machine dead: no bus cycles,
+                        // and the arbitration worker the PRU reaches only
+                        // between them is not run either, which the emulated
+                        // processor reports as the PRU being stopped or hung.
+                        // worker() does the waiting, on the device's own
+                        // thread, the way every other long command does.
+                        execute_function_delayed = true;
+                    else
+                        do_command_done();
                     break;
                 default:
                     execute_function_delayed = true;
@@ -994,6 +1011,15 @@ void RL11_c::worker(unsigned instance)
 
         // all commands: OPI, if drive powered off
         clear_errors();
+
+        // A Get Status the register logic could not answer. Waiting out the
+        // drive's timeout is this thread's to do - see where the reason is set.
+        if (operation_incomplete_reason) {
+            const char *reason = operation_incomplete_reason;
+            operation_incomplete_reason = NULL;
+            do_operation_incomplete(reason);
+            continue;
+        }
 
         if (drive->state.value == RL0102_STATE_power_off) {
             DEBUG_FAST("cmd %d ignored, drive powered off.", function_code);

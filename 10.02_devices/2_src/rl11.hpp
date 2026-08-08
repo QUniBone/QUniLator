@@ -48,6 +48,13 @@ private:
     // bits<21:17> of BAE register
 
     volatile bool error_operation_incomplete; // OPI. operation aborted because of error
+
+    // Why a Get Status could not be answered in the register access, or NULL.
+    // The drive's 200 ms timeout is waited out by worker(): doing it in the
+    // register access would hold a bus cycle open for all of it. Written on the
+    // adapter's event thread, taken by worker(), and the controller is not
+    // ready between the two, so only one of them ever has it.
+    const char *operation_incomplete_reason;
     volatile bool error_dma_timeout; // DMA operation addresses non existing memory
     volatile bool error_writecheck; // mismatch between memory and disk data
     volatile bool error_header_not_found; // sector address notfound on track

@@ -427,9 +427,40 @@ A slot shared at **different** levels was tested the same way and does not wedge
 the listing ran to 236 entries with `blocked` at zero throughout, so the refusal
 added above does cover the reachable case.
 
-That leaves the fix ARM-side and small — look at the mailbox on every wake *and*
-every timeout, rather than only on a fresh interrupt — which is step 3, and worth
-doing before 3.1 touches the same handshake.
+**Fixed, and it was a device, not the engine.** The guess above — that the
+worker's `res > 0` guard was losing a wake — was wrong, and testing it said so:
+the change was built, deployed and made no difference at all. A backtrace of the
+adapter's thread taken while the machine was wedged named the line instead:
+
+    #3  __nanosleep64
+    #4  timeout_c::wait_ms(unsigned int)
+    #5  RL11_c::do_operation_incomplete(char const*)
+
+`do_operation_incomplete()` waits out the 200 ms a drive takes to not answer, and
+two of its callers were in `on_after_register_access()` — which runs on the
+adapter's event thread, inside the register access, with the PRU holding the bus
+cycle open until that thread returns. So the wait stopped the machine dead for
+200 ms at a time: no bus cycles, and the arbitration worker that the PRU reaches
+only between them not run either, which is what the processor was reporting. The
+waiting is worker()'s now, on the device's own thread, the way every other long
+command already does it — which is also the more faithful emulation, since a
+real RL11 releases the bus and sets the error 200 ms later rather than freezing
+the machine.
+
+The slot collision only made it frequent. The reachable case needs no collision
+at all: **Get Status on an empty drive slot**, which is how a program finds out
+which drives a machine carries. Boot ROM polling a drive that is not there, no
+collision anywhere, 30 seconds:
+
+    before:  62 "arbitration pending for >100ms" errors
+    after:    0
+
+XXDP boots from DL0 and lists 191 files with none, and the counters stay at
+`blocked=0`, `pending=false` throughout.
+
+The `res > 0` guard is still there and still looks wrong — on a timeout the
+worker deliberately ignores an event standing in the mailbox. Nothing observed
+needs it, so it is left alone rather than changed on a hunch; worth its own look.
 
 ---
 
