@@ -297,7 +297,7 @@ newer code already follows — *user- or guest-reachable conditions refuse with
 an error; only internal invariants assert* — should be applied to the whole
 file. Most of section 2 disappears when it is.
 
-### 4.2 Register-handle allocation fragments and never recovers holes
+### 4.2 Register-handle allocation fragments and never recovers holes — FIXED in 0856452
 `qunibusadapter.cpp:204-218` allocates register handles strictly above the
 highest handle in use; holes from unregistered devices are only reclaimed when
 everything above them is also gone. A long-running board whose operator
@@ -305,6 +305,13 @@ enables/disables devices in an unlucky order creeps toward the 254-handle
 ceiling and then refuses installs until restart. A free-list (or first-fit
 scan for a contiguous run, which the 4-bit-per-entry map makes easy) fixes it
 permanently.
+
+First-fit it is, over `register_by_handle[]` — the allocation record itself,
+rather than the IO page map the old scan derived it from. The unlucky order is
+two devices leapfrogging: disable one and re-enable it above the other, then the
+same for the other. On ubx that refused `rl` on round 40 before the fix and ran
+200 rounds after it. Cycling a *single* device never showed it, the top dropping
+back when the device on top leaves, which is why it went unnoticed.
 
 ### 4.3 Dead and vestigial code in the hot files — PARTIALLY in 347348d
 - `qunibusadapter_c::on_init_changed()` (`qunibusadapter.cpp:125-131`) is never
