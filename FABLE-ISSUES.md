@@ -139,7 +139,7 @@ The same function already returns `false` for the other configuration errors
 `install()` handles refusal cleanly (`qunibusdevice.cpp:140-143`). This one
 check should refuse, not abort.
 
-### 2.4 An INTR re-raise with a different vector aborts the service
+### 2.4 An INTR re-raise with a different vector aborts the service — FIXED in 92df982
 `qunibusadapter.cpp:963-964`: `assert(scheduled_intr_req->vector ==
 intr_request.vector)` — a device that re-raises a pending interrupt after its
 vector parameter changed (vectors are editable while a device is unplugged,
@@ -147,6 +147,13 @@ but the pending request survives INIT paths) aborts the process. The comment
 above it already says "if different vector, it may not be ignored"; do that —
 update the scheduled request's vector (and the PRU's `mailbox->intr.vector[]`
 if not yet granted) instead of asserting.
+
+The vector assertion could not in fact fire: a device re-raises by passing the
+same `intr_request_c` member, so it compared the object with itself. The abort
+that *was* reachable is the `device` assertion on the line above — two devices
+put on one priority slot at one level, which `warn_on_slot_collisions()` only
+warns about. Both are gone; the vector is now corrected on a pending request,
+which matters because MSCP and DELQA take their vector from the guest.
 
 ---
 
