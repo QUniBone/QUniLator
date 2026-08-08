@@ -247,7 +247,7 @@ hours. Add the `delete[]` in the failure branch.
 
 ## 2. Showstopper bugs
 
-### 2.1 Mailbox DMA overwrite race → assert abort (known, issue #92) — FIXED in c3c87a9 and PENDING
+### 2.1 Mailbox DMA overwrite race → assert abort (known, issue #92) — FIXED in c3c87a9 and 6ce0736
 `qunibusadapter.cpp:1249` (`assert(wordcount_transferred <= dmareq->wordcount)`).
 `requests_cancel_scheduled()` (INIT/power event) clears `prl->active` and
 releases the waiting device **while the PRU is still executing the transfer**
@@ -346,7 +346,7 @@ put on one priority slot at one level, which `warn_on_slot_collisions()` only
 warns about. Both are gone; the vector is now corrected on a pending request,
 which matters because MSCP and DELQA take their vector from the guest.
 
-### 2.5 A priority-slot collision wedges the PRU's interrupt arbitration — ARM SIDE FIXED in 4d1622d
+### 2.5 A priority-slot collision wedges the PRU's interrupt arbitration — FIXED in 4d1622d and 5f39247
 *Not from the review — found on ubx while fixing 2.4.*
 
 `qunibusdevice.cpp`, `warn_on_slot_collisions()`: two devices given the same
