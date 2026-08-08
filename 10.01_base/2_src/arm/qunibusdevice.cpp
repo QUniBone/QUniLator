@@ -145,18 +145,29 @@ void qunibusdevice_c::set_default_bus_params(uint32_t _default_base_addr,
 
 bool qunibusdevice_c::install(void)
 {
-	// registration is refused for a bad register configuration, an address that
-	// belongs to another device, or an exhausted bus, rather than aborting;
-	// leave the device off the bus instead of powering on an unregistered
-	// device. The refusal is passed back so the device does not end up reading
-	// as enabled while it carries no handle - it would abort on the next
-	// uninstall, which is the abort this refusal exists to avoid.
+	// A device is refused rather than installed where its bus placement
+	// conflicts with a device already there. Both checks run before anything is
+	// claimed, so a refusal leaves nothing to undo, and both pass the refusal
+	// back so the device does not end up reading as enabled while it is not on
+	// the bus.
+
+	// the arbitration side: a priority slot another device already arbitrates
+	// on at the same level
+	if (!check_slot_collisions()) {
+		ERROR("device %s not installed: priority slot already arbitrating",
+				name.value.c_str());
+		return false;
+	}
+
+	// the register side: a bad register configuration, an address that belongs
+	// to another device, or an exhausted bus. Powering on an unregistered
+	// device would abort on the next uninstall, which is the abort this
+	// refusal exists to avoid.
 	if (!qunibusadapter->register_device(*this)) {
 		ERROR("device %s not installed: registration refused", name.value.c_str());
 		return false;
 	}
 	// now has handle
-	warn_on_slot_collisions();
 
 	// Reset device by generating DCLO power cycle.
 	// Do not toggle ACLO, meant for run/stop conditions (CPU start, M9312 boot vector redirection)
@@ -304,8 +315,8 @@ void qunibusdevice_c::log_register_event(const char *change_info,
 }
 
 // search device in global list mydevices[]
-qunibusdevice_c *qunibusdevice_c::find_installed_by_request_slot(uint8_t priority_slot,
-		const qunibusdevice_c *except)
+qunibusdevice_c *qunibusdevice_c::find_installed_by_request_level_slot(uint8_t level,
+		uint8_t priority_slot, const qunibusdevice_c *except)
 {
 	std::list<device_c *>::iterator devit;
 	for (devit = device_c::mydevices.begin(); devit != device_c::mydevices.end(); ++devit) {
@@ -314,33 +325,86 @@ qunibusdevice_c *qunibusdevice_c::find_installed_by_request_slot(uint8_t priorit
 			// all dma and intr requests
 			for (std::vector<dma_request_c *>::iterator reqit = ubdevice->dma_requests.begin();
 					reqit < ubdevice->dma_requests.end(); reqit++)
-				if ((*reqit)->get_priority_slot() == priority_slot)
+				if ((*reqit)->get_priority_slot() == priority_slot
+						&& (level == 0 || (*reqit)->get_level() == level))
 					return ubdevice;
 			for (std::vector<intr_request_c *>::iterator reqit = ubdevice->intr_requests.begin();
 					reqit < ubdevice->intr_requests.end(); reqit++)
-				if ((*reqit)->get_priority_slot() == priority_slot)
+				if ((*reqit)->get_priority_slot() == priority_slot
+						&& (level == 0 || (*reqit)->get_level() == level))
 					return ubdevice;
 		}
 	}
 	return NULL;
 }
 
+qunibusdevice_c *qunibusdevice_c::find_installed_by_request_slot(uint8_t priority_slot,
+		const qunibusdevice_c *except)
+{
+	return find_installed_by_request_level_slot(0 /*any level*/, priority_slot, except);
+}
+
 // A slot is a backplane position, and the grant chain runs through it, so two
 // devices on the bus in one slot have no defined arbitration order between
-// them. Report that when it happens; unplugged devices share slots freely.
-void qunibusdevice_c::warn_on_slot_collisions(void)
+// them. Where they also arbitrate on one level it is worse than undefined: a
+// level and a slot are one entry of the adapter's schedule table
+// (request_levels[level].slot_request[slot]), which holds a single request, so
+// the second device's interrupt is dropped for as long as the first one's sits
+// there - and the run that found this left the PRU's interrupt arbitration
+// wedged, the emulated processor unable to make progress, until the service was
+// restarted. There is no working outcome to allow, so the device stays off the
+// bus and the operator can move it: "slot" is a writable parameter of an
+// unplugged device, which is how it got here.
+//
+// A slot shared at different levels costs no table entry and is only reported.
+// Unplugged devices share slots freely; only the bus is searched.
+bool qunibusdevice_c::check_slot_collisions(void)
 {
 	std::vector<priority_request_c *> requests;
 	requests.insert(requests.end(), dma_requests.begin(), dma_requests.end());
 	requests.insert(requests.end(), intr_requests.begin(), intr_requests.end());
-	for (std::vector<priority_request_c *>::iterator reqit = requests.begin();
-			reqit != requests.end(); reqit++) {
+	// The taken schedule table entries first, and on their own: where the
+	// device is refused anyway, the slot it merely shares is not worth a line.
+	bool installable = true;
+	std::vector<priority_request_c *>::iterator reqit;
+	for (reqit = requests.begin(); reqit != requests.end(); reqit++) {
 		uint8_t slot = (*reqit)->get_priority_slot();
+		uint8_t level = (*reqit)->get_level();
+		if (slot >= PRIORITY_SLOT_COUNT)
+			continue; // request never given a slot: not on the backplane
+		qunibusdevice_c *other = find_installed_by_request_level_slot(level, slot, this);
+		if (other) {
+			// get_level() reports NPR as 8, one past BR7
+			char levelname[8];
+			if (level > 7)
+				snprintf(levelname, sizeof levelname, "NPR");
+			else
+				snprintf(levelname, sizeof levelname, "BR%u", (unsigned) level);
+			ERROR("Slot %u at %s is used by device %s: %s arbitrates there too",
+					(unsigned) slot, levelname, other->name.value.c_str(),
+					name.value.c_str());
+			installable = false;
+		}
+	}
+	if (!installable)
+		return false;
+
+	// The device goes on the bus. A slot it shares at another level is still a
+	// backplane position two cards claim, so say so - once per slot: a device
+	// arbitrates from the one slot on several levels, DMA and INTR both.
+	uint32_t slots_reported = 0;
+	for (reqit = requests.begin(); reqit != requests.end(); reqit++) {
+		uint8_t slot = (*reqit)->get_priority_slot();
+		if (slot >= PRIORITY_SLOT_COUNT || (slots_reported & (1u << slot)))
+			continue;
 		qunibusdevice_c *other = find_installed_by_request_slot(slot, this);
-		if (other)
+		if (other) {
 			WARNING("Slot %u used by device %s is also used by %s", (unsigned) slot,
 					name.value.c_str(), other->name.value.c_str());
+			slots_reported |= 1u << slot;
+		}
 	}
+	return true;
 }
 
 // returns a string of form

@@ -91,6 +91,12 @@ public:
 	uint8_t get_priority_slot(void) {
 		return priority_slot;
 	}
+	// BR4..BR7 for an INTR; a DMA request arbitrates on NPR and reports 8,
+	// one past BR7, so that level and slot together identify a request's
+	// place in arbitration whatever kind it is.
+	uint8_t get_level(void) {
+		return level_index + 4;
+	}
 };
 
 class dma_request_c: public priority_request_c {
@@ -159,9 +165,6 @@ public:
 
 	void set_level(uint8_t level);
 	void set_vector(uint16_t vector);
-	uint8_t get_level(void) {
-		return level_index + 4;
-	}
 	uint8_t get_vector(void) {
 		return vector;
 	}
