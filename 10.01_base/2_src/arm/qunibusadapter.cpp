@@ -308,8 +308,7 @@ void qunibusadapter_c::unregister_device(qunibusdevice_c& device)
     // if its a CPU, disable PRU to "with_CPU"
     unibuscpu_c *cpu = dynamic_cast<unibuscpu_c*>(&device);
     if (cpu) {
-        mailbox->param = 0;
-        mailbox_execute(ARM2PRU_CPU_ENABLE);
+        mailbox_execute(ARM2PRU_CPU_ENABLE, 0);
         registered_cpu = NULL;
     }
 

@@ -354,7 +354,34 @@ extern volatile mailbox_t *mailbox;
 void mailbox_print(void);
 int mailbox_connect(void);
 void mailbox_test1(void);
-bool mailbox_execute(uint8_t request);
+
+// A command to the PRU is its payload and the request byte together, but only
+// the request byte used to be serialized: mailbox_execute() took the lock, and
+// every caller filled its payload before calling it. The payloads
+// mailbox->param, ->initializationsignal, ->buslatch and the rest are one
+// union, so two threads preparing different commands overwrite each other's
+// fields, and the PRU picks up half of each - a power cycle from the web API
+// against a CPU start, say, where initializationsignal.id lands in the low half
+// of param. The answer a command leaves behind (buslatch.val) is the same
+// story read the other way.
+//
+// So the lock covers fill, request and read-back now. Hold it with
+// mailbox_lock_c and use mailbox_execute_locked() inside; the plain
+// mailbox_execute() takes the lock itself and must not be called while holding
+// it, the mutex being non-recursive.
+class mailbox_lock_c {
+public:
+	mailbox_lock_c();
+	~mailbox_lock_c();
+	mailbox_lock_c(const mailbox_lock_c&) = delete;
+	mailbox_lock_c& operator=(const mailbox_lock_c&) = delete;
+};
+
+bool mailbox_execute_locked(uint8_t request); // caller holds mailbox_lock_c
+
+bool mailbox_execute(uint8_t request); // for a request with no payload
+// The single-word payload, which most commands carry, filled under the lock.
+bool mailbox_execute(uint8_t request, uint32_t param);
 
 #else
 // included by PRU code

@@ -77,9 +77,10 @@ void mailbox_print(void)
  * result in "val"
  */
 static unsigned n = 0;
-void mailbox_test1() 
+void mailbox_test1()
 {
 	unsigned reg_sel = 0;
+	mailbox_lock_c lock; // mailbox_test shares its union with every other payload
 	for (reg_sel = 0; reg_sel < 8; reg_sel++) {
 		//TODO: memory barrier??
 //		__sync_synchronize() ;
@@ -104,10 +105,21 @@ void mailbox_test1()
 }
 
 /* start cmd to PRU via mailbox. Wait until ready
- * mailbox union members must have been filled.
+ * mailbox union members must have been filled - under this same lock, see
+ * mailbox.h: the payload and the request are one command.
  */
 
 pthread_mutex_t arm2pru_mutex = PTHREAD_MUTEX_INITIALIZER ;
+
+mailbox_lock_c::mailbox_lock_c()
+{
+	pthread_mutex_lock(&arm2pru_mutex) ;
+}
+
+mailbox_lock_c::~mailbox_lock_c()
+{
+	pthread_mutex_unlock(&arm2pru_mutex) ;
+}
 
 // The PRU main loop ACKs every request within a few of its iterations
 // (microseconds). If the PRU firmware is stopped, crashed or restarted, an
@@ -116,11 +128,9 @@ pthread_mutex_t arm2pru_mutex = PTHREAD_MUTEX_INITIALIZER ;
 // Bound the spin, so a dead PRU produces a message instead of a silent freeze.
 #define ARM2PRU_TIMEOUT_MS	100
 
-bool  mailbox_execute(uint8_t request)
+bool mailbox_execute_locked(uint8_t request)
 {
 // write to arm2pru_req must be last memory operation
-	pthread_mutex_lock(&arm2pru_mutex) ;
-
 	__sync_synchronize();
 	uint64_t starttime_ns = timeout_c::abstime_ns() ;
 	while (mailbox->arm2pru_req != ARM2PRU_NONE) {
@@ -128,7 +138,6 @@ bool  mailbox_execute(uint8_t request)
 		if (timeout_c::abstime_ns() - starttime_ns > ARM2PRU_TIMEOUT_MS * 1000000ull) {
 			printf("ERROR: mailbox_execute(%u): PRU busy with request %u for %u ms - PRU stopped or hung?\n",
 					(unsigned) request, (unsigned) mailbox->arm2pru_req, ARM2PRU_TIMEOUT_MS);
-			pthread_mutex_unlock(&arm2pru_mutex) ;
 			return false ;
 		}
 	}
@@ -142,12 +151,22 @@ bool  mailbox_execute(uint8_t request)
 			printf("ERROR: mailbox_execute(%u): PRU did not ACK within %u ms - PRU stopped or hung?\n",
 					(unsigned) request, ARM2PRU_TIMEOUT_MS);
 			mailbox->arm2pru_req = ARM2PRU_NONE; // back to idle for a later restarted PRU
-			pthread_mutex_unlock(&arm2pru_mutex) ;
 			return false ;
 		}
 	}
 	// result false = error
-	bool result = (mailbox->arm2pru_req == ARM2PRU_NONE) ;
-	pthread_mutex_unlock(&arm2pru_mutex) ;
-	return result ;
+	return (mailbox->arm2pru_req == ARM2PRU_NONE) ;
+}
+
+bool  mailbox_execute(uint8_t request)
+{
+	mailbox_lock_c lock ;
+	return mailbox_execute_locked(request) ;
+}
+
+bool  mailbox_execute(uint8_t request, uint32_t param)
+{
+	mailbox_lock_c lock ;
+	mailbox->param = param ;
+	return mailbox_execute_locked(request) ;
 }

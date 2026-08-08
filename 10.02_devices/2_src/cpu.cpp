@@ -388,8 +388,7 @@ void cpu_base_c::start()
     trigger.conditions_clear() ;
 
     runmode.value = true;
-    mailbox->param = 1;
-    mailbox_execute(ARM2PRU_CPU_ENABLE);
+    mailbox_execute(ARM2PRU_CPU_ENABLE, 1);
     set_bus_arbitration(/*arbitrating*/true);
     pc.readonly = true; // can only be set on stopped CPU
     core_set_state(cpu_state_running);
@@ -416,8 +415,7 @@ void cpu_base_c::stop(const char * info, int show_options)
     pc.value = core_get_pc(); // update for editing
 
     runmode.value = false;
-    mailbox->param = 0;
-    mailbox_execute(ARM2PRU_CPU_ENABLE);
+    mailbox_execute(ARM2PRU_CPU_ENABLE, 0);
     set_bus_arbitration(/*arbitrating*/false);
 
     if (info && strlen(info)) {

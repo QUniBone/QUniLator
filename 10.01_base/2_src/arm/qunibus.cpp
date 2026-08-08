@@ -261,21 +261,31 @@ bool qunibus_c::parse_slot(char *txt, uint8_t *priority_slot)
 }
 
 
+// Drive one of the bus signals the PRU raises on command: INIT, ACLO/DCLO,
+// POK/DCOK, HALT. The id and the value are two fields of a payload that shares
+// its union with every other ARM2PRU command, so they are filled under the
+// mailbox lock and the request goes out before it is released - a power cycle
+// from the web API and a CPU start on another thread otherwise interleave
+// their fills and the PRU acts on the mixture.
+static bool set_initializationsignal(uint8_t id, uint8_t val)
+{
+    mailbox_lock_c lock;
+    mailbox->initializationsignal.id = id;
+    mailbox->initializationsignal.val = val;
+    return mailbox_execute_locked(ARM2PRU_INITALIZATIONSIGNAL_SET);
+}
+
 /* pulse INIT cycle for some milliseconds
  */
 void qunibus_c::init()
 {
-    mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_INIT;
-    mailbox->initializationsignal.val = 1;
-    mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+    set_initializationsignal(INITIALIZATIONSIGNAL_INIT, 1);
 #if defined(UNIBUS)
     timeout_c::wait_ms(10); // UNIBUS: PDP-11/70 = 10ms
 #elif defined(QBUS)
     timeout_c::wait_us(10); // QBUS only 10us !
 #endif
-    mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_INIT;
-    mailbox->initializationsignal.val = 0;
-    mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+    set_initializationsignal(INITIALIZATIONSIGNAL_INIT, 0);
 }
 
 // return: bitmask with shortcount BG*/NPG IN_OUT signals
@@ -312,16 +322,21 @@ uint8_t qunibus_c::probe_grant_continuity(bool error_if_closed)
     //     set BG OUT = 0, if IN 0 -> jumper!
 
     // Set BG*_OUT/NPG_OUT bits at latch 0
-    // and read back
-    mailbox->buslatch.addr = 0;
-    mailbox->buslatch.bitmask = PRIORITY_ARBITRATION_BIT_MASK;
-    mailbox->buslatch.val = 0x00;// output 0 = against pullups
-    mailbox_execute(ARM2PRU_BUSLATCH_SET);
+    // and read back. The read-back is part of the command: the answer sits in
+    // the same union another thread's payload would overwrite, so the lock is
+    // held until it has been taken.
+    {
+        mailbox_lock_c lock;
+        mailbox->buslatch.addr = 0;
+        mailbox->buslatch.bitmask = PRIORITY_ARBITRATION_BIT_MASK;
+        mailbox->buslatch.val = 0x00;// output 0 = against pullups
+        mailbox_execute_locked(ARM2PRU_BUSLATCH_SET);
 
-    // Read back BG*_IN/NPG_IN bits from latch 0
+        // Read back BG*_IN/NPG_IN bits from latch 0
 //	mailbox->buslatch.addr = 0;
-//	mailbox_execute(ARM2PRU_BUSLATCH_GET);
-    uint8_t grant_mask = ~ (mailbox->buslatch.val & PRIORITY_ARBITRATION_BIT_MASK);
+//	mailbox_execute_locked(ARM2PRU_BUSLATCH_GET);
+        grant_mask = ~ (mailbox->buslatch.val & PRIORITY_ARBITRATION_BIT_MASK);
+    }
 #endif
     // simulate POWER ON
     powercycle(2);
@@ -361,24 +376,16 @@ void qunibus_c::powercycle(int phase)
      *	 For example, M9312 works only on ACLO as startup condition.
      */
     if (phase & 0x01) { // Power Down
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_ACLO;
-        mailbox->initializationsignal.val = 1;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        set_initializationsignal(INITIALIZATIONSIGNAL_ACLO, 1);
         timeout_c::wait_ms(delay_ms);
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_DCLO;
-        mailbox->initializationsignal.val = 1;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        set_initializationsignal(INITIALIZATIONSIGNAL_DCLO, 1);
         timeout_c::wait_ms(delay_ms);
     }
     if (phase & 0x02) { // Power Up
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_DCLO;
-        mailbox->initializationsignal.val = 0;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        set_initializationsignal(INITIALIZATIONSIGNAL_DCLO, 0);
         timeout_c::wait_ms(delay_ms);
         // CPU generates INIT
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_ACLO;
-        mailbox->initializationsignal.val = 0;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        set_initializationsignal(INITIALIZATIONSIGNAL_ACLO, 0);
         timeout_c::wait_ms(delay_ms);
         // CPU executes power fail vector
     }
@@ -392,9 +399,7 @@ void qunibus_c::powercycle(int phase)
         // failure, and has not become bus master, may maintain the
         // request u n til BINIT L is asserted or the request is
         // acknowledged (in which case regular bus protocol is followed)."
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_POK;
-        mailbox->initializationsignal.val = 0;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        set_initializationsignal(INITIALIZATIONSIGNAL_POK, 0);
         // "Processor software should execute a RESET Instruction 3 ms
         // minimun after the negation of BPOK H. This asserts BINIT L
         // for from 8 to 20 us. Processor software executes a HALT
@@ -405,9 +410,7 @@ void qunibus_c::powercycle(int phase)
         // to protect themselves against erasures and erroneous writes
         // during a power failure.""
         timeout_c::wait_ms(delay_ms);
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_DCOK;
-        mailbox->initializationsignal.val = 0;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        set_initializationsignal(INITIALIZATIONSIGNAL_DCOK, 0);
         // "The Processor asserts BINIT L 1 us minimum after the negation of BDCOK H."
         // "Dc power must remain stable for a minimum of 5 us after the negation of BDCOK H."
         // "BDCOK H must remain negated for a minimnn of 3 ms."
@@ -420,16 +423,12 @@ void qunibus_c::powercycle(int phase)
         // interrupt through the power-fail vector mid-boot ("power fail in boot").
         // Assert BPOK first, while BINIT still holds the CPU, so it cold-starts
         // with power already up and the boot runs uninterrupted.
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_POK;
-        mailbox->initializationsignal.val = 1;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        set_initializationsignal(INITIALIZATIONSIGNAL_POK, 1);
         timeout_c::wait_ms(delay_ms);
         // "Power supply logic ... asserts BDCOK H 3 ms minimum after dc power is
         // restored." The processor negates BINIT after the assertion of BDCOK H
         // and starts from the power-up vector, with BPOK already asserted.
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_DCOK;
-        mailbox->initializationsignal.val = 1;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        set_initializationsignal(INITIALIZATIONSIGNAL_DCOK, 1);
         timeout_c::wait_ms(delay_ms);
     }
 #endif
@@ -439,9 +438,7 @@ void qunibus_c::powercycle(int phase)
 // set state of QBUS  HALT line, like HALT toggle switch on QBUS front panels
 void qunibus_c::set_halt(bool active)
 {
-    mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_HALT;
-    mailbox->initializationsignal.val = active;
-    mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+    set_initializationsignal(INITIALIZATIONSIGNAL_HALT, active);
 }
 #endif
 
@@ -449,8 +446,12 @@ void qunibus_c::set_halt(bool active)
 #if defined(UNIBUS)
 void qunibus_c::set_address_overlay(uint32_t address_overlay)
 {
+    // address_overlay has a field of its own rather than a place in the
+    // payload union, but it is still half of a command: filled here, acted on
+    // by the request, so the two go together under the lock.
+    mailbox_lock_c lock;
     mailbox->address_overlay = address_overlay;
-    mailbox_execute (ARM2PRU_ADDRESS_OVERLAY);
+    mailbox_execute_locked(ARM2PRU_ADDRESS_OVERLAY);
 }
 
 // check: UNIBUS ADDR lines manipulated by (M9312) overlay?
@@ -466,8 +467,7 @@ void qunibus_c::set_cpu_bus_activity(bool active)
 {
     UNUSED(active) ;
 #if defined(QBUS)
-    mailbox->param = active ;
-    mailbox_execute(ARM2PRU_CPU_BUS_ACCESS);
+    mailbox_execute(ARM2PRU_CPU_BUS_ACCESS, active);
 #endif
 }
 
