@@ -20,11 +20,11 @@
 # usage:
 #   ./packaging/build-release.sh          # qbone (QBUS) image
 #   ./packaging/build-release.sh -u       # unibone (UNIBUS) image
-#   ./packaging/build-release.sh -x       # ... and compress it with xz
+#   ./packaging/build-release.sh -x       # ... and compress it as a release does
 #
 #   -u  build the UNIBUS board's image instead of the QBUS board's
 #   -p  skip the package build and use the <name>_*_armhf.deb already in dist/
-#   -x  compress the finished image to <name>-dist.img.xz
+#   -x  compress the finished image to <name>-dist.img.zst and .img.xz
 #   -h  show this summary
 #
 # environment:
@@ -190,8 +190,14 @@ if [ ! -O "$OUT" ]; then
 fi
 
 if [ "$COMPRESS" = 1 ]; then
+    # Both formats a release publishes, from the same bytes: the installer takes
+    # the .zst, which it decompresses faster than a card can be written, and an
+    # imaging tool takes the .xz. zstd is given the file rather than a pipe, so
+    # the frame header carries the size of the image inside it.
     echo "== compressing =="
+    zstd -19 -T0 --long=27 --no-progress -f -o "$OUT.zst" "$OUT"
     xz -T0 -f "$OUT"
+    echo "   $OUT.zst ($(du -h "$OUT.zst" | cut -f1))"
     OUT=$OUT.xz
     WRITE="xz -dc $OUT | sudo dd of=/dev/sdX bs=4M status=progress"
 else

@@ -60,7 +60,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            dpkg-dev device-tree-compiler gcc-arm-linux-gnueabihf libc6-dev-armhf-cross xz-utils
+            dpkg-dev device-tree-compiler gcc-arm-linux-gnueabihf libc6-dev-armhf-cross \
+            xz-utils zstd
 
       - name: Write build.env
         # crossbuild.sh reads the board and its bus from build.env and refuses
@@ -113,28 +114,45 @@ jobs:
 
       - name: Compress the image
         # build-image.sh writes the image as root from its privileged container;
-        # take ownership so xz can set the compressed file's group, then compress.
+        # take ownership so the compressors can set the compressed file's group.
+        #
+        # The image is published twice, from the same bytes. The installer takes
+        # the .zst, which it decompresses at around 250 MB/s - ten times what an
+        # SD card takes, so a write waits on the card. An imaging tool that has
+        # never heard of zstd takes the .xz.
+        #
+        # zstd is given the file rather than a pipe, so the frame header carries
+        # the size of the image inside it and the installer can report progress
+        # against the image rather than against the download. The window spans
+        # 128 MB, which is what a filesystem image full of repetition pays off,
+        # and is the largest a stock zstd decompresses without being asked to.
         run: |
           img=${{ matrix.board }}-dist.img
           sudo chown "$(id -u):$(id -g)" "$img"
+          zstd -19 -T0 --long=27 --no-progress -o "$img.zst" "$img"
           xz -T0 "$img"
+          ls -l "$img".*
 
-      - name: Publish the image to a GitHub Release
+      - name: Publish the images to a GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          img=${{ matrix.board }}-dist.img.xz
           tag='${{ inputs.release_tag || github.ref_name }}'
           # A half-downloaded image is the likeliest thing to go wrong between
-          # here and a card, and the cheapest to catch: the digest is published
-          # beside the image, in the shape sha256sum -c reads, and the installer
-          # checks it before it writes anything.
-          sha256sum "$img" > "$img.sha256"
+          # here and a card, and the cheapest to catch: a digest is published
+          # beside each image, in the shape sha256sum -c reads, and the installer
+          # checks the one beside whichever image it took before it writes
+          # anything.
+          for img in ${{ matrix.board }}-dist.img.zst ${{ matrix.board }}-dist.img.xz; do
+            sha256sum "$img" > "$img.sha256"
+          done
           # the deb and image jobs both target this one release; create is
-          # best-effort (release-deb usually makes it first), then upload the asset
+          # best-effort (release-deb usually makes it first), then upload the assets
           gh release create "$tag" --title "$tag" \
             --notes "qbone and unibone packages and appliance images. Image base: $BASE_VERSION." 2>/dev/null || true
-          gh release upload "$tag" "$img" "$img.sha256" --clobber
+          gh release upload "$tag" ${{ matrix.board }}-dist.img.zst \
+            ${{ matrix.board }}-dist.img.zst.sha256 \
+            ${{ matrix.board }}-dist.img.xz ${{ matrix.board }}-dist.img.xz.sha256 --clobber
 
       - uses: actions/upload-artifact@v7
         with:
