@@ -37,6 +37,7 @@
 #include <inttypes.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 #include <algorithm>
 #include <fstream>
@@ -76,6 +77,53 @@ bool storageimage_base_c::is_zero(uint64_t position, unsigned len)
 }
 
 
+// Expand <image>.gz into <image>, without a shell.
+//
+// The image path is settable through the web API, and it used to be pasted
+// into the command line "zcat <path>.gz ><path>" and handed to system(). A
+// name carrying a space breaks that command; one carrying a semicolon or a
+// backtick runs what it names, as the operator, who has sudo on this board.
+// Here zcat gets the path as an argument rather than as text in a line, and
+// the output file as a file descriptor, so there is no line for anything to be
+// quoted into and no shell to interpret it.
+//
+// A failed expansion takes the half-written file with it: an image left
+// truncated is one the retry above would open as a valid, empty disk.
+static bool uncompress_gz(const std::string &gz_path, const std::string &out_path)
+{
+    int out_fd = ::open(out_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0666);
+    if (out_fd < 0)
+        return false;
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        ::close(out_fd);
+        unlink(out_path.c_str());
+        return false;
+    }
+    if (pid == 0) {
+        // child: image file becomes stdout, then become zcat
+        if (dup2(out_fd, STDOUT_FILENO) < 0)
+            _exit(127);
+        ::close(out_fd);
+        // "--" so a path starting with '-' stays a path
+        execlp("zcat", "zcat", "--", gz_path.c_str(), (char *) NULL);
+        _exit(127); // no zcat on this board
+    }
+    ::close(out_fd);
+
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0)
+        if (errno != EINTR) {
+            unlink(out_path.c_str());
+            return false;
+        }
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        return true;
+    unlink(out_path.c_str());
+    return false;
+}
+
 // http://www.cplusplus.com/doc/tutorial/files/
 
 // open a file, if possible.
@@ -113,10 +161,9 @@ bool storageimage_binfile_c::open(storagedrive_c *_drive, bool create)
             std::string compressed_image_fname = image_fname + ".gz" ;
             if (FILE *fz = fopen(compressed_image_fname.c_str(), "r")) {
                 fclose(fz);
-                std::string uncompress_cmd = "zcat " + compressed_image_fname + " >" + image_fname ;
-                printf("Only compressed image file %s found, expanding \"%s\" ...\n", image_fname.c_str(), uncompress_cmd.c_str()) ;
-                int ret = system(uncompress_cmd.c_str()) ;
-                if (ret != 0) {
+                printf("Only compressed image file %s found, expanding %s ...\n",
+                       image_fname.c_str(), compressed_image_fname.c_str()) ;
+                if (!uncompress_gz(compressed_image_fname, image_fname)) {
                     printf(" FAILED!\n") ;
                     retries = 0 ; // not again
                 } else

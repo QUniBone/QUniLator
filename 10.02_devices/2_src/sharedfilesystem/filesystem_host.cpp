@@ -38,6 +38,10 @@
 
 
 #include <assert.h>
+#include <errno.h>
+#include <ftw.h>
+#include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 #include <limits.h>
 #include <sys/types.h>
@@ -445,20 +449,42 @@ void filesystem_host_c::remove_directory(directory_base_c *_dir)
 }
 
 
+// remove one entry of the walk. FTW_DEPTH has nftw() report a directory after
+// everything inside it, which is the order remove() can act on.
+static int clear_disk_dir_remove(const char *path, const struct stat *sb, int typeflag,
+                                 struct FTW *ftwbuf)
+{
+    UNUSED(sb) ;
+    UNUSED(typeflag) ;
+    if (ftwbuf->level == 0)
+        return 0 ; // the shared directory itself stays
+    if (remove(path) != 0)
+        return -1 ; // stops the walk
+    return 0 ;
+}
+
 // delete everything in the the Linux directory
 void filesystem_host_c::clear_disk_dir()
 {
-    char buffer[4096] ;
     // Boy, this is dangerous. some minor security checks:
     assert(file_exists(&rootpath)) ;
     assert(rootpath.size() >= 4) ;	// not just "/", at least "/tmp" ...
 
-    // https://unix.stackexchange.com/questions/77127/rm-rf-all-files-and-all-hidden-files-without-error
-    // do not remove hidden with just ".*", will recurse upwards to ".." !
-    sprintf(buffer, "/bin/sh -c 'rm --force --recursive  %s/..?* %s/.[!.]* %s/*'",
-            rootpath.c_str(),rootpath.c_str(),rootpath.c_str()) ;
-    DEBUG_FAST(buffer) ;
-    system(buffer) ; // waits until ready
+    // This used to build "/bin/sh -c 'rm -rf <root>/..?* <root>/.[!.]* <root>/*'"
+    // with sprintf() into a fixed buffer and hand it to system(). The path is
+    // the shared directory of a storage device, settable through the web API,
+    // so a name carrying a quote or a semicolon ended the rm and started
+    // something else, running as the operator - and the three globs were only
+    // there to reach hidden files without letting ".*" match ".." and delete
+    // upwards. Walking the directory needs neither a shell nor the globs, and
+    // reaches what they were meant to reach by construction.
+    //
+    // FTW_PHYS so a symlink is removed rather than followed into whatever it
+    // points at; FTW_MOUNT so the walk cannot leave the filesystem it started on.
+    if (nftw(rootpath.c_str(), clear_disk_dir_remove, 16,
+             FTW_DEPTH | FTW_PHYS | FTW_MOUNT) != 0)
+        ERROR("clear_disk_dir(): could not empty %s: %s", rootpath.c_str(),
+              strerror(errno)) ;
 }
 
 
