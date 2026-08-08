@@ -154,6 +154,13 @@ private:
 	// true:  active CPU. devices perform Request/Grant/SACK protocoll
 	bool arbitrator_active;
 
+	// Where probe_range() has its DATI land. A probe bounds its wait, and a
+	// request that times out stays scheduled with the adapter still holding
+	// this pointer (see dma()), so it may not be a local of the probing call -
+	// the words would be written into a stack frame that is gone. What the
+	// address answered with is never read; only whether it answered at all.
+	uint16_t probe_word_buffer;
+
 	// disabled
 	uint8_t probe_grant_continuity(bool error_if_closed) ;
 

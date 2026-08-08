@@ -55,6 +55,7 @@ qunibus_c::qunibus_c()
     addr_space_byte_count = 0;
     iopage_start_addr = 0;
     cpu_reserved_start = 0;
+    probe_word_buffer = 0;
 #if defined(UNIBUS)
     set_addr_width(18); // const
 #endif
@@ -563,7 +564,6 @@ uint32_t qunibus_c::test_sizer(void)
  */
 uint32_t qunibus_c::probe_range(uint32_t startaddr, uint32_t endaddr, uint32_t step)
 {
-    uint16_t w;
     if (startaddr > endaddr || step < 2)
         return QUNIBUS_PROBE_NONE;
 
@@ -576,11 +576,34 @@ uint32_t qunibus_c::probe_range(uint32_t startaddr, uint32_t endaddr, uint32_t s
     uint64_t first_cycle_ms = 0;
     uint32_t answered = QUNIBUS_PROBE_NONE;
 
+    // Each cycle is bounded. An unbounded one parks this thread for good on a
+    // backplane that never grants the bus - a machine switched off, or one
+    // whose processor is not arbitrating - and that is the state a range is
+    // probed in before a memory card is placed. A granted cycle answers or
+    // times out on the bus in microseconds, so the bound costs a live machine
+    // nothing; it is generous because the first grant after a power cycle is
+    // the slow one.
+    const unsigned probe_cycle_timeout_ms = 2000;
+
     for (uint32_t addr = startaddr; addr <= endaddr; addr += step) {
         cycles++;
-        bool hit = dma(true, QUNIBUS_CYCLE_DATI, addr, &w, 1, /*share_bus*/false);
-        if (cycles == 1)
+        bool hit = dma(true, QUNIBUS_CYCLE_DATI, addr, &probe_word_buffer, 1,
+                       /*share_bus*/false, probe_cycle_timeout_ms);
+        if (cycles == 1) {
             first_cycle_ms = probe_time.elapsed_ms();
+            // Nothing granted that cycle: it took the whole bound, where a
+            // slave that simply did not answer takes microseconds. No address
+            // in the range can answer either, and walking it would pay the
+            // bound at every step - minutes of them across a memory card's
+            // range. Nothing answers, which is what the caller asked.
+            if (!hit && first_cycle_ms >= probe_cycle_timeout_ms) {
+                INFO("probe of %s..%s stopped after one cycle: nothing is "
+                     "arbitrating the bus, so nothing can answer",
+                     addr2text(startaddr), addr2text(endaddr));
+                dma_request->timeout_expected = false;
+                return QUNIBUS_PROBE_NONE;
+            }
+        }
         if (hit) {
             answered = addr;
             break;
@@ -591,7 +614,8 @@ uint32_t qunibus_c::probe_range(uint32_t startaddr, uint32_t endaddr, uint32_t s
     // the end of the range need not fall on a step boundary
     if (answered == QUNIBUS_PROBE_NONE) {
         cycles++;
-        if (dma(true, QUNIBUS_CYCLE_DATI, endaddr, &w, 1, /*share_bus*/false))
+        if (dma(true, QUNIBUS_CYCLE_DATI, endaddr, &probe_word_buffer, 1,
+                /*share_bus*/false, probe_cycle_timeout_ms))
             answered = endaddr;
     }
 
