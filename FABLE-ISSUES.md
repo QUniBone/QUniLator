@@ -247,7 +247,7 @@ hours. Add the `delete[]` in the failure branch.
 
 ## 2. Showstopper bugs
 
-### 2.1 Mailbox DMA overwrite race → assert abort (known, issue #92) — PARTIALLY in c3c87a9
+### 2.1 Mailbox DMA overwrite race → assert abort (known, issue #92) — FIXED in c3c87a9 and PENDING
 `qunibusadapter.cpp:1249` (`assert(wordcount_transferred <= dmareq->wordcount)`).
 `requests_cancel_scheduled()` (INIT/power event) clears `prl->active` and
 releases the waiting device **while the PRU is still executing the transfer**
@@ -260,6 +260,51 @@ Fix direction: a "PRU busy" latch that survives `requests_cancel_scheduled()`
 — don't push a new `ARM2PRU_DMA` until the orphaned completion has been
 acked — or a generation counter in `mailbox->dma` so a stale completion is
 discarded instead of accounted.
+
+Done, in two parts. The overwrite itself took the latch (`c3c87a9`), and that
+half remains unproven against the bug — the window is one chunk's execution and
+no test reached it. What the repro shows every time is the *other* half named in
+issue #92, and that is what the second part fixes: **a request the PRU never
+completes was never retired, so its slot stayed dead for the life of the
+process.** On a dark or deviceless machine that is every later transfer on that
+slot, and recovery took `systemctl restart`.
+
+The obstacle was that **there was no way to tell the PRU to abandon a DMA.**
+`ARM2PRU_INTR_CANCEL` existed for interrupts; there was no equivalent, so a
+transfer parked in an arbitration nothing would grant could only be waited for.
+`ARM2PRU_DMA_CANCEL` is that equivalent, in both firmwares. The PRU takes back a
+transfer that has not started and refuses one that is on the bus, which ends
+within a bus timeout per word anyway; the ARM reads which happened from
+`mailbox.dma.cur_status` and there is no completion event either way, as with
+the INTR cancel. Telling the two apart needed `DMA_STATE_ARBITRATING` to become
+real — it was defined and never written, and a transfer that had merely been
+requested was indistinguishable from one that had run to its end, both reading
+`DMA_STATE_READY`. `DMA()` retires a request that outlasts its deadline on the
+strength of that answer, and `requests_cancel_scheduled()` tries the cancel
+before it resorts to marking an orphan.
+
+Verified on ubx by the issue's own repro, before and after on the same rig. The
+old binary: one 4 s wait, then `DMA slot 16 still holds a request of none: DATI
+@ 001302 refused` and `/api/memory` silently answering `null` for good. The new
+one: eight rounds, each pushed to the PRU (`cur_status=1`, the state that now
+gets written), each retired, no refusals, and the whole wedge-and-recover cycle
+three times over in one process — dark board, refused transfers, config apply,
+`dc_on`, XXDP booting from DL0 — with the same PID and no restarts.
+
+Testing turned up a **second road to the same wedge**, pre-existing and not
+described in the issue: the orphan latch could be stranded, and a stranded latch
+holds off every DMA there is. `requests_cancel_scheduled()` sets it when the PRU
+will not give a transfer back, and it clears on that transfer's completion —
+but a `cpu_access` completion raises no PRU interrupt and the adapter worker
+passes over it, because the emulated processor's own thread collects it inside
+its spin. When a power event cancels the request that thread is waiting on, the
+thread leaves, and the completion has no owner. Seen exactly so: `dma
+signaled=112 acked=111` and `DMA held off: the PRU still carries a cancelled
+transfer` forever after. The processor thread now collects that last completion
+before it goes, bounded, since the PRU refused the cancel precisely because the
+transfer is on the bus. Counters stay in step afterwards (`137/137`), and fifteen
+INITs interleaved with fifteen slot-16 transfers into a running XXDP left the
+slot live.
 
 ### 2.2 A guest-supplied DMA range that runs off the end of memory aborts the service — FIXED in c9b6400
 `qunibusadapter.cpp:702`: `assert((unibus_addr + 2*wordcount) <=
