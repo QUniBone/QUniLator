@@ -77,12 +77,18 @@ solved this properly (synthesises assert+negate on every event,
 `qunibusadapter.cpp:1450-1457`); the UNIBUS path could do the same when the
 event arrives with no visible edge but a set signal counter.
 
-### 1.6 KD11-EA/KA11 `DIV`: 0x80000000 / −1 is signed overflow
+### 1.6 KD11-EA/KA11 `DIV`: 0x80000000 / −1 is signed overflow — FIXED in a9ccbe2
 `kd11ea.c:679` (`ldiv(prod, dv)`): dividing INT32_MIN by −1 overflows `long`
 (32-bit on ARM), which is UB inside `ldiv`. On ARM it happens to produce a
 value that then takes the V-bit path, matching hardware by accident. Guard the
 one case explicitly (set V, leave registers) and the core is UB-free. Same
 pattern in `cpu20/ka11.c` if EIS is ever enabled there.
+
+The pair is intercepted before the divide now. Nothing observable moved: the
+host, where `long` is 64 bits, computed a true 2147483648 and that is out of
+16-bit range as well, so both widths already produced V=1, N=0, Z=1 and no
+register write — which is what the guard sets. The KA11 needed nothing: the
+11/20 has no EIS and traps the whole 0070000 group as reserved.
 
 ### 1.7 `intr_request_c::get_vector()` truncates vectors to 8 bits
 `priorityrequest.hpp:165`: returns `uint8_t` for a 16-bit vector. Only caller
