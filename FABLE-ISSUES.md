@@ -26,7 +26,7 @@ succeeded and consume whatever the last transfer left in the buffer. The
 matching cancel path (`requests_cancel_scheduled`, line 429) carefully sets
 `success = false`; this early-out should do the same.
 
-### 1.2 Mailbox command payloads are filled outside the lock that serializes commands
+### 1.2 Mailbox command payloads are filled outside the lock that serializes commands — FIXED in e25ba6d
 `mailbox_execute()` (`mailbox.cpp:119`) serializes the *execution* of ARM2PRU
 commands under `arm2pru_mutex`, but every caller fills the payload **before**
 calling it, unlocked. For DMA/INTR the payloads live in dedicated
@@ -45,6 +45,39 @@ request's payload between fill and PRU pickup (e.g. `initializationsignal.id`
 overwrites the low half of `param`). Low probability, impossible to debug when
 it fires. Fix: pass the payload into `mailbox_execute()` (or take
 `arm2pru_mutex` around fill + execute at every call site).
+
+Both, as it turned out, because the payloads are not one shape. `mailbox.h`
+now offers `mailbox_lock_c`, which holds `arm2pru_mutex`, and
+`mailbox_execute_locked()` to be used inside it; `mailbox_execute()` keeps
+taking the lock itself for a request with no payload, and gained an overload
+that fills `param` under it, which is what most of the call sites wanted.
+`qunibus.cpp` grew `set_initializationsignal(id, val)` around the same
+mechanism, and its eleven call sites — INIT, the ACLO/DCLO and POK/DCOK power
+sequences, HALT — read better for it.
+
+The `buslatch` members are in that same union and had the same problem the
+other way round: `buslatch_c::getval()` and `probe_grant_continuity()` fill an
+address, run the command and then read the PRU's *answer* out of the union, so
+the lock is held until the answer has been taken rather than released at the
+end of the command. `address_overlay` has a field of its own but is still half
+of a command, and is filled under the lock too.
+
+Three places still write `mailbox->arm2pru_req` directly and are deliberately
+left: `pru_c` probing with a NOP before any device exists,
+`ddrmem_c::unibus_slave()` and `buslatches_c::test_timing()`, which start a PRU
+loop that runs until the request byte is changed and so cannot be a
+fill-and-ack at all. All three are single-threaded startup or test-firmware
+paths, and none of them touches the payload union.
+
+Verified on ubx: both buses build warning-free and the host suites pass; XXDP
+boots from RL0 and lists the directory. The race itself is the reviewer's
+example — a web power cycle against a CPU start/stop — so it was driven
+directly for 30 s, `POST /control powercycle` every second against `halt` and
+`continue` twice a second, which is `initializationsignal` and `param` fills
+interleaving at speed. The service came through it, the journal holds nothing
+but the memory probe's own timeout, and XXDP boots and lists afterwards.
+Nothing here proves the old code would have failed that test — the window is a
+few instructions wide — so this rests on the structure, not on a reproduction.
 
 ### 1.3 Cross-thread flags are plain/volatile bools, not atomics — FIXED in e8ce517
 `line_INIT`, `line_ACLO`, `line_DCLO` and `deviceregister_servicing` are plain
