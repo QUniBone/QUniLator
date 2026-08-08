@@ -46,7 +46,7 @@ overwrites the low half of `param`). Low probability, impossible to debug when
 it fires. Fix: pass the payload into `mailbox_execute()` (or take
 `arm2pru_mutex` around fill + execute at every call site).
 
-### 1.3 Cross-thread flags are plain/volatile bools, not atomics
+### 1.3 Cross-thread flags are plain/volatile bools, not atomics — FIXED in e8ce517
 `line_INIT`, `line_ACLO`, `line_DCLO` and `deviceregister_servicing` are plain
 `bool`s written by the adapter worker and read by device threads in `DMA()` /
 `INTR()` (`qunibusadapter.cpp:711, 940, 783`); `priority_request_c::complete`,
@@ -57,6 +57,33 @@ synchronisation primitive. On this single-cluster ARM32 with the mutex/condvar
 handshakes around most of them it works today, but any compiler upgrade or
 reordering can break it silently. Converting them to `std::atomic<bool>` with
 relaxed/acquire-release ordering is cheap and mechanical.
+
+All of them are `std::atomic<bool>` now, and `device_c::init_asserted` with
+them: it is the same flag as `line_INIT` copied onto each device by the same
+worker thread, and the reviewer's list simply did not reach it.
+`deviceregister_servicing` had already been converted when it was added.
+
+The ordering is the default, sequentially consistent, rather than the relaxed
+one the finding offers: `complete` is not just a flag but the publication point
+of a transfer — the words in the device's buffer and `success` are only
+readable because the reader saw it set — so it needs the release/acquire
+relationship a relaxed pair would not give. Nothing here is read at a rate that
+makes the barrier worth counting; the emulated processor's spin loop reads the
+mailbox and takes a mutex, not these.
+
+What the change cost was not the flags but the classes holding them: an atomic
+member deletes the implicit copy constructor, and every device declared its
+requests as `intr_request_c intr_request = intr_request_c(this)`, a
+copy-initialisation that C++11 (which is what the makefiles ask for) still
+requires a copy constructor for. Those 29 declarations across 15 device headers
+are now `intr_request_c intr_request{this}` — direct initialisation, which is
+what `deuna.hpp` already used. No behaviour moved with them.
+
+Verified on ubx: both buses build warning-free, the host suites pass (297 + 46 +
+21 + 40 + 63 + 41 checks, no failures) and the 36 CPU-core diagnostics are
+unchanged; on the board XXDP boots from RL0 through the M9312, lists all 727
+files of the directory and reboots on a power cycle, with no error in the
+journal.
 
 ### 1.4 Shell command built from a web-settable path
 `storageimage.cpp:116-118` runs `system("zcat <image>.gz ><image>")` with the
