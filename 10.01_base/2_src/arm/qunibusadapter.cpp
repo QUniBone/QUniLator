@@ -143,7 +143,6 @@ void qunibusadapter_c::on_init_changed(void)
 // result: false = failure
 bool qunibusadapter_c::register_device(qunibusdevice_c& device) 
 {
-    bool register_handle_used[MAX_IOPAGE_REGISTER_COUNT]; // index by handle
     unsigned i;
     unsigned register_handle;
     unsigned device_handle;
@@ -180,9 +179,6 @@ bool qunibusadapter_c::register_device(qunibusdevice_c& device)
     devices[device_handle] = &device;
     device.handle = device_handle; // tell the device its slots
 
-    // lookup register_handles[]
-    memset(register_handle_used, 0, sizeof(register_handle_used)); // all 0
-
     // verify: does the device implement a register address already
     // in use by another device? it happened!
     // Two cards answering one address is something an operator arranges from
@@ -208,31 +204,45 @@ bool qunibusadapter_c::register_device(qunibusdevice_c& device)
         }
     }
 
-    for (i = 0; i < 0x1000; i++) {
-        // scan all addresses in IO page
-        register_handle = pru_iopage_registers->register_handles[i];
-        assert(register_handle < MAX_IOPAGE_REGISTER_COUNT || register_handle == IOPAGE_REGISTER_HANDLE_ROM);
-        if (register_handle != 0 && register_handle != IOPAGE_REGISTER_HANDLE_ROM)
-            // device registers may decdoe into ROM space, M9312
-            register_handle_used[register_handle] = true;
+    // Allocate the device a run of register_count handles: the lowest free run
+    // that fits, not the space above the highest handle in use. Devices are
+    // enabled and disabled while the board runs, and appending only ever
+    // reclaims a disabled device's handles when everything above them has been
+    // given back too - so an operator toggling devices in an unlucky order
+    // walks the allocation up to the 254-handle ceiling and is then refused
+    // every install until the service is restarted.
+    //
+    // register_by_handle[] is the allocation record itself, written here and
+    // cleared by unregister_device(), so it answers "handle in use" directly.
+    unsigned run_first = 0;     // handle the current run of free handles starts at
+    unsigned run_length = 0;    // its length
+    unsigned run_start = 0;     // first run long enough for the device, 0 = none
+    unsigned longest_run = 0;   // for the refusal message
+    unsigned free_handles = 0;
+    for (i = 1; i < MAX_IOPAGE_REGISTER_COUNT; i++) { // handle 0 is reserved
+        if (register_by_handle[i] != NULL) {
+            run_length = 0; // run broken by a handle in use
+            continue;
+        }
+        free_handles++;
+        if (run_length == 0)
+            run_first = i;
+        run_length++;
+        if (run_length > longest_run)
+            longest_run = run_length;
+        if (run_start == 0 && run_length >= device.register_count)
+            run_start = run_first;
     }
-    // allocate new handles for registers of device
-    // we could try to find a "hole" of size device->register_count, but simply add to the end
-    // find highest handle uses so far.
-    register_handle = 0; // biggest handle in use
-    // handle#0 not to be used!
-    for (i = 1; i < MAX_IOPAGE_REGISTER_COUNT; i++)
-        if (register_handle_used[i])
-            register_handle = i;
-    unsigned free_handles = MAX_IOPAGE_REGISTER_COUNT - register_handle - 1;
-    if (free_handles < device.register_count) {
-        ERROR("register_device() can not register device %s, needs %d register, only %d left.",
-              device.name.value.c_str(), device.register_count, free_handles);
+    if (run_start == 0 && device.register_count > 0) {
+        ERROR("register_device() can not register device %s: it needs %u consecutive "
+              "register handles, the longest free run is %u (%u of %u handles free).",
+              device.name.value.c_str(), device.register_count, longest_run, free_handles,
+              MAX_IOPAGE_REGISTER_COUNT - 1);
         devices[device_handle] = NULL; // see the address-conflict refusal above
         device.handle = 0;
         return false;
     }
-    register_handle++; // first free handle
+    register_handle = run_start;
 
     // add registers of device (controller) to global shared register map
 
