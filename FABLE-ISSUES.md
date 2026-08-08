@@ -161,7 +161,7 @@ put on one priority slot at one level, which `warn_on_slot_collisions()` only
 warns about. Both are gone; the vector is now corrected on a pending request,
 which matters because MSCP and DELQA take their vector from the guest.
 
-### 2.5 A priority-slot collision wedges the PRU's interrupt arbitration
+### 2.5 A priority-slot collision wedges the PRU's interrupt arbitration — ARM SIDE FIXED in 4d1622d
 *Not from the review — found on ubx while fixing 2.4.*
 
 `qunibusdevice.cpp`, `warn_on_slot_collisions()`: two devices given the same
@@ -191,6 +191,16 @@ than warn, the way an address conflict now does (2.3) — a collision has no
 working outcome to allow. That is ARM-side and small. What actually wedges the
 PRU is a separate question and needs the arbitration state machines read; the
 refusal keeps a board out of it meanwhile.
+
+Done: `install()` refuses a slot shared **at one arbitration level**, which is
+one entry of `request_levels[level].slot_request[slot]` and the collision that
+drops interrupts. A slot shared at different levels shares no entry — the PRU is
+never told a slot, `mailbox_intr_t` carrying one vector per BR line — so that
+stays a warning. It caught a shipped configuration on the way: `DL11b` was given
+its slot and vector by assigning `parameter.value` directly, which never reaches
+the RCV/XMT requests, so the second SLU had been arbitrating on DL11's slots
+with DL11's vector; it goes through `set_default_bus_params()` now. The PRU-side
+wedge is untouched and still open.
 
 ---
 
