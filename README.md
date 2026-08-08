@@ -120,7 +120,17 @@ on first boot:
     xz -dc qbone-dist.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 
 Replace `/dev/sdX` with the card — on macOS `/dev/rdiskN`, and check it twice,
-`dd` will not ask. Then fit the card, apply power, and wait out the first boot:
+`dd` will not ask.
+
+As an alternative to fetching and writing it yourself,
+[qunilator-installer](https://github.com/QUniBone/qunilator-installer/releases/latest)
+does both from one command and can settle the operator identity, the host name,
+the ssh keys and the address on the SD card before it ever boots. It is one
+static binary per platform; on macOS it is unsigned, so it has to be authorised
+before it will run — see [Installing the
+software](https://qunilator.com/start/install/).
+
+Then fit the card, apply power, and wait out the first boot:
 it takes 2–3 minutes and includes a reboot of its own, so do not pull power in
 between. The user LEDs say how far it has got, and a bouncing sweep across
 `usr0`–`usr2` means the emulator is running.

@@ -34,6 +34,45 @@ Replace `/dev/sdX` with the card — on macOS `/dev/rdiskN`. Check it twice;
 `dd` will not ask. Raspberry Pi Imager, balenaEtcher and `bmaptool` all take
 the `.xz` directly if you would rather not use `dd`.
 
+## Or let the installer fetch and write it
+
+`qunilator-installer` is an alternative to the two steps above, not a
+replacement for them: everything on this page works without it. What it saves is
+the choosing and the typing — it fetches the release, writes the SD card, reads
+back what it wrote, and can put the identity on the card before it ever boots,
+preparing the file described under [Or set it up before it ever
+boots](#or-set-it-up-before-it-ever-boots) for you.
+
+One static binary per platform on the [installer
+releases](https://github.com/QUniBone/qunilator-installer/releases/latest) page
+— macOS on Apple silicon or Intel, Linux on x86-64 or arm, Windows on x86-64 —
+with a `SHA256SUMS` beside them to check a download against. A release asset
+carries no permissions, so on macOS and Linux it has to be made executable:
+
+```sh
+chmod +x qunilator-installer-darwin-arm64
+```
+
+**On macOS the binaries are not signed**, so the system refuses to run one until
+it has been authorised. Clearing the quarantine flag the browser attached is the
+short way:
+
+```sh
+xattr -d com.apple.quarantine qunilator-installer-darwin-arm64
+```
+
+The other way is to open Finder, right-click the binary, choose **Open** and
+confirm — or, after the first refusal, **System Settings → Privacy & Security →
+Open Anyway**. Without one of these the binary does not start at all, and what
+macOS says about it does not mention signing.
+
+Run it with no arguments and it asks its way through: which SD card, which
+QUniLator, which image, and whether to settle the identity now. Writing a raw
+disk needs rights, so it raises that one command with `sudo` and shows you the
+command first; where you can already open the SD card yourself, it uses no
+`sudo` at all. The SD card is ejected when it is done, so it can go straight
+into the bone.
+
 ## Fit the card and power on
 
 The image runs from the microSD. The cape occupies the eMMC data lines, so the
