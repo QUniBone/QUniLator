@@ -288,8 +288,15 @@ void application_c::hardware_startup(enum pru_c::prucode_enum prucode_id)
     INFO("Connecting to PRU.");
     /* initialize the library, PRU and interrupt; launch our PRU program */
 
+    // No mailbox_connect() here. pru->start() does it, before it loads the
+    // PRUs - which is the only order that works, because mailbox_connect()
+    // clears the whole mailbox. Called again afterwards it wipes whatever the
+    // PRUs have written in the meantime, and by then they have been running for
+    // the 100 ms start() waits out plus the NOP handshake it ends with. It cost
+    // the diagnostic counters their magic word, written once at PRU startup and
+    // erased before anything could read it; an event signalled that early would
+    // go the same way.
     pru->start(prucode_id);
-    mailbox_connect();
 
     INFO("Registering non-PRU pins.");
     gpios->init();

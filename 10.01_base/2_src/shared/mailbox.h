@@ -159,6 +159,51 @@ typedef struct {
 
 } mailbox_arbitrator_t;
 
+/* Where the PRU's main loop is spending its passes.
+ *
+ * The one question these answer: when the ARM reports
+ *
+ *     ERR cpu34] unibone_grant_interrupts(): PRU arbitration pending for
+ *                >100ms - PRU stopped or hung?
+ *
+ * is the PRU (a) not looping at all, (b) looping but stuck in a bus master
+ * cycle that never ends, or (c) looping but blocked on a device register event
+ * the ARM has not acknowledged? Those are three different faults with three
+ * different fixes, and until now nothing on the board could tell them apart -
+ * the flag the ARM waits on is cleared at the bottom of sm_arb_worker_cpu(),
+ * so all the message says is that the worker was not reached.
+ *
+ * Two samples a moment apart name the case. `loop_passes` standing still is
+ * (a). Otherwise the three pass counters partition every pass of the loop, so
+ * the passes blocked on the register event are the ones left over:
+ *
+ *     blocked = loop_passes - arbitration_passes - master_passes
+ *
+ * Counters, not states: they are read while the PRU runs, and a state read that
+ * way is a value from an instant that has already gone. They free-run and wrap;
+ * a reader takes differences and never absolutes.
+ *
+ * Cost is two increments to shared RAM per pass, ~15 ns of a loop that takes
+ * microseconds. That is deliberately all of it. The QBUS firmware's separate
+ * `qbus_diag` block carries the detailed bus counters and the transition ring,
+ * behind QBUS_BUS_TRACE where their cost belongs; this is the part cheap enough
+ * to stand in every build, on both buses, which is the part a wedge needs.
+ *
+ * It lives in the mailbox because the ARM must read it live. `qbus_diag` sits
+ * at its own symbol, to be found in the .out.map by an external tool, and
+ * nothing in the running system reads it at all.
+ */
+typedef struct {
+	uint32_t magic;			// MAILBOX_DIAG_MAGIC once the PRU has run
+	uint32_t loop_passes;		// every pass of the main loop
+	uint32_t arbitration_passes;	// ... which reached the arbitration worker
+	uint32_t master_passes;		// ... which executed a bus master state
+} mailbox_diag_t;
+
+// "PDIA": zero instead means a firmware built without this, or one that has
+// not started. A reader must check it rather than report zeroed counters.
+#define MAILBOX_DIAG_MAGIC	0x50444941
+
 // data for a requested DMA operation
 typedef struct {
 	// take care of 32 bit word borders for struct members
@@ -322,6 +367,9 @@ typedef struct {
 	volatile ddrmem_t *ddrmem_base_physical;
 
 	mailbox_arbitrator_t arbitrator;
+
+	// written by PRU, read by ARM at any time
+	mailbox_diag_t diag;
 
 	// set by PRU, read by ARM on event
 	mailbox_events_t events;

@@ -25,6 +25,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <sched.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #include <string>
 
@@ -38,6 +39,9 @@
 #include "webstorage.hpp"
 #include "qunibusadapter.hpp"
 #include "qunibus.h"		// QUNILATOR_NAME (the product name)
+#if defined(QBUS) || defined(UNIBUS)
+#include "mailbox.h"		// the PRU's loop counters, for /api/debug/pru
+#endif
 
 webserver_c *webserver = nullptr;
 
@@ -173,6 +177,95 @@ static const char *platform_name = "UNIBUS";
 static const char *platform_name = "HOST"; // host-side test build
 #endif
 
+// GET /api/debug/pru - where the PRU's main loop is spending its passes
+//
+// For one question: when the emulated processor reports "PRU arbitration
+// pending for >100ms - PRU stopped or hung?", is the PRU not looping, looping
+// but stuck in a bus master cycle, or looping but blocked on a device register
+// event the ARM has not acknowledged? The counters partition every pass of the
+// loop, so the three cases are told apart by which of them moves.
+//
+// Answering needs two samples, so this takes them both rather than leaving a
+// caller to diff two requests - a board in this state is being looked at by
+// somebody with one curl and a problem.
+static int api_debug_pru_handler(struct mg_connection *conn, void * /*cbdata*/) {
+	picojson::object o;
+
+#if defined(QBUS) || defined(UNIBUS)
+	static const unsigned SAMPLE_MS = 50;
+	// Field by field: the mailbox is volatile, so each of these is its own
+	// uncached read of PRU shared RAM, and a struct copy is not available.
+	uint32_t loop0 = mailbox->diag.loop_passes;
+	uint32_t arb0 = mailbox->diag.arbitration_passes;
+	uint32_t master0 = mailbox->diag.master_passes;
+	usleep(SAMPLE_MS * 1000);
+	uint32_t loop1 = mailbox->diag.loop_passes;
+	uint32_t arb1 = mailbox->diag.arbitration_passes;
+	uint32_t master1 = mailbox->diag.master_passes;
+
+	// Zero magic is a firmware built without the counters, or one that has not
+	// reached its loop. Reporting the zeros as measurements would say "the PRU
+	// is not looping", which is the most alarming answer there is.
+	uint32_t magic = mailbox->diag.magic;
+	bool available = (magic == MAILBOX_DIAG_MAGIC);
+	o["available"] = picojson::value(available);
+	// Reported whatever it says: "no counters" and "the counters are not where
+	// this build expects them" look the same from `available` alone, and the
+	// second is a layout disagreement between the ARM and the PRU - the one
+	// fault that would make every other field here fiction.
+	if (!available) {
+		char hex[16];
+		snprintf(hex, sizeof hex, "0x%08x", (unsigned) magic);
+		o["magic"] = picojson::value(std::string(hex));
+	}
+	if (available) {
+		// Free-running and wrapping: unsigned subtraction is what makes a
+		// difference across the wrap still the right number.
+		uint32_t d_loop = loop1 - loop0;
+		uint32_t d_arb = arb1 - arb0;
+		uint32_t d_master = master1 - master0;
+
+		o["sample_ms"] = picojson::value((double) SAMPLE_MS);
+		o["loop_passes"] = picojson::value((double) loop1);
+		o["loop_passes_delta"] = picojson::value((double) d_loop);
+		o["arbitration_passes_delta"] = picojson::value((double) d_arb);
+		o["master_passes_delta"] = picojson::value((double) d_master);
+		// What is left of the loop: passes that reached neither, which are the
+		// ones held back by an unacknowledged device register event.
+		o["blocked_passes_delta"] = picojson::value((double) (d_loop - d_arb - d_master));
+
+		o["looping"] = picojson::value(d_loop != 0);
+		o["arbitrating"] = picojson::value(d_arb != 0);
+		o["arbitration_pending"] =
+			picojson::value(mailbox->arbitrator.ifs_intr_arbitration_pending != 0);
+	}
+
+	// The event handshakes, for the other half of the picture: a count signalled
+	// and not acknowledged is the ARM owing the PRU an answer, and the PRU
+	// holding a bus cycle open (deviceregister) or a transfer's result
+	// (dma) until it comes.
+	picojson::object ev;
+	ev["deviceregister_signaled"] =
+		picojson::value((double) mailbox->events.deviceregister.signaled);
+	ev["deviceregister_acked"] =
+		picojson::value((double) mailbox->events.deviceregister.acked);
+	ev["dma_signaled"] = picojson::value((double) mailbox->events.dma.signaled);
+	ev["dma_acked"] = picojson::value((double) mailbox->events.dma.acked);
+	o["events"] = picojson::value(ev);
+#else
+	o["available"] = picojson::value(false); // host build, no PRU
+#endif
+
+	std::string body = picojson::value(o).serialize();
+	mg_printf(conn,
+			"HTTP/1.1 200 OK\r\n"
+			"Content-Type: application/json\r\n"
+			"Cache-Control: no-store\r\n"
+			"Content-Length: %u\r\n\r\n", (unsigned) body.size());
+	mg_write(conn, body.c_str(), body.size());
+	return 200;
+}
+
 // GET /api/state — phase 0: identifies the platform and the API generation.
 // Bus/device state fields are added with the corresponding phases.
 // GET  /api/latency  - how long the PRU was left holding the bus
@@ -293,6 +386,7 @@ bool webserver_c::start(void) {
 	}
 	mg_set_request_handler(ctx, "/api/state", api_state_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/latency", api_latency_handler, nullptr);
+	mg_set_request_handler(ctx, "/api/debug/pru", api_debug_pru_handler, nullptr);
 	webauth_register(ctx);
 	webapi_register(ctx);
 	INFO("web server listening on port %u, document root %s, %s", port, docroot.c_str(),
