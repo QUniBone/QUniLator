@@ -1020,14 +1020,45 @@ void qunibusadapter_c::INTR(intr_request_c& intr_request,
         // A device may re-raised a pending INTR again
         // (quite normal situation when other ISRs block, CPU overload)
         // A re-raise will be ignored.
-        // ! Another device MAY NOT reraise an INTR with same slot/level
-        // ! (else complete signals may be routed to wrong device)
-        assert(scheduled_intr_req->device == intr_request.device);
-        assert(scheduled_intr_req->vector == intr_request.vector);
-        // if different vector, it may not be ignored -> change in program flow
+        //
+        // Two devices on one slot and level is a device implementation error -
+        // completion signals would be routed to the wrong one - and a device
+        // with several interrupt sources must give each its own pseudo-slot, as
+        // DL11 rcv/xmt do. It is still not worth the machine: the re-raise is
+        // dropped and the journal says why, where this aborted the emulator.
+        if (scheduled_intr_req->device != intr_request.device) {
+            ERROR("INTR() slot %u level %u is held by %s: %s may not raise on it too",
+                  (unsigned) intr_request.priority_slot,
+                  (unsigned) (intr_request.level_index + 4),
+                  scheduled_intr_req->device
+                      ? scheduled_intr_req->device->name.value.c_str() : "none",
+                  intr_request.device ? intr_request.device->name.value.c_str() : "none");
+            pthread_mutex_unlock(&requests_mutex);
+            return;
+        }
 
-        // If device uses multiple INTRs with different vectors (DL11 rcv+xmt),
-        // it must use different pseudo-slots.
+        // The vector may have moved since the pending request was raised. A
+        // guest sets one over the bus - an MSCP controller takes it from the
+        // host in its init handshake, a DELQA from its setup block - so this is
+        // reachable from a running program, and it may not be ignored: the
+        // interrupt would take that program somewhere else. While the request
+        // only sits in the schedule table it costs nothing to correct, because
+        // request_execute_active_on_PRU() reads the vector when it hands the
+        // request to the PRU. Once handed over the PRU has it and the moment
+        // has passed, which is worth a line rather than an abort.
+        if (scheduled_intr_req->vector != intr_request.vector) {
+            if (scheduled_intr_req->executing_on_PRU)
+                ERROR("INTR() vector of %s moved %03o -> %03o while its interrupt "
+                      "was already granted; the interrupt carries the old one",
+                      intr_request.device ? intr_request.device->name.value.c_str() : "none",
+                      (unsigned) scheduled_intr_req->vector, (unsigned) intr_request.vector);
+            else {
+                DEBUG_FAST("INTR() vector of pending request moved %03o -> %03o",
+                           (unsigned) scheduled_intr_req->vector,
+                           (unsigned) intr_request.vector);
+                scheduled_intr_req->vector = intr_request.vector;
+            }
+        }
 
         // scheduled and request_active_complete() not called
         pthread_mutex_unlock(&requests_mutex);
