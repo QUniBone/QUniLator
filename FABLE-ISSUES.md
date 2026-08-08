@@ -947,7 +947,7 @@ shared with its writer (`priorityrequest.cpp:102`).
 neither `tmpbuff` nor `buffer` can be run past - the testcontroller's 31*4
 interrupt requests were the case that could. The sentinel is
 `intr_request_c::vector_none`, named where the constructor writes it.
-### Found while verifying: `POST /api/memory/probe` hangs on a bus nobody arbitrates
+### Found while verifying: `POST /api/memory/probe` hangs on a bus nobody arbitrates — issue #95
 
 Not one of the seventeen, and **not caused by any of them** — the A/B below is
 what says so. Recorded because it wedges the service and takes an operator's
@@ -976,7 +976,7 @@ bounds every cycle and bails on a dead bus, and `dma_request_abandon()` retires 
 transfer that outlasted its deadline — but both only apply to a DMA that was
 given a deadline, and `test_sizer()` gives none. Giving it one (and reporting the
 dead bus, as `probe_range()` does) is the fix; it was left alone here because it
-is outside the seventeen.
+is outside the seventeen, and is tracked as issue #95.
 
 Pre-existing on `main`, so not counted above, but adjacent: the worker acks
 the dma event outside `requests_mutex` (a rare double-dispatch window the new
