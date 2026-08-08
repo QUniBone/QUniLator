@@ -465,7 +465,15 @@ char *qunibusdevice_c::get_qunibus_resource_info(void)
 		strcat(buffer, ", INTRs");
 		for (std::vector<intr_request_c *>::iterator it = intr_requests.begin();
 				it < intr_requests.end(); it++) {
-			sprintf(tmpbuff, "%s%d/%03o", sep, (*it)->get_level(), (*it)->get_vector());
+			// 0xffff is the request's "no vector yet": an MSCP port is told its
+			// vector by the guest's init handshake and carries none before that.
+			// Truncating to 8 bits used to hide it behind a plausible-looking
+			// 377.
+			uint16_t vector = (*it)->get_vector();
+			if (vector == 0xffff)
+				sprintf(tmpbuff, "%s%d/-", sep, (*it)->get_level());
+			else
+				sprintf(tmpbuff, "%s%d/%03o", sep, (*it)->get_level(), vector);
 			strcat(buffer, tmpbuff);
 			sep = ",";
 		}

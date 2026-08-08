@@ -173,7 +173,10 @@ public:
 
 	void set_level(uint8_t level);
 	void set_vector(uint16_t vector);
-	uint8_t get_vector(void) {
+	// uint16_t, like the vector itself: a PDP-11 vector is a 9 bit byte address
+	// into the trap page, and the floating vectors of a second controller live
+	// above 0400. Returning uint8_t silently dropped that bit.
+	uint16_t get_vector(void) {
 		return vector;
 	}
 
