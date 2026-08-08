@@ -22,9 +22,9 @@ Release notes are on the [latest release page](https://github.com/QUniBone/QUniL
 ## Write it to a microSD card
 
 8 GB or larger. The image is shrunk to fit the release and grows to fill the
-card on first boot, so whatever the card has over the release is where your disk
-and tape images live. A 4 GB card holds the release, with little room left for
-images.
+SD card on first boot, so whatever it has over the release is where your disk
+and tape images live. A 4 GB SD card holds the release, with little room left
+for images.
 
 ```sh
 xz -dc qbone-dist.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync

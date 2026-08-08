@@ -1,11 +1,12 @@
 qbone (1.19.2-1) trixie; urgency=low
 
-  * A card prepared for a machine that has never been set up now sets it up.
-    Applying a setup file adopted the account it names rather than creating one,
-    and adopting refuses a name the machine does not have - so every such card
-    was refused, with "there is no account called ... to adopt" in the journal
-    and a board asking to be set up by hand. It adopts where there is something
-    to adopt and creates the account otherwise.
+  * An SD card written from an image carries an installation with no operator
+    account, and a setup file on it now creates one. Applying the file adopted
+    the account it names rather than creating it, and adopting refuses a name
+    the installation does not have - so every freshly written SD card was
+    refused, with "there is no account called ... to adopt" in the journal, and
+    the installation came up asking to be set up through the web interface. It
+    adopts where there is an account to adopt, and creates one otherwise.
 
  -- Hans Huebner <hans@huebner.org>  Sat, 08 Aug 2026 08:11:47 +0200
 

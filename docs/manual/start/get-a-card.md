@@ -52,7 +52,7 @@ your own you will need Lattice Diamond and a programming adapter to load them.
   [Why a BeagleBone](what-it-is.md#why-a-beaglebone).
 - **A microSD card, 8 GB or larger.** The release takes a couple of gigabytes
   and the rest is where your disk and tape images live, which is what the 8 GB
-  is for. A 4 GB card boots and runs, with little room left for images. Buy a
+  is for. A 4 GB SD card boots and runs, with little room left for images. Buy a
   good one: unlike in a camera, Debian is on it the whole time, and speed and
   reliability both matter.
 - **A 90° angled Ethernet plug**, if the card is going into a closed DEC case.
