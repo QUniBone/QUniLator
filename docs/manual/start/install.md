@@ -58,6 +58,18 @@ confirm — or, after the first refusal, **System Settings → Privacy & Securit
 Open Anyway**. macOS wants one of these before the binary starts at all, and
 what it says about the refusal does not mention signing.
 
+**On Windows the binaries are not signed either**, so Defender SmartScreen puts
+*"Windows protected your PC"* in the way. **More info → Run anyway** gets past
+it once; clearing the mark the browser attached avoids it altogether:
+
+```powershell
+Unblock-File .\qunilator-installer-windows-amd64.exe
+```
+
+or right-click the file, **Properties**, and tick **Unblock**. Writing a raw
+disk needs administrator rights, which the program asks for as it starts: one
+UAC prompt, and no need to open a terminal as administrator first.
+
 Run it with no arguments and it asks its way through: which SD card, which
 QUniLator, which image, and whether to settle the identity now. Writing a raw
 disk needs rights, so it raises that one command with `sudo` and shows you the
