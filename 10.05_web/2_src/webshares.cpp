@@ -758,6 +758,10 @@ bool webshares_has_ssh_key(const std::string &name) {
 	return stat(path.c_str(), &st) == 0 && st.st_size > 0;
 }
 
+bool webshares_account_exists(const std::string &name) {
+	return !name.empty() && getpwnam(name.c_str()) != nullptr;
+}
+
 bool webshares_adopt_account(const std::string &name, std::string *error) {
 	if (getuid() != 0) {
 		*error = "adopting an account is root's to do";

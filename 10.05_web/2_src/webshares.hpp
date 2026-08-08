@@ -41,6 +41,12 @@ void webshares_apply_hashed(const std::string &previous, const std::string &name
 // browser. On refusal, false with the reason in *error.
 bool webshares_adopt_account(const std::string &name, std::string *error);
 
+// Whether an account of this name is on the machine at all, which is what tells
+// adopting one from creating one. A card carrying a name nobody here has is
+// asking for that account to be made; the same card in a machine that already
+// has it is asking for that account to be taken over.
+bool webshares_account_exists(const std::string &name);
+
 // Make key the ssh public key the operator's account answers to, replacing any
 // it held. On refusal, false with the reason in *error: a key OpenSSH would not
 // accept, or a board with no operator account yet.
