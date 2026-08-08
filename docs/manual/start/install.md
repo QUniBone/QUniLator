@@ -65,7 +65,7 @@ command first; where you can already open the SD card yourself, it uses no
 `sudo` at all. An identity you give it goes onto the SD card as the
 [configuration file](#settling-the-identity-before-first-boot), with the
 password in its [derived forms](#without-writing-the-password-down). The SD card
-is ejected when it is done, so it can go straight into the bone.
+is ejected when it is done, so it can go straight into the BeagleBone.
 
 ## Writing the SD card by hand
 
@@ -155,8 +155,8 @@ Whoever holds the SD card can read its root filesystem either way.
 
 The image runs from the microSD. The cape occupies the eMMC data lines, so the
 overlay disables the eMMC and it is unusable while the card is fitted. If the
-bone comes up on something else, hold the **S2** boot button while applying power
-to force SD boot.
+BeagleBone comes up on something else, hold the **S2** boot button while applying
+power to force SD boot.
 
 ## Wait out the first boot
 
