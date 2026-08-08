@@ -208,11 +208,33 @@ host, where `long` is 64 bits, computed a true 2147483648 and that is out of
 register write — which is what the guard sets. The KA11 needed nothing: the
 11/20 has no EIS and traps the whole 0070000 group as reserved.
 
-### 1.7 `intr_request_c::get_vector()` truncates vectors to 8 bits
+### 1.7 `intr_request_c::get_vector()` truncates vectors to 8 bits — FIXED in dc7f343
 `priorityrequest.hpp:165`: returns `uint8_t` for a 16-bit vector. Only caller
 is the resource-info line (`qunibusdevice.cpp:389`), so the damage is a wrong
 octal vector shown for anything ≥ 0400 (floating vectors, second controllers).
 One-character fix.
+
+It was, and the character brought a second finding with it. The `intr_vector`
+parameter is declared nine bits wide, so the truncation drops exactly the bit
+the floating vectors need. Widening the getter then exposed what the missing
+bit had been covering: `intr_request_c`'s constructor sets `vector = 0xffff`
+for "not set yet", and an MSCP port has no vector until the guest's init
+handshake gives it one — `uda` and `tqk50` had been listing that sentinel as a
+plausible-looking `377`. The line prints `5/-` for a request with no vector
+now, rather than a number nobody assigned.
+
+Verified in the device menu on ubx, service stopped, since that menu's `ld` is
+the only consumer of the string. With `rl`'s `intr_vector` set to 0500 the
+installed binary printed
+
+    - rl    Type RL11, ... INTRs:5/100
+    - uda   Type UDA50, ... INTRs:5/377
+
+and the new one prints `INTRs:5/500` and `INTRs:5/-`. Vectors below 0400 are
+untouched (`ts` 5/224, `dzv11` 4/300,4/304, `DL11` 4/060,4/064). The board was
+put back on the `xxx` configuration afterwards — XXDP boots from DL0 and lists
+its directory, and `rl`'s vector is back at the 0160 default, the menu having
+persisted nothing.
 
 ### 1.8 MSCP `DMARead()` leaks its buffer on a failed transfer — FIXED in c9b6400
 `mscp_port.cpp:1176-1196`: `new uint16_t[...]`, then on `!dma_request.success`
