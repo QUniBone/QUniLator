@@ -384,8 +384,52 @@ never told a slot, `mailbox_intr_t` carrying one vector per BR line — so that
 stays a warning. It caught a shipped configuration on the way: `DL11b` was given
 its slot and vector by assigning `parameter.value` directly, which never reaches
 the RCV/XMT requests, so the second SLU had been arbitrating on DL11's slots
-with DL11's vector; it goes through `set_default_bus_params()` now. The PRU-side
-wedge is untouched and still open.
+with DL11's vector; it goes through `set_default_bus_params()` now.
+
+**The wedge is not in the PRU.** Counters in the mailbox (`GET /api/debug/pru`)
+partition every pass of the PRU's main loop, and with them the wedge was
+provoked on ubx and watched: `rl` and `DL11` both on slot 15 at BR4, the
+`install()` refusal turned back into a warning for the run, XXDP booted and left
+to work. What comes out is not a stopped PRU:
+
+```
+loop=35580  arb=33423  blocked=0      pending=False dr=222/222
+loop=55690  arb=19477  blocked=34356  pending=True  dr=224/223
+loop=83790  arb=0      blocked=83790  pending=True  dr=224/223
+loop=82787  arb=0      blocked=82787  pending=True  dr=224/223
+loop=69805  arb=8624   blocked=59924  pending=False dr=225/225
+loop=35971  arb=30946  blocked=0      pending=False dr=225/225
+```
+
+The PRU loops throughout — faster while wedged, the blocked path being the short
+one — and reaches its arbitration worker **not once** in the middle two samples.
+It is held at `EVENT_IS_ACKED(mailbox, deviceregister)`, and `dr=224/223` says by
+what: **one device register event the ARM has not acknowledged**. So
+`sm_arb_worker_cpu()` is never called, `ifs_intr_arbitration_pending` is never
+cleared, and the emulated processor spins out its 100 ms and reports the PRU
+stopped or hung. The PRU is doing what it should; the arbitration statemachines
+have nothing wrong with them.
+
+The stall is ARM-side, in `qunibusadapter_c::worker()`. Its event block is
+guarded by `res > 0` — the result of `pru_backend->wait_event()`, which returns 0
+on a timeout — so **the worker examines the mailbox only when a new PRU interrupt
+arrives, never on the poll timeout**. An interrupt that is coalesced away (the
+remoteproc path reads a *count*, so several PRU signals collapse into one wake)
+leaves its event standing in the mailbox with nothing to look at it, and the
+worker sleeps in `poll()` up to 100 ms at a time while the PRU holds the bus
+cycle open. It recovers when the next unrelated interrupt arrives and the loop
+drains the backlog, which is why the wedge comes and goes rather than sticking.
+The slot collision does not cause this; it churns interrupt bookkeeping hard
+enough to hit the window often. Thread states agree: the adapter worker sits in
+`S` while the event stands unacknowledged, and the CPU thread spins in `R`.
+
+A slot shared at **different** levels was tested the same way and does not wedge:
+the listing ran to 236 entries with `blocked` at zero throughout, so the refusal
+added above does cover the reachable case.
+
+That leaves the fix ARM-side and small — look at the mailbox on every wake *and*
+every timeout, rather than only on a fresh interrupt — which is step 3, and worth
+doing before 3.1 touches the same handshake.
 
 ---
 

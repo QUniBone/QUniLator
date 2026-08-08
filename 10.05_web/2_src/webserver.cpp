@@ -232,7 +232,14 @@ static int api_debug_pru_handler(struct mg_connection *conn, void * /*cbdata*/) 
 		o["master_passes_delta"] = picojson::value((double) d_master);
 		// What is left of the loop: passes that reached neither, which are the
 		// ones held back by an unacknowledged device register event.
-		o["blocked_passes_delta"] = picojson::value((double) (d_loop - d_arb - d_master));
+		//
+		// The three are read one after another while the PRU runs, so a sample
+		// can catch a pass counted in one and not yet in the next, and the
+		// remainder come out at -1. Signed, and floored: the skew is a count of
+		// one, and reporting it as four billion blocked passes would name the
+		// very fault this endpoint exists to find.
+		int64_t blocked = (int64_t) d_loop - (int64_t) d_arb - (int64_t) d_master;
+		o["blocked_passes_delta"] = picojson::value((double) (blocked > 0 ? blocked : 0));
 
 		o["looping"] = picojson::value(d_loop != 0);
 		o["arbitrating"] = picojson::value(d_arb != 0);
