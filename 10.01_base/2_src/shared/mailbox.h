@@ -52,6 +52,7 @@
 #define ARM2PRU_DDR_SLAVE_MEMORY	18	// use DDR as QBUS/UNIBUS slave memory
 #define ARM2PRU_ARB_GRANT_INTR_REQUESTS	19 // emulated CPU answers device requests
 #define ARM2PRU_CPU_BUS_ACCESS 20 // prohibit any activity of CPU on QBUS
+#define ARM2PRU_DMA_CANCEL	21 // take back a DMA which has not started yet
 
 
 
@@ -75,11 +76,17 @@
 #endif
 
 // possible states of DMA machine
+// The PRU writes these: ARBITRATING when it takes an ARM2PRU_DMA, RUNNING when
+// the data statemachine starts, and one of the final states when it stops. So
+// the state says who owns mailbox.dma - ARBITRATING means the request is only a
+// pending NPR/DMR and nothing has been transferred, which is the one state an
+// ARM2PRU_DMA_CANCEL can take back.
 #define DMA_STATE_READY	0        	// idle
 #define DMA_STATE_ARBITRATING	1	// in NPR/NPG/SACK arbitration
 #define DMA_STATE_RUNNING	2	// transfering data
 #define DMA_STATE_TIMEOUTSTOP	3	// stop because of QBUS/UNIBUS timeout
 #define DMA_STATE_INITSTOP	4	// stop because INIT signal sensed
+#define DMA_STATE_CANCELED	5	// taken back by ARM before it started
 
 // Bit masks BR*/NPR and BG*/NPG in buslatch 0 and 1
 // bit # is index into arbitration_request[] array.

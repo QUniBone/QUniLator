@@ -82,6 +82,12 @@ private:
 	// only under requests_mutex.
 	bool dma_orphan_on_pru;
 
+	// Ask the PRU to abandon the DMA it is holding. True if it did, which frees
+	// mailbox->dma at once; false if the transfer is already on the bus, and
+	// then its completion is still on its way. Under requests_mutex, which is
+	// what serializes mailbox->dma.
+	bool dma_cancel_on_pru(void);
+
 	unibuscpu_c	*registered_cpu ; // only one unibuscpu_c may be registered
 
 	// Helper map: find register via 8bit handle
@@ -150,6 +156,11 @@ public:
 	bool request_is_blocking_active(uint8_t level_index);
 	void request_active_complete(unsigned level_index, bool signal_complete);
 	void request_execute_active_on_PRU(unsigned level_index);
+
+	// Give up on a DMA that outlasted its caller's deadline: take it back from
+	// the PRU if it never started, and retire it from the schedule tables.
+	// True if it was retired here.
+	bool dma_request_abandon(dma_request_c& dma_request);
 
 	// one emulated-processor bus access, folded into the running summary
 	void cpu_access_profile_note(uint64_t wall_ns, uint64_t cpu_ns,

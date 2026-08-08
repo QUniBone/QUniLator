@@ -66,6 +66,7 @@
 #include "pru_backend.hpp"
 #include "pruss_intc_mapping.h"
 #include "iopageregister.h"
+#include "timeout.hpp"
 #include "priorityrequest.hpp"
 #include "qunibusadapter.hpp"
 #include "unibuscpu.hpp"
@@ -427,10 +428,20 @@ void qunibusadapter_c::request_schedule(priority_request_c& request)
     prl->slot_request_mask |= (1 << request.priority_slot);  // set slot bit
 }
 
+// Ask the PRU to abandon the DMA it holds, and say whether it did.
+bool qunibusadapter_c::dma_cancel_on_pru(void)
+{
+    // Must run under pthread_mutex_lock(&requests_mutex): mailbox->dma is what
+    // that lock protects, and the answer is read out of it.
+    if (!mailbox_execute(ARM2PRU_DMA_CANCEL))
+        return false; // PRU did not answer at all: assume it still has the transfer
+    return mailbox->dma.cur_status == DMA_STATE_CANCELED;
+}
+
 // Cancel all pending device_DMA and IRQ requests of every level.
 // requests which are active on the PRU (->active) are left running,
 // and the PRU terminates DMA sequences on INIT.
-void qunibusadapter_c::requests_cancel_scheduled(void) 
+void qunibusadapter_c::requests_cancel_scheduled(void)
 {
     priority_request_c *req;
 
@@ -444,12 +455,18 @@ void qunibusadapter_c::requests_cancel_scheduled(void)
             if ((req = prl->slot_request[slot])) {
                 dma_request_c *dmareq;
                 // A DMA chunk already handed to the PRU keeps running - the
-                // tables are cleared here, the transfer is not. It still owns
-                // mailbox->dma and will still signal when it ends, so remember
-                // it: no further chunk may be pushed until that signal has been
-                // taken, or the two transfers share one mailbox and the
+                // tables are cleared here, the transfer is not. Take it back if
+                // the PRU has not started it: one parked in an arbitration that
+                // is never granted would otherwise never signal, and holding the
+                // mailbox for it holds off every later DMA for good.
+                //
+                // A chunk the PRU is executing cannot be taken back. It still
+                // owns mailbox->dma and will still signal when it ends, so
+                // remember it: no further chunk may be pushed until that signal
+                // has been taken, or the two transfers share one mailbox and the
                 // completion is accounted against the wrong request.
-                if (level_index == PRIORITY_LEVEL_INDEX_NPR && req->executing_on_PRU)
+                if (level_index == PRIORITY_LEVEL_INDEX_NPR && req->executing_on_PRU
+                        && !dma_cancel_on_pru())
                     dma_orphan_on_pru = true;
                 req->executing_on_PRU = false;
                 if ((dmareq = dynamic_cast<dma_request_c *>(req)))
@@ -672,6 +689,65 @@ void qunibusadapter_c::request_active_complete(unsigned level_index, bool signal
 
 }
 
+// A transfer that outlasted the deadline its caller gave it. Retire it, so its
+// slot does not stay occupied for the life of the process: DMA() refuses every
+// later transfer on an occupied slot, and on a machine where nothing grants the
+// bus - a dark one, or one with no processor - that is every transfer the
+// slot's owner will ever make again. Recovering from that used to need a
+// restart of the service.
+//
+// Only a transfer the PRU has not started can be retired; the PRU says which it
+// was. One that is on the bus keeps its slot, as before: it ends within a bus
+// timeout per word, and its completion is what retires it.
+bool qunibusadapter_c::dma_request_abandon(dma_request_c& dma_request)
+{
+    priority_request_level_c *prl = &request_levels[PRIORITY_LEVEL_INDEX_NPR];
+    unsigned slot = dma_request.priority_slot;
+
+    pthread_mutex_lock(&requests_mutex);
+
+    // It may have completed between the deadline expiring and this lock, or an
+    // INIT may have cleared the tables under it. Then there is nothing to do,
+    // and nothing may be signalled either - the request is someone else's now.
+    if (dma_request.complete || prl->slot_request[slot] != &dma_request) {
+        pthread_mutex_unlock(&requests_mutex);
+        return false;
+    }
+
+    if (dma_request.executing_on_PRU && !dma_cancel_on_pru()) {
+        ERROR("DMA of %s stays in slot %u: the PRU has it on the bus "
+              "(dma.cur_status=%u)",
+              dma_request.device ? dma_request.device->name.value.c_str() : "none",
+              slot, (unsigned) mailbox->dma.cur_status);
+        pthread_mutex_unlock(&requests_mutex);
+        return false;
+    }
+    dma_request.executing_on_PRU = false;
+
+    // out of the schedule tables
+    prl->slot_request[slot] = NULL;
+    prl->slot_request_mask &= ~(1 << slot);
+    if (prl->active == &dma_request)
+        prl->active = NULL;
+
+    // whatever was queued behind it may run now - the mailbox is free again
+    if (!prl->active && prl->slot_request_mask) {
+        request_activate_lowest_slot(PRIORITY_LEVEL_INDEX_NPR);
+        request_execute_active_on_PRU(PRIORITY_LEVEL_INDEX_NPR);
+    }
+    pthread_mutex_unlock(&requests_mutex);
+
+    // Release the request. `success` is already false: the caller that gave up
+    // on it set that before coming here, for the same reason
+    // requests_cancel_scheduled() does - a device reuses one dma_request_c, and
+    // the result of its previous transfer must not stand as this one's.
+    pthread_mutex_lock(&dma_request.complete_mutex);
+    dma_request.complete = true;
+    pthread_cond_signal(&dma_request.complete_cond);
+    pthread_mutex_unlock(&dma_request.complete_mutex);
+    return true;
+}
+
 // Request a DMA cycle from Arbitrator.
 // unibus_control = QUNIBUS_CYCLE_DATI or _DATO
 // unibus_end_addr = last accessed address (success or timeout) and timeout condition
@@ -803,13 +879,14 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
     priority_request_level_c *prl = &request_levels[PRIORITY_LEVEL_INDEX_NPR];
 
     // The slot still carries a request. Either the device has two transfers in
-    // flight on one slot - its own error - or the previous one timed out and is
-    // still scheduled, which is this adapter's contract: a timed-out request
-    // stays put because the PRU may yet finish it, and the buffer is where its
-    // words land. Either way the transfer cannot be started, and the caller is
-    // told so rather than the process being aborted: a device driving the bus
-    // badly must not take the emulator down with it. The slot frees itself when
-    // the PRU completes the request that holds it.
+    // flight on one slot - its own error - or a previous one timed out with the
+    // PRU already executing it, which dma_request_abandon() leaves in place:
+    // such a transfer still owns mailbox->dma and the buffer is where its words
+    // land. Either way the transfer cannot be started, and the caller is told so
+    // rather than the process being aborted: a device driving the bus badly must
+    // not take the emulator down with it. The slot frees itself when the PRU
+    // completes the request that holds it, which for a transfer on the bus is a
+    // bus timeout per word away.
     if (prl->slot_request[dma_request.priority_slot] != NULL) {
         priority_request_c *held = prl->slot_request[dma_request.priority_slot];
         ERROR("DMA slot %u still holds a request of %s: %s @ %s refused",
@@ -870,6 +947,10 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
         // NO wait for PRU signal, instead busy waiting. CPU thread blocked.
         // Reason: SPEED. CPU does high frequency single word accesses.
         bool completed = false;
+        // How long a completion the PRU still owes for a cancelled transfer is
+        // waited for, and when the wait started (0 = not waiting). See below.
+        static const uint64_t ORPHAN_WAIT_NS = 100000000ull; // 100 ms
+        uint64_t orphan_wait_ns = 0;
         // What the spin actually costs an emulated processor, measured two ways:
         // elapsed time, and the time this thread was on a core for. They agree
         // when the spin is genuinely waiting for the PRU to finish the cycle,
@@ -906,9 +987,37 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
                 if (worker_device_dma_chunk_complete_event())
                     completed = true;
                 EVENT_ACK(*mailbox, dma);
-            } else if (activereq == NULL)
-                // request aborted by worker_power_event()
-                completed = true;
+            } else if (activereq == NULL) {
+                // The request was aborted by worker_init_event() or
+                // worker_power_event() while this thread waited on it. If the
+                // PRU had already started the transfer, it is finishing it, and
+                // the completion is this thread's to collect: the adapter
+                // worker passes over cpu_access events, and a cpu_access
+                // completion raises no PRU interrupt to wake it with either.
+                // Walking away from the signal strands the orphan latch that
+                // requests_cancel_scheduled() set, and a stranded latch holds
+                // off every later DMA for the life of the process - the slot
+                // 16 wedge of issue #92, by a second road.
+                //
+                // The wait is bounded because the reason there is a latch at
+                // all is that the PRU refused to abandon the transfer: it has
+                // it on the bus, where a word ends within a bus timeout.
+                if (!dma_orphan_on_pru)
+                    completed = true;
+                else if (!EVENT_IS_ACKED(*mailbox, dma)) {
+                    worker_device_dma_chunk_complete_event(); // discards, clears the latch
+                    EVENT_ACK(*mailbox, dma);
+                    completed = true;
+                } else if (orphan_wait_ns == 0)
+                    orphan_wait_ns = timeout_c::abstime_ns();
+                else if (timeout_c::abstime_ns() - orphan_wait_ns > ORPHAN_WAIT_NS) {
+                    // Never seen; the alternative is spinning here for good.
+                    ERROR("the PRU owes a completion for a cancelled CPU access "
+                          "and has not given it in %u ms: later DMA stays held off",
+                          (unsigned) (ORPHAN_WAIT_NS / 1000000));
+                    completed = true;
+                }
+            }
             pthread_mutex_unlock(&requests_mutex); //&dma_request.complete_mutex);
         } while (!completed);
 //ARM_DEBUG_PIN1(0); // CPU20 performace
@@ -944,22 +1053,25 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
                 deadline.tv_sec++;
                 deadline.tv_nsec -= 1000000000L;
             }
+            bool timed_out = false;
             while (!dma_request.complete) {
                 int res = pthread_cond_timedwait(&dma_request.complete_cond,
                                                  &dma_request.complete_mutex,
                                                  &deadline);
                 if (res == ETIMEDOUT) {
                     dma_request.success = false;
+                    timed_out = true;
                     ERROR("DMA did not complete within %u ms: dev %s, %s @ %s, "
                           "wordcount %u", timeout_ms,
                           dma_request.device ? dma_request.device->name.value.c_str()
                                              : "none",
                           qunibus_c::control2text(qunibus_cycle),
                           qunibus->addr2text(unibus_addr), wordcount);
-                    // Where the transfer died, read off the mailbox. cur_status
-                    // 1 is the PRU parked in NPR/NPG/SACK arbitration - a grant
-                    // that never came; 0 with signaled != acked is a transfer
-                    // that finished whose completion event was never serviced.
+                    // Where the transfer died, read off the mailbox.
+                    // DMA_STATE_ARBITRATING (1) is the PRU parked in NPR/NPG/SACK
+                    // arbitration - a grant that never came; DMA_STATE_READY (0)
+                    // with signaled != acked is a transfer that finished whose
+                    // completion event was never serviced.
                     ERROR("  mailbox: dma.cur_status=%u cur_addr=%s "
                           "event dma signaled=%u acked=%u",
                           (unsigned) mailbox->dma.cur_status,
@@ -970,6 +1082,12 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
                 }
                 assert(!res);
             }
+            pthread_mutex_unlock(&dma_request.complete_mutex);
+            // Outside the request's own lock: retiring it takes requests_mutex
+            // first and this one second, the order every other path uses.
+            if (timed_out)
+                dma_request_abandon(dma_request);
+            return;
         }
         pthread_mutex_unlock(&dma_request.complete_mutex);
     }

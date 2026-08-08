@@ -282,7 +282,49 @@ void main(void) {
 					// Emulated device: raise request for emulated or physical Arbitrator.
 					sm_arb.device_request_mask |= PRIORITY_ARBITRATION_BIT_NP;
 				}
+				// The request exists now but nothing has been transferred: say so,
+				// so ARM2PRU_DMA_CANCEL can tell a transfer that never started
+				// from one that ran to its end (which leaves DMA_STATE_READY too).
+				mailbox.dma.cur_status = DMA_STATE_ARBITRATING;
 				// request not put on bus for CPU memory access
+				mailbox.arm2pru_req = ARM2PRU_NONE; // ACK: done
+				break;
+			case ARM2PRU_DMA_CANCEL:
+				// Take back a DMA the ARM has given up waiting for. Without this
+				// there is no way to reclaim mailbox.dma from a transfer parked in
+				// an arbitration that is never granted - nothing drives DMGO on a
+				// machine with no processor in it, or with a wedged one - and the
+				// ARM must hold the request's slot for a completion that will
+				// never arrive.
+				//
+				// Only a transfer that has not started can be taken back. Once the
+				// data statemachine has the bus it owns mailbox.dma, and it ends by
+				// itself: every word is bounded by the bus timeout. It is refused
+				// here, and the ARM reads which happened from cur_status. There is
+				// no completion event either way, as with ARM2PRU_INTR_CANCEL.
+				if (sm_data_master_state == NULL
+						&& mailbox.dma.cur_status == DMA_STATE_ARBITRATING) {
+					if (mailbox.dma.cpu_access)
+						sm_arb.cpu_request = 0;
+					else {
+						// DMR comes off the bus with the request: grant_check
+						// writes the request lines from this mask every pass.
+						//
+						// Retracting a committed DMR is the thing the dmr_committed
+						// latch exists to avoid, because a CPU retracts an in-flight
+						// DMGO with it and a SACK on the dying pulse would run a DMA
+						// with no bus mastership. Two things make it safe here: the
+						// ARM only cancels after waiting out a timeout no arbitrating
+						// CPU would ever need, and the grant state is reset with the
+						// request, so the accept path cannot assert SACK afterwards.
+						sm_arb.device_request_mask &= ~PRIORITY_ARBITRATION_BIT_NP;
+						sm_arb.device_grant_mask &= ~PRIORITY_ARBITRATION_BIT_NP;
+						sm_arb.dmr_committed = 0;
+						if (sm_arb.state == state_arbitration_dma_grant_rply_sync_wait)
+							sm_arb.state = state_arbitration_grant_check;
+					}
+					mailbox.dma.cur_status = DMA_STATE_CANCELED;
+				}
 				mailbox.arm2pru_req = ARM2PRU_NONE; // ACK: done
 				break;
 			case ARM2PRU_INTR:

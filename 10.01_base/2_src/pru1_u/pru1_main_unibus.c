@@ -248,7 +248,44 @@ void main(void) {
 					// Emulated device: raise request for emulated or physical Arbitrator.
 					sm_arb.device_request_mask |= PRIORITY_ARBITRATION_BIT_NP;
 				}
+				// The request exists now but nothing has been transferred: say so,
+				// so ARM2PRU_DMA_CANCEL can tell a transfer that never started
+				// from one that ran to its end (which leaves DMA_STATE_READY too).
+				mailbox.dma.cur_status = DMA_STATE_ARBITRATING;
 				// request not put on bus for CPU memory access
+				mailbox.arm2pru_req = ARM2PRU_NONE; // ACK: done
+				break;
+			case ARM2PRU_DMA_CANCEL:
+				// Take back a DMA the ARM has given up waiting for. Without this
+				// there is no way to reclaim mailbox.dma from a transfer parked in
+				// an arbitration that is never granted - nothing drives NPG on a
+				// machine with no processor in it - and the ARM must hold the
+				// request's slot for a completion that will never arrive.
+				//
+				// Only a transfer that has not started can be taken back. Once the
+				// data statemachine has the bus it owns mailbox.dma, and it ends by
+				// itself: every word is bounded by the bus timeout. It is refused
+				// here, and the ARM reads which happened from cur_status. There is
+				// no completion event either way, as with ARM2PRU_INTR_CANCEL.
+				if (sm_data_master_state == NULL
+						&& mailbox.dma.cur_status == DMA_STATE_ARBITRATING) {
+					if (mailbox.dma.cpu_access)
+						sm_arb.cpu_request = 0;
+					else {
+						// NPR comes off the bus with the request: the arbitration
+						// worker writes the BR/NPR lines from this mask every pass.
+						sm_arb.device_request_mask &= ~PRIORITY_ARBITRATION_BIT_NP;
+						if (sm_arb.grant_bbsy_ssyn_wait_grant_mask
+								& PRIORITY_ARBITRATION_BIT_NP) {
+							// NPG was taken and SACK asserted, and the bus master
+							// never released BBSY. Drop SACK with the request:
+							// held, it blocks every later arbitration on the bus.
+							sm_arb.grant_bbsy_ssyn_wait_grant_mask = 0;
+							buslatches_setbits(1, BIT(5), 0); // SACK = latch[1], bit 5
+						}
+					}
+					mailbox.dma.cur_status = DMA_STATE_CANCELED;
+				}
 				mailbox.arm2pru_req = ARM2PRU_NONE; // ACK: done
 				break;
 			case ARM2PRU_INTR:
