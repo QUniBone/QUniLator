@@ -16,7 +16,7 @@ console down with it.
 
 ## 1. Technical correctness
 
-### 1.1 `DMA()` returns a *stale* success flag when INIT is active
+### 1.1 `DMA()` returns a *stale* success flag when INIT is active — FIXED in c9b6400
 `qunibusadapter.cpp:711-715`: a `DMA()` call during INIT sets
 `dma_request.complete = true` and returns — but never touches
 `dma_request.success`, `qunibus_end_addr`, or the buffer. Devices reuse their
@@ -90,7 +90,7 @@ is the resource-info line (`qunibusdevice.cpp:389`), so the damage is a wrong
 octal vector shown for anything ≥ 0400 (floating vectors, second controllers).
 One-character fix.
 
-### 1.8 MSCP `DMARead()` leaks its buffer on a failed transfer
+### 1.8 MSCP `DMARead()` leaks its buffer on a failed transfer — FIXED in c9b6400
 `mscp_port.cpp:1176-1196`: `new uint16_t[...]`, then on `!dma_request.success`
 returns `nullptr` **without `delete[]`**. Every NXM read a guest provokes leaks
 the full transfer size. A guest OS with a buggy driver (or a diagnostic doing
@@ -101,7 +101,7 @@ hours. Add the `delete[]` in the failure branch.
 
 ## 2. Showstopper bugs
 
-### 2.1 Mailbox DMA overwrite race → assert abort (known, issue #92)
+### 2.1 Mailbox DMA overwrite race → assert abort (known, issue #92) — PARTIALLY in c3c87a9
 `qunibusadapter.cpp:1249` (`assert(wordcount_transferred <= dmareq->wordcount)`).
 `requests_cancel_scheduled()` (INIT/power event) clears `prl->active` and
 releases the waiting device **while the PRU is still executing the transfer**
@@ -115,7 +115,7 @@ Fix direction: a "PRU busy" latch that survives `requests_cancel_scheduled()`
 acked — or a generation counter in `mailbox->dma` so a stale completion is
 discarded instead of accounted.
 
-### 2.2 A guest-supplied DMA range that runs off the end of memory aborts the service
+### 2.2 A guest-supplied DMA range that runs off the end of memory aborts the service — FIXED in c9b6400
 `qunibusadapter.cpp:702`: `assert((unibus_addr + 2*wordcount) <=
 addr_space_byte_count)` — and asserts are live. The MSCP port validates only
 the *start* address of guest-supplied buffer descriptors
@@ -129,7 +129,7 @@ so no device can ever reach it. Worth auditing the other DMA devices (RL, RK,
 TS, DELQA) for the same missing end-of-range check — the engine-side fix
 covers them all at once.
 
-### 2.3 Enabling a device whose registers collide with another aborts the service
+### 2.3 Enabling a device whose registers collide with another aborts the service — FIXED in 347348d
 `qunibusadapter.cpp:190-193`: `register_device()` hits `FATAL` (process abort)
 when a new device's register address is already claimed. This runs at *enable*
 time from a user action (web API, config apply): two DL11s at 776500, or a
@@ -252,7 +252,7 @@ ceiling and then refuses installs until restart. A free-list (or first-fit
 scan for a contiguous run, which the 4-bit-per-entry map makes easy) fixes it
 permanently.
 
-### 4.3 Dead and vestigial code in the hot files
+### 4.3 Dead and vestigial code in the hot files — PARTIALLY in 347348d
 - `qunibusadapter_c::on_init_changed()` (`qunibusadapter.cpp:125-131`) is never
   called — the adapter is not in its own `devices[]` table — so the ARM-side
   "cancel all BR/NPR on INIT" never runs. The QBUS PRU clears
@@ -261,7 +261,7 @@ permanently.
   equivalent, then delete or wire the dead method.
 - The second writable/active-DATI `FATAL` block in `register_device()`
   (`qunibusadapter.cpp:242-250`) is unreachable — the same condition is
-  refused at 159-167.
+  refused at 159-167. — FIXED in 347348d; the other two bullets stand.
 - `#ifdef TODO` blocks (emulated-CPU arbitration in `pru1_main_qbus.c`,
   `pru1_statemachine_arbitration.c:162-192`) and large commented-out
   experiments throughout the adapter deserve either a plan reference or
