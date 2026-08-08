@@ -93,7 +93,7 @@ private:
 	qunibusdevice_register_t *reg_buf;
 	qunibusdevice_register_t *reg_ctr;
 
-	intr_request_c intr_request = intr_request_c(this);
+	intr_request_c intr_request{this};
 
 	// serializes state between the bus-access callback and the worker
 	pthread_mutex_t state_mutex = PTHREAD_MUTEX_INITIALIZER;

@@ -72,7 +72,7 @@ private:
     qunibusdevice_register_t *busreg_RXDB;		// multipurpose data register: offset +2
 
     // RX11 has no DMA
-    intr_request_c intr_request = intr_request_c(this);
+    intr_request_c intr_request{this};
 
 public:
 
@@ -149,11 +149,11 @@ private:
     qunibusdevice_register_t *busreg_RX2DB;		// multipurpose data register: offset +2
 
 
-    intr_request_c intr_request = intr_request_c(this);
+    intr_request_c intr_request{this};
     bool interrupt_condition_prev ; // find raising interrupt condition
     bool interrupt_enable ;
 
-    dma_request_c dma_request = dma_request_c(this); // operated by qunibusadapter
+    dma_request_c dma_request{this}; // operated by qunibusadapter
 
 
     unsigned dma_function_word_count ; // needed DMA wordcount for function

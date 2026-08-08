@@ -93,7 +93,7 @@ public:
     parameter_bool_c large_monitor = parameter_bool_c(this, "largemonitor", "lm", false,
             "report a 19-inch monitor rather than a 15-inch one");
 
-    intr_request_c intr_request = intr_request_c(this);
+    intr_request_c intr_request{this};
 
 private:
     // --- CSR (base+00) ---

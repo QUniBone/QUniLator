@@ -70,8 +70,8 @@ private:
     qunibusdevice_register_t *reg_config;
 
     // two interrupts of same level, need slot and slot+1
-    intr_request_c intr_request_input_change = intr_request_c(this);
-    intr_request_c intr_request_output_period = intr_request_c(this);
+    intr_request_c intr_request_input_change{this};
+    intr_request_c intr_request_output_period{this};
 
 
     /*** SLU is infact 2 independend devices: RCV and XMT ***/

@@ -184,8 +184,8 @@ public:
     void worker_wake(void) override;
 
 private:
-    dma_request_c dma_request = dma_request_c(this);
-    intr_request_c intr_request = intr_request_c(this);
+    dma_request_c dma_request{this};
+    intr_request_c intr_request{this};
 
     // true on the Q-bus M7196, which decodes a byte write to TSSR<15:8> as
     // TSDBX. The Unibus M7982 has no such register and reads any write to the

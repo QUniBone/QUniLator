@@ -115,8 +115,8 @@ private:
 	qunibusdevice_register_t *reg_xbuf;
 
 	// two interrupts of same level, need slot and slot+1
-	intr_request_c rcvintr_request = intr_request_c(this);
-	intr_request_c xmtintr_request = intr_request_c(this);
+	intr_request_c rcvintr_request{this};
+	intr_request_c xmtintr_request{this};
 
 	/*** SLU is infact 2 independend devices: RCV and XMT ***/
 	pthread_cond_t on_after_rcv_register_access_cond = PTHREAD_COND_INITIALIZER;
@@ -223,7 +223,7 @@ private:
 	qunibusdevice_register_t *reg_lks;
 
 	// KW11 has one interrupt
-	intr_request_c intr_request = intr_request_c(this);
+	intr_request_c intr_request{this};
 
 	bool intr_enable; // interrupt enable, LKS bit 6
 	bool line_clock_monitor; // LKS bit 7

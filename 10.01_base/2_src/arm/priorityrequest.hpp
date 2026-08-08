@@ -46,6 +46,7 @@
 
 #include <stdint.h>
 #include <pthread.h>
+#include <atomic>
 
 #include "logsource.hpp"
 
@@ -76,9 +77,14 @@ private:
 
 	uint8_t priority_slot; // backplane priority_slot which triggered request
 public:
-	// better make state variables volatile, accessed by qunibusadapter::worker
-	volatile bool executing_on_PRU; // true between schedule to PRU and compelte signal
-	volatile bool complete;
+	// State shared between the requesting device thread and
+	// qunibusadapter::worker(). Atomic, not `volatile`: `complete` is the flag a
+	// waiting device polls, and the words the transfer landed in the buffer plus
+	// `success` must be visible to it once it sees the flag set. A sequentially
+	// consistent store/load pair gives that release/acquire relationship; a
+	// `volatile` write gives nothing but a promise not to elide the access.
+	std::atomic<bool> executing_on_PRU; // true between schedule to PRU and compelte signal
+	std::atomic<bool> complete;
 
 	// PRU -> signal -> worker() -> request -> device. INTR/DMA
 	pthread_mutex_t complete_mutex;
@@ -124,7 +130,9 @@ public:
 	uint32_t chunk_qunibus_start_addr; // current chunk
 	uint32_t chunk_words; // size of current chunks
 
-	volatile bool success; // DMA can fail with bus timeout
+	// DMA can fail with bus timeout. Set by the adapter worker before it sets
+	// `complete`, read by the device once it sees that - see the note there.
+	std::atomic<bool> success;
 
 	// return ptr to chunk pos in buffer
 	uint16_t *chunk_buffer_start(void) {

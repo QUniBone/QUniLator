@@ -328,9 +328,9 @@ public:
 private:
 	qunibusdevice_register_t *reg[dhv_idx_count];
 
-	intr_request_c rcvintr_request = intr_request_c(this);
-	intr_request_c xmtintr_request = intr_request_c(this);
-	dma_request_c  dma_request = dma_request_c(this);
+	intr_request_c rcvintr_request{this};
+	intr_request_c xmtintr_request{this};
+	dma_request_c  dma_request{this};
 	// How long a transmit DMA may take before it is called lost. A real
 	// transfer is microseconds; this is only there so a bus that has stopped
 	// answering cannot park the transmit worker for good.

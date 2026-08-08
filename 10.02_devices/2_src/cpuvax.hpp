@@ -57,7 +57,7 @@ public:
 
     // A register access the processor makes on the UNIBUS, handled by
     // qunibusadapter as a DATI or DATO like any other bus master's.
-    dma_request_c data_transfer_request = dma_request_c(this);
+    dma_request_c data_transfer_request{this};
 
     parameter_unsigned_c memory_mb = parameter_unsigned_c(this, "memory", "mem",/*readonly*/
                                      false, "MB", "%u", "Main memory size in megabytes.", 8, 10);

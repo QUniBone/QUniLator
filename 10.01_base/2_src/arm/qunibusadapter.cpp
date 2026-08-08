@@ -1189,7 +1189,7 @@ void qunibusadapter_c::worker_init_event()
     DEBUG_FAST("worker_init_event(): INIT %s", line_INIT ? "asserted" : "negated");
     for (device_handle = 0; device_handle <= MAX_DEVICE_HANDLE; device_handle++)
         if ((device = devices[device_handle])) {
-            device->init_asserted = line_INIT;
+            device->init_asserted = line_INIT.load();
             device->on_init_changed();
         }
 

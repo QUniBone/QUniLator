@@ -61,8 +61,8 @@ private:
     uint16_t silo_compare[128]; // memory data to be compared with silo
 
     // RL11 has one INTR and DMA
-    dma_request_c dma_request = dma_request_c(this); // operated by qunibusadapter
-    intr_request_c intr_request = intr_request_c(this);
+    dma_request_c dma_request{this}; // operated by qunibusadapter
+    intr_request_c intr_request{this};
 
     // only 16*16 = 256 byte buffer from drive (SILO)
     // one DMA transaction per sector, must be complete within one sector time

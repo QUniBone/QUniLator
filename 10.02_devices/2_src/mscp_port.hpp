@@ -97,8 +97,8 @@ public:
     void on_drive_status_changed(storagedrive_c *drive) override;
 
     // As every storage controller UDA has one INTR and DMA
-    dma_request_c dma_request = dma_request_c(this) ; // operated by qunibusadapter
-    intr_request_c intr_request = intr_request_c(this) ;
+    dma_request_c dma_request{this}; // operated by qunibusadapter
+    intr_request_c intr_request{this};
 
     // Configuration parameter for 22-bit DMA
     parameter_bool_c twenty_two_bit_DMA = parameter_bool_c(this, "22_bit_dma", "dma22",

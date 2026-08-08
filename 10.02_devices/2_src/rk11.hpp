@@ -151,8 +151,8 @@ private:
 
 	// Unibusadapter: RK11 has one INTR and DMA
 	// should be merged with RK11::DMARequest
-	dma_request_c dma_request = dma_request_c(this) ; // operated by qunibusadapter
-	intr_request_c intr_request = intr_request_c(this) ;
+	dma_request_c dma_request{this}; // operated by qunibusadapter
+	intr_request_c intr_request{this};
 
 	
 public:

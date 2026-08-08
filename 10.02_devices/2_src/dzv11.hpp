@@ -263,8 +263,8 @@ private:
 	qunibusdevice_register_t *reg_msr_tdr;
 
 	// two interrupts of the same level, slot and slot+1 (RCV, XMT)
-	intr_request_c rcvintr_request = intr_request_c(this);
-	intr_request_c xmtintr_request = intr_request_c(this);
+	intr_request_c rcvintr_request{this};
+	intr_request_c xmtintr_request{this};
 
 	pthread_mutex_t state_mutex = PTHREAD_MUTEX_INITIALIZER;
 	pthread_cond_t  xmt_cond = PTHREAD_COND_INITIALIZER;

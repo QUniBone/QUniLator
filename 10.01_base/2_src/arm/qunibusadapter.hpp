@@ -118,9 +118,17 @@ public:
 	// Lower index = "nearer to CPU" = higher priority
 	qunibusdevice_c *devices[MAX_DEVICE_HANDLE + 1];
 
-	volatile bool line_INIT; // current state of these QUNIBUS signals
-	volatile bool line_DCLO;
-	volatile bool line_ACLO;
+	// Current state of these QUNIBUS signals. Written by the adapter's worker
+	// thread when the PRU signals an edge, read by every device thread and by
+	// the web layer, so they are atomics rather than the `volatile bool`s they
+	// used to be: `volatile` orders nothing against other objects and a plain
+	// concurrent read/write is a data race the compiler is free to break.
+	// Sequentially consistent by default, which is what makes a DMA() that
+	// looks at line_INIT see the flag and the state the worker set around it in
+	// one order.
+	std::atomic<bool> line_INIT{false};
+	std::atomic<bool> line_DCLO{false};
+	std::atomic<bool> line_ACLO{false};
 
 	void on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge) override; // must implement
 	void on_init_changed(void) override; // must implement

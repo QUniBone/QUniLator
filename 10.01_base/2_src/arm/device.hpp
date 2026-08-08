@@ -30,6 +30,7 @@
 #include <list>
 #include <vector>
 #include <mutex>
+#include <atomic>
 
 #include "utils.hpp"
 #include "parameter.hpp"
@@ -155,15 +156,22 @@ public:
 	// reset device, UNIBUS DC_LO, QBUS DCOK
 
 	// every device has a INIT signal, which can be active (asserted) or inactive
-	// set/release device from INIT state
-	volatile bool init_asserted;
+	// set/release device from INIT state.
+	// Written by the adapter's worker thread on an INIT edge, read by this
+	// device's own workers, so atomic for the same reason as the adapter's
+	// line_INIT.
+	std::atomic<bool> init_asserted;
 	virtual void on_init_changed(void) = 0; // reset device, like QBUS/UNIBUS INIT
 
 	// worker threads: multiple instances of single worker() are running in parallel
 	// device must implement a worker(instance) {
 	//		switch((instance) { ... } }
 	//	'instance' from 0 .. worker_count-1
-	volatile bool workers_terminate; // cmd flag to all worker() instances
+	// cmd flag to all worker() instances. Set by workers_stop() on the thread
+	// disabling the device, tested by every worker loop, so atomic: the racing
+	// read of a plain bool is undefined behaviour, and a worker that never sees
+	// the flag is one that gets cancelled instead of unwinding.
+	std::atomic<bool> workers_terminate;
 
 	std::vector<device_worker_c> workers;
 
