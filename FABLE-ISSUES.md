@@ -118,13 +118,46 @@ unchanged; on the board XXDP boots from RL0 through the M9312, lists all 727
 files of the directory and reboots on a power cycle, with no error in the
 journal.
 
-### 1.4 Shell command built from a web-settable path
+### 1.4 Shell command built from a web-settable path — FIXED in b4e2479
 `storageimage.cpp:116-118` runs `system("zcat <image>.gz ><image>")` with the
 image path interpolated unquoted; `sharedfilesystem/filesystem_host.cpp:461` has
 the same pattern. `image_filepath` is settable through the web API, so a
 filename containing spaces or shell metacharacters breaks the command — or
 executes it. The service runs as the operator with sudo rights on the board.
 Use `fork`/`execvp` with an argument vector, or at minimum quote-escape.
+
+Neither runs a shell now. `storageimage.cpp` grew `uncompress_gz()`, which
+forks, makes the output image the child's stdout with a file descriptor, and
+`execlp("zcat", "zcat", "--", gz_path, …)` — the path is an argument, so there
+is no command line for a metacharacter to be quoted into. A failed expansion
+unlinks the half-written file, because a truncated image is one the retry loop
+would then open as a valid empty disk. `filesystem_host.cpp::clear_disk_dir()`
+walked its `rm -rf` glob through `/bin/sh`; it uses `nftw()` with `FTW_DEPTH`
+now, removing each entry below the root, `FTW_PHYS` so a symlink is unlinked
+rather than followed and `FTW_MOUNT` so the walk cannot leave its filesystem —
+and the three shell globs it used to reach hidden files without matching `..`
+are answered by the walk for free.
+
+The `webstorage_image_*` helpers put no restriction on metacharacters in the
+path — a value with a semicolon reaches the drive's `image_fname` unaltered —
+so the input the finding describes is real and still arrives; it is the sink
+that changed.
+
+Verified against the deployed fixed binary on ubx, not just by reading. A
+gzip image was placed on the board under the name `evil;touch qbone_pwned.rl02.gz`,
+a drive pointed at `images/dl/evil;touch qbone_pwned.rl02` and powered on so the
+spin-up opened it: the plain image appeared, decompressed correctly from the
+hostile name (the feature still works), and no `qbone_pwned` marker was created
+anywhere writable — under the old `system()` the `;touch` would have run as the
+operator. The board was then restored to the `xxx` configuration and XXDP boots.
+`clear_disk_dir()` was not exercised end to end — reaching it needs a shared
+host directory set up on a drive — so that half rests on reading; both buses
+build warning-free and the host suites pass.
+
+Two other shell-outs were checked and left as they are: `webupdate.cpp` builds
+`timeout 90 <updater> --changelog` for `popen()`, but every word of it is fixed
+and nothing from the request reaches the line; and `webupdate`'s unit start
+already uses `fork`/`execvp`. `ddrmem`/`buslatches` menu paths run no shell.
 
 ### 1.5 UNIBUS: an INIT pulse can be swallowed as a "stray event"
 `qunibusadapter.cpp:1425-1446`: the worker derives INIT edges by comparing
