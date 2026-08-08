@@ -155,6 +155,37 @@ put on one priority slot at one level, which `warn_on_slot_collisions()` only
 warns about. Both are gone; the vector is now corrected on a pending request,
 which matters because MSCP and DELQA take their vector from the guest.
 
+### 2.5 A priority-slot collision wedges the PRU's interrupt arbitration
+*Not from the review — found on ubx while fixing 2.4.*
+
+`qunibusdevice.cpp`, `warn_on_slot_collisions()`: two devices given the same
+priority slot are **warned** about and installed anyway.
+
+    WRN     rl] Slot 1 used by device rl is also used by DL11
+
+`slot` is a writable parameter, so this is an ordinary operator mistake, and a
+saved configuration carries it. Once both devices interrupt on that slot the
+PRU's interrupt arbitration stops moving:
+
+    ERR  cpu34] unibone_grant_interrupts(): PRU arbitration pending for >100ms
+                - PRU stopped or hung?
+
+repeating for as long as the machine is left running, with the emulated
+processor unable to make progress. `dc_off`/`dc_on` and a power cycle did not
+clear it on ubx; only `systemctl restart` did.
+
+2.4 removed the assertion that used to abort the service on the second device's
+INTR, so the process now survives — but the arbitration is wedged all the same,
+and the refusal path added there was never reached in the run that wedged it. So
+the slot collision costs more than the assertion did, and the damage is in the
+bookkeeping the two devices share, not in the ARM-side check.
+
+Worth doing first: make `warn_on_slot_collisions()` refuse the install rather
+than warn, the way an address conflict now does (2.3) — a collision has no
+working outcome to allow. That is ARM-side and small. What actually wedges the
+PRU is a separate question and needs the arbitration state machines read; the
+refusal keeps a board out of it meanwhile.
+
 ---
 
 ## 3. Performance — CPU cores and engine
