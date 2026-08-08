@@ -473,6 +473,7 @@ infrastructure already in place (`cpu_access_profile_note`,
 `event_latency_c`) is the right tool — the costs below are all *outside* the
 cores, in the per-instruction engine round trips.
 
+
 ### 3.1 One PRU round trip per instruction for interrupt granting
 `cpu.cpp:87-105` — `unibone_grant_interrupts()` runs before **every** opcode
 fetch (`kd11ea_condstep`/`ka11_condstep`) and costs a full
@@ -641,6 +642,348 @@ publication around the actual `core_condstep()`. Each is simple; together
 they make the per-instruction path hard to reason about (and hard to make
 fast, see 3.4). Extracting switch/power handling into functions called from
 the loop would let the loop read as: handle-rare-events, step, publish.
+
+---
+
+## Review findings
+
+A review of this branch against `main` (2026-08-08) confirmed the fixes above
+do what they claim, and found 17 issues at the edges of the new mechanisms —
+nine correctness (1-9), one efficiency (10), and seven cleanups (11-17), in
+descending severity. **All seventeen are fixed**; each carries a note saying
+how. Both buses build warning-free, the 36 MAINDEC diagnostic runs and the 508
+host checks pass. Verified sound along the way: the `/api/debug/pru`
+NULL-`mailbox` deref is unreachable in both entry paths, the init-pulse replay
+cannot fabricate a reset without a real INIT edge, a refused CPU enable cannot
+leave the PRU arbitrating for a missing CPU (CPUs carry no registers), and
+concurrent `probe_range()` is fenced off by `operations_mutex`.
+
+### 1. A device DMA scheduled into the orphan window wedges the CPU spin loop
+`qunibusadapter.cpp:990`: the 2.1 fix latches `dma_orphan_on_pru` when the PRU
+refuses to cancel a cpu_access transfer, and the CPU spin loop in `DMA()`
+collects the orphan — but only in its `activereq == NULL` branch. If a device
+thread schedules a DMA in the window (`request_activate_lowest_slot()` makes
+its request `prl->active` at 516 before `request_execute_active_on_PRU()`
+early-returns on the latch at 558-560), the spin sees an `activereq` that is
+neither `NULL` nor itself, matches neither of its two branches, and spins
+forever — even the 100 ms bail sits inside the `NULL` branch. Nobody else can
+collect the orphan: the worker's dispatch guard (1788) skips cpu_access
+events, and the PRU raises no interrupt for them
+(`pru1_q/pru1_statemachine_dma.c:119-121`). Reaching it takes the
+INIT-during-cpu-access race plus a device DMA in a microseconds-wide window,
+but every link is constructible. Fix: a third spin branch (or a worker-side
+collector) for the foreign-active case.
+
+**Fixed.** The spin no longer reads "my access was cancelled" off `prl->active`
+being NULL. It asks the access's own slot: `requests_cancel_scheduled()` empties
+the slot of everything it force-completes, so a request that is neither active
+nor in its slot was cancelled, and one that is in its slot while another device's
+DMA is active is simply waiting its turn - a state to go on spinning in. Every
+state the spin can be in now falls into a branch.
+
+### 2. The 100 ms orphan bail leaves the latch set for the life of the process
+`qunibusadapter.cpp:1013`: when the owed completion never arrives, the bail
+exits with `completed = true` but `dma_orphan_on_pru` still set — and nothing
+else ever clears it. The only clear site is
+`worker_device_dma_chunk_complete_event()` (1455), reachable solely through a
+dma-event dispatch that on this path can never fire; INIT and power events only
+*set* the latch in `requests_cancel_scheduled()`, never reset it. So the
+holdoff outlives the fault: even after the PRU recovers (say, a restart), every
+`request_execute_active_on_PRU()` returns early, the next emulated-CPU access
+becomes `prl->active`, is held off, and its spin satisfies neither branch — an
+unbounded spin with no bail applicable. Only a service restart recovers. Fix:
+reset the latch on INIT/power (the events that prove a new bus epoch), so the
+wedge cannot outlast what caused it.
+
+**Fixed**, both halves. The bail now applies wherever the latch stands, not only
+in the cancelled branch, so an access held off behind an orphan is bounded too;
+where the access is still in the tables the bail takes it out of them, the way
+`dma_request_abandon()` does, so its slot does not stay occupied. And
+`requests_cancel_scheduled()` clears a latch older than the same 100 ms bound:
+INIT and power are where the bus starts over, and a holdoff must not outlive the
+epoch that caused it. `dma_orphan_since_ns` is what distinguishes an orphan still
+in flight - microseconds of bus cycle left - from one the PRU will never
+complete, so the negate edge of an INIT pulse does not clear the latch its own
+assert edge just set.
+
+### 3. A refused `install()` never unwinds `on_before_install()`
+`qunibusdevice.cpp:87`: the 2.5 refusal path runs `on_before_install()` at 80,
+then on `install()` returning false restores only the four bus-placement
+params (93-97) and returns — `on_before_uninstall()`/`uninstall()`/
+`on_after_uninstall()` never run, so every override's acquisitions leak. An
+`slu_c` whose slot now hard-collides has already opened its tty and made
+`serialport`/`baudrate` readonly (`dl11w.cpp:167-176`): the disabled device
+keeps the port open (blocking the external console bridge) with its params
+stuck readonly. `dhv11_c` leaks its bound TCP listeners; on QBUS `vcb01_c`
+leaves the X window open and `DDRMEM_RANGE_DEVICE` claimed (`vcb01.cpp:231`) —
+a PRU-answered bus window with no controller behind it. (The CPU variant is
+unreachable: CPUs carry no iopage registers and no valid slot, so no refusal
+fires for them.) Made newly reachable by finding 4. Fix: run the uninstall
+callbacks on the refusal path.
+
+**Fixed.** The refusal path runs `on_before_uninstall()` and
+`on_after_uninstall()` before it gives the bus parameters back. `uninstall()` is
+not among them: `install()` refuses before it registers anything, so there is no
+handle to give back and `unregister_device()` asserts on that.
+
+### 4. Three factory-default device pairs now hard-collide on slot and level
+`device_configuration.cpp:110`: DL11b defaults to slots 3,4 at BR4
+(`SLU_SLOT`+2, XMT at slot+1) and DZV11 to slots 4,5 at level 4
+(`DZV11_SLOT=4`) — `check_slot_collisions()` (`qunibusdevice.cpp:375-390`)
+refuses same-slot-same-level, so enabling both defaults refuses the second
+device. On QBUS the level-4 disk variants collide too: DHV11b (slots 14,15) vs
+RLV12 (slot 15), DZV11d (slots 10,11) vs RKV11 (slot 10); the UNIBUS RK11/RL11
+escape only because they sit at level 5, which is warn-only. A defaults-only
+configuration can genuinely fail to bring up its second device. Fix: re-space
+the shipped default slots.
+
+**Fixed** by re-spacing the three defaults that overlapped at level 4: the DZV11
+pool base 4 -> 5 (instances at 5..12, clear of DL11b at 3,4), the DHV11 pool base
+12 -> 17 (17..20, the first run of four that no level-4 device claims), and the
+QBUS RKV11 slot 10 -> 13, which is what opens the run 5..12 for the DZV11s. No
+two shipped defaults arbitrate on one slot at one level now. Slots still shared
+at *different* levels are left alone: there are more devices than slots, and that
+sharing costs no schedule-table entry and is only reported.
+
+### 5. A config apply silently swallows a refused device enable
+`webconfigs.cpp:1614`: `dev->enabled.set(true)` returns void, the
+`on_param_changed` false result is swallowed, and apply never re-checks
+`enabled.value` — so `POST /api/configs/<name>/apply` answers `{ok:true,
+errors:[]}` (and the journal logs "0 rejections") while the device stayed off
+the bus. Parameter rejections elsewhere in the same apply do reach the errors
+array (1579-1584), so the vehicle exists, and `webpower.cpp:283-294` shows the
+working pattern: set, re-check `enabled.value`, report the refusal.
+
+**Fixed.** The apply re-reads `enabled.value` after the set and reports the
+refusal into the errors array, with `last_error` behind it when the device gave
+a reason - the pattern `webpower.cpp` already uses. Verified against a running
+machine: a configuration placing a second SLU on the console's own address now
+answers `{"ok": false, "errors": ["DL11b: did not go on the bus: device DL11b
+not installed: registration refused"]}` where it used to answer `{"ok": true,
+"errors": []}`. Only the branch that applies to a *powered* machine is this
+one's; a dark machine goes through `webpower_set_in_machine()`, which reports
+refusals at power-on and is untouched here. The web UI's Load button always
+darkens the machine first, so it takes that other branch - this string reaches
+an API client, not that button.
+
+### 6. RL11 `reset()` clears `operation_incomplete_reason` without the lock
+`rl11.cpp:345`: every other accessor of the new field holds
+`on_after_register_access_mutex`; `reset()` (adapter thread, on INIT) NULLs it
+with no lock — a data race, and the INIT-cancels-the-pending-OPI intent can
+lose it. If the device worker consumes the reason (1017-1019) before `reset()`
+clears it, a stale 200 ms OPI error and interrupt fire on a freshly reset
+controller; and once the 200 ms wait is in flight nothing rechecks
+`init_asserted`, so INIT cannot stop the completion either. New exposure: on
+`main` the Get Status OPI ran synchronously on the adapter thread, serialized
+against INIT dispatch. Fix: clear under the mutex, recheck `init_asserted`
+after the wait.
+
+**Fixed.** `operation_incomplete_reason` is a `std::atomic<const char *>`, stored
+by `reset()` and taken by `worker()` with an `exchange()`, so exactly one of them
+ever has it. Taking `on_after_register_access_mutex` in `reset()` was not an
+option: `worker()` holds it across a command, so the INIT would have waited out
+the very timeout it is cancelling, on the adapter's event thread. The second half
+- INIT cannot stop a wait already in flight - is a `reset_epoch` counter sampled
+across the 200 ms wait; `reset()` runs on the *falling* edge of INIT, so
+`init_asserted` is false again by the time it could be asked.
+
+### 7. The immediate-seek path can still stall the event thread 200 ms
+`rl11.cpp:494`: `on_after_register_access` checks `drive_ready_line` at 490
+and calls `state_seek()` directly on the adapter's event thread; `state_seek()`
+rechecks at 756 and its not-ready branch calls `do_operation_incomplete()` —
+the same 200 ms whole-machine stall this branch fixed for Get Status, whose
+comment (517-527) spells out why it is forbidden. `drive_ready_line` is
+written by other threads (drive power switch, image unload), so it can flip in
+the window. Narrow, but the consequence is the full stall; deferring this
+branch to the worker too (`execute_function_delayed = true`) closes it.
+
+**Fixed.** `state_seek()` takes a `deferrable` flag: from the register access it
+refuses instead of seeking when the drive turned not-ready between the caller's
+test and its own, and the caller hands the command to `worker()` like every other
+delayed one. From `worker()` it is called with `deferrable = false` and waits the
+OPI out on the device's own thread, as before.
+
+### 8. `probe_range()`'s dead-bus bail-out applies only to the first cycle
+`qunibus.cpp:599`: a DATI that consumes the whole 2000 ms bound proves nothing
+grants the bus, but the check runs only when `cycles == 1`. A machine that
+stops arbitrating mid-probe (operator powers down or halts during a MEM/MRV11
+claim) pays the full bound at every remaining step: 32-64 steps at the default
+64 KiB step is 1-2 minutes parked — holding `operations_mutex`, so every other
+device operation waits too — plus DMA-timeout ERROR spam. Fix: time each cycle
+and apply the same `!hit && took >= bound` early return on every step.
+
+**Fixed.** Every step is timed against the same bound, not only the first, so a
+machine that stops arbitrating mid-probe costs one more cycle instead of the rest
+of the walk. The message says which address it stopped at and after how many
+cycles. Code change only: `probe_range()` was not exercised on the board — see
+the note below on what trying to reach it found instead.
+
+### 9. `line_INIT` is inverted during the UNIBUS pulse-replay window
+`qunibusadapter.cpp:1693`: the replay sets `line_INIT` to the opposite of the
+real bus level for the whole `worker_init_event()` device sweep, and device
+threads read it lock-free as the `DMA()`/`INTR()` admission gate (852, 1129) —
+so a concurrent transfer is refused on a quiet bus, or admitted mid-INIT and
+reclaimed by the second sweep. Low severity: the replay only follows a real
+INIT pulse, so the refusal approximates what INIT would have done, and the
+QBUS path (1714-1716) has used the identical idiom all along — but the window
+is real and new on UNIBUS.
+
+**Fixed** by separating the level from the gate. `line_INIT` still carries what
+each half of the replay stands for - a device that resets on an edge needs the
+negate - and a new `init_replay` flag stands for the whole replay.
+`bus_init_active()` is the two together, and that is what `DMA()` and `INTR()`
+now ask, so nothing is admitted to a bus that is being reset.
+
+### 10. The PRU cancel busy-spins up to 200 ms under `requests_mutex`
+`qunibusadapter.cpp:717`: `dma_request_abandon()` and
+`requests_cancel_scheduled()` call `dma_cancel_on_pru()` →
+`mailbox_execute(ARM2PRU_DMA_CANCEL)` — a no-yield busy-spin bounded at ~200 ms
+— while holding `requests_mutex`. With a hung PRU, every DMA timeout burns a
+core with the adapter's central lock held: the CPU per-access path, the CPU
+blocking spin, and worker dispatch all stall behind it. Normal case is
+microseconds and a hung PRU means the machine is down anyway, so low severity;
+still, the cancel could be issued after dropping the mutex and re-validated,
+or the spin could yield.
+
+**Fixed** the second way the finding offers: `mailbox_execute_locked()` spins
+plain for the first millisecond - a request the PRU is running takes
+microseconds, and a spin is the cheapest way to see it end - and yields past
+that. The normal path is untouched; a hung PRU no longer burns a core for the
+rest of the ARM2PRU timeout with the adapter's central lock held. The lock
+ordering itself is left alone: dropping and retaking `requests_mutex` around the
+cancel would have to re-validate every table it walks.
+
+### 11. The init-pulse ack catch-up loop is a single store in disguise
+`qunibusadapter.cpp:1701`: `while (mailbox->events.init.acked !=
+init_signaled) EVENT_ACK(*mailbox, init);` — `EVENT_ACK` is a bare
+post-increment (`mailbox.h:257`), the UNIBUS PRU never reads `init.acked`, and
+the only readers are this thread. Up to 255 uncached read-modify-writes of PRU
+shared RAM, and wrap-around reasoning for the reader, to reach a value one
+volatile store away: `mailbox->events.init.acked = init_signaled;`.
+
+**Fixed**: `mailbox->events.init.acked = init_signaled;`
+
+### 12. `register_device()` claims its slot before checking, forcing rollbacks
+`qunibusadapter.cpp:180`: the device slot is claimed
+(`devices[device_handle] = &device; device.handle = device_handle;`) before
+the two refusal checks run, so both refusal paths carry a copy-pasted two-line
+rollback. Neither check reads `devices[device_handle]`; checking first removes
+both rollbacks — the same check-before-claiming ordering `install()` itself
+now advertises. A third refusal path that forgets the undo pair leaves a
+device that "looks installed" with a stale handle, tripping `install()`'s
+assert — the abort class this branch exists to remove.
+
+**Fixed.** The free handle is found first and claimed last, after both refusals;
+the two copy-pasted rollbacks are gone, and a refusal added later cannot forget
+one.
+
+### 13. The PRU diag-counter code is duplicated across both bus trees
+`pru1_q/pru1_main_qbus.c:139` and `pru1_u/pru1_main_unibus.c:125-149`: the
+reset block (magic written last — load-bearing, per its own comment) and three
+increment sites are character-for-character copies. `shared/mailbox.h` is the
+established home for cross-tree mailbox code as macros (`EVENT_SIGNAL` et
+al.); a `MAILBOX_DIAG_RESET`/`MAILBOX_DIAG_COUNT` there carries the logic
+once. An edit to one main that reorders the magic write or adds a counter
+leaves the other bus silently reporting fiction to the shared endpoint. (The
+`ARM2PRU_DMA_CANCEL` blocks are legitimately bus-specific; not flagged.)
+
+**Fixed.** `MAILBOX_DIAG_RESET()` and `MAILBOX_DIAG_COUNT()` live in
+`shared/mailbox.h` beside `EVENT_SIGNAL` and the rest; both mains call them.
+
+### 14. `/api/debug/pru` sleeps 50 ms before checking availability
+`webserver.cpp:209`: the handler reads `mailbox->diag.magic` only after
+sampling twice around a 50 ms `usleep` — on firmware without the counters,
+every request holds a civetweb worker 50 ms and does six uncached PRU-RAM
+reads only to discard them. Reading magic first returns immediately and merges
+the two adjacent availability blocks into one if/else. It also hand-writes the
+JSON/HTTP boilerplate that `webapi.cpp`'s `send_json()` (:72) already wraps —
+the third verbatim copy of the header block in webserver.cpp. (Auth is not
+affected: `begin_request_handler` runs before any URI handler.)
+
+**Fixed.** The magic is read first, and the sampling happens only in the branch
+that is going to report it, so firmware without the counters answers at once.
+The hand-written header block is gone: `send_json()` is now `web_send_json()`,
+declared in `webserver.hpp` and shared.
+
+### 15. `uncompress_gz()` is the fourth hand-rolled fork/exec block
+`storageimage.cpp:92`: `webstorage.cpp:805`, `websystem.cpp:85` and
+`webupdate.cpp:227` each already carry a private fork/dup2/execlp/waitpid
+block, with subtly different EINTR handling (webstorage's `waitpid` does not
+retry on EINTR; the others do). None is exported, so there was no helper to
+call — but this was the moment to hoist one (in 10.01_base utils, where
+10.02_devices can depend without reaching into 10.05_web) rather than add
+copy four.
+
+**Fixed.** `subprocess_run()` in `10.01_base/2_src/arm/utils.cpp` runs a program
+with an argument vector, optionally handing it a descriptor as stdout or
+collecting its output, and retries the wait on EINTR. All four callers use it:
+`storageimage.cpp`, `webstorage.cpp`, `websystem.cpp` and `webupdate.cpp` - the
+last of which drops its two hand-written absolute paths for a PATH lookup, which
+is what they were doing anyway.
+
+### 16. `orphan_wait_ns` / `ORPHAN_WAIT_NS` are twins meaning different things
+`qunibusadapter.cpp:953`: a start timestamp (with 0 as "not waiting") beside a
+duration, differing only in case, hand-rolling the one-shot elapsed check that
+`timeout_c::start`/`reached()` packages. An edit that mixes the twins compiles
+cleanly and silently breaks the 100 ms bound — in the one path that only runs
+during a rare cancelled-transfer race. Storing a deadline once collapses the
+ladder and names what the variable holds.
+
+**Fixed.** One `orphan_deadline_ns`, set once to now + the bound and compared
+against; the bound itself is a file-scope `dma_orphan_wait_ns` shared with
+`requests_cancel_scheduled()`, which needs the same number for finding 2.
+
+### 17. New `sprintf` where CLAUDE.md asks for bounded `snprintf`
+`qunibusdevice.cpp:474`: the edited `get_qunibus_resource_info` adds a new
+unbounded `sprintf(tmpbuff, ...)` (the `"%s%d/-"` branch) — while the same
+diff uses `snprintf(..., sizeof ...)` correctly in `check_slot_collisions`.
+It follows the seven pre-existing `sprintf` calls in the function, which
+tempers severity, but touched lines are the ones the rule applies to. The
+bare `0xffff` no-vector sentinel compared here also deserves a named constant
+shared with its writer (`priorityrequest.cpp:102`).
+
+**Fixed**, and the rest of the function with it: the pieces are assembled into a
+`std::string` and copied into the static buffer with one bounded `snprintf`, so
+neither `tmpbuff` nor `buffer` can be run past - the testcontroller's 31*4
+interrupt requests were the case that could. The sentinel is
+`intr_request_c::vector_none`, named where the constructor writes it.
+### Found while verifying: `POST /api/memory/probe` hangs on a bus nobody arbitrates
+
+Not one of the seventeen, and **not caused by any of them** — the A/B below is
+what says so. Recorded because it wedges the service and takes an operator's
+board with it.
+
+`memory_probe()` (`webapi.cpp:1066`) calls `qunibus->test_sizer()`, which issues
+one blocking `DMA()` over the whole address space with no `timeout_ms` — the
+default 0, which `DMA()` documents as "the unbounded wait, which is what a caller
+that cannot make progress without the data wants". On a backplane where nothing
+grants the bus, the PRU parks in NPR/NPG/SACK arbitration and the transfer never
+ends, so the request never completes and nothing bounds the wait. It holds
+`device_configuration_c::operations_mutex` for all of it, so every later device
+operation queues behind it: `dc_on` answers `held_by: "validating configuration
+for power on"` from then on, and only a service restart recovers. The API doc
+already says to run the probe with the CPU halted; a *dark* machine is the case
+it does not cover, and that is the state a range is probed in before a card is
+placed.
+
+Reproduced on a UniBone with nothing carried, twice, with a 65 s client bound:
+the fixed binary hangs, and the branch tip **without** the seventeen fixes hangs
+identically. So it is the pre-existing unbounded wait, not the `sched_yield()`
+finding 10 added to the mailbox spin.
+
+It is the same shape as finding 8 at a different call site: `probe_range()` now
+bounds every cycle and bails on a dead bus, and `dma_request_abandon()` retires a
+transfer that outlasted its deadline — but both only apply to a DMA that was
+given a deadline, and `test_sizer()` gives none. Giving it one (and reporting the
+dead bus, as `probe_range()` does) is the fix; it was left alone here because it
+is outside the seventeen.
+
+Pre-existing on `main`, so not counted above, but adjacent: the worker acks
+the dma event outside `requests_mutex` (a rare double-dispatch window the new
+spin body neither widens nor closes — the issue #94 caveat), and the blocking
+DMA deadline uses CLOCK_REALTIME on a default-clock condvar, which a clock
+step mis-times — worth a `CLOCK_MONOTONIC` condattr now that
+`dma_request_abandon()` acts on the timeout.
 
 ---
 

@@ -85,7 +85,8 @@ bool storageimage_base_c::is_zero(uint64_t position, unsigned len)
 // backtick runs what it names, as the operator, who has sudo on this board.
 // Here zcat gets the path as an argument rather than as text in a line, and
 // the output file as a file descriptor, so there is no line for anything to be
-// quoted into and no shell to interpret it.
+// quoted into and no shell to interpret it. subprocess_run() does the fork and
+// the wait; see utils.hpp.
 //
 // A failed expansion takes the half-written file with it: an image left
 // truncated is one the retry above would open as a valid, empty disk.
@@ -95,30 +96,11 @@ static bool uncompress_gz(const std::string &gz_path, const std::string &out_pat
     if (out_fd < 0)
         return false;
 
-    pid_t pid = fork();
-    if (pid < 0) {
-        ::close(out_fd);
-        unlink(out_path.c_str());
-        return false;
-    }
-    if (pid == 0) {
-        // child: image file becomes stdout, then become zcat
-        if (dup2(out_fd, STDOUT_FILENO) < 0)
-            _exit(127);
-        ::close(out_fd);
-        // "--" so a path starting with '-' stays a path
-        execlp("zcat", "zcat", "--", gz_path.c_str(), (char *) NULL);
-        _exit(127); // no zcat on this board
-    }
+    // "--" so a path starting with '-' stays a path
+    const char *argv[] = { "zcat", "--", gz_path.c_str(), NULL };
+    int rc = subprocess_run(argv, out_fd);
     ::close(out_fd);
-
-    int status = 0;
-    while (waitpid(pid, &status, 0) < 0)
-        if (errno != EINTR) {
-            unlink(out_path.c_str());
-            return false;
-        }
-    if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+    if (rc == 0)
         return true;
     unlink(out_path.c_str());
     return false;

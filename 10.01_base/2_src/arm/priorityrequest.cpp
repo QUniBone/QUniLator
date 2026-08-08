@@ -99,7 +99,7 @@ intr_request_c::intr_request_c(qunibusdevice_c *_device) :
 {
 	// convert QBUS/UNIBUS level 4,5,6,7 to internal priority, see REQUEST_INDEX_*
 	level_index = 0xff; // uninitialized, asserts() if used
-	vector = 0xffff; // uninitialized, asserts() if used
+	vector = vector_none; // uninitialized, asserts() if used
 	signal_level = 0;
 	if (_device)
 		_device->intr_requests.push_back(this);

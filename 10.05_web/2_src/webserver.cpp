@@ -193,32 +193,34 @@ static int api_debug_pru_handler(struct mg_connection *conn, void * /*cbdata*/) 
 
 #if defined(QBUS) || defined(UNIBUS)
 	static const unsigned SAMPLE_MS = 50;
-	// Field by field: the mailbox is volatile, so each of these is its own
-	// uncached read of PRU shared RAM, and a struct copy is not available.
-	uint32_t loop0 = mailbox->diag.loop_passes;
-	uint32_t arb0 = mailbox->diag.arbitration_passes;
-	uint32_t master0 = mailbox->diag.master_passes;
-	usleep(SAMPLE_MS * 1000);
-	uint32_t loop1 = mailbox->diag.loop_passes;
-	uint32_t arb1 = mailbox->diag.arbitration_passes;
-	uint32_t master1 = mailbox->diag.master_passes;
 
 	// Zero magic is a firmware built without the counters, or one that has not
 	// reached its loop. Reporting the zeros as measurements would say "the PRU
-	// is not looping", which is the most alarming answer there is.
+	// is not looping", which is the most alarming answer there is. Asked first,
+	// so a build without the counters answers at once instead of holding a
+	// civetweb worker through the sampling interval to discard what it read.
 	uint32_t magic = mailbox->diag.magic;
 	bool available = (magic == MAILBOX_DIAG_MAGIC);
 	o["available"] = picojson::value(available);
-	// Reported whatever it says: "no counters" and "the counters are not where
-	// this build expects them" look the same from `available` alone, and the
-	// second is a layout disagreement between the ARM and the PRU - the one
-	// fault that would make every other field here fiction.
 	if (!available) {
+		// Reported whatever it says: "no counters" and "the counters are not
+		// where this build expects them" look the same from `available` alone,
+		// and the second is a layout disagreement between the ARM and the PRU -
+		// the one fault that would make every other field here fiction.
 		char hex[16];
 		snprintf(hex, sizeof hex, "0x%08x", (unsigned) magic);
 		o["magic"] = picojson::value(std::string(hex));
-	}
-	if (available) {
+	} else {
+		// Field by field: the mailbox is volatile, so each of these is its own
+		// uncached read of PRU shared RAM, and a struct copy is not available.
+		uint32_t loop0 = mailbox->diag.loop_passes;
+		uint32_t arb0 = mailbox->diag.arbitration_passes;
+		uint32_t master0 = mailbox->diag.master_passes;
+		usleep(SAMPLE_MS * 1000);
+		uint32_t loop1 = mailbox->diag.loop_passes;
+		uint32_t arb1 = mailbox->diag.arbitration_passes;
+		uint32_t master1 = mailbox->diag.master_passes;
+
 		// Free-running and wrapping: unsigned subtraction is what makes a
 		// difference across the wrap still the right number.
 		uint32_t d_loop = loop1 - loop0;
@@ -263,13 +265,7 @@ static int api_debug_pru_handler(struct mg_connection *conn, void * /*cbdata*/) 
 	o["available"] = picojson::value(false); // host build, no PRU
 #endif
 
-	std::string body = picojson::value(o).serialize();
-	mg_printf(conn,
-			"HTTP/1.1 200 OK\r\n"
-			"Content-Type: application/json\r\n"
-			"Cache-Control: no-store\r\n"
-			"Content-Length: %u\r\n\r\n", (unsigned) body.size());
-	mg_write(conn, body.c_str(), body.size());
+	web_send_json(conn, 200, picojson::value(o));
 	return 200;
 }
 

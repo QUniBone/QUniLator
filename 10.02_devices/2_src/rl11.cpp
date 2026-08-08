@@ -132,7 +132,8 @@ RL11_c::RL11_c(void) :    storagecontroller_c()
     unsigned i;
 
     state = RL11_STATE_CONTROLLER_READY;
-    operation_incomplete_reason = NULL;
+    operation_incomplete_reason.store(NULL);
+    reset_epoch.store(0);
     name.value = "rl"; // only one supported
     type_name.value = "RL11";
     log_label = "rl";
@@ -341,8 +342,12 @@ void RL11_c::reset(void)
     interrupt_enable = 0;
     qunibus_address_msb = 0;
     // A Get Status handed to worker() and overtaken by the reset is not owed
-    // its timeout any more; the command it belonged to is gone.
-    operation_incomplete_reason = NULL;
+    // its timeout any more; the command it belonged to is gone. An atomic
+    // store: this runs on the adapter's event thread, worker() reads it on its
+    // own, and neither may block the other. The counter says the same thing to
+    // a timeout already being waited out.
+    operation_incomplete_reason.store(NULL);
+    reset_epoch++;
     clear_errors();
     intr_request.edge_detect_reset();
     change_state(RL11_STATE_CONTROLLER_READY);
@@ -487,11 +492,18 @@ void RL11_c::on_after_register_access(qunibusdevice_register_t *device_reg,
                     // the not-ready OPI in state_seek() and silently lose it,
                     // desynchronising a program that tracks head position across
                     // overlapped/back-to-back seeks (CZRLK).
+                    // The test and the seek are two looks at drive_ready_line,
+                    // which the drive's own thread and the drive power switch
+                    // write between them, so state_seek() is asked to refuse
+                    // rather than seek if the drive is no longer ready: its
+                    // not-ready path waits out the 200 ms OPI, and this thread
+                    // may not wait - see the Get Status branch below.
                     if (!drive->drive_ready_line)
                         execute_function_delayed = true;
                     else {
                         DEBUG_FAST("cmd %d = Seek", function_code);
-                        state_seek();
+                        if (!state_seek(true))
+                            execute_function_delayed = true;
                     }
                     break;
                 case RL11_CMD_GET_STATUS:
@@ -723,8 +735,17 @@ void RL11_c::do_controller_status(bool do_intr, const char *debug_info)
 void RL11_c::do_operation_incomplete(const char *info) 
 {
     DEBUG_FAST("do_operation_incomplete! %s", info);
+    uint32_t epoch = reset_epoch.load();
     // drive does not respond after 200ms
     timeout.wait_ms(200 / emulation_speed.value);
+    // A reset inside the wait - a bus INIT, or a power cycle - is the controller
+    // starting over: it is back at CONTROLLER_READY with its errors cleared, and
+    // the command this timeout belonged to is gone. Setting OPI now would raise
+    // an interrupt on a controller that has just been reset.
+    if (reset_epoch.load() != epoch) {
+        DEBUG_FAST("do_operation_incomplete: reset during the wait, OPI dropped");
+        return;
+    }
     error_operation_incomplete = true;
     do_command_done();
 }
@@ -747,21 +768,23 @@ void RL11_c::change_state_INTR(unsigned new_state)
 
 // start seek operation, then interrupt
 // only one state, but complex operation
-void RL11_c::state_seek() 
+bool RL11_c::state_seek(bool deferrable) 
 {
     RL0102_c *drive = selected_drive();
 
 // eval difference word in DA to destination_cylinder
 //  what, if drive not ready???
     if (!drive->drive_ready_line) {
+        if (deferrable)
+            return false; // worker() waits for the drive, on its own thread
         do_operation_incomplete("state_seek(): drive not ready"); // verified
-        return;
+        return true;
     }
     // bit 0 must be 1, bit 3 must be 0
     if ((get_register_dato_value(busreg_DA) & 9) != 1) {
         // do nothing
         do_command_done();
-        return;
+        return true;
     }
 
     // cylinder address difference is <7:15>
@@ -790,6 +813,7 @@ void RL11_c::state_seek()
         // drive in wrong state??
     }
     do_command_done();
+    return true;
 }
 
 // data from drive is requested with cmd_read_next_sector()
@@ -1014,9 +1038,8 @@ void RL11_c::worker(unsigned instance)
 
         // A Get Status the register logic could not answer. Waiting out the
         // drive's timeout is this thread's to do - see where the reason is set.
-        if (operation_incomplete_reason) {
-            const char *reason = operation_incomplete_reason;
-            operation_incomplete_reason = NULL;
+        const char *reason = operation_incomplete_reason.exchange(NULL);
+        if (reason) {
             do_operation_incomplete(reason);
             continue;
         }
@@ -1099,7 +1122,7 @@ void RL11_c::worker(unsigned instance)
             // process current command states machines
             // noop if machine terminates and state == RL11_STATE_CONTROLLER_READY
             if (state & RL11_STATE_SEEK_MASK)
-                state_seek();
+                state_seek(false);
             else if (state & RL11_STATE_RW_MASK)
                 state_readwrite();
         }

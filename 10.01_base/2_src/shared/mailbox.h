@@ -204,6 +204,25 @@ typedef struct {
 // not started. A reader must check it rather than report zeroed counters.
 #define MAILBOX_DIAG_MAGIC	0x50444941
 
+// Start the counters, once, before the main loop runs. The loader leaves shared
+// RAM as it found it, so a fresh firmware would otherwise carry on from whatever
+// the last one left behind - and a reader taking differences would see one
+// enormous step, or none. The magic is written last: a reader that sees it takes
+// what follows as real, so it may not be there before the counters are.
+//
+// Here rather than in each bus's main, like EVENT_SIGNAL and the rest: the two
+// firmwares feed one endpoint, and a counter added or a write reordered in one
+// of them alone leaves the other reporting fiction to it.
+#define MAILBOX_DIAG_RESET(mailbox)	do { \
+		(mailbox).diag.loop_passes = 0; \
+		(mailbox).diag.arbitration_passes = 0; \
+		(mailbox).diag.master_passes = 0; \
+		(mailbox).diag.magic = MAILBOX_DIAG_MAGIC; \
+	} while (0)
+
+// one pass of the main loop reached <counter>
+#define MAILBOX_DIAG_COUNT(mailbox,counter)	((mailbox).diag.counter++)
+
 // data for a requested DMA operation
 typedef struct {
 	// take care of 32 bit word borders for struct members

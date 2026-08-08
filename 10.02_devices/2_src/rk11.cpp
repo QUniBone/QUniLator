@@ -124,8 +124,11 @@ rkv11_c::rkv11_c(): rk11_c()
     type_name.value = "RKV11";
     log_label = "rk";
 
-    // INTR level 4 instead of RK11s 5 
-	set_default_bus_params(0777400, 10, 0220, 4) ;
+    // INTR level 4 instead of RK11s 5, and slot 13 instead of the RK11's 10:
+	// at level 4 the slot is shared with the DZV11 pool (5..12), and two devices
+	// arbitrating on one slot at one level is refused by install(), so the two
+	// could not be enabled together. 13 keeps the RK ahead of the RLV12 (15).
+	set_default_bus_params(0777400, 13, 0220, 4) ;
 }
 
 

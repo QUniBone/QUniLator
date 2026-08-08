@@ -90,6 +90,18 @@ bool qunibusdevice_c::on_param_changed(parameter_c *param)
 				// so the operator can move the device and try again, and deny
 				// the enable: "enabled" stays false, which is what the web API
 				// reports back.
+				//
+				// What on_before_install() took has to go back first. Devices
+				// acquire the outside world there - a serial port, a listening
+				// socket, an X window, a DDR range answering a bus window - and
+				// a device that stays disabled while holding any of them is
+				// worse than one that failed: the serial line it kept open is
+				// the one the console bridge then cannot have. uninstall() is
+				// not among the steps, because install() refuses before it
+				// registers anything: there is no handle to unregister, and
+				// unregister_device() asserts on that.
+				on_before_uninstall();
+				on_after_uninstall();
 				base_addr.readonly = false;
 				priority_slot.readonly = false;
 				intr_vector.readonly = false;
@@ -413,18 +425,19 @@ char *qunibusdevice_c::get_qunibus_resource_info(void)
 {
 	static char buffer[1024];
 	char tmpbuff[256];
-	buffer[0] = 0;
+	std::string info;
 
 	// get register address range
 	// use parameter "base_addr", register struct only valid after qunibusadapter.install()
 	if (register_count == 0)  // cpu is a device without register interface
-		strcpy(tmpbuff, "");
+		tmpbuff[0] = 0;
 	else if (register_count == 1)
-		sprintf(tmpbuff, "addr %s", qunibus->addr2text(base_addr.value));
+		snprintf(tmpbuff, sizeof tmpbuff, "addr %s", qunibus->addr2text(base_addr.value));
 	else
-		sprintf(tmpbuff, "addr %s-%s (%d regs)", qunibus->addr2text(base_addr.value),
+		snprintf(tmpbuff, sizeof tmpbuff, "addr %s-%s (%d regs)",
+				qunibus->addr2text(base_addr.value),
 				qunibus->addr2text(base_addr.value + 2 * (register_count - 1)), register_count);
-	strcat(buffer, tmpbuff);
+	info += tmpbuff;
 
 	// get priority slot range from DMA request and intr_requests
 	uint8_t slot_from = 0xff, slot_to = 0;
@@ -442,43 +455,46 @@ char *qunibusdevice_c::get_qunibus_resource_info(void)
 	if (slot_from > slot_to) // no requests: use device parameter
 		slot_from = slot_to = priority_slot.value;
 	if (slot_from == slot_to)
-		sprintf(tmpbuff, ", slot %u", (unsigned) slot_from);
+		snprintf(tmpbuff, sizeof tmpbuff, ", slot %u", (unsigned) slot_from);
 	else
-		sprintf(tmpbuff, ", slots %u-%u", (unsigned) slot_from, (unsigned) slot_to);
-	strcat(buffer, tmpbuff);
+		snprintf(tmpbuff, sizeof tmpbuff, ", slots %u-%u", (unsigned) slot_from,
+				(unsigned) slot_to);
+	info += tmpbuff;
 
 	//  DMA channels
 	if (dma_requests.size() > 0) {
 		if (dma_requests.size() == 1)
-			sprintf(tmpbuff, ", DMA");
-		else
-			sprintf(tmpbuff, ", %uxDMA", dma_requests.size());
-		strcat(buffer, tmpbuff);
+			info += ", DMA";
+		else {
+			snprintf(tmpbuff, sizeof tmpbuff, ", %uxDMA", (unsigned) dma_requests.size());
+			info += tmpbuff;
+		}
 	}
 	//  Interrupts
 	if (intr_requests.size() > 4) {
 		// that crazy testcontroller has 31*4 !
-		sprintf(tmpbuff, "%d INTRs", intr_requests.size());
-		strcat(buffer, tmpbuff);
+		snprintf(tmpbuff, sizeof tmpbuff, "%u INTRs", (unsigned) intr_requests.size());
+		info += tmpbuff;
 	} else if (intr_requests.size() > 0) {
 		const char *sep = ":";
-		strcat(buffer, ", INTRs");
+		info += ", INTRs";
 		for (std::vector<intr_request_c *>::iterator it = intr_requests.begin();
 				it < intr_requests.end(); it++) {
-			// 0xffff is the request's "no vector yet": an MSCP port is told its
-			// vector by the guest's init handshake and carries none before that.
-			// Truncating to 8 bits used to hide it behind a plausible-looking
-			// 377.
+			// A request with no vector yet is shown as one: truncating to 8 bits
+			// used to hide it behind a plausible-looking 377.
 			uint16_t vector = (*it)->get_vector();
-			if (vector == 0xffff)
-				sprintf(tmpbuff, "%s%d/-", sep, (*it)->get_level());
+			if (vector == intr_request_c::vector_none)
+				snprintf(tmpbuff, sizeof tmpbuff, "%s%d/-", sep, (*it)->get_level());
 			else
-				sprintf(tmpbuff, "%s%d/%03o", sep, (*it)->get_level(), vector);
-			strcat(buffer, tmpbuff);
+				snprintf(tmpbuff, sizeof tmpbuff, "%s%d/%03o", sep, (*it)->get_level(), vector);
+			info += tmpbuff;
 			sep = ",";
 		}
 	}
 
+	// The caller gets a pointer into the static buffer, as it always has; the
+	// pieces are assembled where they cannot outrun it.
+	snprintf(buffer, sizeof buffer, "%s", info.c_str());
 	return buffer;
 }
 

@@ -82,6 +82,12 @@ private:
 	// only under requests_mutex.
 	bool dma_orphan_on_pru;
 
+	// When it was set, so a later INIT or power event can tell an orphan still
+	// in flight - the PRU has microseconds of bus cycle left to run - from one
+	// the PRU is never going to complete, whose holdoff would otherwise outlive
+	// the bus epoch that caused it. Only meaningful while the latch is set.
+	uint64_t dma_orphan_since_ns;
+
 	// Ask the PRU to abandon the DMA it is holding. True if it did, which frees
 	// mailbox->dma at once; false if the transfer is already on the bus, and
 	// then its completion is still on its way. Under requests_mutex, which is
@@ -133,6 +139,19 @@ public:
 	// looks at line_INIT see the flag and the state the worker set around it in
 	// one order.
 	std::atomic<bool> line_INIT{false};
+
+	// True while an INIT pulse too short for this thread to have seen is being
+	// played out to the devices. line_INIT carries the level each half of the
+	// replay stands for - devices are told of the negate and then of the assert,
+	// which is what a device that resets on an edge needs - so for one sweep it
+	// reads the opposite of what the bus is doing. Device threads take it as
+	// their admission gate, and admitting a transfer in the middle of an INIT is
+	// what this says no to. Ask bus_init_active(), not line_INIT, for that.
+	std::atomic<bool> init_replay{false};
+
+	// Whether a device may put anything on the bus: INIT is asserted, or an
+	// INIT is being replayed to the devices.
+	bool bus_init_active(void) { return line_INIT || init_replay; }
 	std::atomic<bool> line_DCLO{false};
 	std::atomic<bool> line_ACLO{false};
 

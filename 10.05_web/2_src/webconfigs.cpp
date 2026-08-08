@@ -1608,10 +1608,27 @@ static bool apply_document(const picojson::value &content, const std::string &na
 			}
 
 			if (d.get("enabled").is<bool>()) {
+				bool want = d.get("enabled").get<bool>();
 				if (dark)
-					webpower_set_in_machine(dev, d.get("enabled").get<bool>(), nullptr);
-				else
-					dev->enabled.set(d.get("enabled").get<bool>());
+					webpower_set_in_machine(dev, want, nullptr);
+				else {
+					// A device may refuse to go on the bus - a slot another
+					// device already arbitrates on, an address it answers at, a
+					// serial port something else holds. enabled.set() returns
+					// nothing, so the refusal is read back off the flag: without
+					// this the apply answers "ok, 0 rejections" while the device
+					// stayed off, and the operator has a configuration that says
+					// one thing and a machine that is another.
+					dev->last_error.clear();
+					dev->enabled.set(want);
+					if (dev->enabled.value != want) {
+						std::string why = dev->last_error;
+						errors->push_back(picojson::value(devname
+								+ (want ? ": did not go on the bus"
+								        : ": did not come off the bus")
+								+ (why.empty() ? std::string() : ": " + why)));
+					}
+				}
 			}
 		}
 

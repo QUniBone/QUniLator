@@ -585,24 +585,30 @@ uint32_t qunibus_c::probe_range(uint32_t startaddr, uint32_t endaddr, uint32_t s
     // the slow one.
     const unsigned probe_cycle_timeout_ms = 2000;
 
+    uint64_t elapsed_ms = 0;
     for (uint32_t addr = startaddr; addr <= endaddr; addr += step) {
         cycles++;
+        uint64_t before_ms = elapsed_ms;
         bool hit = dma(true, QUNIBUS_CYCLE_DATI, addr, &probe_word_buffer, 1,
                        /*share_bus*/false, probe_cycle_timeout_ms);
-        if (cycles == 1) {
-            first_cycle_ms = probe_time.elapsed_ms();
-            // Nothing granted that cycle: it took the whole bound, where a
-            // slave that simply did not answer takes microseconds. No address
-            // in the range can answer either, and walking it would pay the
-            // bound at every step - minutes of them across a memory card's
-            // range. Nothing answers, which is what the caller asked.
-            if (!hit && first_cycle_ms >= probe_cycle_timeout_ms) {
-                INFO("probe of %s..%s stopped after one cycle: nothing is "
-                     "arbitrating the bus, so nothing can answer",
-                     addr2text(startaddr), addr2text(endaddr));
-                dma_request->timeout_expected = false;
-                return QUNIBUS_PROBE_NONE;
-            }
+        elapsed_ms = probe_time.elapsed_ms();
+        if (cycles == 1)
+            first_cycle_ms = elapsed_ms;
+        // Nothing granted that cycle: it took the whole bound, where a slave
+        // that simply did not answer takes microseconds. No address in the
+        // range can answer either, and walking it would pay the bound at every
+        // step - minutes of them across a memory card's range, with the
+        // adapter's operations_mutex held for all of it. Nothing answers, which
+        // is what the caller asked. Every step is timed, not only the first: a
+        // machine can stop arbitrating in the middle of a probe - the operator
+        // powers it down, or halts it - and the walk that is left to do is the
+        // expensive part.
+        if (!hit && elapsed_ms - before_ms >= probe_cycle_timeout_ms) {
+            INFO("probe of %s..%s stopped at %s after %u cycles: nothing is "
+                 "arbitrating the bus, so nothing can answer",
+                 addr2text(startaddr), addr2text(endaddr), addr2text(addr), cycles);
+            dma_request->timeout_expected = false;
+            return QUNIBUS_PROBE_NONE;
         }
         if (hit) {
             answered = addr;

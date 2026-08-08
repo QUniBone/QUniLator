@@ -171,6 +171,13 @@ public:
 
 	~intr_request_c();
 
+	// The vector a request carries before it has been given one. An MSCP port
+	// is told its vector by the guest's init handshake and has none until then,
+	// so this is a state to report rather than a fault. Named here because the
+	// constructor writes it and get_qunibus_resource_info() reads it, and a
+	// bare 0xffff at either end says nothing about the other.
+	static const uint16_t vector_none = 0xffff;
+
 	void set_level(uint8_t level);
 	void set_vector(uint16_t vector);
 	// uint16_t, like the vector itself: a PDP-11 vector is a 9 bit byte address

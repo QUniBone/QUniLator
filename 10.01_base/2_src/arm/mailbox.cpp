@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <sched.h>
 
 #include "pru.hpp"
 #include "pru_backend.hpp"
@@ -128,18 +129,30 @@ mailbox_lock_c::~mailbox_lock_c()
 // Bound the spin, so a dead PRU produces a message instead of a silent freeze.
 #define ARM2PRU_TIMEOUT_MS	100
 
+// How long the wait for the PRU stays a plain spin. A request the PRU is
+// running takes microseconds, and a spin is the cheapest way to see it end; one
+// that has taken a thousand times that is a PRU that is not answering, and then
+// the spin is a core burned for the rest of the ARM2PRU timeout - with whatever
+// lock the caller holds. The adapter cancels a DMA from under requests_mutex,
+// which is the lock every device thread and the emulated processor go through.
+#define ARM2PRU_SPIN_NS	1000000ull	// 1 ms
+
 bool mailbox_execute_locked(uint8_t request)
 {
 // write to arm2pru_req must be last memory operation
 	__sync_synchronize();
 	uint64_t starttime_ns = timeout_c::abstime_ns() ;
+	uint64_t waited_ns ;
 	while (mailbox->arm2pru_req != ARM2PRU_NONE) {
 		// wait for previous request to complete
-		if (timeout_c::abstime_ns() - starttime_ns > ARM2PRU_TIMEOUT_MS * 1000000ull) {
+		waited_ns = timeout_c::abstime_ns() - starttime_ns ;
+		if (waited_ns > ARM2PRU_TIMEOUT_MS * 1000000ull) {
 			printf("ERROR: mailbox_execute(%u): PRU busy with request %u for %u ms - PRU stopped or hung?\n",
 					(unsigned) request, (unsigned) mailbox->arm2pru_req, ARM2PRU_TIMEOUT_MS);
 			return false ;
 		}
+		if (waited_ns > ARM2PRU_SPIN_NS)
+			sched_yield() ;
 	}
 
 	mailbox->arm2pru_req = request; // go!
@@ -147,12 +160,15 @@ bool mailbox_execute_locked(uint8_t request)
 	// wait until ACKed
 	starttime_ns = timeout_c::abstime_ns() ;
 	while (mailbox->arm2pru_req == request) {
-		if (timeout_c::abstime_ns() - starttime_ns > ARM2PRU_TIMEOUT_MS * 1000000ull) {
+		waited_ns = timeout_c::abstime_ns() - starttime_ns ;
+		if (waited_ns > ARM2PRU_TIMEOUT_MS * 1000000ull) {
 			printf("ERROR: mailbox_execute(%u): PRU did not ACK within %u ms - PRU stopped or hung?\n",
 					(unsigned) request, ARM2PRU_TIMEOUT_MS);
 			mailbox->arm2pru_req = ARM2PRU_NONE; // back to idle for a later restarted PRU
 			return false ;
 		}
+		if (waited_ns > ARM2PRU_SPIN_NS)
+			sched_yield() ;
 	}
 	// result false = error
 	return (mailbox->arm2pru_req == ARM2PRU_NONE) ;
