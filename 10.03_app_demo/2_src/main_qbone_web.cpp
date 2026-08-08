@@ -196,12 +196,18 @@ static int setup_from_seed(const std::string &path)
 		return 1;
 	}
 	// A card prepared with a name that is already an account here is asking for
-	// that account: there is nobody at the machine to answer the question, and
-	// the alternative is an installation that will not come up.
+	// that account, home and files and all: there is nobody at the machine to
+	// answer the question, and the alternative is an installation that will not
+	// come up. A name nobody here has is asking for the account to be made,
+	// which is every card written for a machine that has never been set up -
+	// adopting unconditionally refused all of those, with "there is no account
+	// called ... to adopt" in the journal and a board asking to be set up by
+	// hand.
+	bool adopt = webshares_account_exists(seed.user);
 	int result = seed.derived()
-			? setup_operator_hashed(seed, /*adopt*/true)
+			? setup_operator_hashed(seed, adopt)
 			: setup_operator(seed.user, seed.password, seed.ssh_key, seed.hostname,
-					/*adopt*/true);
+					adopt);
 	if (result != 0)
 		return result;
 	// Addressing, which the file carries only when it is not DHCP.

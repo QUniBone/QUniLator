@@ -212,7 +212,19 @@ install_bridge() {
     changed=
     # the uplink whose driver we manage is eth0; a bridge over anything else is
     # the operator's own setup
-    mac=$(cat /sys/class/net/eth0/address 2>/dev/null)
+    #
+    # This runs before networkd, so eth0 may still be a moment away: the driver
+    # creates it, and on a cold boot that lands after this unit starts. Waiting
+    # a few seconds for it is the difference between pinning the uplink's MAC
+    # into the bridge and deciding there is no network to configure.
+    mac=
+    i=0
+    while [ $i -lt 30 ]; do
+        mac=$(cat /sys/class/net/eth0/address 2>/dev/null) || true
+        [ -n "$mac" ] && break
+        i=$((i + 1))
+        sleep 1
+    done
     [ -n "$mac" ] || { say "  no eth0 to bridge"; return 1; }
 
     # br0.netdev with the uplink MAC pinned in

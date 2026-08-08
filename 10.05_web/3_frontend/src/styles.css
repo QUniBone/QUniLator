@@ -1303,11 +1303,60 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
 
 /* ---- the debug panel ---------------------------------------------------- */
 
-/* The register block reuses the console card's readouts (.cpu-regs, .cpu-oct),
-   but a page has room a card does not: the registers are laid out in a row that
-   wraps rather than being squeezed into a panel's width. */
-.dbg-regs { gap: 10px; }
-.dbg-reg { align-items: flex-start; }
+/* The register block. The readouts are the console card's (.cpu-oct), but they
+   are stacked rather than laid in a row under a line of captions: a register is
+   read as a line - its name, then what it holds - and a column of them is
+   scanned downward, which is how a register dump is written and how an operator
+   looks one register up. Short columns side by side keep the block from running
+   the width of the card.
+
+   The status word sits above the columns rather than in one: its value and the
+   bits spelled out beside it are one register, so they are one line. */
+.dbg-psw { align-items: center; gap: 5px; margin: 0 0 12px; }
+.dbg-psw .dbg-regrow { margin-right: 9px; }
+.dbg-regblock { position: relative; }
+.dbg-regcols { display: flex; flex-wrap: wrap; gap: 8px 30px; }
+.dbg-regcol { display: flex; flex-direction: column; gap: 5px; }
+.dbg-regrow { display: flex; align-items: center; gap: 8px; }
+.dbg-regname {
+  font-family: var(--font-mono); font-size: var(--fs-0); font-weight: 700;
+  letter-spacing: .08em; color: var(--sw-legend);
+  min-width: 4.5ch; text-align: right;
+}
+/* A status register answers when it is clicked, so its row is a button - reset
+   to the row it replaces, with the name marked to say the click is there. */
+.dbg-reginfo {
+  display: flex; align-items: center; gap: 8px;
+  background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
+  font: inherit; color: inherit; text-align: left;
+}
+.dbg-reginfo .dbg-regname { text-decoration: underline dotted; text-underline-offset: 3px; }
+.dbg-reginfo:hover .dbg-regname, .dbg-regrow-open .dbg-regname { color: var(--accent); }
+.dbg-reginfo:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* What a status register says: a field, the bits it lives in, and what the two
+   mean. It hangs under the whole register block, not off the row it belongs to:
+   under the row it would cover the two registers below, and beside the row it
+   would cover whatever panel stands next to the processor. It lies over the
+   page rather than pushing anything apart, so nothing moves as it opens. */
+.dbg-pop {
+  position: absolute; top: calc(100% + 10px); left: 0; z-index: 20;
+  width: max(340px, 100%); max-width: min(620px, 92vw);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+  padding: 10px 12px 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+}
+.dbg-pop-head {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  font-weight: 700; font-size: var(--fs-1);
+}
+.dbg-pop-tab { border-collapse: collapse; font-size: var(--fs-0); width: 100%; }
+.dbg-pop-tab td { padding: 2px 10px 2px 0; vertical-align: top; }
+.dbg-pop-bits { color: var(--ink-faint); white-space: nowrap; }
+.dbg-pop-name { color: var(--ink-muted); white-space: nowrap; }
+.dbg-pop-val { color: var(--ink); width: 100%; }
+.dbg-pop-note {
+  margin: 10px 0 0; font-size: var(--fs-0); line-height: 1.45; color: var(--ink-muted);
+}
 
 /* The inputs of a view carry no printed label: what they are is obvious from
    what they hold - an octal address, a word count - and a caption above each
@@ -1343,6 +1392,36 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
 .dbg-reason { max-width: 70ch; margin: 0; }
 .dbg-note { font-size: var(--fs-0); margin: 12px 0 0; max-width: 80ch; }
 .dbg-error { color: var(--err); margin: 0 0 10px; }
+
+/* The page registers, one row per page and one column pair per mode. Read down
+   a column and it is a mode's map of the whole virtual space, which is why the
+   pages run vertically rather than across.
+
+   The mode the processor is in has its two columns marked: the other mode's
+   registers are as real, they are simply not what the next reference goes
+   through, so the mark is a tint and a rule rather than anything shouted. */
+.dbg-mmu { border-collapse: collapse; font-size: var(--fs-1); }
+.dbg-mmu th {
+  text-align: right; font-weight: 600; font-size: var(--fs-0);
+  color: var(--ink-muted); padding: 0 12px 4px;
+}
+.dbg-mmu thead tr:first-child th { text-align: center; padding-bottom: 2px; }
+.dbg-mmu td { padding: 1px 12px; text-align: right; white-space: pre; }
+.dbg-mmu .dbg-mmu-page {
+  color: var(--ink-muted); text-align: left; padding-left: 0; padding-right: 14px;
+}
+/* the pair of a mode is one block: the rule sits before its PAR */
+.dbg-mmu .dbg-mmu-par { border-left: 1px solid var(--line); }
+.dbg-mmu .dbg-mmu-live { background: var(--accent-soft); }
+.dbg-mmu th.dbg-mmu-mode.dbg-mmu-live { color: var(--accent); }
+
+/* The top row: the processor, and the page registers beside it when they are
+   shown. Neither is wide - four columns of octal against five - and the two are
+   read together, so they share a line. The processor takes what the page
+   registers leave; below the width the two need, they stack. */
+.dbg-top { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+.dbg-top > .card { flex: 1 1 520px; min-width: 0; }
+.dbg-top > .dbg-view { flex: 0 1 auto; }
 
 /* The bar that opens views, and the views themselves. A view is a card of its
    own: opened, moved around by address, and closed when it has served. Two fit

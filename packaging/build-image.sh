@@ -42,7 +42,8 @@ DIST=${DIST:-$HERE/dist}
 OUT=${OUT:-$HERE/${NAME}-dist.img}
 # room to add beyond the base while building; the image is shrunk to fit after
 GROW=${GROW:-4G}
-# margin left in the root filesystem after the shrink
+# free space the shipped root filesystem carries. The first boot grows it to
+# fill the card, so this only has to last until then.
 MARGIN_MB=${MARGIN_MB:-400}
 
 ls "$DIST"/base.img.xz >/dev/null 2>&1 || { echo "missing $DIST/base.img.xz" >&2; exit 1; }
@@ -316,7 +317,12 @@ echo "-- enabling the services (offline, from the host)"
 # <name>-announce prints the board's address on the console once it has one
 # qunilator-usb-gadget builds the CDC Ethernet gadget, which is what brings usb0
 # into existence for usb0.network to address
-systemctl --root=/mnt enable qunilator-network.service ${NAME}.service qunilator-setup.service qunilator-leds.service qunilator-resize.service qunilator-announce.service qunilator-usb-gadget.service >/dev/null 2>&1 || true
+# qunilator-seed.service reads the setup file a card carries. The package's
+# postinst enables it, and every one of those calls is guarded on a running
+# systemd - which the armhf chroot above is not - so an image that does not
+# enable it here ships a board that ignores the file and comes up asking to be
+# set up by hand.
+systemctl --root=/mnt enable qunilator-network.service ${NAME}.service qunilator-setup.service qunilator-leds.service qunilator-resize.service qunilator-announce.service qunilator-usb-gadget.service qunilator-seed.service >/dev/null 2>&1 || true
 # A login on the second UART and on the gadget's serial port, which
 # qunilator-usb-gadget creates as /dev/ttyGS0; the debug header's getty the base
 # image already enables. ttyS1 is a login as the image ships, which is the
@@ -330,6 +336,23 @@ systemctl --root=/mnt enable qunilator-update-check.timer >/dev/null 2>&1 || tru
 # mDNS: <name>.local, and the DNS-SD advertisement the package drops in
 # /etc/avahi/services. The postinst enables it, this makes sure of it.
 systemctl --root=/mnt enable avahi-daemon.service >/dev/null 2>&1 || true
+
+# Every enable above ends in "|| true", because a unit renamed out from under
+# this script should not stop a build - and that is exactly how a unit comes to
+# be left out of the list and ship disabled, which is what happened to
+# qunilator-seed.service. So the result is read back: what the appliance needs
+# running at boot is named once more here, and a name that is not enabled by now
+# stops the build rather than reaching a card.
+for unit in qunilator-network.service ${NAME}.service qunilator-setup.service \
+        qunilator-leds.service qunilator-resize.service qunilator-announce.service \
+        qunilator-usb-gadget.service qunilator-seed.service \
+        qunilator-update-check.timer avahi-daemon.service \
+        serial-getty@ttyS1.service serial-getty@ttyGS0.service; do
+    state=$(systemctl --root=/mnt is-enabled "$unit" 2>/dev/null | head -1)
+    [ "$state" = enabled ] && continue
+    echo "-- $unit is \"${state:-missing}\" in the image, and has to be enabled" >&2
+    exit 1
+done
 # The GPIO daemon's unit: nothing here uses it.
 systemctl --root=/mnt mask gpio-manager.service >/dev/null 2>&1 || true
 # a persistent journal survives reboots
@@ -385,10 +408,20 @@ trap - EXIT
 
 echo "-- shrinking the root filesystem to fit"
 e2fsck -pf "${LO}p3" >/dev/null 2>&1 || true
-# minimum, then add the margin
+# The margin is how much free space the image has to ship with, not an amount
+# added to whatever the shrink arrives at. resize2fs cannot pack a filesystem
+# down to what it holds - metadata it will not relocate sets a floor well above
+# that - so the floor usually leaves more free space than the margin asks for,
+# and adding the margin on top of it writes those megabytes to every card for
+# nothing. Every one of them is time somebody watches a progress bar.
 MINBLK=$(resize2fs -P "${LO}p3" 2>/dev/null | awk '{print $NF}')
 BLKSZ=$(dumpe2fs -h "${LO}p3" 2>/dev/null | awk -F: '/Block size/{print $2}' | tr -d ' ')
-TARGET=$(( MINBLK + MARGIN_MB * 1024 * 1024 / BLKSZ ))
+COUNT=$(dumpe2fs -h "${LO}p3" 2>/dev/null | awk -F: '/Block count/{print $2}' | tr -d ' ')
+FREE=$(dumpe2fs -h "${LO}p3" 2>/dev/null | awk -F: '/Free blocks/{print $2}' | tr -d ' ')
+WANTED=$(( COUNT - FREE + MARGIN_MB * 1024 * 1024 / BLKSZ ))
+TARGET=$MINBLK
+[ "$WANTED" -gt "$TARGET" ] && TARGET=$WANTED
+echo "-- holding $(( (COUNT - FREE) * BLKSZ / 1000000 )) MB, floor $(( MINBLK * BLKSZ / 1000000 )) MB, margin ${MARGIN_MB} MB: $(( TARGET * BLKSZ / 1000000 )) MB"
 resize2fs "${LO}p3" "$TARGET" >/dev/null
 e2fsck -pf "${LO}p3" >/dev/null 2>&1 || true
 

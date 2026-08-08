@@ -7,22 +7,86 @@ sidebar:
 
 The supported path is the ready-made card image. It carries Debian 13, the
 emulator, the cape overlay and the boot settings, and configures itself on first
-boot. What you do is: write the image, fit the card, power on, open the web
-interface — in that order.
+boot. What you do is: write the image to a microSD card, fit the card, power on,
+open the web interface — in that order.
 
-## Get the image for your bus
+The microSD card is 8 GB or larger. The image is shrunk to fit the release and
+grows to fill the SD card on first boot, so whatever it has over the release is
+where your disk and tape images live. A 4 GB SD card holds the release, with
+little room left for images.
 
-These links always give the newest release:
+## Two ways to write the SD card
+
+**[The installer](#writing-the-sd-card-with-the-installer)** does the whole step
+in one program: it fetches the release for your bus, writes the SD card, reads
+back what it wrote, and can settle the machine's identity — name, password, host
+name, ssh keys, address — before the SD card has ever booted. It runs on macOS,
+Windows and Linux.
+
+**[By hand](#writing-the-sd-card-by-hand)** is a download and one `dd`, or
+whatever imaging tool you already use. Such an SD card gets a predefined
+configuration by writing
+[`qunilator.toml`](#settling-the-identity-before-first-boot) onto its BOOT
+partition with a text editor; leave the file off and the web interface asks for
+the identity on first use.
+
+The SD card that comes out is the same either way, and so is everything after
+it.
+
+## Writing the SD card with the installer
+
+One static binary per platform on the [installer
+releases](https://github.com/QUniBone/qunilator-installer/releases/latest) page
+— macOS on Apple silicon or Intel, Linux on x86-64 or arm, Windows on x86-64 —
+with a `SHA256SUMS` beside them to check a download against. A release asset
+carries no permissions, so on macOS and Linux make it executable:
+
+```sh
+chmod +x qunilator-installer-darwin-arm64
+```
+
+**On macOS the binaries are not signed**, so the system refuses to run one until
+it has been authorised. Clearing the quarantine flag the browser attached is the
+short way:
+
+```sh
+xattr -d com.apple.quarantine qunilator-installer-darwin-arm64
+```
+
+The other way is to open Finder, right-click the binary, choose **Open** and
+confirm — or, after the first refusal, **System Settings → Privacy & Security →
+Open Anyway**. macOS wants one of these before the binary starts at all, and
+what it says about the refusal does not mention signing.
+
+**On Windows the binaries are not signed either**, so Defender SmartScreen puts
+*"Windows protected your PC"* in the way. **More info → Run anyway** gets past
+it once; clearing the mark the browser attached avoids it altogether:
+
+```powershell
+Unblock-File .\qunilator-installer-windows-amd64.exe
+```
+
+or right-click the file, **Properties**, and tick **Unblock**. Writing a raw
+disk needs administrator rights, which the program asks for as it starts: one
+UAC prompt, and no need to open a terminal as administrator first.
+
+Run it with no arguments and it asks its way through: which SD card, which
+QUniLator, which image, and whether to settle the identity now. Writing a raw
+disk needs rights, so it raises that one command with `sudo` and shows you the
+command first; where you can already open the SD card yourself, it uses no
+`sudo` at all. An identity you give it goes onto the SD card as the
+[configuration file](#settling-the-identity-before-first-boot), with the
+password in its [derived forms](#without-writing-the-password-down). The SD card
+is ejected when it is done, so it can go straight into the BeagleBone.
+
+## Writing the SD card by hand
+
+These links always give the newest release, one image per bus:
 
 - **[qbone-dist.img.xz](https://github.com/QUniBone/QUniLator/releases/latest/download/qbone-dist.img.xz)** — QBUS
 - **[unibone-dist.img.xz](https://github.com/QUniBone/QUniLator/releases/latest/download/unibone-dist.img.xz)** — UNIBUS
 
 Release notes are on the [latest release page](https://github.com/QUniBone/QUniLator/releases/latest).
-
-## Write it to a microSD card
-
-8 GB or larger. The image is shrunk to fit the release and grows to fill the
-card on first boot.
 
 ```sh
 xz -dc qbone-dist.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
@@ -30,53 +94,15 @@ xz -dc qbone-dist.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 
 Replace `/dev/sdX` with the card — on macOS `/dev/rdiskN`. Check it twice;
 `dd` will not ask. Raspberry Pi Imager, balenaEtcher and `bmaptool` all take
-the `.xz` directly if you would rather not use `dd`.
+the `.xz` directly.
 
-## Fit the card and power on
+## Settling the identity before first boot
 
-The image runs from the microSD. The cape occupies the eMMC data lines, so the
-overlay disables the eMMC and it is unusable while the card is fitted. If the
-bone comes up on something else, hold the **S2** boot button while applying power
-to force SD boot.
-
-## Wait out the first boot
-
-**It takes 2–3 minutes and includes a reboot of its own.** Setup runs in two
-passes: the first applies boot settings and moves `eth0` onto a bridgeable
-driver, then reboots; the second finds everything in place and starts the
-emulator. Do not pull power in between — watch the LEDs instead.
-
-## Find it on the network
-
-Try these in order:
-
-1. **`http://qbone.local/`** — the image runs an mDNS responder. Your client
-   needs to speak mDNS too: macOS does, Linux wants `libnss-mdns`, Windows
-   wants Bonjour.
-2. **A service browser** — the interface advertises over DNS-SD as
-   *\<hostname\> (QBone ddeeff)*, so it shows up in Safari's Bonjour
-   bookmarks and in `avahi-browse -rt _http._tcp`.
-3. **A USB cable** — the BeagleBone appears as a network interface at a fixed
-   **192.168.7.2** and hands your machine an address on the same subnet. No
-   LAN needed: `http://192.168.7.2/`.
-4. **Your router's lease table** — the uplink MAC is pinned, so the lease is
-   stable across reboots.
-5. **A 3.3 V USB-serial adapter** on the J1 header, 115200 8N1. The address
-   is printed above the login prompt, so you need not log in.
-
-## Open it and create your identity
-
-The web interface binds port 80 and asks you to create the operator identity on
-first use — a name and a password, and it will not go further without both. That
-one pair serves **both** the web login and the Linux account behind it, so the
-same credentials get you into the file shares and `ssh` in later.
-
-## Or set it up before it ever boots
-
-A card can carry its identity from the start, in which case no dialog appears.
-Write `qunilator.toml` onto the card's first partition — the small FAT one
-labelled **BOOT**, which is what macOS and Windows mount when you insert the
-card, so a text editor is the only tool needed:
+An SD card can carry its identity from the start and come up configured. The
+installer writes this file when you let it settle the identity; by hand it is
+`qunilator.toml` on the SD card's first partition — the small FAT one labelled
+**BOOT**, which is what macOS and Windows mount when you insert the SD card, so
+a text editor is the only tool needed:
 
 ```toml
 config_version = 1
@@ -111,9 +137,9 @@ back on DHCP.
 ### Without writing the password down
 
 The one identity is checked in three places that each want the password in their
-own shape, so a file can carry all three derived forms instead of the password —
-which is what a tool preparing a card writes, and it means the password itself
-never lands on the card:
+own shape, so a file can carry all three derived forms instead of the password,
+and the password itself never lands on the card. This is the form the installer
+writes:
 
 ```toml
 config_version = 1
@@ -133,17 +159,57 @@ All three or none: a file carrying one of them would set up a third of a
 QUniLator, and one carrying both a plaintext `password` and a `[credentials]`
 block is refused as two ways of saying the same thing.
 
-Whoever holds the card can read its root filesystem either way, so this is not
-about protecting the machine — it is about the password, which people reuse, and
-which a plaintext file on a partition your workstation mounts may follow into an
-unrelated backup.
+What this protects is the password, which people reuse, and which a plaintext
+file on a partition your workstation mounts may follow into an unrelated backup.
+Whoever holds the SD card can read its root filesystem either way.
+
+## Fit the card and power on
+
+The image runs from the microSD. The cape occupies the eMMC data lines, so the
+overlay disables the eMMC and it is unusable while the card is fitted. If the
+BeagleBone comes up on something else, hold the **S2** boot button while applying
+power to force SD boot.
+
+## Wait out the first boot
+
+**It takes 2–3 minutes and includes a reboot of its own.** Setup runs in two
+passes: the first applies boot settings and moves `eth0` onto a bridgeable
+driver, then reboots; the second finds everything in place and starts the
+emulator. Do not pull power in between — watch the LEDs instead.
+
+## Find it on the network
+
+Try these in order:
+
+1. **`http://qbone.local/`** — the image runs an mDNS responder. Your client
+   needs to speak mDNS too: macOS does, Linux wants `libnss-mdns`, Windows
+   wants Bonjour.
+2. **A service browser** — the interface advertises over DNS-SD as
+   *\<hostname\> (QBone ddeeff)*, so it shows up in Safari's Bonjour
+   bookmarks and in `avahi-browse -rt _http._tcp`.
+3. **A USB cable** — the BeagleBone appears as a network interface at a fixed
+   **192.168.7.2** and hands your machine an address on the same subnet. No
+   LAN needed: `http://192.168.7.2/`.
+4. **Your router's lease table** — the uplink MAC is pinned, so the lease is
+   stable across reboots.
+5. **A 3.3 V USB-serial adapter** on the J1 header, 115200 8N1. The address
+   is printed above the login prompt, so you need not log in.
+
+## Open it
+
+The web interface binds port 80. An SD card written with an identity presents
+the login; one written without asks you to create the operator identity on first
+use — a name and a password, and it will not go further without both. That one
+pair serves **both** the web login and the Linux account behind it, so the same
+credentials get you into the file shares and `ssh` in later.
 
 ## Getting back in
 
-The same file dropped on the BOOT partition later is the way back when the
-password is lost: shut down, put the card in your workstation, write the file,
-and boot. A file this refuses is left where it is, with the reason in the
-journal — `journalctl -u qunilator-seed`.
+A [`qunilator.toml`](#settling-the-identity-before-first-boot) dropped on the
+BOOT partition later is the way back when the password is lost: shut down, put
+the SD card in your workstation, write the file, and boot. A file this refuses
+is left where it is, with the reason in the journal —
+`journalctl -u qunilator-seed`.
 
 ## Reading the LEDs
 

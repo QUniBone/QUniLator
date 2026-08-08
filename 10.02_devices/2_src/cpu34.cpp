@@ -167,4 +167,13 @@ void cpu34_c::core_get_snapshot(state_snapshot_c *snap)
     snap->mmr0 = kd11ea->mmu.mmr0;
     snap->mmr1 = kd11ea->mmu.mmr1;
     snap->mmr2 = kd11ea->mmu.mmr2;
+    // The page registers of both modes. par[]/pdr[] are one array indexed by
+    // space + page, and the two spaces are eight apart; taken apart here so a
+    // reader outside needs to know nothing about that layout.
+    for (unsigned i = 0; i < 8; i++) {
+        snap->kernel_par[i] = kd11ea->mmu.par[KT11D_SPACE_KERNEL + i];
+        snap->kernel_pdr[i] = kd11ea->mmu.pdr[KT11D_SPACE_KERNEL + i];
+        snap->user_par[i] = kd11ea->mmu.par[KT11D_SPACE_USER + i];
+        snap->user_pdr[i] = kd11ea->mmu.pdr[KT11D_SPACE_USER + i];
+    }
 }

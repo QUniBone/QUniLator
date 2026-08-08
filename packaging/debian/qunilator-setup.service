@@ -1,11 +1,18 @@
 [Unit]
 Description=First-boot setup (network bridge, boot settings)
 Documentation=file:/usr/share/qunilator/README.Debian
-# eth0 has to exist so its MAC can be pinned into the bridge; networkd manages
-# it. Run before the emulator and its network so the bridge is in place first.
-After=systemd-networkd.service
-Wants=systemd-networkd.service
-Before=qunilator-network.service
+# The bridge configuration is written before networkd configures anything, so
+# the first DHCP request of a board's life is the one it will keep making.
+# Running after networkd meant the base image's eth0.network took a lease under
+# networkd's default identity, this replaced it, and the lease was released -
+# which withdraws the name from the DHCP server's DNS, taking with it the
+# record for the address the board actually ends up on.
+#
+# eth0 is created by its driver rather than by networkd, so its MAC can be read
+# here; the script waits for it to appear.
+Before=network-pre.target systemd-networkd.service qunilator-network.service
+Wants=network-pre.target
+After=local-fs.target
 # The bridge is written once, on the first boot. qunilator-setup --auto records
 # this when the network is configured, and this condition stops it re-running.
 ConditionPathExists=!/var/lib/qunilator/.setup-done
