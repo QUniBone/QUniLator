@@ -159,7 +159,7 @@ Two other shell-outs were checked and left as they are: `webupdate.cpp` builds
 and nothing from the request reaches the line; and `webupdate`'s unit start
 already uses `fork`/`execvp`. `ddrmem`/`buslatches` menu paths run no shell.
 
-### 1.5 UNIBUS: an INIT pulse can be swallowed as a "stray event"
+### 1.5 UNIBUS: an INIT pulse can be swallowed as a "stray event" — FIXED in 8c5f770
 `qunibusadapter.cpp:1425-1446`: the worker derives INIT edges by comparing
 `init_signal_cur` against its own `line_INIT`. If INIT asserts *and* deasserts
 before the worker services the event (the PRU updates `init_signal_cur` in
@@ -169,6 +169,31 @@ short INIT from an odd console/diagnostic device would be lost. The QBUS side
 solved this properly (synthesises assert+negate on every event,
 `qunibusadapter.cpp:1450-1457`); the UNIBUS path could do the same when the
 event arrives with no visible edge but a set signal counter.
+
+That is what it does now. A pending init event with no edge means the line
+went away from the level the worker holds and came back, so both halves are
+played out — assert then negate, or negate then assert when INIT was already
+asserted. The event count is read *before* the level is sampled, and every
+count it covers is acknowledged together: they all describe the one pulse that
+has since settled, and acknowledging a single one would play the same pulse
+out again on the next pass.
+
+Reproduced on ubx rather than reasoned about. The rig cannot make a short INIT
+through any of its own paths — `qunibus_c::init()` holds the line for the
+10 ms a PDP-11/70 does, and the emulated CPU's RESET goes through it — so the
+wait was temporarily removed, which leaves the two mailbox commands separated
+only by a PRU loop and lands both inside the worker's 100-300 µs wake window.
+On the old code that stimulus logged
+
+    EVENT_INIT: init_signal_cur=0x0, init_raise=0, init_fall=0
+    EVENT_INIT: init_signal_cur=0x0, init_raise=0, init_fall=0
+
+and nothing else: two events dropped as stray, no `worker_init_event()`, no
+device reset — the finding exactly. With the fix the same stimulus logs one
+`INIT asserted`, one `INIT negated` and `init_pulse=1`, once. A real 10 ms
+INIT still takes the edge path untouched (`init_raise=1` then `init_fall=1`,
+16 ms apart). The stimulus was then removed, the clean binary deployed, and
+the machine boots XXDP from DL0 and reads its directory off the RL.
 
 ### 1.6 KD11-EA/KA11 `DIV`: 0x80000000 / −1 is signed overflow — FIXED in a9ccbe2
 `kd11ea.c:679` (`ldiv(prod, dv)`): dividing INT32_MIN by −1 overflows `long`
