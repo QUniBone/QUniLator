@@ -1543,6 +1543,9 @@ void qunibusadapter_c::worker(unsigned instance)
                 // QBUS: bus blocked by DMR until EVENT_ACK for raising edge
 //              printf("mailbox->events.init_signals_cur 0x%x\n", (unsigned)mailbox->events.init_signal_cur) ;
 #if defined(UNIBUS)
+                // Read the count before the level, so that everything the count
+                // covers is at least as old as the level sampled next.
+                uint8_t init_signaled = mailbox->events.init.signaled;
                 if (mailbox->events.init_signal_cur) {
                     if (!line_INIT)
                         init_raising_edge = true;
@@ -1552,17 +1555,42 @@ void qunibusadapter_c::worker(unsigned instance)
                         init_falling_edge = true;
                     line_INIT = false;
                 }
-				if (!init_raising_edge && !init_falling_edge) {
-					// clear stray event
-	                EVENT_ACK(*mailbox, init);
-				} else if (init_falling_edge) { // INIT asserted -> negated.  DATI/DATO cycle only possible after that.
-	                // raising edge below ?!
+                bool init_pulse = !init_raising_edge && !init_falling_edge;
+                if (init_pulse) {
+                    // The PRU signalled a change and the level shows none: INIT
+                    // went away from where the ARM believes it is and came back
+                    // before this thread got to look. init_signal_cur is the
+                    // level *now* - the PRU updates it in place - so nothing of
+                    // the pulse survives in it, and taking that for a stray
+                    // event resets no device at all.
+                    //
+                    // A processor-driven INIT lasts >= 10 ms and cannot be lost
+                    // this way; a console or diagnostic that pulses INIT briefly
+                    // can be, and a device that never hears of it keeps exactly
+                    // the state the reset was there to clear. So play the pulse
+                    // out, both halves, the way the QBUS path below does for
+                    // every INIT event. Its far side is the opposite of the
+                    // level held here: an assert and its negate while INIT was
+                    // negated, a negate and its assert while it was asserted.
+                    bool init_level = line_INIT;
+                    line_INIT = !init_level;
                     worker_init_event();
-	                EVENT_ACK(*mailbox, init); // PRU may re-raise and change mailbox now
-                	}
+                    line_INIT = init_level;
+                    worker_init_event();
+                    // The pulse is over, so every count taken before the level
+                    // was sampled describes it - acknowledge them all, or the
+                    // next pass plays the same pulse out a second time.
+                    while (mailbox->events.init.acked != init_signaled)
+                        EVENT_ACK(*mailbox, init);
+                } else if (init_falling_edge) { // INIT asserted -> negated.  DATI/DATO cycle only possible after that.
+                    // raising edge below ?!
+                    worker_init_event();
+                    EVENT_ACK(*mailbox, init); // PRU may re-raise and change mailbox now
+                }
                 DEBUG_FAST(
-                    "EVENT_INIT: init_signal_cur=0x%x, init_raise=%d, init_fall=%d",
-                    mailbox->events.init_signal_cur, init_raising_edge, init_falling_edge) ;
+                    "EVENT_INIT: init_signal_cur=0x%x, init_raise=%d, init_fall=%d, init_pulse=%d",
+                    mailbox->events.init_signal_cur, init_raising_edge, init_falling_edge,
+                    init_pulse) ;
 #elif defined(QBUS)
 			// QBUS: INIT is 10us pulse (not a state)
 			line_INIT = true;
