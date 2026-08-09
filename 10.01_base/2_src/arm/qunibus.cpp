@@ -539,16 +539,77 @@ bool qunibus_c::dma(bool blocking, uint8_t qunibus_cycle, uint32_t startaddr, ui
  * return 0: no memory found at all
  * arbitration_active: if 1, perform NPR/NPG/SACK resp. DMR/DMG/SACK arbitration before mem accesses
  * words[]: buffer for whole QBUS/UNIBUS address range, is filled with data
+ *
+ * no_grant, when given, tells the two zeroes apart: memory that starts at the
+ * first address with nothing in it, and a backplane that granted the board
+ * nothing at all. Both mean "nothing answered", but only the second is worth
+ * reporting to whoever asked for the sweep.
  */
-uint32_t qunibus_c::test_sizer(void)
+uint32_t qunibus_c::test_sizer(bool *no_grant)
 {
-    // tests chunks of 128 word
-    unsigned addr = 0;
+    if (no_grant != nullptr)
+        *no_grant = false;
 
-    // one big transaction, automatically split in chunks
-    qunibusadapter->DMA(*dma_request, true, QUNIBUS_CYCLE_DATI, addr, testwords,
-                        qunibus->addr_space_word_count);
-    return dma_request->qunibus_end_addr; // first non implemented address
+    // The sweep is made a chunk at a time rather than as one transfer the
+    // adapter splits, because each chunk is then bounded. An unbounded one
+    // parks this thread for good on a backplane that never grants the bus - a
+    // machine switched off, or one whose processor is not arbitrating - and
+    // sizing memory is exactly what is asked before a card is placed in such a
+    // machine. Issue #95: the sweep took the device layer's lock with it, and
+    // nothing short of a service restart got it back.
+    //
+    // Bounding every chunk rather than only the first is deliberate: a machine
+    // can stop arbitrating in the middle of a sweep - the operator powers it
+    // down, or halts it - and the part still to walk is the expensive part.
+    const unsigned chunk_timeout_ms = 2000;
+
+    // The sweep ends on a bus timeout: that is the answer it went looking for,
+    // not a device losing a transfer, so the adapter is told to expect it.
+    dma_request->timeout_expected = true;
+
+    timeout_c sweep_time;
+    sweep_time.start_ns(0);
+    uint64_t elapsed_ms = 0;
+    uint32_t end_addr = 0;
+
+    for (unsigned words_done = 0; words_done < addr_space_word_count; ) {
+        unsigned chunk_words = addr_space_word_count - words_done;
+        if (chunk_words > PRU_MAX_DMA_WORDCOUNT)
+            chunk_words = PRU_MAX_DMA_WORDCOUNT;
+        uint32_t addr = 2 * words_done;
+
+        uint64_t before_ms = elapsed_ms;
+        qunibusadapter->DMA(*dma_request, true, QUNIBUS_CYCLE_DATI, addr,
+                            testwords + words_done, chunk_words, chunk_timeout_ms);
+        elapsed_ms = sweep_time.elapsed_ms();
+
+        if (dma_request->success) {
+            end_addr = dma_request->qunibus_end_addr; // last address that answered
+            words_done += chunk_words;
+            continue;
+        }
+        // Nothing granted that chunk: it took the whole bound, where a slave
+        // that simply did not answer ends the cycle in microseconds. No address
+        // above can answer either, since it is the bus and not the address that
+        // is silent.
+        if (elapsed_ms - before_ms >= chunk_timeout_ms) {
+            INFO("memory sizing stopped at %s after %llu ms: nothing is "
+                 "arbitrating the bus, so nothing can answer",
+                 addr2text(addr), (unsigned long long) elapsed_ms);
+            dma_request->timeout_expected = false;
+            if (no_grant != nullptr)
+                *no_grant = true;
+            return 0;
+        }
+        // A bus timeout, which is what the sweep is looking for: the address it
+        // stopped at is the first that nothing implements.
+        dma_request->timeout_expected = false;
+        return dma_request->qunibus_end_addr;
+    }
+
+    // Everything answered, up to the top of the address space.
+    dma_request->timeout_expected = false;
+    return end_addr;
 }
 
 /* probe_range(): does anything on the bus answer inside [startaddr, endaddr]?

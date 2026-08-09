@@ -1065,10 +1065,21 @@ static void memory_map(struct mg_connection *conn) {
 // halted: it takes the bus for the length of the sweep.
 static void memory_probe(struct mg_connection *conn) {
 	uint32_t first_invalid;
+	bool no_grant = false;
 	{
 		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
 		std::lock_guard<std::mutex> mlock(web_bus_mutex());
-		first_invalid = qunibus->test_sizer();
+		first_invalid = qunibus->test_sizer(&no_grant);
+		// Nothing on the backplane granted the board the bus, so the sweep says
+		// nothing about what the machine carries. Reported rather than recorded:
+		// a machine that is switched off would otherwise be filed as one with no
+		// memory, over the last probe that did reach the bus.
+		if (no_grant) {
+			send_error(conn, 504, "the board asked for the bus and was not granted it: "
+					"nothing on this backplane is arbitrating. A machine that is "
+					"switched off grants nothing.");
+			return;
+		}
 
 		// The board answers its own ranges, and a sweep cannot tell those from
 		// memory the machine carries: with a card placed above the machine's own

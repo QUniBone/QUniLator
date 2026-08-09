@@ -593,6 +593,12 @@ placed over the rest.
 This sweeps the whole address space and holds the bus for the length of the
 sweep, so run it with the CPU halted.
 
+A machine that is switched off, or one whose processor is not arbitrating,
+grants the board no bus cycle at all: nothing can answer and the sweep has
+nothing to measure. That answers `504` — "the board asked for the bus and was
+not granted it" — and leaves what `/api/memory/map` reports from an earlier
+probe alone, rather than filing the machine as one with no memory.
+
 ### `POST /api/memory/place`
 
 ```json

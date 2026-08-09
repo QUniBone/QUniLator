@@ -231,7 +231,12 @@ public:
 			uint8_t unibus_control, uint16_t *words, uint32_t unibus_start_addr,
 			uint32_t unibus_end_addr, bool *timeout, uint32_t *block_counter);
 
-	uint32_t test_sizer(void);
+	// Size the machine's own memory: DATI ascending from 0 until the bus times
+	// out, returning the first address nothing implements (0 = no memory at
+	// all). Every chunk of the sweep is bounded, so a backplane that grants
+	// the board nothing ends it instead of parking the caller for good; that
+	// case answers 0 with *no_grant set, when a flag is given for it.
+	uint32_t test_sizer(bool *no_grant = nullptr);
 
 	// Probing a range: the lowest address in it that a slave answers, or
 	// QUNIBUS_PROBE_NONE when nothing does.
