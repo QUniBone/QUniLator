@@ -978,6 +978,26 @@ given a deadline, and `test_sizer()` gives none. Giving it one (and reporting th
 dead bus, as `probe_range()` does) is the fix; it was left alone here because it
 is outside the seventeen, and is tracked as issue #95.
 
+**Fixed.** `test_sizer()` no longer hands the adapter one transfer to split: it
+sweeps a chunk of `PRU_MAX_DMA_WORDCOUNT` at a time and bounds every chunk at
+2 s, the bound and the reasoning `probe_range()` already uses. A chunk that
+consumes the whole bound is a bus nobody granted — no address above it can
+answer either — so the sweep logs that and returns 0 with `*no_grant` set;
+a chunk that fails in microseconds is the bus timeout the sizer went looking
+for, and its address is the answer. Every chunk is timed, not only the first,
+because a machine can stop arbitrating mid-sweep. `POST /api/memory/probe`
+turns `no_grant` into `504` with the wording `/api/memory/read` and
+`/api/memory/write` already use, and leaves the last probe that did reach the
+bus standing rather than filing a dark machine as one with no memory.
+
+Verified on the UniBone, machine dark: the deployed build gave no answer in
+25 s and left `dc_on` queued behind `operations_mutex` with the journal silent;
+the fixed build answers `504` in 2.009 s, `dc_on` follows in 0.83 s, and a probe
+of the machine once powered answers in 0.48 s. `dc_off` and probe again is the
+same 504. The journal now names it, at `info`: "memory sizing stopped at 000000
+after 2003 ms: nothing is arbitrating the bus, so nothing can answer", over the
+adapter's `dma.cur_status=1` — the PRU parked in arbitration.
+
 Pre-existing on `main`, so not counted above, but adjacent: the worker acks
 the dma event outside `requests_mutex` (a rare double-dispatch window the new
 spin body neither widens nor closes — the issue #94 caveat), and the blocking
