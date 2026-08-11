@@ -49,11 +49,13 @@
 // DEC floating defaults for the first DZV11
 #define DZV11_ADDR   0760100
 // Each mux uses two arbitration slots (RCV at slot, XMT at slot+1), and the
-// pool steps four instances by two, so a DZV11 pool spans slot..slot+7. Base 4
-// keeps all four instances clear of the console DL11 (1,2), the KW11 (3), and
-// the disk/network controllers (uda 20, delqa 21) that share level 5; a slot
-// shared with another device's request drops one device's interrupts.
-#define DZV11_SLOT   4
+// pool steps four instances by two, so a DZV11 pool spans slot..slot+7. Base 5
+// puts all four instances above the two SLUs (DL11 at 1,2 and DL11b at 3,4) and
+// below the disk controllers, none of which arbitrates at level 4 inside 5..12:
+// the RKV11 that used to sit at 10 was moved to 13 to leave the run clear. Two
+// devices arbitrating on one slot at one level is refused outright by
+// install(), so a collision here is a device that will not come up at all.
+#define DZV11_SLOT   5
 #define DZV11_VECTOR 0300   // RCV +0, XMT +4
 #define DZV11_LEVEL  04     // DZV11 asserts BIRQ4 (TM: priority 200 = level 4)
 
@@ -263,8 +265,8 @@ private:
 	qunibusdevice_register_t *reg_msr_tdr;
 
 	// two interrupts of the same level, slot and slot+1 (RCV, XMT)
-	intr_request_c rcvintr_request = intr_request_c(this);
-	intr_request_c xmtintr_request = intr_request_c(this);
+	intr_request_c rcvintr_request{this};
+	intr_request_c xmtintr_request{this};
 
 	pthread_mutex_t state_mutex = PTHREAD_MUTEX_INITIALIZER;
 	pthread_cond_t  xmt_cond = PTHREAD_COND_INITIALIZER;

@@ -36,9 +36,12 @@
 // diagnostic's built-in default CSR is 160460 = 0760460 18-bit).
 #define DHV11_ADDR   0760460
 // Two arbitration slots per mux (RCV at slot, XMT at slot+1); the two-instance
-// pool spans slot..slot+3. Base 12 sits just above the DZV11 pool (4..11) and
-// clear of uda (20) and delqa (21) — a shared slot loses interrupts.
-#define DHV11_SLOT   12
+// pool spans slot..slot+3. Base 17 is the first run of four slots no other
+// device arbitrates at level 4 on: the DZV11 pool takes 5..12, the RKV11 13,
+// the RLV12 15 and the RXV11/RXV21 16, and delqa (21) and vcb01 (24) are just
+// past it. deuna (18) and uda (20) sit in the run but at level 5, which costs
+// no schedule-table entry and is only reported.
+#define DHV11_SLOT   17
 #define DHV11_VECTOR 0300   // RCV +0, XMT +4
 // The DHV11 is a Level 4 interrupt device (EK-DHV11-TM-002: "the DHV11 is a Level
 // 4 device"); CVDHA's interrupt-BR-level test checks the request line it asserts.
@@ -328,9 +331,9 @@ public:
 private:
 	qunibusdevice_register_t *reg[dhv_idx_count];
 
-	intr_request_c rcvintr_request = intr_request_c(this);
-	intr_request_c xmtintr_request = intr_request_c(this);
-	dma_request_c  dma_request = dma_request_c(this);
+	intr_request_c rcvintr_request{this};
+	intr_request_c xmtintr_request{this};
+	dma_request_c  dma_request{this};
 	// How long a transmit DMA may take before it is called lost. A real
 	// transfer is microseconds; this is only there so a bus that has stopped
 	// answering cannot park the transmit worker for good.

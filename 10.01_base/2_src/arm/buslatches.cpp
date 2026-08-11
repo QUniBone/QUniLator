@@ -95,27 +95,32 @@ void buslatches_c::pru_reset()
 }
 
 // read the REG_DATIN[0..7] pins
-unsigned buslatch_c::getval() 
+unsigned buslatch_c::getval()
 {
 // PRU1 does it
+	// The latch address going out and the value coming back are both in the
+	// payload union every other ARM2PRU command shares, so the whole exchange
+	// is held under the mailbox lock - see mailbox.h.
+	mailbox_lock_c lock;
 	mailbox->buslatch.addr = addr;
 	while (mailbox->buslatch.addr != addr)
 		; // cache !
 
-	mailbox_execute(ARM2PRU_BUSLATCH_GET);
+	mailbox_execute_locked(ARM2PRU_BUSLATCH_GET);
 
 	return mailbox->buslatch.val; // PRU1 has put the result here
 }
 
 // write the REG_DATOUT[0..7] pins into one latch
 // only bits "valmask" are written. Other bits are cleared (PRU logic)
-void buslatch_c::setval(unsigned valmask, unsigned val) 
+void buslatch_c::setval(unsigned valmask, unsigned val)
 {
 	// write value into latch
+	mailbox_lock_c lock;
 	mailbox->buslatch.addr = addr;
 	mailbox->buslatch.bitmask = valmask & 0xff;
 	mailbox->buslatch.val = val;
-	mailbox_execute(ARM2PRU_BUSLATCH_SET);
+	mailbox_execute_locked(ARM2PRU_BUSLATCH_SET);
 }
 
 bool buslatches_c::get_pin_val(buslatches_wire_info_t *wi) 
@@ -359,7 +364,10 @@ void buslatches_c::test_simple_pattern_multi(unsigned pattern, bool stop_on_erro
 			testval[reg_sel] &= buslatches[reg_sel]->rw_bitmask;
 
 		// Setup mailbox for PRU buslatch exerciser
-		// it tests always 8 accesses
+		// it tests always 8 accesses.
+		// The work list goes out and the read-back values come home in the
+		// same payload union, so it is filled, run and read under one lock.
+		mailbox_lock_c lock;
 		for (reg_sel = 0; reg_sel < BUSLATCHES_COUNT; reg_sel++) {
 			mailbox->buslatch_exerciser.addr[reg_sel] = reg_sel;
 			mailbox->buslatch_exerciser.writeval[reg_sel] = testval[reg_sel];
@@ -373,7 +381,7 @@ void buslatches_c::test_simple_pattern_multi(unsigned pattern, bool stop_on_erro
 		mailbox->buslatch_exerciser.pattern = (pass_no
 				% MAILBOX_BUSLATCH_EXERCISER_PATTERN_COUNT);
 
-		mailbox_execute(ARM2PRU_BUSLATCH_EXERCISER);
+		mailbox_execute_locked(ARM2PRU_BUSLATCH_EXERCISER);
 
 		// check: mailbox readvalues == write values ?
 		for (unsigned i = 0; i < BUSLATCHES_COUNT; i++) {

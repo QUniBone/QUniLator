@@ -100,10 +100,15 @@ device_configuration_c::device_configuration_c() :
 	DL11b = new slu_c();
 	DL11b->name.value = "DL11b";
 	DL11b->log_label = "slub";
-	DL11b->priority_slot.value = DL11->priority_slot.value + 1; // next to 1st uart
-	DL11b->base_addr.value = 0176500; //  AK6DN boot loader listing
-	DL11b->intr_vector.value = 0300; // PDP-11/44 doc
-	DL11b->intr_level.value = 4; // PDP-11/44 doc
+	// Bus placement through set_default_bus_params(), the way the mux pools do
+	// it: assigning priority_slot.value and the interrupt fields directly does
+	// not reach the RCV/XMT requests, which then keep the slot and vector the
+	// constructor gave them - DL11's. Two SLUs on one slot at one level lose
+	// each other's interrupts, and install() refuses that outright now, so the
+	// second SLU has to be jumpered somewhere else to exist at all. An SLU
+	// occupies its slot and slot+1 (RCV, XMT), hence the step of two.
+	DL11b->set_default_bus_params(0176500, // AK6DN boot loader listing
+			DL11->priority_slot.value + 2, 0300, 4); // vector, level: PDP-11/44 doc
 	DL11b->serialport.value = "ttyS1"; // well, cross-over 2nd UART == UART1 on board
 	DL11b->baudrate.value = 38400;
 	DL11b->mode.value = "8N1";

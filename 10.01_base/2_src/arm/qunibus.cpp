@@ -55,6 +55,7 @@ qunibus_c::qunibus_c()
     addr_space_byte_count = 0;
     iopage_start_addr = 0;
     cpu_reserved_start = 0;
+    probe_word_buffer = 0;
 #if defined(UNIBUS)
     set_addr_width(18); // const
 #endif
@@ -260,21 +261,31 @@ bool qunibus_c::parse_slot(char *txt, uint8_t *priority_slot)
 }
 
 
+// Drive one of the bus signals the PRU raises on command: INIT, ACLO/DCLO,
+// POK/DCOK, HALT. The id and the value are two fields of a payload that shares
+// its union with every other ARM2PRU command, so they are filled under the
+// mailbox lock and the request goes out before it is released - a power cycle
+// from the web API and a CPU start on another thread otherwise interleave
+// their fills and the PRU acts on the mixture.
+static bool set_initializationsignal(uint8_t id, uint8_t val)
+{
+    mailbox_lock_c lock;
+    mailbox->initializationsignal.id = id;
+    mailbox->initializationsignal.val = val;
+    return mailbox_execute_locked(ARM2PRU_INITALIZATIONSIGNAL_SET);
+}
+
 /* pulse INIT cycle for some milliseconds
  */
 void qunibus_c::init()
 {
-    mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_INIT;
-    mailbox->initializationsignal.val = 1;
-    mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+    set_initializationsignal(INITIALIZATIONSIGNAL_INIT, 1);
 #if defined(UNIBUS)
     timeout_c::wait_ms(10); // UNIBUS: PDP-11/70 = 10ms
 #elif defined(QBUS)
     timeout_c::wait_us(10); // QBUS only 10us !
 #endif
-    mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_INIT;
-    mailbox->initializationsignal.val = 0;
-    mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+    set_initializationsignal(INITIALIZATIONSIGNAL_INIT, 0);
 }
 
 // return: bitmask with shortcount BG*/NPG IN_OUT signals
@@ -311,16 +322,21 @@ uint8_t qunibus_c::probe_grant_continuity(bool error_if_closed)
     //     set BG OUT = 0, if IN 0 -> jumper!
 
     // Set BG*_OUT/NPG_OUT bits at latch 0
-    // and read back
-    mailbox->buslatch.addr = 0;
-    mailbox->buslatch.bitmask = PRIORITY_ARBITRATION_BIT_MASK;
-    mailbox->buslatch.val = 0x00;// output 0 = against pullups
-    mailbox_execute(ARM2PRU_BUSLATCH_SET);
+    // and read back. The read-back is part of the command: the answer sits in
+    // the same union another thread's payload would overwrite, so the lock is
+    // held until it has been taken.
+    {
+        mailbox_lock_c lock;
+        mailbox->buslatch.addr = 0;
+        mailbox->buslatch.bitmask = PRIORITY_ARBITRATION_BIT_MASK;
+        mailbox->buslatch.val = 0x00;// output 0 = against pullups
+        mailbox_execute_locked(ARM2PRU_BUSLATCH_SET);
 
-    // Read back BG*_IN/NPG_IN bits from latch 0
+        // Read back BG*_IN/NPG_IN bits from latch 0
 //	mailbox->buslatch.addr = 0;
-//	mailbox_execute(ARM2PRU_BUSLATCH_GET);
-    uint8_t grant_mask = ~ (mailbox->buslatch.val & PRIORITY_ARBITRATION_BIT_MASK);
+//	mailbox_execute_locked(ARM2PRU_BUSLATCH_GET);
+        grant_mask = ~ (mailbox->buslatch.val & PRIORITY_ARBITRATION_BIT_MASK);
+    }
 #endif
     // simulate POWER ON
     powercycle(2);
@@ -360,24 +376,16 @@ void qunibus_c::powercycle(int phase)
      *	 For example, M9312 works only on ACLO as startup condition.
      */
     if (phase & 0x01) { // Power Down
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_ACLO;
-        mailbox->initializationsignal.val = 1;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        set_initializationsignal(INITIALIZATIONSIGNAL_ACLO, 1);
         timeout_c::wait_ms(delay_ms);
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_DCLO;
-        mailbox->initializationsignal.val = 1;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        set_initializationsignal(INITIALIZATIONSIGNAL_DCLO, 1);
         timeout_c::wait_ms(delay_ms);
     }
     if (phase & 0x02) { // Power Up
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_DCLO;
-        mailbox->initializationsignal.val = 0;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        set_initializationsignal(INITIALIZATIONSIGNAL_DCLO, 0);
         timeout_c::wait_ms(delay_ms);
         // CPU generates INIT
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_ACLO;
-        mailbox->initializationsignal.val = 0;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        set_initializationsignal(INITIALIZATIONSIGNAL_ACLO, 0);
         timeout_c::wait_ms(delay_ms);
         // CPU executes power fail vector
     }
@@ -391,9 +399,7 @@ void qunibus_c::powercycle(int phase)
         // failure, and has not become bus master, may maintain the
         // request u n til BINIT L is asserted or the request is
         // acknowledged (in which case regular bus protocol is followed)."
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_POK;
-        mailbox->initializationsignal.val = 0;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        set_initializationsignal(INITIALIZATIONSIGNAL_POK, 0);
         // "Processor software should execute a RESET Instruction 3 ms
         // minimun after the negation of BPOK H. This asserts BINIT L
         // for from 8 to 20 us. Processor software executes a HALT
@@ -404,9 +410,7 @@ void qunibus_c::powercycle(int phase)
         // to protect themselves against erasures and erroneous writes
         // during a power failure.""
         timeout_c::wait_ms(delay_ms);
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_DCOK;
-        mailbox->initializationsignal.val = 0;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        set_initializationsignal(INITIALIZATIONSIGNAL_DCOK, 0);
         // "The Processor asserts BINIT L 1 us minimum after the negation of BDCOK H."
         // "Dc power must remain stable for a minimum of 5 us after the negation of BDCOK H."
         // "BDCOK H must remain negated for a minimnn of 3 ms."
@@ -419,16 +423,12 @@ void qunibus_c::powercycle(int phase)
         // interrupt through the power-fail vector mid-boot ("power fail in boot").
         // Assert BPOK first, while BINIT still holds the CPU, so it cold-starts
         // with power already up and the boot runs uninterrupted.
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_POK;
-        mailbox->initializationsignal.val = 1;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        set_initializationsignal(INITIALIZATIONSIGNAL_POK, 1);
         timeout_c::wait_ms(delay_ms);
         // "Power supply logic ... asserts BDCOK H 3 ms minimum after dc power is
         // restored." The processor negates BINIT after the assertion of BDCOK H
         // and starts from the power-up vector, with BPOK already asserted.
-        mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_DCOK;
-        mailbox->initializationsignal.val = 1;
-        mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+        set_initializationsignal(INITIALIZATIONSIGNAL_DCOK, 1);
         timeout_c::wait_ms(delay_ms);
     }
 #endif
@@ -438,9 +438,7 @@ void qunibus_c::powercycle(int phase)
 // set state of QBUS  HALT line, like HALT toggle switch on QBUS front panels
 void qunibus_c::set_halt(bool active)
 {
-    mailbox->initializationsignal.id = INITIALIZATIONSIGNAL_HALT;
-    mailbox->initializationsignal.val = active;
-    mailbox_execute(ARM2PRU_INITALIZATIONSIGNAL_SET);
+    set_initializationsignal(INITIALIZATIONSIGNAL_HALT, active);
 }
 #endif
 
@@ -448,8 +446,12 @@ void qunibus_c::set_halt(bool active)
 #if defined(UNIBUS)
 void qunibus_c::set_address_overlay(uint32_t address_overlay)
 {
+    // address_overlay has a field of its own rather than a place in the
+    // payload union, but it is still half of a command: filled here, acted on
+    // by the request, so the two go together under the lock.
+    mailbox_lock_c lock;
     mailbox->address_overlay = address_overlay;
-    mailbox_execute (ARM2PRU_ADDRESS_OVERLAY);
+    mailbox_execute_locked(ARM2PRU_ADDRESS_OVERLAY);
 }
 
 // check: UNIBUS ADDR lines manipulated by (M9312) overlay?
@@ -465,8 +467,7 @@ void qunibus_c::set_cpu_bus_activity(bool active)
 {
     UNUSED(active) ;
 #if defined(QBUS)
-    mailbox->param = active ;
-    mailbox_execute(ARM2PRU_CPU_BUS_ACCESS);
+    mailbox_execute(ARM2PRU_CPU_BUS_ACCESS, active);
 #endif
 }
 
@@ -538,16 +539,77 @@ bool qunibus_c::dma(bool blocking, uint8_t qunibus_cycle, uint32_t startaddr, ui
  * return 0: no memory found at all
  * arbitration_active: if 1, perform NPR/NPG/SACK resp. DMR/DMG/SACK arbitration before mem accesses
  * words[]: buffer for whole QBUS/UNIBUS address range, is filled with data
+ *
+ * no_grant, when given, tells the two zeroes apart: memory that starts at the
+ * first address with nothing in it, and a backplane that granted the board
+ * nothing at all. Both mean "nothing answered", but only the second is worth
+ * reporting to whoever asked for the sweep.
  */
-uint32_t qunibus_c::test_sizer(void)
+uint32_t qunibus_c::test_sizer(bool *no_grant)
 {
-    // tests chunks of 128 word
-    unsigned addr = 0;
+    if (no_grant != nullptr)
+        *no_grant = false;
 
-    // one big transaction, automatically split in chunks
-    qunibusadapter->DMA(*dma_request, true, QUNIBUS_CYCLE_DATI, addr, testwords,
-                        qunibus->addr_space_word_count);
-    return dma_request->qunibus_end_addr; // first non implemented address
+    // The sweep is made a chunk at a time rather than as one transfer the
+    // adapter splits, because each chunk is then bounded. An unbounded one
+    // parks this thread for good on a backplane that never grants the bus - a
+    // machine switched off, or one whose processor is not arbitrating - and
+    // sizing memory is exactly what is asked before a card is placed in such a
+    // machine. Issue #95: the sweep took the device layer's lock with it, and
+    // nothing short of a service restart got it back.
+    //
+    // Bounding every chunk rather than only the first is deliberate: a machine
+    // can stop arbitrating in the middle of a sweep - the operator powers it
+    // down, or halts it - and the part still to walk is the expensive part.
+    const unsigned chunk_timeout_ms = 2000;
+
+    // The sweep ends on a bus timeout: that is the answer it went looking for,
+    // not a device losing a transfer, so the adapter is told to expect it.
+    dma_request->timeout_expected = true;
+
+    timeout_c sweep_time;
+    sweep_time.start_ns(0);
+    uint64_t elapsed_ms = 0;
+    uint32_t end_addr = 0;
+
+    for (unsigned words_done = 0; words_done < addr_space_word_count; ) {
+        unsigned chunk_words = addr_space_word_count - words_done;
+        if (chunk_words > PRU_MAX_DMA_WORDCOUNT)
+            chunk_words = PRU_MAX_DMA_WORDCOUNT;
+        uint32_t addr = 2 * words_done;
+
+        uint64_t before_ms = elapsed_ms;
+        qunibusadapter->DMA(*dma_request, true, QUNIBUS_CYCLE_DATI, addr,
+                            testwords + words_done, chunk_words, chunk_timeout_ms);
+        elapsed_ms = sweep_time.elapsed_ms();
+
+        if (dma_request->success) {
+            end_addr = dma_request->qunibus_end_addr; // last address that answered
+            words_done += chunk_words;
+            continue;
+        }
+        // Nothing granted that chunk: it took the whole bound, where a slave
+        // that simply did not answer ends the cycle in microseconds. No address
+        // above can answer either, since it is the bus and not the address that
+        // is silent.
+        if (elapsed_ms - before_ms >= chunk_timeout_ms) {
+            INFO("memory sizing stopped at %s after %llu ms: nothing is "
+                 "arbitrating the bus, so nothing can answer",
+                 addr2text(addr), (unsigned long long) elapsed_ms);
+            dma_request->timeout_expected = false;
+            if (no_grant != nullptr)
+                *no_grant = true;
+            return 0;
+        }
+        // A bus timeout, which is what the sweep is looking for: the address it
+        // stopped at is the first that nothing implements.
+        dma_request->timeout_expected = false;
+        return dma_request->qunibus_end_addr;
+    }
+
+    // Everything answered, up to the top of the address space.
+    dma_request->timeout_expected = false;
+    return end_addr;
 }
 
 /* probe_range(): does anything on the bus answer inside [startaddr, endaddr]?
@@ -563,7 +625,6 @@ uint32_t qunibus_c::test_sizer(void)
  */
 uint32_t qunibus_c::probe_range(uint32_t startaddr, uint32_t endaddr, uint32_t step)
 {
-    uint16_t w;
     if (startaddr > endaddr || step < 2)
         return QUNIBUS_PROBE_NONE;
 
@@ -576,11 +637,40 @@ uint32_t qunibus_c::probe_range(uint32_t startaddr, uint32_t endaddr, uint32_t s
     uint64_t first_cycle_ms = 0;
     uint32_t answered = QUNIBUS_PROBE_NONE;
 
+    // Each cycle is bounded. An unbounded one parks this thread for good on a
+    // backplane that never grants the bus - a machine switched off, or one
+    // whose processor is not arbitrating - and that is the state a range is
+    // probed in before a memory card is placed. A granted cycle answers or
+    // times out on the bus in microseconds, so the bound costs a live machine
+    // nothing; it is generous because the first grant after a power cycle is
+    // the slow one.
+    const unsigned probe_cycle_timeout_ms = 2000;
+
+    uint64_t elapsed_ms = 0;
     for (uint32_t addr = startaddr; addr <= endaddr; addr += step) {
         cycles++;
-        bool hit = dma(true, QUNIBUS_CYCLE_DATI, addr, &w, 1, /*share_bus*/false);
+        uint64_t before_ms = elapsed_ms;
+        bool hit = dma(true, QUNIBUS_CYCLE_DATI, addr, &probe_word_buffer, 1,
+                       /*share_bus*/false, probe_cycle_timeout_ms);
+        elapsed_ms = probe_time.elapsed_ms();
         if (cycles == 1)
-            first_cycle_ms = probe_time.elapsed_ms();
+            first_cycle_ms = elapsed_ms;
+        // Nothing granted that cycle: it took the whole bound, where a slave
+        // that simply did not answer takes microseconds. No address in the
+        // range can answer either, and walking it would pay the bound at every
+        // step - minutes of them across a memory card's range, with the
+        // adapter's operations_mutex held for all of it. Nothing answers, which
+        // is what the caller asked. Every step is timed, not only the first: a
+        // machine can stop arbitrating in the middle of a probe - the operator
+        // powers it down, or halts it - and the walk that is left to do is the
+        // expensive part.
+        if (!hit && elapsed_ms - before_ms >= probe_cycle_timeout_ms) {
+            INFO("probe of %s..%s stopped at %s after %u cycles: nothing is "
+                 "arbitrating the bus, so nothing can answer",
+                 addr2text(startaddr), addr2text(endaddr), addr2text(addr), cycles);
+            dma_request->timeout_expected = false;
+            return QUNIBUS_PROBE_NONE;
+        }
         if (hit) {
             answered = addr;
             break;
@@ -591,7 +681,8 @@ uint32_t qunibus_c::probe_range(uint32_t startaddr, uint32_t endaddr, uint32_t s
     // the end of the range need not fall on a step boundary
     if (answered == QUNIBUS_PROBE_NONE) {
         cycles++;
-        if (dma(true, QUNIBUS_CYCLE_DATI, endaddr, &w, 1, /*share_bus*/false))
+        if (dma(true, QUNIBUS_CYCLE_DATI, endaddr, &probe_word_buffer, 1,
+                /*share_bus*/false, probe_cycle_timeout_ms))
             answered = endaddr;
     }
 

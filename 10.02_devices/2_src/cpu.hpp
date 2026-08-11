@@ -205,7 +205,7 @@ public:
     bool claimed_memory = false;
 
     // used for DATI/DATO, operated by qunibusadapter
-    dma_request_c data_transfer_request = dma_request_c(this);
+    dma_request_c data_transfer_request{this};
 
     bool on_param_changed(parameter_c *param) override;  // must implement
 

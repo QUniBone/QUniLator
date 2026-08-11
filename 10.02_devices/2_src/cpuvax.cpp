@@ -281,8 +281,7 @@ bool cpuvax_c::on_before_install(void)
     // The processor is the bus master whether or not it is executing, so a
     // console examine reaches a device register on a stopped machine too.
     if (bus_iopage.value) {
-        mailbox->param = 1;
-        mailbox_execute(ARM2PRU_CPU_ENABLE);
+        mailbox_execute(ARM2PRU_CPU_ENABLE, 1);
         set_bus_arbitration(/*arbitrating*/true);
     }
 
@@ -476,8 +475,7 @@ void cpuvax_c::machine_start(void)
     // neither the arbitration a device's request needs nor the state machine
     // that catches the INTR which follows it, so a device can raise a request
     // and see nothing come of it.
-    mailbox->param = 1;
-    mailbox_execute(ARM2PRU_CPU_ENABLE);
+    mailbox_execute(ARM2PRU_CPU_ENABLE, 1);
     set_bus_arbitration(/*arbitrating*/true);
     publish_unibus_map();
     // On emulated time the interval clock and every device delay advance with
@@ -508,8 +506,7 @@ void cpuvax_c::machine_stop(const char *why)
     machine_running = false;
     runmode.value = false;
     ddrmem->base_virtual->unibus_map_active = 0;
-    mailbox->param = 0;
-    mailbox_execute(ARM2PRU_CPU_ENABLE);
+    mailbox_execute(ARM2PRU_CPU_ENABLE, 0);
     set_bus_arbitration(/*arbitrating*/false);
     the_flexi_timeout_controller->set_mode(flexi_timeout_c::world_time);
     simh_shim_set_fixed_ips(0.0);

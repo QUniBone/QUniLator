@@ -94,8 +94,8 @@ public:
     parameter_bool_c loopback_connector = parameter_bool_c(this, "loopback", "lb", false,
             "loopback connector installed on the transceiver port");
 
-    dma_request_c dma_request = dma_request_c(this);
-    intr_request_c intr_request = intr_request_c(this);
+    dma_request_c dma_request{this};
+    intr_request_c intr_request{this};
 
 private:
     // --- CSR bits (base+16) ---

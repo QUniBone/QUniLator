@@ -52,6 +52,7 @@
 #define ARM2PRU_DDR_SLAVE_MEMORY	18	// use DDR as QBUS/UNIBUS slave memory
 #define ARM2PRU_ARB_GRANT_INTR_REQUESTS	19 // emulated CPU answers device requests
 #define ARM2PRU_CPU_BUS_ACCESS 20 // prohibit any activity of CPU on QBUS
+#define ARM2PRU_DMA_CANCEL	21 // take back a DMA which has not started yet
 
 
 
@@ -75,11 +76,17 @@
 #endif
 
 // possible states of DMA machine
+// The PRU writes these: ARBITRATING when it takes an ARM2PRU_DMA, RUNNING when
+// the data statemachine starts, and one of the final states when it stops. So
+// the state says who owns mailbox.dma - ARBITRATING means the request is only a
+// pending NPR/DMR and nothing has been transferred, which is the one state an
+// ARM2PRU_DMA_CANCEL can take back.
 #define DMA_STATE_READY	0        	// idle
 #define DMA_STATE_ARBITRATING	1	// in NPR/NPG/SACK arbitration
 #define DMA_STATE_RUNNING	2	// transfering data
 #define DMA_STATE_TIMEOUTSTOP	3	// stop because of QBUS/UNIBUS timeout
 #define DMA_STATE_INITSTOP	4	// stop because INIT signal sensed
+#define DMA_STATE_CANCELED	5	// taken back by ARM before it started
 
 // Bit masks BR*/NPR and BG*/NPG in buslatch 0 and 1
 // bit # is index into arbitration_request[] array.
@@ -151,6 +158,70 @@ typedef struct {
 	uint8_t _dummy[2];	// keep 32 bit borders
 
 } mailbox_arbitrator_t;
+
+/* Where the PRU's main loop is spending its passes.
+ *
+ * The one question these answer: when the ARM reports
+ *
+ *     ERR cpu34] unibone_grant_interrupts(): PRU arbitration pending for
+ *                >100ms - PRU stopped or hung?
+ *
+ * is the PRU (a) not looping at all, (b) looping but stuck in a bus master
+ * cycle that never ends, or (c) looping but blocked on a device register event
+ * the ARM has not acknowledged? Those are three different faults with three
+ * different fixes, and until now nothing on the board could tell them apart -
+ * the flag the ARM waits on is cleared at the bottom of sm_arb_worker_cpu(),
+ * so all the message says is that the worker was not reached.
+ *
+ * Two samples a moment apart name the case. `loop_passes` standing still is
+ * (a). Otherwise the three pass counters partition every pass of the loop, so
+ * the passes blocked on the register event are the ones left over:
+ *
+ *     blocked = loop_passes - arbitration_passes - master_passes
+ *
+ * Counters, not states: they are read while the PRU runs, and a state read that
+ * way is a value from an instant that has already gone. They free-run and wrap;
+ * a reader takes differences and never absolutes.
+ *
+ * Cost is two increments to shared RAM per pass, ~15 ns of a loop that takes
+ * microseconds. That is deliberately all of it. The QBUS firmware's separate
+ * `qbus_diag` block carries the detailed bus counters and the transition ring,
+ * behind QBUS_BUS_TRACE where their cost belongs; this is the part cheap enough
+ * to stand in every build, on both buses, which is the part a wedge needs.
+ *
+ * It lives in the mailbox because the ARM must read it live. `qbus_diag` sits
+ * at its own symbol, to be found in the .out.map by an external tool, and
+ * nothing in the running system reads it at all.
+ */
+typedef struct {
+	uint32_t magic;			// MAILBOX_DIAG_MAGIC once the PRU has run
+	uint32_t loop_passes;		// every pass of the main loop
+	uint32_t arbitration_passes;	// ... which reached the arbitration worker
+	uint32_t master_passes;		// ... which executed a bus master state
+} mailbox_diag_t;
+
+// "PDIA": zero instead means a firmware built without this, or one that has
+// not started. A reader must check it rather than report zeroed counters.
+#define MAILBOX_DIAG_MAGIC	0x50444941
+
+// Start the counters, once, before the main loop runs. The loader leaves shared
+// RAM as it found it, so a fresh firmware would otherwise carry on from whatever
+// the last one left behind - and a reader taking differences would see one
+// enormous step, or none. The magic is written last: a reader that sees it takes
+// what follows as real, so it may not be there before the counters are.
+//
+// Here rather than in each bus's main, like EVENT_SIGNAL and the rest: the two
+// firmwares feed one endpoint, and a counter added or a write reordered in one
+// of them alone leaves the other reporting fiction to it.
+#define MAILBOX_DIAG_RESET(mailbox)	do { \
+		(mailbox).diag.loop_passes = 0; \
+		(mailbox).diag.arbitration_passes = 0; \
+		(mailbox).diag.master_passes = 0; \
+		(mailbox).diag.magic = MAILBOX_DIAG_MAGIC; \
+	} while (0)
+
+// one pass of the main loop reached <counter>
+#define MAILBOX_DIAG_COUNT(mailbox,counter)	((mailbox).diag.counter++)
 
 // data for a requested DMA operation
 typedef struct {
@@ -316,6 +387,9 @@ typedef struct {
 
 	mailbox_arbitrator_t arbitrator;
 
+	// written by PRU, read by ARM at any time
+	mailbox_diag_t diag;
+
 	// set by PRU, read by ARM on event
 	mailbox_events_t events;
 
@@ -354,7 +428,34 @@ extern volatile mailbox_t *mailbox;
 void mailbox_print(void);
 int mailbox_connect(void);
 void mailbox_test1(void);
-bool mailbox_execute(uint8_t request);
+
+// A command to the PRU is its payload and the request byte together, but only
+// the request byte used to be serialized: mailbox_execute() took the lock, and
+// every caller filled its payload before calling it. The payloads
+// mailbox->param, ->initializationsignal, ->buslatch and the rest are one
+// union, so two threads preparing different commands overwrite each other's
+// fields, and the PRU picks up half of each - a power cycle from the web API
+// against a CPU start, say, where initializationsignal.id lands in the low half
+// of param. The answer a command leaves behind (buslatch.val) is the same
+// story read the other way.
+//
+// So the lock covers fill, request and read-back now. Hold it with
+// mailbox_lock_c and use mailbox_execute_locked() inside; the plain
+// mailbox_execute() takes the lock itself and must not be called while holding
+// it, the mutex being non-recursive.
+class mailbox_lock_c {
+public:
+	mailbox_lock_c();
+	~mailbox_lock_c();
+	mailbox_lock_c(const mailbox_lock_c&) = delete;
+	mailbox_lock_c& operator=(const mailbox_lock_c&) = delete;
+};
+
+bool mailbox_execute_locked(uint8_t request); // caller holds mailbox_lock_c
+
+bool mailbox_execute(uint8_t request); // for a request with no payload
+// The single-word payload, which most commands carry, filled under the lock.
+bool mailbox_execute(uint8_t request, uint32_t param);
 
 #else
 // included by PRU code

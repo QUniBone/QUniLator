@@ -177,6 +177,30 @@ bool str_decode_escapes(char *result, unsigned result_size, char *encoded) ;
 int	rangeToMinMax(int val, int min, int max) ;
 
 
+/* subprocess_run(): run a program with an argument vector, no shell involved.
+ *
+ * An argument is an argument here: a file name carrying a space, a semicolon or
+ * a backtick is a file name, not a command line for something else to parse.
+ * Paths reach this board through the web API, and the account behind that API
+ * has sudo, so the difference is the whole point - see the callers, all of which
+ * pass a path somebody typed.
+ *
+ * argv[0] names the program and is also its argv[0]; the vector ends in NULL. A
+ * name with no slash in it is looked up on PATH.
+ *
+ * Exactly one of the two output arguments is used, or neither:
+ *   stdout_fd >= 0  the child's standard output is that descriptor
+ *   capture != NULL what the child writes to standard output, collected here
+ * capture_stderr folds the child's standard error into the same place.
+ *
+ * Result: the child's exit status, 0 for success. -1 if it could not be run,
+ * did not exit normally, or was killed. The wait retries on EINTR - a signal
+ * delivered to this process is not the child's answer.
+ */
+int subprocess_run(const char *const argv[], int stdout_fd = -1,
+		std::string *capture = NULL, bool capture_stderr = false) ;
+
+
 // rotating set of buffers for "number to text" functions
 class rolling_text_buffers_c {
 private:

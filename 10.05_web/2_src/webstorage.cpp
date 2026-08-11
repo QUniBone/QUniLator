@@ -45,6 +45,7 @@
 #include "picojson.h"
 
 #include "logger.hpp"
+#include "utils.hpp"
 #include "device.hpp"
 #include "storagedrive.hpp"
 #include "storageimage.hpp"
@@ -799,31 +800,10 @@ static const char *INTROSPECT = "/usr/share/qunilator/decoders/introspect.py";
 // never a shell, so a file name carrying shell metacharacters is passed as one
 // argument and cannot inject.
 static std::string run_introspect(const std::string &abspath) {
-	int fds[2];
-	if (pipe(fds) != 0)
-		return "";
-	pid_t pid = fork();
-	if (pid < 0) {
-		close(fds[0]);
-		close(fds[1]);
-		return "";
-	}
-	if (pid == 0) {
-		dup2(fds[1], STDOUT_FILENO);
-		close(fds[0]);
-		close(fds[1]);
-		execlp("python3", "python3", INTROSPECT, abspath.c_str(), (char *) nullptr);
-		_exit(127);
-	}
-	close(fds[1]);
+	const char *argv[] = { "python3", INTROSPECT, abspath.c_str(), nullptr };
 	std::string out;
-	char buf[4096];
-	ssize_t n;
-	while ((n = read(fds[0], buf, sizeof buf)) > 0)
-		out.append(buf, (size_t) n);
-	close(fds[0]);
-	int status;
-	waitpid(pid, &status, 0);
+	if (subprocess_run(argv, -1, &out) != 0)
+		return "";
 	return out;
 }
 

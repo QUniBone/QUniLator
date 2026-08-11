@@ -26,6 +26,8 @@
 #ifndef _RL11_HPP_
 #define _RL11_HPP_
 
+#include <atomic>
+
 #include "qunibusadapter.hpp"
 #include "storagecontroller.hpp"
 
@@ -48,6 +50,24 @@ private:
     // bits<21:17> of BAE register
 
     volatile bool error_operation_incomplete; // OPI. operation aborted because of error
+
+    // Why a Get Status could not be answered in the register access, or NULL.
+    // The drive's 200 ms timeout is waited out by worker(): doing it in the
+    // register access would hold a bus cycle open for all of it. Written on the
+    // adapter's event thread and taken by worker() - and cleared by reset() on
+    // a third, since an INIT retracts the command the timeout belonged to.
+    // reset() cannot take on_after_register_access_mutex to do it: worker()
+    // holds that across a command, so the INIT would wait out the very timeout
+    // it is cancelling, on the adapter's event thread. An atomic exchange gives
+    // the reason to exactly one of the two without the lock.
+    std::atomic<const char *> operation_incomplete_reason;
+
+    // Bumped by reset(). do_operation_incomplete() waits out a drive's 200 ms
+    // timeout on the worker thread, and a bus INIT or a power cycle inside that
+    // wait retracts the command it belongs to; comparing the counter across the
+    // wait is how the worker finds out. reset() runs on the falling edge of
+    // INIT, so init_asserted is false again by the time it is asked.
+    std::atomic<uint32_t> reset_epoch;
     volatile bool error_dma_timeout; // DMA operation addresses non existing memory
     volatile bool error_writecheck; // mismatch between memory and disk data
     volatile bool error_header_not_found; // sector address notfound on track
@@ -61,8 +81,8 @@ private:
     uint16_t silo_compare[128]; // memory data to be compared with silo
 
     // RL11 has one INTR and DMA
-    dma_request_c dma_request = dma_request_c(this); // operated by qunibusadapter
-    intr_request_c intr_request = intr_request_c(this);
+    dma_request_c dma_request{this}; // operated by qunibusadapter
+    intr_request_c intr_request{this};
 
     // only 16*16 = 256 byte buffer from drive (SILO)
     // one DMA transaction per sector, must be complete within one sector time
@@ -86,7 +106,11 @@ private:
     // state machines
     void change_state(unsigned new_state);
     void change_state_INTR(unsigned new_state);
-    void state_seek(void);
+    // deferrable: the caller can hand the command to worker() instead, and then
+    // a drive that is not ready is refused here rather than waited out - see
+    // do_operation_incomplete() for why the adapter's event thread may not wait.
+    // False when the seek was refused and nothing was done.
+    bool state_seek(bool deferrable);
     void state_readwrite(void);
 
     void connect_to_panel(void);

@@ -154,6 +154,13 @@ private:
 	// true:  active CPU. devices perform Request/Grant/SACK protocoll
 	bool arbitrator_active;
 
+	// Where probe_range() has its DATI land. A probe bounds its wait, and a
+	// request that times out stays scheduled with the adapter still holding
+	// this pointer (see dma()), so it may not be a local of the probing call -
+	// the words would be written into a stack frame that is gone. What the
+	// address answered with is never read; only whether it answered at all.
+	uint16_t probe_word_buffer;
+
 	// disabled
 	uint8_t probe_grant_continuity(bool error_if_closed) ;
 
@@ -224,7 +231,12 @@ public:
 			uint8_t unibus_control, uint16_t *words, uint32_t unibus_start_addr,
 			uint32_t unibus_end_addr, bool *timeout, uint32_t *block_counter);
 
-	uint32_t test_sizer(void);
+	// Size the machine's own memory: DATI ascending from 0 until the bus times
+	// out, returning the first address nothing implements (0 = no memory at
+	// all). Every chunk of the sweep is bounded, so a backplane that grants
+	// the board nothing ends it instead of parking the caller for good; that
+	// case answers 0 with *no_grant set, when a flag is given for it.
+	uint32_t test_sizer(bool *no_grant = nullptr);
 
 	// Probing a range: the lowest address in it that a slave answers, or
 	// QUNIBUS_PROBE_NONE when nothing does.

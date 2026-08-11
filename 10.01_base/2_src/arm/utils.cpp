@@ -43,6 +43,7 @@
 #include <errno.h>
 #include <sys/time.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 
 #include <algorithm>
 #include <string>
@@ -902,3 +903,67 @@ int	rangeToMinMax(int val, int min, int max) {
     return result ;
 }
 
+
+// see utils.hpp for what this is for
+int subprocess_run(const char *const argv[], int stdout_fd, std::string *capture,
+		bool capture_stderr)
+{
+	int pipefd[2] = { -1, -1 };
+	if (capture != NULL) {
+		capture->clear();
+		if (pipe(pipefd) != 0)
+			return -1;
+	}
+
+	pid_t pid = fork();
+	if (pid < 0) {
+		if (pipefd[0] >= 0) {
+			close(pipefd[0]);
+			close(pipefd[1]);
+		}
+		return -1;
+	}
+	if (pid == 0) {
+		// child
+		int out = (pipefd[1] >= 0) ? pipefd[1] : stdout_fd;
+		if (pipefd[0] >= 0)
+			close(pipefd[0]);
+		if (out >= 0) {
+			if (dup2(out, STDOUT_FILENO) < 0)
+				_exit(127);
+			if (capture_stderr && dup2(out, STDERR_FILENO) < 0)
+				_exit(127);
+			if (out != STDOUT_FILENO && out != STDERR_FILENO)
+				close(out);
+		}
+		execvp(argv[0], (char *const *) argv);
+		_exit(127); // no such program on this board
+	}
+
+	// parent
+	if (pipefd[1] >= 0)
+		close(pipefd[1]);
+	if (pipefd[0] >= 0) {
+		char buf[4096];
+		// Read to EOF before waiting: a child writing more than the pipe holds
+		// would block forever against a parent already in waitpid().
+		for (;;) {
+			ssize_t n = read(pipefd[0], buf, sizeof buf);
+			if (n > 0)
+				capture->append(buf, (size_t) n);
+			else if (n == 0)
+				break; // the child closed its end
+			else if (errno != EINTR)
+				break; // a real read error: keep what did arrive
+		}
+		close(pipefd[0]);
+	}
+
+	int status = 0;
+	while (waitpid(pid, &status, 0) < 0)
+		if (errno != EINTR)
+			return -1;
+	if (!WIFEXITED(status))
+		return -1; // killed by a signal: not an exit status at all
+	return WEXITSTATUS(status);
+}

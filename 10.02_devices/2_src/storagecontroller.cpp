@@ -81,7 +81,7 @@ void storagecontroller_c::on_init_changed()
 {
 	std::vector<storagedrive_c*>::iterator it;
 	for (it = storagedrives.begin(); it != storagedrives.end(); it++) {
-		(*it)->init_asserted = init_asserted;
+		(*it)->init_asserted = init_asserted.load();
 		(*it)->on_init_changed();
 	}
 }

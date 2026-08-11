@@ -55,6 +55,7 @@ $CXX -std=c++11 -Wall -Wextra $INCLUDES \
 	"$WEB/webshares.cpp" \
 	"$WEB/websystem.cpp" \
 	"$WEB/weblog.cpp" \
+	"$BASE/utils.cpp" \
 	"$OUT/civetweb.o" \
 	-lpthread -o "$OUT/auth_test"
 

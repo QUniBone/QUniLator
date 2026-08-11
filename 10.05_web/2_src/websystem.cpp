@@ -31,6 +31,8 @@
 
 #include <string>
 
+#include "utils.hpp"
+
 #include "civetweb.h"
 #include "picojson.h"
 
@@ -83,34 +85,7 @@ static bool read_json_body(struct mg_connection *conn, picojson::value *out) {
 // is the exit status, or -1 when the program could not be run at all. No shell
 // takes part, so an argument is an argument.
 static int run_capturing(const char *const argv[], std::string *output) {
-	int fds[2];
-	if (pipe(fds) != 0)
-		return -1;
-	pid_t pid = fork();
-	if (pid < 0) {
-		close(fds[0]);
-		close(fds[1]);
-		return -1;
-	}
-	if (pid == 0) {
-		close(fds[0]);
-		if (dup2(fds[1], STDOUT_FILENO) < 0 || dup2(fds[1], STDERR_FILENO) < 0)
-			_exit(127);
-		close(fds[1]);
-		execv(argv[0], (char *const *) argv);
-		_exit(127);
-	}
-	close(fds[1]);
-	char buf[512];
-	ssize_t n;
-	output->clear();
-	while ((n = read(fds[0], buf, sizeof(buf))) > 0)
-		output->append(buf, (size_t) n);
-	close(fds[0]);
-	int status = 0;
-	while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
-		;
-	return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+	return subprocess_run(argv, -1, output, /*capture_stderr*/true);
 }
 
 // The tool prefixes what it says with its own name and ends it with a newline;

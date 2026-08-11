@@ -66,6 +66,7 @@
 #include "pru_backend.hpp"
 #include "pruss_intc_mapping.h"
 #include "iopageregister.h"
+#include "timeout.hpp"
 #include "priorityrequest.hpp"
 #include "qunibusadapter.hpp"
 #include "unibuscpu.hpp"
@@ -77,6 +78,11 @@ bool qunibusadapter_debug_flag = 0;
 
 // encode signal bit for PRU from BR/NPR level.
 // index is one of PRIORITY_LEVEL_INDEX_*
+
+// How long the PRU is given to make good on an orphan it refused to abandon:
+// one bus timeout per word, with room to spare. Past it the transfer is written
+// off - by the CPU access waiting on it, and by the next bus epoch.
+static const uint64_t dma_orphan_wait_ns = 100000000ull; // 100 ms
 
 static uint8_t priority_level_idx_to_arbitration_bit[PRIORITY_LEVEL_COUNT] = {
     PRIORITY_ARBITRATION_BIT_B4,
@@ -101,6 +107,9 @@ qunibusadapter_c::qunibusadapter_c() :     device_c()
     line_ACLO = false;
 
     requests_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+    dma_orphan_on_pru = false;
+    dma_orphan_since_ns = 0;
 
     requests_init();
 
@@ -141,7 +150,6 @@ void qunibusadapter_c::on_init_changed(void)
 // result: false = failure
 bool qunibusadapter_c::register_device(qunibusdevice_c& device) 
 {
-    bool register_handle_used[MAX_IOPAGE_REGISTER_COUNT]; // index by handle
     unsigned i;
     unsigned register_handle;
     unsigned device_handle;
@@ -166,8 +174,11 @@ bool qunibusadapter_c::register_device(qunibusdevice_c& device)
         }
     }
 
-    // assign to "backplane position"
-    // search next free "slot"
+    // the "backplane position" this device would take. Claimed further down,
+    // once every refusal is behind us: a device that carries a handle looks
+    // installed - install() asserts on one that does - so claiming first means
+    // every refusal has to remember to give it back, and the one that forgets
+    // is an aborted emulator rather than a refused enable.
     device_handle = 1; // reserve 0 for special use
     while (device_handle <= MAX_DEVICE_HANDLE && devices[device_handle] != NULL)
         device_handle++;
@@ -175,47 +186,68 @@ bool qunibusadapter_c::register_device(qunibusdevice_c& device)
         ERROR("register_device() Tried to register more than %u devices!", MAX_DEVICE_HANDLE);
         return false;
     }
-    devices[device_handle] = &device;
-    device.handle = device_handle; // tell the device its slots
-
-    // lookup register_handles[]
-    memset(register_handle_used, 0, sizeof(register_handle_used)); // all 0
 
     // verify: does the device implement a register address already
     // in use by another device? it happened!
+    // Two cards answering one address is something an operator arranges from
+    // the web interface - a second DL11 left at the factory address, a base
+    // address moved onto a neighbour - and a configuration is applied the same
+    // way. So it refuses, like the misconfiguration above: the device stays off
+    // the bus and install() reports it, rather than the machine going down over
+    // an address somebody typed.
     for (i = 0; i < device.register_count; i++) {
         qunibusdevice_register_t *device_reg = &(device.registers[i]);
         device_reg->addr = device.base_addr.value + 2 * i;
         uint8_t reghandle = IOPAGE_REGISTER_ENTRY(*pru_iopage_registers, device_reg->addr);
-        if (reghandle != 0 && reghandle != IOPAGE_REGISTER_HANDLE_ROM)
-            FATAL(
-                "register_device() IO page address conflict: %s implements register at %s, belongs already to other device.",
-                device.name.value.c_str(), qunibus->addr2text(device_reg->addr));
+        if (reghandle != 0 && reghandle != IOPAGE_REGISTER_HANDLE_ROM) {
+            ERROR("register_device() IO page address conflict: %s implements register at %s, "
+                  "belongs already to other device; refusing to install",
+                  device.name.value.c_str(), qunibus->addr2text(device_reg->addr));
+            return false;
+        }
     }
 
-    for (i = 0; i < 0x1000; i++) {
-        // scan all addresses in IO page
-        register_handle = pru_iopage_registers->register_handles[i];
-        assert(register_handle < MAX_IOPAGE_REGISTER_COUNT || register_handle == IOPAGE_REGISTER_HANDLE_ROM);
-        if (register_handle != 0 && register_handle != IOPAGE_REGISTER_HANDLE_ROM)
-            // device registers may decdoe into ROM space, M9312
-            register_handle_used[register_handle] = true;
+    // Allocate the device a run of register_count handles: the lowest free run
+    // that fits, not the space above the highest handle in use. Devices are
+    // enabled and disabled while the board runs, and appending only ever
+    // reclaims a disabled device's handles when everything above them has been
+    // given back too - so an operator toggling devices in an unlucky order
+    // walks the allocation up to the 254-handle ceiling and is then refused
+    // every install until the service is restarted.
+    //
+    // register_by_handle[] is the allocation record itself, written here and
+    // cleared by unregister_device(), so it answers "handle in use" directly.
+    unsigned run_first = 0;     // handle the current run of free handles starts at
+    unsigned run_length = 0;    // its length
+    unsigned run_start = 0;     // first run long enough for the device, 0 = none
+    unsigned longest_run = 0;   // for the refusal message
+    unsigned free_handles = 0;
+    for (i = 1; i < MAX_IOPAGE_REGISTER_COUNT; i++) { // handle 0 is reserved
+        if (register_by_handle[i] != NULL) {
+            run_length = 0; // run broken by a handle in use
+            continue;
+        }
+        free_handles++;
+        if (run_length == 0)
+            run_first = i;
+        run_length++;
+        if (run_length > longest_run)
+            longest_run = run_length;
+        if (run_start == 0 && run_length >= device.register_count)
+            run_start = run_first;
     }
-    // allocate new handles for registers of device
-    // we could try to find a "hole" of size device->register_count, but simply add to the end
-    // find highest handle uses so far.
-    register_handle = 0; // biggest handle in use
-    // handle#0 not to be used!
-    for (i = 1; i < MAX_IOPAGE_REGISTER_COUNT; i++)
-        if (register_handle_used[i])
-            register_handle = i;
-    unsigned free_handles = MAX_IOPAGE_REGISTER_COUNT - register_handle - 1;
-    if (free_handles < device.register_count) {
-        ERROR("register_device() can not register device %s, needs %d register, only %d left.",
-              device.name.value.c_str(), device.register_count, free_handles);
+    if (run_start == 0 && device.register_count > 0) {
+        ERROR("register_device() can not register device %s: it needs %u consecutive "
+              "register handles, the longest free run is %u (%u of %u handles free).",
+              device.name.value.c_str(), device.register_count, longest_run, free_handles,
+              MAX_IOPAGE_REGISTER_COUNT - 1);
         return false;
     }
-    register_handle++; // first free handle
+    register_handle = run_start;
+
+    // Nothing refuses from here on: take the backplane position.
+    devices[device_handle] = &device;
+    device.handle = device_handle; // tell the device its slots
 
     // add registers of device (controller) to global shared register map
 
@@ -239,15 +271,8 @@ bool qunibusadapter_c::register_device(qunibusdevice_c& device)
 		pru_iopage_reg->event_register_handle = 0; 
         // "active" devices are marked with controller handle
         if (device_reg->active_on_dati || device_reg->active_on_dato) {
-            if (device_reg->active_on_dati && !device_reg->active_on_dato && device_reg->writable_bits != 0x0000) {
-                FATAL(
-                    "register_device() Register configuration error for device %s, register idx %u:\n"
-                    "A writable device register may not be passive on DATO and active on DATI.\n"
-                    "Passive DATO -> value written only saved in shared " QUNIBUS_NAME " reg value\n"
-                    "Active DATI: shared " QUNIBUS_NAME " reg value updated from flipflops -> DATO value overwritten\n"
-                    "make DATO active too -> datao value saved in DATO flipflops",
-                    device.name.value.c_str(), i);
-            }
+            // a writable register active on DATI and passive on DATO was
+            // refused at the top of this function, before any state was touched
             pru_iopage_reg->event_register_handle = device_reg->register_handle;
             if (device_reg->active_on_dati)
                 pru_iopage_reg->event_flags |= IOPAGEREGISTER_EVENT_FLAG_DATI;
@@ -288,8 +313,7 @@ void qunibusadapter_c::unregister_device(qunibusdevice_c& device)
     // if its a CPU, disable PRU to "with_CPU"
     unibuscpu_c *cpu = dynamic_cast<unibuscpu_c*>(&device);
     if (cpu) {
-        mailbox->param = 0;
-        mailbox_execute(ARM2PRU_CPU_ENABLE);
+        mailbox_execute(ARM2PRU_CPU_ENABLE, 0);
         registered_cpu = NULL;
     }
 
@@ -408,14 +432,39 @@ void qunibusadapter_c::request_schedule(priority_request_c& request)
     prl->slot_request_mask |= (1 << request.priority_slot);  // set slot bit
 }
 
+// Ask the PRU to abandon the DMA it holds, and say whether it did.
+bool qunibusadapter_c::dma_cancel_on_pru(void)
+{
+    // Must run under pthread_mutex_lock(&requests_mutex): mailbox->dma is what
+    // that lock protects, and the answer is read out of it.
+    if (!mailbox_execute(ARM2PRU_DMA_CANCEL))
+        return false; // PRU did not answer at all: assume it still has the transfer
+    return mailbox->dma.cur_status == DMA_STATE_CANCELED;
+}
+
 // Cancel all pending device_DMA and IRQ requests of every level.
 // requests which are active on the PRU (->active) are left running,
 // and the PRU terminates DMA sequences on INIT.
-void qunibusadapter_c::requests_cancel_scheduled(void) 
+void qunibusadapter_c::requests_cancel_scheduled(void)
 {
     priority_request_c *req;
 
     // Must run under pthread_mutex_lock(&requests_mutex);
+
+    // A latch left standing from an earlier epoch. Only the completion it waits
+    // for clears it, and a PRU that never gives that completion holds off every
+    // DMA the process makes from then on - the CPU access spin gives up on it
+    // after 100 ms, but the holdoff itself outlives the fault and used to need a
+    // service restart. INIT and power are where the bus starts over: the PRU
+    // terminates its DMA sequences on them, so whatever it owed is void, and the
+    // holdoff is re-established below if this epoch's cancel is refused in turn.
+    if (dma_orphan_on_pru
+            && timeout_c::abstime_ns() - dma_orphan_since_ns > dma_orphan_wait_ns) {
+        ERROR("the PRU never completed a cancelled transfer; the holdoff on it "
+              "ends here, with the bus");
+        dma_orphan_on_pru = false;
+    }
+
     for (unsigned level_index = 0; level_index < PRIORITY_LEVEL_COUNT; level_index++) {
         priority_request_level_c *prl = &request_levels[level_index];
         prl->slot_request_mask = 0; // clear alls slot from request
@@ -424,6 +473,22 @@ void qunibusadapter_c::requests_cancel_scheduled(void)
         for (unsigned slot = 0; slot < PRIORITY_SLOT_COUNT; slot++)
             if ((req = prl->slot_request[slot])) {
                 dma_request_c *dmareq;
+                // A DMA chunk already handed to the PRU keeps running - the
+                // tables are cleared here, the transfer is not. Take it back if
+                // the PRU has not started it: one parked in an arbitration that
+                // is never granted would otherwise never signal, and holding the
+                // mailbox for it holds off every later DMA for good.
+                //
+                // A chunk the PRU is executing cannot be taken back. It still
+                // owns mailbox->dma and will still signal when it ends, so
+                // remember it: no further chunk may be pushed until that signal
+                // has been taken, or the two transfers share one mailbox and the
+                // completion is accounted against the wrong request.
+                if (level_index == PRIORITY_LEVEL_INDEX_NPR && req->executing_on_PRU
+                        && !dma_cancel_on_pru()) {
+                    dma_orphan_on_pru = true;
+                    dma_orphan_since_ns = timeout_c::abstime_ns();
+                }
                 req->executing_on_PRU = false;
                 if ((dmareq = dynamic_cast<dma_request_c *>(req)))
                     dmareq->success = false; // device gets an DMA error, but will not understand
@@ -505,6 +570,16 @@ void qunibusadapter_c::request_execute_active_on_PRU(unsigned level_index)
 
         dma_request_c *dmareq = dynamic_cast<dma_request_c *>(prl->active);
         assert(dmareq);
+
+        // The PRU is still finishing a chunk whose request was cancelled out
+        // from under it. mailbox->dma belongs to that transfer until its signal
+        // arrives, so this request waits: it stays active and scheduled, and
+        // worker_device_dma_chunk_complete_event() pushes it as soon as the
+        // orphan's completion has been taken.
+        if (dma_orphan_on_pru) {
+            DEBUG("DMA held off: the PRU still carries a cancelled transfer");
+            return;
+        }
 
         // We do the device_DMA transfer in chunks so we can handle arbitrary buffer sizes.
         // (the PRU mailbox has limited space available.)
@@ -635,6 +710,65 @@ void qunibusadapter_c::request_active_complete(unsigned level_index, bool signal
 
 }
 
+// A transfer that outlasted the deadline its caller gave it. Retire it, so its
+// slot does not stay occupied for the life of the process: DMA() refuses every
+// later transfer on an occupied slot, and on a machine where nothing grants the
+// bus - a dark one, or one with no processor - that is every transfer the
+// slot's owner will ever make again. Recovering from that used to need a
+// restart of the service.
+//
+// Only a transfer the PRU has not started can be retired; the PRU says which it
+// was. One that is on the bus keeps its slot, as before: it ends within a bus
+// timeout per word, and its completion is what retires it.
+bool qunibusadapter_c::dma_request_abandon(dma_request_c& dma_request)
+{
+    priority_request_level_c *prl = &request_levels[PRIORITY_LEVEL_INDEX_NPR];
+    unsigned slot = dma_request.priority_slot;
+
+    pthread_mutex_lock(&requests_mutex);
+
+    // It may have completed between the deadline expiring and this lock, or an
+    // INIT may have cleared the tables under it. Then there is nothing to do,
+    // and nothing may be signalled either - the request is someone else's now.
+    if (dma_request.complete || prl->slot_request[slot] != &dma_request) {
+        pthread_mutex_unlock(&requests_mutex);
+        return false;
+    }
+
+    if (dma_request.executing_on_PRU && !dma_cancel_on_pru()) {
+        ERROR("DMA of %s stays in slot %u: the PRU has it on the bus "
+              "(dma.cur_status=%u)",
+              dma_request.device ? dma_request.device->name.value.c_str() : "none",
+              slot, (unsigned) mailbox->dma.cur_status);
+        pthread_mutex_unlock(&requests_mutex);
+        return false;
+    }
+    dma_request.executing_on_PRU = false;
+
+    // out of the schedule tables
+    prl->slot_request[slot] = NULL;
+    prl->slot_request_mask &= ~(1 << slot);
+    if (prl->active == &dma_request)
+        prl->active = NULL;
+
+    // whatever was queued behind it may run now - the mailbox is free again
+    if (!prl->active && prl->slot_request_mask) {
+        request_activate_lowest_slot(PRIORITY_LEVEL_INDEX_NPR);
+        request_execute_active_on_PRU(PRIORITY_LEVEL_INDEX_NPR);
+    }
+    pthread_mutex_unlock(&requests_mutex);
+
+    // Release the request. `success` is already false: the caller that gave up
+    // on it set that before coming here, for the same reason
+    // requests_cancel_scheduled() does - a device reuses one dma_request_c, and
+    // the result of its previous transfer must not stand as this one's.
+    pthread_mutex_lock(&dma_request.complete_mutex);
+    dma_request.complete = true;
+    pthread_cond_signal(&dma_request.complete_cond);
+    pthread_mutex_unlock(&dma_request.complete_mutex);
+    return true;
+}
+
 // Request a DMA cycle from Arbitrator.
 // unibus_control = QUNIBUS_CYCLE_DATI or _DATO
 // unibus_end_addr = last accessed address (success or timeout) and timeout condition
@@ -697,19 +831,49 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
     assert(dma_request.priority_slot < PRIORITY_SLOT_COUNT);
     assert(dma_request.level_index == PRIORITY_LEVEL_INDEX_NPR);
 
-    // setup device request
-    assert(wordcount > 0);
-    assert((unibus_addr + 2*wordcount) <= qunibus->addr_space_byte_count);
     // lowest priority reserved for CPU
     assert(!dma_request.is_cpu_access || dma_request.priority_slot == 31);
+
+    // setup device request
+    // The extent of a transfer is not this adapter's to trust: a device gets it
+    // from a guest, out of the buffer descriptors of an MSCP command or the
+    // address registers of a disk controller, so a driver bug puts a range past
+    // the end of the machine's memory here. Asserts are live in the deployed
+    // binary, so refusing is what keeps one bad descriptor from aborting the
+    // emulator - machine, disks and console with it. The caller sees a transfer
+    // that did not happen, which is what a bus that did not answer looks like,
+    // and the devices already report that upward as NXM.
+    if (wordcount == 0
+            || (uint64_t) unibus_addr + 2 * (uint64_t) wordcount
+                    > (uint64_t) qunibus->addr_space_byte_count) {
+        ERROR("DMA %s of %u words at %s refused: %s",
+              qunibus_c::control2text(qunibus_cycle), wordcount,
+              qunibus->addr2text(unibus_addr),
+              wordcount == 0 ? "no words to transfer"
+                             : "runs past the end of the address space");
+        dma_request.success = false;
+        dma_request.qunibus_start_addr = unibus_addr;
+        dma_request.qunibus_end_addr = unibus_addr;
+        dma_request.complete = true;
+        return;
+    }
 
 #if defined(UNIBUS)
     if (!dma_request.is_cpu_access && qunibus->is_address_overlay_active())
         ERROR("UNIBUS ADDR lines overlayed (for M9312 boot) @ %s. Only CPU 24/26 access intended!", qunibus->addr2text(unibus_addr)) ;
 #endif
 
-    // ignore calls if INIT condition
-    if (line_INIT) {
+    // ignore calls if INIT condition.
+    // A device reuses one dma_request_c for every transfer it makes, so leaving
+    // success untouched here hands it the result of its *previous* transfer: a
+    // DATI refused because INIT was asserted would read as one that succeeded,
+    // and the device would consume whatever words the last transfer left in the
+    // buffer. requests_cancel_scheduled() is careful about this for the same
+    // reason - the request it releases gets success = false.
+    if (bus_init_active()) {
+        dma_request.success = false;
+        dma_request.qunibus_start_addr = unibus_addr;
+        dma_request.qunibus_end_addr = unibus_addr;
         dma_request.complete = true;
         return;
     }
@@ -736,13 +900,14 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
     priority_request_level_c *prl = &request_levels[PRIORITY_LEVEL_INDEX_NPR];
 
     // The slot still carries a request. Either the device has two transfers in
-    // flight on one slot - its own error - or the previous one timed out and is
-    // still scheduled, which is this adapter's contract: a timed-out request
-    // stays put because the PRU may yet finish it, and the buffer is where its
-    // words land. Either way the transfer cannot be started, and the caller is
-    // told so rather than the process being aborted: a device driving the bus
-    // badly must not take the emulator down with it. The slot frees itself when
-    // the PRU completes the request that holds it.
+    // flight on one slot - its own error - or a previous one timed out with the
+    // PRU already executing it, which dma_request_abandon() leaves in place:
+    // such a transfer still owns mailbox->dma and the buffer is where its words
+    // land. Either way the transfer cannot be started, and the caller is told so
+    // rather than the process being aborted: a device driving the bus badly must
+    // not take the emulator down with it. The slot frees itself when the PRU
+    // completes the request that holds it, which for a transfer on the bus is a
+    // bus timeout per word away.
     if (prl->slot_request[dma_request.priority_slot] != NULL) {
         priority_request_c *held = prl->slot_request[dma_request.priority_slot];
         ERROR("DMA slot %u still holds a request of %s: %s @ %s refused",
@@ -803,6 +968,13 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
         // NO wait for PRU signal, instead busy waiting. CPU thread blocked.
         // Reason: SPEED. CPU does high frequency single word accesses.
         bool completed = false;
+        // When this thread gives up on the orphan latch - the mark that the PRU
+        // still owes a completion for a transfer it refused to abandon. While
+        // the latch stands, nothing this spin waits for can happen: the access
+        // is either cancelled with the completion still owed, or held off from
+        // the PRU behind the orphan. One deadline covers both. 0 = the latch was
+        // not standing last time round, so a later one is waited out afresh.
+        uint64_t orphan_deadline_ns = 0;
         // What the spin actually costs an emulated processor, measured two ways:
         // elapsed time, and the time this thread was on a core for. They agree
         // when the spin is genuinely waiting for the PRU to finish the cycle,
@@ -829,15 +1001,81 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
 //	printf("a\n") ;
 //if (DMA_STATE_IS_COMPLETE(mailbox->dma.cur_status))
 //	printf("b\n") ;
-            if ((activereq == &dma_request) && !EVENT_IS_ACKED(*mailbox, dma)) {
+            bool mine_active = (activereq == &dma_request);
+            // Whether this access is still the adapter's to run at all. Its own
+            // slot answers that: requests_cancel_scheduled() empties the slot of
+            // everything it force-completes, so a request that is neither active
+            // nor in its slot was cancelled out from under this thread. Reading
+            // "cancelled" off prl->active being NULL instead would be wrong -
+            // another device's DMA can be the active one while this access waits
+            // its turn, and that is a state to go on spinning in.
+            bool mine_scheduled =
+                (prl->slot_request[dma_request.priority_slot] == &dma_request);
+            if (mine_active && !EVENT_IS_ACKED(*mailbox, dma)) {
                 assert(activereq->is_cpu_access);
                 // transfer DATI data to buffer, set success flag, schedule next request
-                worker_device_dma_chunk_complete_event(); // do not signal, uses complete_mutex
+                // The signal may belong to a transfer cancelled while the PRU
+                // was running it, taken here because this thread dispatches the
+                // event itself. Then it says nothing about this access - which
+                // is only being pushed to the PRU now - and the spin goes on.
+                if (worker_device_dma_chunk_complete_event())
+                    completed = true;
                 EVENT_ACK(*mailbox, dma);
-                completed = true;
-            } else if (activereq == NULL)
-                // request aborted by worker_power_event()
-                completed = true;
+            } else if (!mine_active && !mine_scheduled) {
+                // The request was aborted by worker_init_event() or
+                // worker_power_event() while this thread waited on it. If the
+                // PRU had already started the transfer, it is finishing it, and
+                // the completion is this thread's to collect: the adapter
+                // worker passes over cpu_access events, and a cpu_access
+                // completion raises no PRU interrupt to wake it with either.
+                // Walking away from the signal strands the orphan latch that
+                // requests_cancel_scheduled() set, and a stranded latch holds
+                // off every later DMA for the life of the process - the slot
+                // 16 wedge of issue #92, by a second road.
+                if (!dma_orphan_on_pru)
+                    completed = true;
+                else if (!EVENT_IS_ACKED(*mailbox, dma)) {
+                    worker_device_dma_chunk_complete_event(); // discards, clears the latch
+                    EVENT_ACK(*mailbox, dma);
+                    completed = true;
+                }
+            }
+            // Otherwise the access is on the PRU, or queued behind another
+            // request, or held off behind the orphan - all of which end in a
+            // signal this loop sees.
+
+            if (!dma_orphan_on_pru)
+                orphan_deadline_ns = 0;
+            else if (!completed) {
+                // The wait is bounded because the reason there is a latch at all
+                // is that the PRU refused to abandon the transfer: it has it on
+                // the bus, where a word ends within a bus timeout.
+                if (orphan_deadline_ns == 0)
+                    orphan_deadline_ns = timeout_c::abstime_ns() + dma_orphan_wait_ns;
+                else if (timeout_c::abstime_ns() > orphan_deadline_ns) {
+                    // Never seen; the alternative is spinning here for good.
+                    ERROR("the PRU owes a completion for a cancelled CPU access "
+                          "and has not given it in %u ms: this access fails",
+                          (unsigned) (dma_orphan_wait_ns / 1000000));
+                    if (mine_scheduled) {
+                        // Held off rather than cancelled, so this access is
+                        // still in the tables and has to be taken out of them:
+                        // DMA() refuses every later transfer on an occupied
+                        // slot, and this one is not going to run.
+                        dma_request.executing_on_PRU = false;
+                        prl->slot_request[dma_request.priority_slot] = NULL;
+                        prl->slot_request_mask &= ~(1 << dma_request.priority_slot);
+                        if (mine_active)
+                            prl->active = NULL;
+                        if (!prl->active && prl->slot_request_mask) {
+                            request_activate_lowest_slot(PRIORITY_LEVEL_INDEX_NPR);
+                            request_execute_active_on_PRU(PRIORITY_LEVEL_INDEX_NPR);
+                        }
+                        dma_request.complete = true; // success is already false
+                    }
+                    completed = true;
+                }
+            }
             pthread_mutex_unlock(&requests_mutex); //&dma_request.complete_mutex);
         } while (!completed);
 //ARM_DEBUG_PIN1(0); // CPU20 performace
@@ -873,22 +1111,25 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
                 deadline.tv_sec++;
                 deadline.tv_nsec -= 1000000000L;
             }
+            bool timed_out = false;
             while (!dma_request.complete) {
                 int res = pthread_cond_timedwait(&dma_request.complete_cond,
                                                  &dma_request.complete_mutex,
                                                  &deadline);
                 if (res == ETIMEDOUT) {
                     dma_request.success = false;
+                    timed_out = true;
                     ERROR("DMA did not complete within %u ms: dev %s, %s @ %s, "
                           "wordcount %u", timeout_ms,
                           dma_request.device ? dma_request.device->name.value.c_str()
                                              : "none",
                           qunibus_c::control2text(qunibus_cycle),
                           qunibus->addr2text(unibus_addr), wordcount);
-                    // Where the transfer died, read off the mailbox. cur_status
-                    // 1 is the PRU parked in NPR/NPG/SACK arbitration - a grant
-                    // that never came; 0 with signaled != acked is a transfer
-                    // that finished whose completion event was never serviced.
+                    // Where the transfer died, read off the mailbox.
+                    // DMA_STATE_ARBITRATING (1) is the PRU parked in NPR/NPG/SACK
+                    // arbitration - a grant that never came; DMA_STATE_READY (0)
+                    // with signaled != acked is a transfer that finished whose
+                    // completion event was never serviced.
                     ERROR("  mailbox: dma.cur_status=%u cur_addr=%s "
                           "event dma signaled=%u acked=%u",
                           (unsigned) mailbox->dma.cur_status,
@@ -899,6 +1140,12 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
                 }
                 assert(!res);
             }
+            pthread_mutex_unlock(&dma_request.complete_mutex);
+            // Outside the request's own lock: retiring it takes requests_mutex
+            // first and this one second, the order every other path uses.
+            if (timed_out)
+                dma_request_abandon(dma_request);
+            return;
         }
         pthread_mutex_unlock(&dma_request.complete_mutex);
     }
@@ -937,7 +1184,7 @@ void qunibusadapter_c::INTR(intr_request_c& intr_request,
     assert((intr_request.vector & 3) == 0); // multiple of 2 words
 
     // ignore calls if INIT condition
-    if (line_INIT) {
+    if (bus_init_active()) {
         intr_request.complete = true;
         return;
     }
@@ -958,14 +1205,45 @@ void qunibusadapter_c::INTR(intr_request_c& intr_request,
         // A device may re-raised a pending INTR again
         // (quite normal situation when other ISRs block, CPU overload)
         // A re-raise will be ignored.
-        // ! Another device MAY NOT reraise an INTR with same slot/level
-        // ! (else complete signals may be routed to wrong device)
-        assert(scheduled_intr_req->device == intr_request.device);
-        assert(scheduled_intr_req->vector == intr_request.vector);
-        // if different vector, it may not be ignored -> change in program flow
+        //
+        // Two devices on one slot and level is a device implementation error -
+        // completion signals would be routed to the wrong one - and a device
+        // with several interrupt sources must give each its own pseudo-slot, as
+        // DL11 rcv/xmt do. It is still not worth the machine: the re-raise is
+        // dropped and the journal says why, where this aborted the emulator.
+        if (scheduled_intr_req->device != intr_request.device) {
+            ERROR("INTR() slot %u level %u is held by %s: %s may not raise on it too",
+                  (unsigned) intr_request.priority_slot,
+                  (unsigned) (intr_request.level_index + 4),
+                  scheduled_intr_req->device
+                      ? scheduled_intr_req->device->name.value.c_str() : "none",
+                  intr_request.device ? intr_request.device->name.value.c_str() : "none");
+            pthread_mutex_unlock(&requests_mutex);
+            return;
+        }
 
-        // If device uses multiple INTRs with different vectors (DL11 rcv+xmt),
-        // it must use different pseudo-slots.
+        // The vector may have moved since the pending request was raised. A
+        // guest sets one over the bus - an MSCP controller takes it from the
+        // host in its init handshake, a DELQA from its setup block - so this is
+        // reachable from a running program, and it may not be ignored: the
+        // interrupt would take that program somewhere else. While the request
+        // only sits in the schedule table it costs nothing to correct, because
+        // request_execute_active_on_PRU() reads the vector when it hands the
+        // request to the PRU. Once handed over the PRU has it and the moment
+        // has passed, which is worth a line rather than an abort.
+        if (scheduled_intr_req->vector != intr_request.vector) {
+            if (scheduled_intr_req->executing_on_PRU)
+                ERROR("INTR() vector of %s moved %03o -> %03o while its interrupt "
+                      "was already granted; the interrupt carries the old one",
+                      intr_request.device ? intr_request.device->name.value.c_str() : "none",
+                      (unsigned) scheduled_intr_req->vector, (unsigned) intr_request.vector);
+            else {
+                DEBUG_FAST("INTR() vector of pending request moved %03o -> %03o",
+                           (unsigned) scheduled_intr_req->vector,
+                           (unsigned) intr_request.vector);
+                scheduled_intr_req->vector = intr_request.vector;
+            }
+        }
 
         // scheduled and request_active_complete() not called
         pthread_mutex_unlock(&requests_mutex);
@@ -1086,7 +1364,7 @@ void qunibusadapter_c::worker_init_event()
     DEBUG_FAST("worker_init_event(): INIT %s", line_INIT ? "asserted" : "negated");
     for (device_handle = 0; device_handle <= MAX_DEVICE_HANDLE; device_handle++)
         if ((device = devices[device_handle])) {
-            device->init_asserted = line_INIT;
+            device->init_asserted = line_INIT.load();
             device->on_init_changed();
         }
 
@@ -1217,13 +1495,26 @@ void qunibusadapter_c::worker_deviceregister_event()
 // called by PRU signal when DMA transmission complete
 // Called for device DMA() chunk,
 // or cpu_DATA_transfer()
-void qunibusadapter_c::worker_device_dma_chunk_complete_event() 
+bool qunibusadapter_c::worker_device_dma_chunk_complete_event()
 {
     priority_request_level_c *prl = &request_levels[PRIORITY_LEVEL_INDEX_NPR];
     bool more_chunks;
     // Must run under pthread_mutex_lock(&requests_mutex) ;
 
     dma_request_c *dmareq = dynamic_cast<dma_request_c *>(prl->active);
+
+    // The signal of a transfer that requests_cancel_scheduled() force-completed
+    // while the PRU was executing it. Whatever mailbox->dma now says describes
+    // that transfer, and the device it belonged to was released long ago, so
+    // none of it may be accounted against the request standing in its place.
+    // Take the signal, give the mailbox back, and start whatever was held off.
+    if (dma_orphan_on_pru) {
+        DEBUG("DMA <- PRU: completion of a cancelled transfer, discarded");
+        dma_orphan_on_pru = false;
+        if (prl->active)
+            request_execute_active_on_PRU(PRIORITY_LEVEL_INDEX_NPR);
+        return false;
+    }
 
     // A bus INIT or power event (worker_init_event/worker_power_event ->
     // requests_cancel_scheduled) can clear prl->active and force-complete the
@@ -1234,7 +1525,7 @@ void qunibusadapter_c::worker_device_dma_chunk_complete_event()
     // stale completion, as request_active_complete() and
     // worker_intr_complete_event() already do. The caller acks the event.
     if (dmareq == NULL)
-        return;
+        return false;
     if (!dmareq->is_cpu_access)
         DEBUG("DMA <- PRU: dev %s, status=%u, wordcount=%u, cur_addr=%s",
               dmareq->device ? dmareq->device->name.value.c_str() : "none",
@@ -1329,6 +1620,7 @@ void qunibusadapter_c::worker_device_dma_chunk_complete_event()
             request_execute_active_on_PRU(PRIORITY_LEVEL_INDEX_NPR);
 
     }
+    return true;
 }
 
 // called by PRU signal when INTR vector transmission complete
@@ -1427,6 +1719,9 @@ void qunibusadapter_c::worker(unsigned instance)
                 // QBUS: bus blocked by DMR until EVENT_ACK for raising edge
 //              printf("mailbox->events.init_signals_cur 0x%x\n", (unsigned)mailbox->events.init_signal_cur) ;
 #if defined(UNIBUS)
+                // Read the count before the level, so that everything the count
+                // covers is at least as old as the level sampled next.
+                uint8_t init_signaled = mailbox->events.init.signaled;
                 if (mailbox->events.init_signal_cur) {
                     if (!line_INIT)
                         init_raising_edge = true;
@@ -1436,17 +1731,55 @@ void qunibusadapter_c::worker(unsigned instance)
                         init_falling_edge = true;
                     line_INIT = false;
                 }
-				if (!init_raising_edge && !init_falling_edge) {
-					// clear stray event
-	                EVENT_ACK(*mailbox, init);
-				} else if (init_falling_edge) { // INIT asserted -> negated.  DATI/DATO cycle only possible after that.
-	                // raising edge below ?!
+                bool init_pulse = !init_raising_edge && !init_falling_edge;
+                if (init_pulse) {
+                    // The PRU signalled a change and the level shows none: INIT
+                    // went away from where the ARM believes it is and came back
+                    // before this thread got to look. init_signal_cur is the
+                    // level *now* - the PRU updates it in place - so nothing of
+                    // the pulse survives in it, and taking that for a stray
+                    // event resets no device at all.
+                    //
+                    // A processor-driven INIT lasts >= 10 ms and cannot be lost
+                    // this way; a console or diagnostic that pulses INIT briefly
+                    // can be, and a device that never hears of it keeps exactly
+                    // the state the reset was there to clear. So play the pulse
+                    // out, both halves, the way the QBUS path below does for
+                    // every INIT event. Its far side is the opposite of the
+                    // level held here: an assert and its negate while INIT was
+                    // negated, a negate and its assert while it was asserted.
+                    // The far side of the pulse is the opposite of the level
+                    // held here, and for that sweep line_INIT says the opposite
+                    // of what the bus is doing. init_replay keeps the device
+                    // threads out for the whole replay regardless: a negate
+                    // played out while INIT is really asserted would otherwise
+                    // let a transfer onto a bus that is being reset, and the
+                    // second sweep would take it straight back off again.
+                    bool init_level = line_INIT;
+                    init_replay = true;
+                    line_INIT = !init_level;
                     worker_init_event();
-	                EVENT_ACK(*mailbox, init); // PRU may re-raise and change mailbox now
-                	}
+                    line_INIT = init_level;
+                    worker_init_event();
+                    init_replay = false;
+                    // The pulse is over, so every count taken before the level
+                    // was sampled describes it - acknowledge them all, or the
+                    // next pass plays the same pulse out a second time. The
+                    // count read above is what "all" means, and acked is this
+                    // thread's alone to write, so it is set rather than counted
+                    // up to: the UNIBUS PRU never reads it, and counting up to
+                    // it is 255 read-modify-writes of uncached PRU shared RAM
+                    // in the worst case, with wrap-around to reason about.
+                    mailbox->events.init.acked = init_signaled;
+                } else if (init_falling_edge) { // INIT asserted -> negated.  DATI/DATO cycle only possible after that.
+                    // raising edge below ?!
+                    worker_init_event();
+                    EVENT_ACK(*mailbox, init); // PRU may re-raise and change mailbox now
+                }
                 DEBUG_FAST(
-                    "EVENT_INIT: init_signal_cur=0x%x, init_raise=%d, init_fall=%d",
-                    mailbox->events.init_signal_cur, init_raising_edge, init_falling_edge) ;
+                    "EVENT_INIT: init_signal_cur=0x%x, init_raise=%d, init_fall=%d, init_pulse=%d",
+                    mailbox->events.init_signal_cur, init_raising_edge, init_falling_edge,
+                    init_pulse) ;
 #elif defined(QBUS)
 			// QBUS: INIT is 10us pulse (not a state)
 			line_INIT = true;

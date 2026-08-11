@@ -94,13 +94,23 @@ public:
 	static qunibusdevice_c *find_installed_by_request_slot(uint8_t priority_slot,
 			const qunibusdevice_c *except);
 
-	// report slots this device shares with another device on the bus
-	void warn_on_slot_collisions(void);
+	// The same, restricted to requests arbitrating on one level. A level and a
+	// slot together name one entry of the adapter's schedule table, which can
+	// hold a single request. "level" is BR4..7, or 8 for NPR, the way
+	// priority_request_c::get_level() reports it; 0 matches any level.
+	static qunibusdevice_c *find_installed_by_request_level_slot(uint8_t level,
+			uint8_t priority_slot, const qunibusdevice_c *except);
+
+	// false: a request of this device would share a schedule table entry with
+	// one already on the bus, and the device must not be installed. A slot
+	// shared at different levels is reported but allowed.
+	bool check_slot_collisions(void);
 
 private:
 	// setup address tables, also in shared memory
 	// start both threads
-	void install(void);
+	// false: the adapter refused the device, it is not on the bus
+	bool install(void);
 
 	void uninstall(void);bool is_installed() {
 		return (handle > 0);

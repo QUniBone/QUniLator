@@ -675,6 +675,14 @@ step(KD11EA *cpu)
 					if(DR == 0) {
 						SEC;
 						SEV;
+					} else if(prod == INT32_MIN && dv == -1) {
+						// -2^31 / -1 is +2^31, which no 32-bit divide can
+						// represent: on a target where long is 32 bits the
+						// ldiv() below would itself be undefined. The
+						// quotient overflows 16 bits, so take the V path
+						// here; its low 16 bits are zero either way, hence Z.
+						SEV;
+						SEZ;
 					} else {
 						ldiv_t d = ldiv(prod, dv);
 						if(d.quot < -32768 || d.quot > 32767) {

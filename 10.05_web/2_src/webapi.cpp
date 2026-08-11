@@ -31,6 +31,8 @@
 #include "civetweb.h"
 #include "picojson.h"
 
+#include "webserver.hpp"
+
 #include "logger.hpp"
 #include "device.hpp"
 #include "storagedrive.hpp"
@@ -69,7 +71,7 @@
 #include "webserialports.hpp"
 #include "websystem.hpp"
 
-static void send_json(struct mg_connection *conn, int status, const picojson::value &val) {
+void web_send_json(struct mg_connection *conn, int status, const picojson::value &val) {
 	std::string body = val.serialize();
 	mg_printf(conn,
 			"HTTP/1.1 %d %s\r\n"
@@ -83,7 +85,7 @@ static void send_json(struct mg_connection *conn, int status, const picojson::va
 static void send_error(struct mg_connection *conn, int status, const std::string &message) {
 	picojson::object err;
 	err["error"] = picojson::value(message);
-	send_json(conn, status, picojson::value(err));
+	web_send_json(conn, status, picojson::value(err));
 }
 
 // read and parse a JSON object request body, of any size - a bulk memory write
@@ -308,7 +310,7 @@ static void devices_list(struct mg_connection *conn) {
 			devices.push_back(picojson::value(o));
 		}
 	}
-	send_json(conn, 200, picojson::value(devices));
+	web_send_json(conn, 200, picojson::value(devices));
 }
 
 // The device's bus placement — where it sits in the I/O page and how it
@@ -452,7 +454,7 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 				// edit to a dark machine sets none, so it is published here —
 				// for the card, and for the drives a controller takes with it.
 				notify_carried(dev);
-				send_json(conn, 200, param_to_json(dev, param));
+				web_send_json(conn, 200, param_to_json(dev, param));
 				return;
 			}
 			if (param == &dev->enabled) {
@@ -586,7 +588,7 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 						WEB_INFO("%s enabled with its medium", dev->name.value.c_str());
 						webstorage_refresh_readonly(webevents_is_powered()
 								&& !webevents_is_halted());
-						send_json(conn, 200, param_to_json(dev, param));
+						web_send_json(conn, 200, param_to_json(dev, param));
 						return;
 					}
 				} else if (param->content == parameter_c::CONTENT_ROM) {
@@ -627,7 +629,7 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 			return;
 		}
 	}
-	send_json(conn, 200, param_to_json(dev, param));
+	web_send_json(conn, 200, param_to_json(dev, param));
 }
 
 // /api/devices and /api/devices/<device>/params/<param>
@@ -858,7 +860,7 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	if (control_apply_to_emulated_cpu(action)) {
 		picojson::object res;
 		res["ok"] = picojson::value(true);
-		send_json(conn, 200, picojson::value(res));
+		web_send_json(conn, 200, picojson::value(res));
 		return 200;
 	}
 
@@ -954,7 +956,7 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	}
 	picojson::object res;
 	res["ok"] = picojson::value(true);
-	send_json(conn, 200, picojson::value(res));
+	web_send_json(conn, 200, picojson::value(res));
 	return 200;
 }
 
@@ -1054,7 +1056,7 @@ static void memory_map(struct mg_connection *conn) {
 			res["probed_at"] = picojson::value();
 		}
 	}
-	send_json(conn, 200, picojson::value(res));
+	web_send_json(conn, 200, picojson::value(res));
 }
 
 // POST /api/memory/probe — size the machine's own memory: DATI ascending from 0
@@ -1063,10 +1065,21 @@ static void memory_map(struct mg_connection *conn) {
 // halted: it takes the bus for the length of the sweep.
 static void memory_probe(struct mg_connection *conn) {
 	uint32_t first_invalid;
+	bool no_grant = false;
 	{
 		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
 		std::lock_guard<std::mutex> mlock(web_bus_mutex());
-		first_invalid = qunibus->test_sizer();
+		first_invalid = qunibus->test_sizer(&no_grant);
+		// Nothing on the backplane granted the board the bus, so the sweep says
+		// nothing about what the machine carries. Reported rather than recorded:
+		// a machine that is switched off would otherwise be filed as one with no
+		// memory, over the last probe that did reach the bus.
+		if (no_grant) {
+			send_error(conn, 504, "the board asked for the bus and was not granted it: "
+					"nothing on this backplane is arbitrating. A machine that is "
+					"switched off grants nothing.");
+			return;
+		}
 
 		// The board answers its own ranges, and a sweep cannot tell those from
 		// memory the machine carries: with a card placed above the machine's own
@@ -1090,7 +1103,7 @@ static void memory_probe(struct mg_connection *conn) {
 	res["first_invalid"] = picojson::value((double) first_invalid);
 	res["physical_end"] = first_invalid >= 2 ?
 			picojson::value((double) (first_invalid - 2)) : picojson::value();
-	send_json(conn, 200, picojson::value(res));
+	web_send_json(conn, 200, picojson::value(res));
 }
 
 // POST /api/memory/fill {"address":…, "count":…, "value":…} — set a run of
@@ -1146,7 +1159,7 @@ static void memory_fill(struct mg_connection *conn, const picojson::value &req) 
 	res["ok"] = picojson::value(true);
 	res["address"] = picojson::value((double) address);
 	res["count"] = picojson::value((double) count);
-	send_json(conn, 200, picojson::value(res));
+	web_send_json(conn, 200, picojson::value(res));
 }
 
 // The machine's memory card, or nullptr on a build that carries none.
@@ -1219,7 +1232,7 @@ static void memory_place(struct mg_connection *conn, const picojson::value &req)
 	WEB_INFO("memory: %s at %s..%s", mem->size.value.c_str(),
 			qunibus->addr2text(mem->startaddr.value),
 			qunibus->addr2text(mem->endaddr.value));
-	send_json(conn, 200, memory_placement_json(mem));
+	web_send_json(conn, 200, memory_placement_json(mem));
 }
 
 static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
@@ -1340,7 +1353,7 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		picojson::object res;
 		res["address"] = picojson::value((double) address);
 		res["words"] = picojson::value(arr);
-		send_json(conn, 200, picojson::value(res));
+		web_send_json(conn, 200, picojson::value(res));
 		return 200;
 	}
 
@@ -1417,7 +1430,7 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	res["ok"] = picojson::value(true);
 	res["address"] = picojson::value((double) address);
 	res["count"] = picojson::value((double) n);
-	send_json(conn, 200, picojson::value(res));
+	web_send_json(conn, 200, picojson::value(res));
 	return 200;
 }
 
@@ -1447,7 +1460,7 @@ static int api_notice_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	picojson::object o;
 	std::string text = webevents_notice();
 	o["notice"] = text.empty() ? picojson::value() : picojson::value(text);
-	send_json(conn, 200, picojson::value(o));
+	web_send_json(conn, 200, picojson::value(o));
 	return 200;
 }
 

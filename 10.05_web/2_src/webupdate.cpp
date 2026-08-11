@@ -40,6 +40,7 @@
 #include "picojson.h"
 
 #include "logger.hpp"
+#include "utils.hpp"
 #include "weblog.hpp"
 #include "websettings.hpp"
 #include "webversion.hpp"
@@ -224,23 +225,14 @@ bool webupdate_poll(void) {
 // survives this service being stopped and restarted by the install it performs.
 // No shell, and the argument list is fixed.
 static bool start_unit(const char *unit) {
-	pid_t pid = fork();
-	if (pid < 0) {
-		WEB_ERROR("update: fork failed: %s", strerror(errno));
-		return false;
-	}
-	if (pid == 0) {
-		execl("/bin/systemctl", "systemctl", "start", "--no-block", unit, (char *) nullptr);
-		execl("/usr/bin/systemctl", "systemctl", "start", "--no-block", unit,
-				(char *) nullptr);
-		_exit(127);
-	}
-	int wstatus = 0;
+	// By name rather than by path: the two absolute paths this used to try in
+	// turn are what a PATH lookup does anyway, and one of them is where the
+	// board keeps systemctl.
+	//
 	// --no-block returns as soon as the job is enqueued, so this does not wait
 	// for the update itself
-	while (waitpid(pid, &wstatus, 0) < 0 && errno == EINTR)
-		;
-	if (!WIFEXITED(wstatus) || WEXITSTATUS(wstatus) != 0) {
+	const char *argv[] = { "systemctl", "start", "--no-block", unit, nullptr };
+	if (subprocess_run(argv) != 0) {
 		WEB_ERROR("update: could not start %s", unit);
 		return false;
 	}

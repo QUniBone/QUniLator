@@ -46,6 +46,7 @@
 
 #include <stdint.h>
 #include <pthread.h>
+#include <atomic>
 
 #include "logsource.hpp"
 
@@ -76,9 +77,14 @@ private:
 
 	uint8_t priority_slot; // backplane priority_slot which triggered request
 public:
-	// better make state variables volatile, accessed by qunibusadapter::worker
-	volatile bool executing_on_PRU; // true between schedule to PRU and compelte signal
-	volatile bool complete;
+	// State shared between the requesting device thread and
+	// qunibusadapter::worker(). Atomic, not `volatile`: `complete` is the flag a
+	// waiting device polls, and the words the transfer landed in the buffer plus
+	// `success` must be visible to it once it sees the flag set. A sequentially
+	// consistent store/load pair gives that release/acquire relationship; a
+	// `volatile` write gives nothing but a promise not to elide the access.
+	std::atomic<bool> executing_on_PRU; // true between schedule to PRU and compelte signal
+	std::atomic<bool> complete;
 
 	// PRU -> signal -> worker() -> request -> device. INTR/DMA
 	pthread_mutex_t complete_mutex;
@@ -90,6 +96,12 @@ public:
 	void set_priority_slot(uint8_t slot);
 	uint8_t get_priority_slot(void) {
 		return priority_slot;
+	}
+	// BR4..BR7 for an INTR; a DMA request arbitrates on NPR and reports 8,
+	// one past BR7, so that level and slot together identify a request's
+	// place in arbitration whatever kind it is.
+	uint8_t get_level(void) {
+		return level_index + 4;
 	}
 };
 
@@ -118,7 +130,9 @@ public:
 	uint32_t chunk_qunibus_start_addr; // current chunk
 	uint32_t chunk_words; // size of current chunks
 
-	volatile bool success; // DMA can fail with bus timeout
+	// DMA can fail with bus timeout. Set by the adapter worker before it sets
+	// `complete`, read by the device once it sees that - see the note there.
+	std::atomic<bool> success;
 
 	// return ptr to chunk pos in buffer
 	uint16_t *chunk_buffer_start(void) {
@@ -157,12 +171,19 @@ public:
 
 	~intr_request_c();
 
+	// The vector a request carries before it has been given one. An MSCP port
+	// is told its vector by the guest's init handshake and has none until then,
+	// so this is a state to report rather than a fault. Named here because the
+	// constructor writes it and get_qunibus_resource_info() reads it, and a
+	// bare 0xffff at either end says nothing about the other.
+	static const uint16_t vector_none = 0xffff;
+
 	void set_level(uint8_t level);
 	void set_vector(uint16_t vector);
-	uint8_t get_level(void) {
-		return level_index + 4;
-	}
-	uint8_t get_vector(void) {
+	// uint16_t, like the vector itself: a PDP-11 vector is a 9 bit byte address
+	// into the trap page, and the floating vectors of a second controller live
+	// above 0400. Returning uint8_t silently dropped that bit.
+	uint16_t get_vector(void) {
 		return vector;
 	}
 

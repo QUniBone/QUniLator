@@ -593,6 +593,12 @@ placed over the rest.
 This sweeps the whole address space and holds the bus for the length of the
 sweep, so run it with the CPU halted.
 
+A machine that is switched off, or one whose processor is not arbitrating,
+grants the board no bus cycle at all: nothing can answer and the sweep has
+nothing to measure. That answers `504` — "the board asked for the bus and was
+not granted it" — and leaves what `/api/memory/map` reports from an earlier
+probe alone, rather than filing the machine as one with no memory.
+
 ### `POST /api/memory/place`
 
 ```json
@@ -651,6 +657,56 @@ case nothing is recorded and every field reads zero.
 A passing diagnostic on an idle board says nothing about this: the tail only
 appears under load and over hours. **`POST`** resets the counters and starts a
 fresh measurement, then answers the same body.
+
+### `GET /api/debug/pru`
+
+Where the PRU's main loop is spending its passes. For one question above all:
+when the emulated processor reports
+
+    ERR cpu34] unibone_grant_interrupts(): PRU arbitration pending for >100ms
+               - PRU stopped or hung?
+
+the flag it waits on is cleared at the bottom of the PRU's arbitration worker,
+so all the message says is that the worker was not reached — and there are three
+different reasons for that, with three different fixes.
+
+```json
+{"available": true, "sample_ms": 50, "looping": true, "arbitrating": true,
+ "loop_passes": 6294296, "loop_passes_delta": 35219,
+ "arbitration_passes_delta": 33521, "master_passes_delta": 1698,
+ "blocked_passes_delta": 0, "arbitration_pending": false,
+ "events": {"deviceregister_signaled": 206, "deviceregister_acked": 206,
+            "dma_signaled": 136, "dma_acked": 136}}
+```
+
+Answering needs two samples, so the request takes both — `sample_ms` apart — and
+reports the differences. A board in this state is being looked at by somebody
+with one `curl` and a problem.
+
+The three pass counters partition every pass of the loop, so which of them moves
+names the case:
+
+| | |
+|---|---|
+| `looping` false | the PRU is not running its loop at all |
+| `master_passes_delta` carrying the loop | stuck in a bus master cycle that never ends |
+| `blocked_passes_delta` carrying the loop | held on a device register event the ARM has not acknowledged |
+
+`blocked_passes_delta` is what is left of the loop after the other two, and the
+`events` block is the other half of that picture: a count signalled and not
+acknowledged is the ARM owing the PRU an answer, with the PRU holding a bus
+cycle open (`deviceregister`) or a transfer's result (`dma`) until it comes. The
+two should never sit apart for long.
+
+For scale, this rig: an idle dark board turns about 56000 passes in 50 ms, one
+running XXDP about 35000, and a directory listing puts some 5% of them in the
+master state. Absolute `loop_passes` is free-running and wraps; only differences
+mean anything.
+
+`available` is false on a firmware built without the counters, and then `magic`
+reports what was found in their place instead. `0x00000000` is a PRU that has
+not reached its loop; anything else is the ARM and the PRU disagreeing about the
+mailbox layout, which would make every other field here fiction.
 
 ### `GET /api/debug/cpu`
 

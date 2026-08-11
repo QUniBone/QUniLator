@@ -73,6 +73,27 @@ private:
 
 	pthread_mutex_t requests_mutex;
 
+	// A DMA chunk the PRU is still executing, whose request was force-completed
+	// by requests_cancel_scheduled() on an INIT or power event. The transfer
+	// runs to its end and signals like any other, but nothing is waiting for it
+	// any more: until that signal arrives the PRU still owns mailbox->dma, and
+	// filling it for the next request would run two transfers together. Set on
+	// the cancel, cleared by the completion that belongs to it. Written and read
+	// only under requests_mutex.
+	bool dma_orphan_on_pru;
+
+	// When it was set, so a later INIT or power event can tell an orphan still
+	// in flight - the PRU has microseconds of bus cycle left to run - from one
+	// the PRU is never going to complete, whose holdoff would otherwise outlive
+	// the bus epoch that caused it. Only meaningful while the latch is set.
+	uint64_t dma_orphan_since_ns;
+
+	// Ask the PRU to abandon the DMA it is holding. True if it did, which frees
+	// mailbox->dma at once; false if the transfer is already on the bus, and
+	// then its completion is still on its way. Under requests_mutex, which is
+	// what serializes mailbox->dma.
+	bool dma_cancel_on_pru(void);
+
 	unibuscpu_c	*registered_cpu ; // only one unibuscpu_c may be registered
 
 	// Helper map: find register via 8bit handle
@@ -82,7 +103,9 @@ private:
 	void worker_init_event(void);
 	void worker_power_event(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge);
 	void worker_deviceregister_event(void);
-	void worker_device_dma_chunk_complete_event(void);
+	// false: the signal belonged to a transfer cancelled while the PRU ran it,
+	// and was discarded - the request standing in its place is still running
+	bool worker_device_dma_chunk_complete_event(void);
 	void worker_intr_complete_event(uint8_t level_index);
 	void worker(unsigned instance) override; // background worker function
 
@@ -107,9 +130,30 @@ public:
 	// Lower index = "nearer to CPU" = higher priority
 	qunibusdevice_c *devices[MAX_DEVICE_HANDLE + 1];
 
-	volatile bool line_INIT; // current state of these QUNIBUS signals
-	volatile bool line_DCLO;
-	volatile bool line_ACLO;
+	// Current state of these QUNIBUS signals. Written by the adapter's worker
+	// thread when the PRU signals an edge, read by every device thread and by
+	// the web layer, so they are atomics rather than the `volatile bool`s they
+	// used to be: `volatile` orders nothing against other objects and a plain
+	// concurrent read/write is a data race the compiler is free to break.
+	// Sequentially consistent by default, which is what makes a DMA() that
+	// looks at line_INIT see the flag and the state the worker set around it in
+	// one order.
+	std::atomic<bool> line_INIT{false};
+
+	// True while an INIT pulse too short for this thread to have seen is being
+	// played out to the devices. line_INIT carries the level each half of the
+	// replay stands for - devices are told of the negate and then of the assert,
+	// which is what a device that resets on an edge needs - so for one sweep it
+	// reads the opposite of what the bus is doing. Device threads take it as
+	// their admission gate, and admitting a transfer in the middle of an INIT is
+	// what this says no to. Ask bus_init_active(), not line_INIT, for that.
+	std::atomic<bool> init_replay{false};
+
+	// Whether a device may put anything on the bus: INIT is asserted, or an
+	// INIT is being replayed to the devices.
+	bool bus_init_active(void) { return line_INIT || init_replay; }
+	std::atomic<bool> line_DCLO{false};
+	std::atomic<bool> line_ACLO{false};
 
 	void on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge) override; // must implement
 	void on_init_changed(void) override; // must implement
@@ -131,6 +175,11 @@ public:
 	bool request_is_blocking_active(uint8_t level_index);
 	void request_active_complete(unsigned level_index, bool signal_complete);
 	void request_execute_active_on_PRU(unsigned level_index);
+
+	// Give up on a DMA that outlasted its caller's deadline: take it back from
+	// the PRU if it never started, and retire it from the schedule tables.
+	// True if it was retired here.
+	bool dma_request_abandon(dma_request_c& dma_request);
 
 	// one emulated-processor bus access, folded into the running summary
 	void cpu_access_profile_note(uint64_t wall_ns, uint64_t cpu_ns,

@@ -32,6 +32,14 @@
 #include "logsource.hpp"
 
 struct mg_context; // civetweb, opaque here
+struct mg_connection;
+namespace picojson { class value; }
+
+// implemented in webapi.cpp: the response every JSON endpoint sends - status
+// line, content type, no-store, content length, body. Shared so an endpoint
+// outside webapi.cpp does not hand-write the header block a fourth time and
+// have it drift.
+void web_send_json(struct mg_connection *conn, int status, const picojson::value &val);
 
 // implemented in webapi.cpp: registers the /api/ and /ws/ handlers that need
 // the device registry and the application (the host test build stubs these)
