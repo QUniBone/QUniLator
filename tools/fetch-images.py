@@ -421,6 +421,7 @@ CATALOGUE = """
 cc.rx01.dsk.gz
 dl0.rl02.dsk.gz
 JH_DU0.ra70.dsk.gz
+JH_DU1.ra70.dsk.gz
 mini-unix-tape0.bin.dsk.gz
 mini-unix-tape1_05.rk05.dsk.gz
 mini-unix-tape1_20.rk05.dsk.gz
@@ -437,6 +438,7 @@ rsx11m4.1_user.rl02.dsk.gz
 rsx11mp46-rl02pg.rl02.dsk.gz
 rsx11mpbl87.ra70.dsk.gz
 rsx11mpv4.6_du0_84.ra80.dsk.gz
+rsx11mpv4.6_du1_84.ra80.dsk.gz
 rsxdl1.rl02.dsk.gz
 rsxdl2.rl02.dsk.gz
 rsxdl3.rl02.dsk.gz
