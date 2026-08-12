@@ -265,6 +265,7 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/stringgrid.o	\
 	$(OBJDIR)/mcout.o	\
 	$(OBJDIR)/inputline.o	\
+	$(OBJDIR)/scriptpath.o	\
 	$(OBJDIR)/kbhit.o	\
 	$(OBJDIR)/bitcalc.o	\
 	$(OBJDIR)/pdp11disas.o	\
@@ -644,6 +645,9 @@ $(OBJDIR)/mcout.o :  $(COMMON_SRC_DIR)/mcout.c $(COMMON_SRC_DIR)/mcout.h
 
 $(OBJDIR)/inputline.o :  $(COMMON_SRC_DIR)/inputline.cpp $(COMMON_SRC_DIR)/inputline.hpp
 	$(CC) $(CCFLAGS) -xc++ $< -o $@
+
+$(OBJDIR)/scriptpath.o :  $(COMMON_SRC_DIR)/scriptpath.cpp $(COMMON_SRC_DIR)/scriptpath.hpp
+	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/kbhit.o :  $(COMMON_SRC_DIR)/kbhit.c $(COMMON_SRC_DIR)/kbhit.h
 	$(CC) $(CCFLAGS) -xc++ $< -o $@

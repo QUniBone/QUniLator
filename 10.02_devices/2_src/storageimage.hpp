@@ -41,6 +41,7 @@
 #include "logsource.hpp"
 #include "bytebuffer.hpp"
 #include "medium_write_protect.hpp"
+#include "scriptpath.hpp"
 
 class storagedrive_c ;
 
@@ -88,7 +89,11 @@ private:
 
 public:
     storageimage_binfile_c(std::string _image_fname) {
-        image_fname = _image_fname ;
+        // An image file a script names is looked for next to the script, see
+        // 90_common/src/scriptpath.hpp. Resolved once here, so every open() and
+        // truncate() below works on the same file. An image which does not
+        // exist yet is created in the current directory, not next to the script.
+        image_fname = scriptpath_resolve(_image_fname) ;
         readonly = false ;
         write_protected = medium_write_protected(image_fname) ;
     }
@@ -158,12 +163,21 @@ private:
     void rebuild_bitmap_from_overlay() ; // crash recovery from overlay sparseness
     void write_bitmap_sidecar() ;
 
+    // The overlay and its bitmap are siblings of the base, so all three move
+    // together when the base does - which happens when only "<base>.gz" was
+    // there and open() expanded it somewhere else.
+    void set_base(const std::string &fname) {
+        base_fname = fname ;
+        overlay_fname = fname + ".ovl" ;
+        map_fname = fname + ".ovl.map" ;
+    }
+
 public:
-    storageimage_cow_c(std::string _base_fname, std::string _overlay_fname,
-                       std::string _map_fname) {
-        base_fname = _base_fname ;
-        overlay_fname = _overlay_fname ;
-        map_fname = _map_fname ;
+    storageimage_cow_c(std::string _base_fname) {
+        // A base image a script names is looked for next to the script, see
+        // 90_common/src/scriptpath.hpp. A base which does not exist yet is
+        // created in the current directory, not next to the script.
+        set_base(scriptpath_resolve(_base_fname)) ;
         base_fd = -1 ;
         overlay_fd = -1 ;
         base_size_bytes = 0 ;

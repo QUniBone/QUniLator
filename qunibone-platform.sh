@@ -1,14 +1,27 @@
 #! /bin/bash
 #
-# Personalizes GitHub "QUniBone" software tree to "UniBone" or "QBone" hardware.
-# Called by github-sync.sh after file update.
+# Personalizes a "QUniLator" software tree to "UniBone" or "QBone" hardware.
+# Called by github-sync.sh after file update, and by qunilator-devkit after it
+# has cloned the tree onto a board.
 # Needs hardware-specific settings in "qunibone-platform.env".
+#
+# Everything works on the tree this script sits in, not on $HOME: it is run
+# through sudo as often as not, and $HOME then names whichever account sudo
+# decided on rather than the checkout being personalized.
+#
+# Afterwards "git status" in the tree is not clean, and that is what an
+# installed board looks like: 5_applications_u|_q are merged into
+# 5_applications and removed, the *.sh are executable, and the shortcuts sit in
+# the tree's root directory.
 #
 #set -v
 #set -x
 #set -u
 # requests a <enter> after each line
 #trap read debug
+
+cd "$(dirname "$0")" || exit 1
+TREE=$PWD
 
 # Are we running on UniBone or QBone hardware ?
 PLATFORMENV="qunibone-platform.env"
@@ -112,29 +125,57 @@ function link4dir() {
 # link4sh ./compile.sh
 
 
-# fix
-# GITHUB: contains both UniBone and QUniBone
+# The repository carries the examples of both buses.
 # 10.03_app_demo/5_applications are sorted into
-#       "...5_applications" (identical for UNIBUS and QBUS machines)
+#       "...5_applications" (identical for UNIBUS and QBUS machines: the
+#        scripts, listings and images that are the same on both)
 # and   "...5_applications_q" (runs only on QBUS)
 # and   "...5_applications_u" (runs only on UNIBUS)
+# A bus-specific script may name an image of the common tree and the other way
+# round; the two only meet after the copy below, which is what makes the
+# installed 5_applications complete.
 
 # Final Installation: only 5_applications with all fitting apps
 # if UniBone: copy 5_applications_u/* to 5_applications,
 # if QBone: copy 5_applications_q/* to 5_applications,
 
-echo "Copying 5_applications$QUNILATOR_PLATFORM_SUFFIX to 5_applications"
-# (recursive move faster, but complicate directory merge)
-cp -f -a $HOME/10.03_app_demo/5_applications$QUNILATOR_PLATFORM_SUFFIX/* $HOME/10.03_app_demo/5_applications
+appdir=$TREE/10.03_app_demo/5_applications
+platform_appdir=$appdir$QUNILATOR_PLATFORM_SUFFIX
+mkdir -p "$appdir"
+if [ -d "$platform_appdir" ] ; then
+  echo "Copying 5_applications$QUNILATOR_PLATFORM_SUFFIX to 5_applications"
+  # (recursive move faster, but complicate directory merge)
+  # "/." instead of "/*": copies dot files too, and does not fail on an empty
+  # directory
+  cp -f -a "$platform_appdir/." "$appdir"
+else
+  echo "No 5_applications$QUNILATOR_PLATFORM_SUFFIX, only the platform independent 5_applications"
+fi
 
 # In any case: remove 5_applications_u and 5_applications_q
-rm -f -R  $HOME/10.03_app_demo/5_applications_u
-rm -f -R  $HOME/10.03_app_demo/5_applications_q
+rm -f -R  "$TREE/10.03_app_demo/5_applications_u"
+rm -f -R  "$TREE/10.03_app_demo/5_applications_q"
 
-# Generating shortcuts for demo scripts in ~ home directory
-find $HOME/10.03_app_demo/5_applications -name \*.sh -exec ln -sf {} $HOME \;
+# Shortcuts to the example scripts, in the root of the tree - which on a board
+# is /root, the directory an operator lands in. A shortcut never overwrites a
+# file which is not one: the scripts of the tree itself live there too.
+while read -r script ; do
+  linkname=$TREE/$(basename "$script")
+  if [ -e "$linkname" ] && [ ! -L "$linkname" ] ; then
+    echo "Not linking $script: $linkname exists and is not a link"
+    continue
+  fi
+  ln -sf "$script" "$linkname"
+done < <(find "$appdir" -name \*.sh)
 
-link4dir $HOME/10.03_app_demo/4_deploy
+link4dir "$TREE/10.03_app_demo/4_deploy"
+
+# Assure all shell scripts are executable
+find "$TREE" -name '*.sh' -exec chmod +x '{}' \;
+
+# remove broken links, if any remaining: an example the merge above did not
+# bring in leaves its shortcut behind
+find "$TREE" -xtype l -delete
 
 
 

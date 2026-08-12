@@ -33,7 +33,7 @@ CXXFLAGS = \
 
 # One test binary per unit under test: <name>test from <name>_test.cpp plus the
 # unit's own source out of ../src. Add a unit by adding its name here.
-TESTS = pdp11disas
+TESTS = pdp11disas scriptpath getopt2
 
 PROGS = $(foreach t,$(TESTS),$(OBJDIR)/$(t)test)
 STAMPS = $(foreach t,$(TESTS),$(STAMPDIR)/$(t).ok)

@@ -1,0 +1,14 @@
+NanoVMS044-1M.rl2
+
+NanoVMS044-1M is a very small version of VMS V4.4 made for testing purpose.
+It runs with only 1MB memory (included on the KA630 MicroVAX II CPU board).
+It is below 10MB in size and thus fits onto an RD51 or RL02.
+Log in with Username: SYSTEM, no password required.
+Because of the small disk and memory size the functionality is limited, 
+although a lot of things still work.
+
+As of now, the RL02 version hangs on boot when used with simh, but it runs
+on a real MicroVAX II and in cooperation with the QBone QBus emulator.
+
+Have fun with NanoVMS!
+

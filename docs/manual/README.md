@@ -56,6 +56,7 @@ is in [`../site/`](../site/); [STRUCTURE.md](../site/STRUCTURE.md) describes it.
 **Tools**
 
 - [The MCP server](tools/mcp-server.md)
+- [Building on the card](tools/development-board.md)
 
 **Background**
 

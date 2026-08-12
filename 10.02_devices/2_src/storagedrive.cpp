@@ -140,8 +140,10 @@ bool storagedrive_c::image_recreate_on_param_change(parameter_c *param)
 	        // ".ovl"); tapes and drives with the overlay disabled write in place.
 	        if (use_overlay.value && !strcmp(category(), "disk")
 	                && !image_filepath.new_value.empty()) {
-	            std::string base = image_filepath.new_value ;
-	            image = new storageimage_cow_c(base, base + ".ovl", base + ".ovl.map") ;
+	            // the overlay and its bitmap are named after the base, which the
+	            // image resolves for itself: a script's image may sit next to
+	            // the script, and only its ".gz" may be there yet
+	            image = new storageimage_cow_c(image_filepath.new_value) ;
 	        } else
 	            image = new storageimage_binfile_c(image_filepath.new_value) ; // dyn size
 	    }

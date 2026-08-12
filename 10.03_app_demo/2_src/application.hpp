@@ -97,6 +97,9 @@ public:
 	// command line args
 	unsigned opt_linewidth = 80;
 	std::string opt_cmdfilename;
+	// the command file was given as a bare argument, not with --cmdfile: the
+	// files it names are then looked for next to it. See scriptpath.hpp.
+	bool opt_script_relative = false;
 #if defined(WEBUI)
 	unsigned opt_web_port = 0; // 0 = web interface not requested
 	std::string opt_web_root; // frontend directory, empty = beside QUNILATOR_DIR

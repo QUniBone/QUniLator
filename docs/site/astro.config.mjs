@@ -112,6 +112,7 @@ export default defineConfig({
 					label: 'Tools',
 					items: [
 						{ label: 'The MCP server', slug: 'tools/mcp-server' },
+						{ label: 'Building on the card', slug: 'tools/development-board' },
 					],
 				},
 				{

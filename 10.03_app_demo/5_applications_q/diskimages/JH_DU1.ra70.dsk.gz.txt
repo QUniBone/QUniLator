@@ -1,0 +1,33 @@
+JH_DU1.ra70.dsk.gz is NOT in this repository
+============================================
+
+What it is
+	The second MSCP disk of the RSX11M-PLUS example, mounted on uda1 by
+	rsx11.mscp/rsx11mp4.8_du0+rl_73.sh ("full install by Mark, many
+	packets"). The disk the example BOOTS from is rsx11mpbl87.ra70.dsk.gz
+	on uda0, which is here.
+
+Why it is missing
+	310,833,398 bytes compressed, 1,720,320,000 expanded. GitHub refuses
+	any push containing a file over 100 MB, so it cannot live in the
+	repository. It is excluded in ../.gitignore by name.
+
+What happens without it
+	Nothing breaks. demo creates an empty image when the one a script names
+	is not there, so uda1 comes up as a blank RA70 instead of carrying that
+	data. The RSX11M-PLUS system on uda0 boots either way.
+
+If you have a copy
+	Put it in this directory under exactly that name and it is used again.
+	To check it is the same disk:
+
+		md5sum        JH_DU1.ra70.dsk.gz
+			649e198c6d8a8892ceae5bc82ec4a58b
+		zcat ... | md5sum   (the expanded image)
+			ac44962aa8686dd4d84ff99ea7e1ff25
+
+	It is not the same disk as the UNIBUS set's excluded master
+	(5_applications_u/diskimages/rsx11mpv4.6_du1_84.ra80.dsk.gz): same
+	expanded size, different content.
+
+	No download URL is recorded for this disk - it did not come with one.

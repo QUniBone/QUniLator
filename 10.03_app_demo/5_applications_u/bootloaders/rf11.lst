@@ -1,0 +1,43 @@
+       1                                	.title RF11/RS11 DECdisk bootstrap
+       2                                
+       3                                	; Ported from M932 diode matrix content
+       4                                	; Source: Restoration of 1st Edition UNIX kernel sources from Bell Laboratories
+       5                                	; https://github.com/jserv/unix-v1/blob/master/boot/m792uv1.s
+       6                                
+       7                                	; Original header:
+       8                                	; UNIX bootstrap ROM, based on BOOT PROCEDURES (VII) 11/3/71
+       9                                	;
+      10                                	; Joerg Hoppe - Feb 2023
+      11                                
+      12 177460                         dcs = 177460	; Disk Control Status Register
+      13 177462                         wc  = 177462	; Word Count Register
+      14 177464                         cma = 177464	; Current Memory Address Register
+      15 177466                         dar = 177466	; Disk Address Register
+      16 177470                         dae = 177470	; Disk Address Ext & Error Register
+      17                                
+      18 054000                         bos = 54000	; location of Bootstrap Operating System, decodes switches etc.
+      19                                
+      20                                	.asect
+      21                                
+      22                                	; ---- Simple boot drive 0 from 0
+      23 000000                         	. = 0
+      24 000000 000137  010000          	jmp	@#start0
+      25                                
+      26 010000                         	. = 10000
+      27                                
+      28                                start0:
+      29                                	; --- Load bos from 1700000 of rf0 (RF11)
+      30                                
+      31 010000 012700  177472          	mov	#dae+2,r0
+      32 010004 012740  000003          	mov	#3,-(r0)	; rf11.dae.ta[6:5] = 3
+      33 010010 012740  140000          	mov	#140000,-(r0)	; rf11.dar = 140000
+      34 010014 012740  054000          	mov	#bos,-(r0)	; rf11.cma = 54000
+      35 010020 012740  176000          	mov	#-2000,-(r0)	; rf11.wc = -2000 (1K words)
+      36 010024 012740  000005          	mov	#5,-(r0)	; rf11.dcs = read,go
+      37 010030 105710                  $1:	tstb	(r0)		; r0 now dcs. done?
+      38 010032 002376                  	bge	$1		; no, loop
+      39 010034 000137  054000          	jmp	@#bos		; jump to bos
+      40                                
+      41                                
+      42                                	.end
+      42                                
