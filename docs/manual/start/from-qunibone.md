@@ -130,6 +130,18 @@ with the same menus, and it reads a command file exactly as `demo` did:
 qbone-cli --cmdfile xxdp.cmd
 ```
 
+A command file may also name itself: give it a `#!` first line and it runs as a
+program, and the images and listings it names are then looked for **next to the
+script** rather than in the directory you happen to stand in.
+
+```sh
+#!/usr/bin/qbone-cli --verbose
+```
+
+That is the form the example machines ship in — see [Building on the
+card](../tools/development-board.md), which puts the whole set of them on a card
+with one command.
+
 > [!NOTE]
 > **You do not have to stop the service**
 >

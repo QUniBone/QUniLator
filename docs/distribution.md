@@ -95,6 +95,13 @@ The disk images left this repository in commit `a11c388` and live at
 `/var/lib/qunilator/images`, registered through the web interface, each paired
 with the `.cmd` script that boots it.
 
+**The scripts came back, the images did not.** `10.03_app_demo/5_applications`
+holds one executable command file per example machine again, for both buses, and
+`qunilator-devkit` puts them on a card. Each tree's `diskimages/*.url` records
+where its media come from, and the emulator expands an `<image>.gz` placed there
+by hand. So the decision below is still open, and it is now only about the
+images.
+
 **A. Baked into the image.** Simplest, and it makes every download carry
 every sample whether or not it is wanted. It also welds the samples to the
 image release cycle.

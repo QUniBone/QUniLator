@@ -280,42 +280,64 @@ The board builds the emulator it runs, which is what debugging on the hardware
 takes: compile.sh is that build. crossbuild.sh in the same tree is the faster
 path, needing Docker on a desktop rather than the board.
 
-A flashed board carries no source, so fetch one and what it needs to compile:
+A flashed board carries no source, and one command puts it there:
 
-    sudo apt-get install -y git build-essential libtirpc-dev
-    git clone https://github.com/QUniBone/QUniLator.git
-    cd QUniLator
+    sudo qunilator-devkit
 
-libtirpc is Sun RPC, which the blinkenlight panel client speaks and glibc no
-longer carries. The TI PRU code generation tools are already here -- the image
-carries clpru as ti-pru-cgt-v2.3 -- so the PRU firmware builds too.
+It installs what a build needs (git, the compiler, libtirpc -- Sun RPC, which
+the blinkenlight panel client speaks and glibc no longer carries -- and the TI
+PRU code generation tools, which the image usually already has as
+ti-pru-cgt-v2.3), fetches the repository into /root at the tag matching the
+installed package, writes qunibone-platform.env for the bus this board bridges,
+and personalizes the tree: the examples of both buses merged into
+10.03_app_demo/5_applications, 4_deploy pointing at this board's build
+directory, every *.sh executable, and a shortcut in /root to each example.
+Running it again fetches and personalizes again. "qunilator-devkit --help"
+lists the options -- another branch, another source, another directory.
 
-Name the bus this board bridges. The example file is a UniBone; a QBone swaps
-the commented pair inside it:
+Then build, from the top of the tree:
 
-    cp qunibone-platform.env.example qunibone-platform.env
-
-Then build, from the top of the checkout:
-
+    cd /root
     ./compile.sh              # or ./compile.sh -a to start from clean
 
 It writes both programs into 10.03_app_demo/4_deploy_q (4_deploy_u on a UNIBUS
 board): qbone-web, the service the unit runs, and demo, the same emulation
-driven from a terminal menu, which the package installs as qbone-cli. Expect the
-better part of an hour on a BeagleBone.
+driven from a terminal menu. Expect the better part of an hour on a BeagleBone.
+It then installs them where the board runs them -- qbone-web as /usr/bin/qbone
+and demo as /usr/bin/qbone-cli, set-user-id root and executable by
+qunilator-admin, exactly as the package installs them -- and restarts the
+service, which takes the emulated machine down with it. "./compile.sh -n"
+installs without the restart, "-N" builds without installing at all.
 
-To run what was built, put it where the unit looks. Renaming onto the file
-replaces it even while it is running, and the restart picks it up:
+The examples
+------------
 
-    sudo install -m 755 10.03_app_demo/4_deploy_q/qbone-web /usr/bin/qbone.new
-    sudo mv /usr/bin/qbone.new /usr/bin/qbone
-    sudo systemctl restart qbone
+10.03_app_demo/5_applications holds the example machines, one command file per
+machine: a serial line, memory, a boot loader, a drive with an image in it, and
+the message saying what to type at the console. Each is executable and names
+the emulator on its "#!" line, so an example runs as a program, and /root holds
+a shortcut to every one of them:
 
-Only one program at a time drives the PRUs and the bus, so stop the service
-before running demo by hand:
+    sudo /root/rt11v5.5_dl_shared.sh
 
-    sudo systemctl stop qbone
-    sudo ./10.03_app_demo/4_deploy_q/demo
+Nothing has to be stopped first: the program asks the service for the board, the
+service switches its machine off and hands the hardware over for the length of
+the session, and takes it back when the session ends -- rebuilding its machine
+switched off, because what a menu session leaves behind is not something to
+start a machine on. One such session runs at a time; a second is refused, naming
+the process that holds the board. The example runs as root because it drives the
+PRUs, and the program built in the tree is not the set-user-id one the package
+installs.
+
+An example names its images and boot loaders relative to itself, and they are
+found there however the example was started -- through the shortcut, or from
+another directory. What such a run *creates* lands in the directory it was
+started from instead, so nothing is written back into the tree by accident.
+
+The disk images are not in the repository: they are large and not all of them
+are ours to distribute. Each tree's diskimages/*.url says where they come from.
+Put an image next to the others as "<name>.gz" and the emulator expands it the
+first time an example mounts it.
 
 The operator's account
 ----------------------

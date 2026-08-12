@@ -174,6 +174,22 @@ naming the ones that do not. The last line of a run says what came out:
 
     Built UNIBUS (unibone): 10.03_app_demo/4_deploy_u/qbone-web
 
+`./compile.sh` is the same build **on the board**, out of a checkout there, and
+it installs what it built: `qbone-web` as `/usr/bin/<name>`, `demo` as
+`/usr/bin/<name>-cli` (setuid root, group `qunilator-admin`), then restarts the
+service — so it costs the running machine exactly what a deploy does. `-n`
+installs without the restart, `-N` builds only. Off a board — no
+`<name>.service` — it builds and installs nothing.
+
+`sudo qunilator-devkit` is what puts that checkout on a flashed board: build
+prerequisites (including the TI PRU tools, without which no build on the board
+can produce PRU firmware), the repository fetched into `/root` at the tag
+matching the installed package, `qunibone-platform.env` written for the board's
+bus, and `qunibone-platform.sh` run — which merges `5_applications_u|_q` into
+`10.03_app_demo/5_applications`, links `4_deploy`, and puts a shortcut to every
+example in the tree's root. `packaging/tests/devkit-test.sh` exercises all of
+that against a stubbed board, so it needs neither hardware nor root.
+
 ## Deploying to the board
 
 `./crossbuild.sh -d` sends the build to `QUNILATOR_HOST`. In `appliance` mode —

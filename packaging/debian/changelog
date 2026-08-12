@@ -1,3 +1,31 @@
+qbone (1.20.0-1) trixie; urgency=low
+
+  * A flashed card can be turned into a development board with one command:
+    "sudo qunilator-devkit" installs what a build needs (compiler, headers, the
+    TI PRU code generation tools), fetches the repository into /root at the tag
+    matching the installed package, writes qunibone-platform.env for the card's
+    bus, and personalizes the tree - the examples merged into one tree, 4_deploy
+    linked, every *.sh executable, and a shortcut in /root to each example.
+  * compile.sh on the card now installs what it built: qbone-web as /usr/bin/
+    <name> and demo as /usr/bin/<name>-cli, set-user-id root and executable by
+    qunilator-admin, and restarts the service. "-n" installs without the
+    restart, "-N" builds without installing.
+  * The example machines are back in the repository, under
+    10.03_app_demo/5_applications, as executable command files - one per
+    machine, for both buses. The disk images they mount are not included; each
+    tree's diskimages/*.url says where they come from.
+  * A command file may be named as a bare argument, which is what makes a "#!"
+    line work, and the files it names are then looked for next to the script -
+    following a symbolic link first, so the shortcuts in /root resolve against
+    the example's own directory. What a run creates still lands in the
+    directory it was started from.
+  * A disk attached to a drive expands its "<image>.gz" when only the compressed
+    master is there. It did so only for images opened without the
+    copy-on-write overlay, which is not how a disk is attached by default, so
+    an example naming a compressed image got an empty disk instead.
+
+ -- Frits Jalvingh <jal@etc.to>  Mon, 10 Aug 2026 23:28:01 +0200
+
 qbone (1.19.2-1) trixie; urgency=low
 
   * An SD card written from an image carries an installation with no operator
