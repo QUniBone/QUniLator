@@ -108,6 +108,13 @@ the one the command files mount from:
 
     tools/fetch-images.py 10.03_app_demo/5_applications/diskimages
 
+The package installs it as `/usr/sbin/qunilator-fetch-images`, beside the other
+board commands, because a board that never gets a checkout needs the images
+just as much - it wants them in `/var/lib/qunilator/images`, where the web
+interface serves them from. Nothing about the tool assumes a repository: with
+no `qunibone-platform.env` and no `build.env` to read, the bus comes from which
+emulator is installed.
+
 It takes one bus's set: `5_applications` plus `5_applications_u` or `_q`, the
 same pair `qunibone-platform.sh` merges, read from `qunibone-platform.env`,
 `build.env` or the installed binary unless `--bus` says otherwise. That is not

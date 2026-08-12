@@ -141,6 +141,12 @@ install -m 755 packaging/debian/qunilator-network packaging/debian/qunilator-set
     packaging/debian/qunilator-rename packaging/debian/qunilator-update \
     packaging/debian/qunilator-devkit \
     packaging/debian/qunilator-usb-gadget $STAGE/usr/sbin/
+# The sample disk images are in neither the repository nor this package - too
+# large, and not all of them ours to distribute - so the tool that fetches them
+# from retrocmp ships instead, under the name the other board commands have. It
+# needs no checkout to work: with no qunibone-platform.env or build.env to read,
+# it takes the bus from which emulator is installed here.
+install -m 755 tools/fetch-images.py $STAGE/usr/sbin/qunilator-fetch-images
 # status LEDs: a tiny standalone daemon, cross-compiled here
 arm-linux-gnueabihf-gcc -O2 -Wall -o $STAGE/usr/sbin/qunilator-leds packaging/debian/qunilator-leds.c
 install -m 644 packaging/debian/qunilator-network.service \

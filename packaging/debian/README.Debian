@@ -334,10 +334,27 @@ found there however the example was started -- through the shortcut, or from
 another directory. What such a run *creates* lands in the directory it was
 started from instead, so nothing is written back into the tree by accident.
 
-The disk images are not in the repository: they are large and not all of them
-are ours to distribute. Each tree's diskimages/*.url says where they come from.
-Put an image next to the others as "<name>.gz" and the emulator expands it the
-first time an example mounts it.
+The disk images are in neither the repository nor this package: they are large
+and not all of them are ours to distribute. Each tree's diskimages/*.url says
+where they come from, and qunilator-fetch-images brings them down from
+files.retrocmp.com under the names the examples mount:
+
+    sudo qunilator-fetch-images /root/10.03_app_demo/5_applications/diskimages
+
+It takes the images for this board's bus -- with no checkout to ask, it reads
+that off the emulator installed here -- and writes each one as
+<software>.<disktype>.dsk.gz, which is the name a command file names. Around 68
+images for a UNIBUS board and 56 for a QBUS one, half a gigabyte either way. A
+run can be repeated: an image already there with the length the server reports
+is left where it is, so an interrupted fetch carries on where it stopped.
+
+A board with no examples on it - no devkit, just this package - wants them in
+the media tree the web interface serves instead:
+
+    sudo qunilator-fetch-images /var/lib/qunilator/images
+
+Either way, an image put next to the others as "<name>.gz" is expanded by the
+emulator the first time something mounts it.
 
 The operator's account
 ----------------------
