@@ -139,6 +139,7 @@ stage_frontend $STAGE/usr/share/qunilator/frontend
 install -m 755 packaging/debian/qunilator-network packaging/debian/qunilator-setup \
     packaging/debian/qunilator-resize packaging/debian/qunilator-announce \
     packaging/debian/qunilator-rename packaging/debian/qunilator-update \
+    packaging/debian/qunilator-devkit \
     packaging/debian/qunilator-usb-gadget $STAGE/usr/sbin/
 # status LEDs: a tiny standalone daemon, cross-compiled here
 arm-linux-gnueabihf-gcc -O2 -Wall -o $STAGE/usr/sbin/qunilator-leds packaging/debian/qunilator-leds.c
