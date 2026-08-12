@@ -98,9 +98,33 @@ with the `.cmd` script that boots it.
 **The scripts came back, the images did not.** `10.03_app_demo/5_applications`
 holds one executable command file per example machine again, for both buses, and
 `qunilator-devkit` puts them on a card. Each tree's `diskimages/*.url` records
-where its media come from, and the emulator expands an `<image>.gz` placed there
-by hand. So the decision below is still open, and it is now only about the
-images.
+where its media come from, and the emulator expands an `<image>.gz` placed there.
+So the decision below is still open, and it is now only about the images.
+
+**`tools/fetch-images.py` fetches them in the meantime.** It walks the example
+tree at `files.retrocmp.com/qunibone/10.03_app_demo/` and writes the images a
+machine needs, flat, into the directory named on the command line - on a board
+the one the command files mount from:
+
+    tools/fetch-images.py 10.03_app_demo/5_applications/diskimages
+
+It takes one bus's set: `5_applications` plus `5_applications_u` or `_q`, the
+same pair `qunibone-platform.sh` merges, read from `qunibone-platform.env`,
+`build.env` or the installed binary unless `--bus` says otherwise. That is not
+only about size - both bus trees carry an `rsx11m_4_8_bl70` and they are
+different disks, so a machine that took both would have to rename one of them.
+68 images and 0.4 GB for UNIBUS, 56 and 0.5 GB for QBUS.
+
+The names on the server are not the ones the command files mount - the same kind
+of image is variously `.dsk.gz`, `.img.gz`, `.rk.gz` or `.RL2.gz`, and a few
+appear in two directories - so each file is matched against a catalogue in the
+script and written as `<software>.<disktype>.dsk.gz`. A run is idempotent: a
+file already present with the length the server reports is left alone, so an
+interrupted fetch resumes, and identical copies of one image are fetched once.
+
+That is a downloader, which takes some of the new code out of option C below,
+but it is a command line on a workstation and not a catalogue the web interface
+can offer.
 
 **A. Baked into the image.** Simplest, and it makes every download carry
 every sample whether or not it is wanted. It also welds the samples to the

@@ -7,6 +7,16 @@ per-application directories.  This walks that tree, picks up every
 compressed image (*.gz), and drops the files - and only the files - into
 the target directory named on the command line.
 
+A machine carries one bus, so it gets one set of images.  The server keeps
+the examples in three trees - 5_applications for what runs on either bus,
+5_applications_u for UNIBUS and 5_applications_q for QBUS - and a board
+merges the one that fits it into 5_applications, images and all
+(qunibone-platform.sh).  This fetches exactly that: the common tree plus
+the tree for this machine's bus, which is read from qunibone-platform.env
+or build.env unless --bus says otherwise.  It matters beyond saving a
+download: both bus trees hold an "rsx11m_4_8_bl70" that is a different
+disk, and only one of them belongs in this machine's diskimages/.
+
 The names on the server are a mess: the same kind of image is variously
 called .dsk.gz, .img.gz, .rk.gz, .RL2.gz or nothing at all, and a few
 images appear in two directories.  Everything that can be recognised is
@@ -18,6 +28,7 @@ against the catalogue at the bottom of this file; anything unrecognised
 keeps its name but is at least given the .dsk.gz ending.
 
 Usage: tools/fetch-images.py [options] <target-directory>
+       tools/fetch-images.py 10.03_app_demo/5_applications/diskimages
 """
 
 from __future__ import annotations
@@ -36,6 +47,12 @@ BASE_URL = "http://files.retrocmp.com/qunibone/10.03_app_demo/"
 MAX_DEPTH = 6
 SUFFIX = ".dsk.gz"
 
+COMMON_TREE = "5_applications"           # runs on either bus
+BUS_TREES = {"unibus": "_u", "qbus": "_q"}
+BUS_NAMES = {"u": "unibus", "unibus": "unibus", "unibone": "unibus",
+             "q": "qbus", "qbus": "qbus", "qbone": "qbus",
+             "both": "both"}
+
 # Disk/medium types, and the spellings the server uses for them.
 TYPE_ALIASES = {
     "rk": "rk05", "rk05": "rk05", "rk06": "rk06", "rk07": "rk07",
@@ -49,6 +66,56 @@ TYPE_ALIASES = {
 
 # Endings that say "this is a disk image" and nothing about the medium.
 GENERIC_EXTS = {"dsk", "img", "image", "disk"}
+
+
+def read_setting(path: str, key: str) -> str | None:
+    """<key>=<value> out of a shell-style settings file."""
+    try:
+        with open(path) as fh:
+            for line in fh:
+                line = line.strip()
+                if line.startswith(f"{key}=") and not line.startswith("#"):
+                    return line.split("=", 1)[1].strip().strip('"\'')
+    except OSError:
+        pass
+    return None
+
+
+def detect_bus() -> tuple[str, str]:
+    """Which bus this machine is, and what said so.
+
+    A board flashed from the release image has qunibone-platform.env, which
+    is what qunibone-platform.sh reads to decide which example tree to merge
+    in; a workstation checkout has build.env naming the board it builds for.
+    Failing both, the installed binary is named after the bus it drives.
+    """
+    tree = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for directory in (tree, os.getcwd(), "/root", os.path.expanduser("~")):
+        path = os.path.join(directory, "qunibone-platform.env")
+        value = (read_setting(path, "QUNILATOR_PLATFORM")
+                 or read_setting(path, "QUNILATOR_PLATFORM_SUFFIX"))
+        if value:
+            bus = "qbus" if value.lower().lstrip("_").startswith("q") else "unibus"
+            return bus, path
+    for directory in (tree, os.getcwd()):
+        path = os.path.join(directory, "build.env")
+        value = read_setting(path, "QUNILATOR_BUS")
+        if value and value.lower() in BUS_NAMES:
+            return BUS_NAMES[value.lower()], path
+    for binary, bus in (("/usr/bin/unibone", "unibus"), ("/usr/bin/qbone", "qbus")):
+        if os.path.exists(binary):
+            return bus, binary
+    raise SystemExit(
+        "cannot tell which bus this machine is: no qunibone-platform.env, no\n"
+        "build.env with QUNILATOR_BUS, and neither /usr/bin/unibone nor\n"
+        "/usr/bin/qbone is installed. Say so with --bus unibus|qbus.")
+
+
+def trees_for(bus: str) -> list[str]:
+    """The server directories whose images belong on this machine."""
+    if bus == "both":
+        return [COMMON_TREE] + [COMMON_TREE + s for s in BUS_TREES.values()]
+    return [COMMON_TREE, COMMON_TREE + BUS_TREES[bus]]
 
 
 class Source:
@@ -214,11 +281,15 @@ def plan(sources: list[Source], catalogue: dict[str, dict[str, str]],
             src.target = ensure_suffix(src.filename)
 
     for src, entries in deferred:
-        free = [n for n in entries.values()
-                if claimed.get(n, src.filename) == src.filename]
-        # One candidate and it is taken by the same file name: two copies of
-        # one image, which is what the duplicate check downstream is for.
-        src.target = free[0] if free else sorted(entries.values())[0]
+        # Nothing free and one candidate: two copies of one image, which is
+        # what the duplicate check downstream is for.
+        free = {dt: n for dt, n in entries.items()
+                if claimed.get(n, src.filename) == src.filename} or entries
+        # An example directory is named after its medium - lsx.rx01, rt11.rl02
+        # - which is the only thing left saying that the "root.dsk.gz" in
+        # lsx.rx01/ is the RX01 root floppy and not the RD54 of another set.
+        dirhint = TYPE_ALIASES.get(src.leafdir.rsplit(".", 1)[-1].lower(), "")
+        src.target = free.get(dirhint) or free[sorted(free)[0]]
         claimed[src.target] = src.filename
 
 
@@ -289,6 +360,12 @@ def main() -> int:
         description="Download the QUniBone sample disk images into one flat "
                     "directory, renamed to <software>.<disktype>.dsk.gz.")
     ap.add_argument("target", help="directory to write the images to")
+    ap.add_argument("--bus", choices=sorted(set(BUS_NAMES)), metavar="BUS",
+                    help="which machine these images are for: unibus (u) or "
+                         "qbus (q), fetching 5_applications and the tree for "
+                         "that bus. Detected from qunibone-platform.env or "
+                         "build.env when not given. \"both\" takes all three "
+                         "trees, which no single machine wants.")
     ap.add_argument("-b", "--base-url", default=BASE_URL, help="URL to scan")
     ap.add_argument("-p", "--pattern", default=r".*\.gz$",
                     help="regex a file name must match (default: %(default)s)")
@@ -316,19 +393,41 @@ def main() -> int:
         text = open(args.names).read() if args.names else CATALOGUE
         catalogue = parse_catalogue(text)
 
-    print(f"Scanning {base} ...")
-    try:
-        sources = scan(fetcher, base, pattern, args.max_depth)
-    except (urllib.error.URLError, OSError) as exc:
-        print(f"cannot read {base}: {exc}", file=sys.stderr)
-        return 1
+    if args.bus:
+        bus, said_so = BUS_NAMES[args.bus], "--bus"
+    else:
+        bus, said_so = detect_bus()
+    trees = trees_for(bus)
+    print(f"Fetching the {bus.upper()} images ({', '.join(trees)}) "
+          f"from {base}\n  bus from {said_so}")
+
+    sources, missing = [], []
+    for tree in trees:
+        try:
+            sources += scan(fetcher, base, pattern, args.max_depth,
+                            url=f"{base}{tree}/", relpath=f"{tree}/")
+        except (urllib.error.URLError, OSError) as exc:
+            missing.append(f"{tree} ({exc})")
+    if missing and not sources:
+        # not the QUniBone layout at all: take the URL as given
+        print(f"no example trees below {base}, scanning it whole", file=sys.stderr)
+        try:
+            sources = scan(fetcher, base, pattern, args.max_depth)
+        except (urllib.error.URLError, OSError) as exc:
+            print(f"cannot read {base}: {exc}", file=sys.stderr)
+            return 1
+    elif missing:
+        print(f"no such tree, skipped: {', '.join(missing)}", file=sys.stderr)
     if not sources:
         print(f"nothing matching {args.pattern!r} below {base}", file=sys.stderr)
         return 1
     print(f"Found {len(sources)} file(s).")
 
+    overrides = dict(OVERRIDES)
+    if bus == "both":
+        overrides.update(OVERRIDES_BOTH)
     sources.sort(key=lambda s: s.relpath)
-    plan(sources, catalogue, {} if args.keep_server_names else OVERRIDES)
+    plan(sources, catalogue, {} if args.keep_server_names else overrides)
     sources = resolve_collisions(sources, fetcher, log)
 
     if args.dry_run:
@@ -393,21 +492,28 @@ def main() -> int:
 # --------------------------------------------------------------- the names
 
 # Images the catalogue cannot place, keyed by their path below the base URL.
-# Two directories hold different builds of one image under a single name; the
-# suffix follows the server's own <OS>_<device>_<pdp11-version> scheme, read
-# off the demo scripts that sit beside each file.
 OVERRIDES = {
-    # mini-unix_dk0_05.sh here, cpu20_mini-unix_dk0.sh over in cpu/
+    # One tree, two builds of one image: the RK05 in mini-unix.rk05/ belongs
+    # to mini-unix_dk0_05.sh, the one in cpu/ to cpu20_mini-unix_dk0.sh. The
+    # suffix is the server's own <OS>_<device>_<pdp11-version> scheme.
     "5_applications_u/mini-unix.rk05/mini-unix-tape1.rk05.gz":
         "mini-unix-tape1_05.rk05.dsk.gz",
     "5_applications_u/cpu/mini-unix-tape1.rk05.gz":
         "mini-unix-tape1_20.rk05.dsk.gz",
-    # rsx11m4.8_du0+rl_23_73.sh in the Q tree, rsx11m4.8_du0+rl_34.sh in the U
+    # the Q tree's rsxm.dsk.gz is the file its own .cmd calls rsxm70.dsk
+    "5_applications_q/rsx11.mscp/rsxm.dsk.gz": "rsxm70.ra70.dsk.gz",
+}
+
+# Only for --bus both, where one directory has to hold both bus trees at once.
+# Each of these names a disk that exists in both, with different content, so
+# the two cannot share the catalogue name a single-bus run gives them: the
+# suffix is the CPU of the example that mounts it (rsx11m4.8_du0+rl_23_73.sh
+# in the Q tree, rsx11m4.8_du0+rl_34.sh in the U tree).
+OVERRIDES_BOTH = {
     "5_applications_q/rsx11.mscp/rsx11m_4_8_bl70.dsk.gz":
         "rsx11m_4_8_bl70_73.ra70.dsk.gz",
     "5_applications_u/rsx11.mscp/rsx11m_4_8_bl70.dsk.gz":
         "rsx11m_4_8_bl70_34.ra70.dsk.gz",
-    # the Q tree's rsxm.dsk.gz is the file its own .cmd calls rsxm70.dsk
     "5_applications_q/rsx11.mscp/rsxm.dsk.gz": "rsxm70_73.ra70.dsk.gz",
     "5_applications_u/rsx11.mscp/rsxm70.dsk.gz": "rsxm70_34.ra70.dsk.gz",
 }
@@ -435,6 +541,7 @@ rsx11m4.1_excprv.rl02.dsk.gz
 rsx11m4.1_hlpdcl.rl02.dsk.gz
 rsx11m4.1_sys_34.rl02.dsk.gz
 rsx11m4.1_user.rl02.dsk.gz
+rsx11m_4_8_bl70.ra70.dsk.gz
 rsx11mp46-rl02pg.rl02.dsk.gz
 rsx11mpbl87.ra70.dsk.gz
 rsx11mpv4.6_du0_84.ra80.dsk.gz
@@ -442,6 +549,7 @@ rsx11mpv4.6_du1_84.ra80.dsk.gz
 rsxdl1.rl02.dsk.gz
 rsxdl2.rl02.dsk.gz
 rsxdl3.rl02.dsk.gz
+rsxm70.ra70.dsk.gz
 rsxm70.rl02.dsk.gz
 RT11.rx02.dsk.gz
 rt11v03-1.rx01.dsk.gz
