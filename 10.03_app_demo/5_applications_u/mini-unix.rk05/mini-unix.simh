@@ -3,9 +3,9 @@ set cpu 11/05
 set rk enabled
 
 # mini unix: tape1=bin, tape2=source, tape3=MAN disk
-att rk0 tape1.bin
-#att rk1 tape2.bin
-att rk1 tape3.bin
+att rk0 ../diskimages/mini-unix-tape1_05.rk05.dsk
+#att rk1 ../diskimages/mini-unix-tape2.rk05.dsk
+att rk1 ../diskimages/mini-unix-tape3.rk05.dsk
 
 echo Mini-UNIX is a stripped down Unix V6
 echo On "@" prompt, enter "rkmx"

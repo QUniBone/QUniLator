@@ -36,7 +36,7 @@ set DZ lines=8
 attach DZ 4000
 
 set rq0 rd54
-attach rq0 root.rd54
+attach rq0 ../diskimages/root.rd54.dsk
 set rq1 rx33
 set rq2 disabled
 set rq3 disabled

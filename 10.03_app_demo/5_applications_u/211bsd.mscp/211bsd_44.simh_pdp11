@@ -25,7 +25,7 @@ set tto 7b
 ; set the boot disk as a 1GB RA72 on an MSCP UDA50
 set rq enabled
 set rq0 ra92
-attach rq0 2.11BSD_44.ra92
+attach rq0 ../diskimages/2.11BSD_44.ra92.dsk
 
 ; boot tape
 set ts enable
