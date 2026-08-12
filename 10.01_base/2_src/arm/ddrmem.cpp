@@ -33,6 +33,7 @@
 #include <assert.h>
 
 #include "logger.hpp"
+#include "scriptpath.hpp"
 #include "mailbox.h"
 #include "iopageregister.h"
 #include "ddrmem.h"
@@ -197,9 +198,11 @@ void ddrmem_c::save(char *fname)
 void ddrmem_c::load(char *fname) 
 {
 	FILE *fin;
-	fin = fopen(fname, "rb");
+	// a file a script names is looked for next to the script, see scriptpath.hpp
+	std::string fpath = scriptpath_resolve(fname);
+	fin = fopen(fpath.c_str(), "rb");
 	if (!fin) {
-		ERROR(fileErrorText("Error opening file %s for read", fname));
+		ERROR(fileErrorText("Error opening file %s for read", fpath.c_str()));
 		return;
 	}
 	// try to read max address range, shorter files are OK
