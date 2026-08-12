@@ -17,16 +17,18 @@ three directories it lives in:
 qunibone-platform.sh builds the running system out of two of them: it copies
 5_applications_<u|q> over 5_applications, so an installed machine has one
 directory, "5_applications", holding the common examples plus the ones for the
-bus it is. That is also why a bus-specific script may name an image that is not
-beside it in the repository - "../diskimages/rsxm70.rl02.dsk" is in the common
-tree, and the two only meet after the copy.
+bus it is.
 
 A file belongs in the common tree when the UNIBUS and the QBUS copy are
-identical, and nowhere else. Two disks with the same name and different content
-stay one per bus: an image carries the drivers of the machine it was built for,
-which the file name does not show. rsxm70.ra70.dsk.gz is such a case - the
-UNIBUS and QBUS packs are both RSX-11M V4.8 BL70 labelled RSXM70, and 4.4% of
-their blocks differ - and so is rsx11m_4_8_bl70.ra70.dsk.gz.
+identical, and nowhere else.
+
+The images are in none of the three trees - see "Images" below - so a disk that
+differs between the buses needs no rule here at all: a machine has one bus, its
+media tree gets that bus's disk, and both buses call it the same thing.
+rsxm70.ra70.dsk is such a case - the UNIBUS and QBUS packs are both RSX-11M V4.8
+BL70 labelled RSXM70, and 4.4% of their blocks differ - and so is
+rsx11m_4_8_bl70.ra70.dsk. A script may therefore name one image on either bus,
+and does.
 
 
 Directories
@@ -57,10 +59,10 @@ ZQKC_E_05_20.abs), a SimH configuration for comparison, a note on the system it
 boots (NanoVMS044-1M.txt). What several examples share sits in a directory of
 its own beside them:
 
-	diskimages	every disk, floppy and tape image
 	bootloaders	the bootloader and boot-ROM listings a script deposits
 
-Both exist in all three trees, and the install-time copy merges them.
+It exists in all three trees, and the install-time copy merges them. Images are
+not among them: they live in the board's media tree, "Images" below.
 
 
 Scripts
@@ -78,10 +80,11 @@ any more. The script IS the demo command file and starts with
 
 so it runs as "sudo ./rt11v5.5.dlx.sh", with further options if wanted. demo
 ignores the "#!" line as it ignores any line starting with "#". A file the
-script names is looked up next to the script, so no "cd" and no absolute paths
-are needed: "../bootloaders/dl.lst", "../diskimages/<image>", or a plain name
-for the one file that belongs to this example alone. Files the run creates land
-in the directory it was started from.
+script names relatively is looked up next to the script, so no "cd" is needed:
+"../bootloaders/dl.lst", or a plain name for the one file that belongs to this
+example alone. The images are the exception and are named in full, because they
+are not in the tree: "/var/lib/qunilator/images/dl/<image>". Files the run
+creates land in the directory it was started from.
 
 <OS><version>	rt11v5.5, rsx11m4.8, unixv6, xxdp22-25, mini-unix, 211BSD,
 		vms73. A script that serves two versions names both: xxdp22-25.
@@ -125,27 +128,37 @@ turns up.
 
 Images
 ------
-All disk, floppy and tape images live in ONE directory per tree, "diskimages",
-and every script reaches them by the same relative path:
+Images are in no tree and in no repository. They live in the board's media tree,
+/var/lib/qunilator/images, which is the one place the emulator, the web
+interface and these examples all read from, and every script names them in full:
 
-	p image ../diskimages/rt11v5.5.rl02.dsk
-	p img   ../diskimages/rt11v03-1.rx01.dsk	(RX drives use "p img")
+	p image /var/lib/qunilator/images/dl/rt11v5.5.rl02.dsk
+	p img   /var/lib/qunilator/images/rx/rt11v03-1.rx01.dsk  (RX drives: "p img")
 
-They used to sit next to the script that mounts them, which meant the same disk
-was kept two or three times over - the XXDP 2.5 volume existed three times, and
-45 disks existed once per bus. One directory means one copy, and a new example
-costs no image it can share.
+They used to sit next to the script that mounts them, and then in one
+"diskimages" directory per tree. Each was a second place for images beside the
+media tree the rest of the system already had, so a disk an example booted and
+the same disk offered in the web interface were two files. One tree means one
+copy, whoever mounts it.
 
-	<OS><version>[_<content>][_<pdp11-model>].<medium>.dsk[.gz]
+	<medium folder>/<OS><version>[_<content>][_<pdp11-model>].<medium>.dsk
 
-	rt11v5.5.rl02.dsk.gz		system disk
-	rt11v5.5_games.rl02.dsk.gz	second volume, named by content
-	rt11v5.5_games_34.rl02.dsk.gz	the same, built for a PDP-11/34
-	rsx11m4.1_hlpdcl.rl02.dsk.gz	help and DCL volume
-	v6bin.rk05.dsk.gz		UNIX V6 binaries
-	rt11v03-1.rx01.dsk.gz		RT-11 v3 distribution floppy 1
-	vms073.rd54.dsk.gz		VMS 7.3 for the MicroVAX
+	dl/rt11v5.5.rl02.dsk		system disk
+	dl/rt11v5.5_games.rl02.dsk	second volume, named by content
+	dl/rt11v5.5_games_34.rl02.dsk	the same, built for a PDP-11/34
+	dl/rsx11m4.1_hlpdcl.rl02.dsk	help and DCL volume
+	dk/v6bin.rk05.dsk		UNIX V6 binaries
+	rx/rt11v03-1.rx01.dsk		RT-11 v3 distribution floppy 1
+	du/vms073.rd54.dsk		VMS 7.3 for the MicroVAX
 
+<medium folder>	One folder per medium, by DEC device mnemonic - the layout the
+		API documents and the package seeds. The medium in the name
+		decides it, so the two never disagree:
+			dk  RK05		du  MSCP: ra.., rd..
+			dl  RL01, RL02		rx  RX01, RX02
+			rf  RS11		mu  tape, and .bin
+		Folders below these are the operator's own; the web interface
+		lists a subpath, "dl/rt11v5.5.rl02.dsk", and so does the API.
 <medium>	The drive the image is mounted in, NOT the file format - the
 		format is a plain block image in every case:
 			rl02  rk05  rx01  rx02  rs11	and the MSCP drives
@@ -154,52 +167,46 @@ costs no image it can share.
 		from. An MSCP volume keeps the type it is mounted as even when
 		"p uis 1" takes the block count from the file, so a .ra80 image
 		may well be larger than a real RA80. rd53/rd54 are the
-		MicroVAX-era disks of the RQDX3 and appear in the QBUS tree
-		only; ra92 and rs11 in the UNIBUS tree only.
+		MicroVAX-era disks of the RQDX3 and appear on a QBUS
+		machine only; ra92 and rs11 on a UNIBUS one only.
 .dsk		Always last, so every image has one known extension whatever
-		the medium is. This is what lets .gitignore hold a single
-		pattern, and it keeps names like "RTRKV4.00" - where the ".00"
-		is a version, not a medium - from being mistaken for one.
-		RTRKV4.00.rk05.dsk.gz says both.
-.gz		The compressed master, and the only form kept in the
-		repository. See "Compression" below.
+		the medium is, and so a name like "RTRKV4.00" - where the ".00"
+		is a version, not a medium - cannot be read as one.
+		RTRKV4.00.rk05.dsk says both.
 
 Two images of the same disk that have genuinely diverged are told apart by a
-suffix, not left as two files of the same name: mini-unix-tape1_20.rk05.dsk.gz
-and mini-unix-tape1_05.rk05.dsk.gz differ in 3% of their blocks and belong to
-the 11/20 and the 11/05 setup respectively. Across the two buses that rule is
-suspended - see "The three trees" above: there the same name in two trees is
-how a per-bus disk is expressed, and the trees never meet in one directory.
-
-"diskimages" also holds the sources the images came from:
-
-	rx01_disk_images_woodstock.url		rx02_disk_images_ak6dn.url
-	woodstock_rx01_floppies.pdf		unixv1_sources_jserv.url (_u)
-						unixv6_images_shoppa.url (_q)
+suffix, not left as two files of the same name: mini-unix-tape1_20.rk05.dsk and
+mini-unix-tape1_05.rk05.dsk differ in 3% of their blocks and belong to the 11/20
+and the 11/05 setup respectively. Both are UNIBUS, so both sit in one media tree
+and the suffix is what keeps them apart; the per-bus disks of "The three trees"
+need none, never being on one machine.
 
 
-Compression
------------
-Only the ".gz" is kept in the repository; the expanded image is a product of a
-run and .gitignore drops every "*.dsk". When demo cannot open the image a script
-names, it looks for "<image>.gz" next to the script and expands it with zcat
-into the directory it found it in - so "diskimages", beside its own ".gz"
-(10.02_devices/2_src/storageimage.cpp). It stays there, and every later run,
-from wherever it is started, opens it directly.
+Where they come from
+--------------------
+tools/fetch-images.py, which the package installs on a board as
+qunilator-fetch-images, brings the images down from files.retrocmp.com and puts
+each one in its medium's folder under the name above:
 
-Every image has its ".gz", so a fresh checkout has every disk an example needs -
-with two exceptions, one per bus tree, both over the 100 MB GitHub allows a
-single file and both a second data disk rather than a disk anything boots from:
+	sudo qunilator-fetch-images
 
-	5_applications_u/diskimages/rsx11mpv4.6_du1_84.ra80.dsk.gz
-	5_applications_q/diskimages/JH_DU1.ra70.dsk.gz
+It fetches the set for the machine's bus - the common tree's images and that
+bus's - so the per-bus disks above arrive without anything having to choose
+between them by hand. A repeated run brings only what is missing.
 
-Each is excluded by name in the .gitignore of its tree and has a ".txt" beside
-it saying what it is, what happens without it (the drive comes up empty, the
-system on the other one boots) and its checksums.
+Only "<image>.dsk.gz" is fetched. When demo cannot open the image a script
+names, it looks for "<image>.gz" beside it and expands it with zcat into the
+directory it found it in (10.02_devices/2_src/storageimage.cpp) - so the
+expanded disk lands in the media tree next to its own ".gz", and every later
+run, from wherever it is started, opens it directly.
 
-mini-unix-tape0.bin.dsk is the one file in "diskimages" that is not a disk: it
-is the Mini-UNIX bootstrap tape, no script mounts it, and it kept its ".bin".
+Nothing here is bounded by what a repository will hold any more. The two second
+data disks that were too large for GitHub, about 300 MB each -
+rsx11mpv4.6_du1_84.ra80.dsk on UNIBUS and JH_DU1.ra70.dsk on QBUS - are fetched
+with everything else, and the notes that stood in for them are gone.
+
+mu/mini-unix-tape0.bin.dsk is the one image that is not a disk: it is the
+Mini-UNIX bootstrap tape, no script mounts it, and it kept its ".bin".
 
 
 Bootloaders

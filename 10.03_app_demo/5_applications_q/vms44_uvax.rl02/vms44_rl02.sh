@@ -16,7 +16,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 # set type to "rl02"
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/NanoVMS044-1M.rl02.dsk # mount image file
+p image /var/lib/qunilator/images/dl/NanoVMS044-1M.rl02.dsk # mount image file
 p runstopbutton 1	# press RUN/STOP, will start
 
 # scratch disk into UDA0
@@ -25,7 +25,7 @@ en uda0			# enable drive #0
 sd uda0			# select
 p type RD53
 # mount image
-p image ../diskimages/scratch.rd53.dsk
+p image /var/lib/qunilator/images/du/scratch.rd53.dsk
 p useimagesize	0  # new&empty iamge
 
 .print Disk drive now on track after 5 secs

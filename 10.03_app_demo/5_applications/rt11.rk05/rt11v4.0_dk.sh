@@ -16,11 +16,11 @@ en rk			# enable RK11 controller
 
 en rk0			# enable drive #0
 sd rk0			# select
-p image ../diskimages/RTRKV4.00.rk05.dsk # www.classiccmp.org/PDP-11/RT-11/dists
+p image /var/lib/qunilator/images/dk/RTRKV4.00.rk05.dsk # www.classiccmp.org/PDP-11/RT-11/dists
 
 en rk1			# enable drive #1
 sd rk1			# select
-p image ../diskimages/scratch1.rk05.dsk
+p image /var/lib/qunilator/images/dk/scratch1.rk05.dsk
 
 
 .print Disk drive now on track after 3 secs

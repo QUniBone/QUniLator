@@ -4,7 +4,7 @@ set rl disabled
 
 set rq enabled
 set rq0 ra80
-att rq0 ../diskimages/rt11v5.5_34.ra80.dsk
+att rq0 rt11v5.5_34.ra80.dsk
 
 ; To make a bootable RA8= from RT11 running on RL02s:
 ; . init du0:

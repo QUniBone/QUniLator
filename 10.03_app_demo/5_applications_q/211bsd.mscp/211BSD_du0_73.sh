@@ -22,7 +22,7 @@ en uda0			# enable drive #0
 sd uda0			# select drive #0
 
 p type RD54
-p image ../diskimages/root.rd54.dsk       # mount image file with test pattern
+p image /var/lib/qunilator/images/du/root.rd54.dsk       # mount image file with test pattern
 
 .print MSCP drives ready.
 .print UDA50 boot loader installed.

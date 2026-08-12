@@ -3,7 +3,7 @@
   "devices": [
     { "name": "rl", "enabled": true, "params": {} },
     { "name": "rl0", "enabled": true,
-      "params": { "image": "images/dl/xxdp25.rl02", "powerswitch": "1", "runstopbutton": "1" } }
+      "params": { "image": "images/dl/xxdp25.rl02.dsk", "powerswitch": "1", "runstopbutton": "1" } }
   ],
   "layout": {
     "controlpanel": { "x": 0, "y": 0 },

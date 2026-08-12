@@ -28,7 +28,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 # set type to "rl02"
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/xxdp25.rl02.dsk	# mount image
+p image /var/lib/qunilator/images/dl/xxdp25.rl02.dsk	# mount image
 p shared_filesystem XXDP # now switch to shared
 p shared_dir xxdp_shared_rl0
 p runstopbutton 1	# press RUN/STOP, will start
@@ -40,7 +40,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 # set type to "rl02"
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/xxdp_test1.rl02.dsk
+p image /var/lib/qunilator/images/dl/xxdp_test1.rl02.dsk
 p shared_filesystem XXDP # now switch to shared
 p shared_dir xxdp_shared_rl1
 p runstopbutton 1	# press RUN/STOP, will open shared dir and start

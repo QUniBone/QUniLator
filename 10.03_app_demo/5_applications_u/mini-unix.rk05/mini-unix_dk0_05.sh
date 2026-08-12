@@ -15,15 +15,15 @@ en rk			# enable RK11 controller
 
 en rk0			# enable drive #0
 sd rk0			# select
-p image ../diskimages/mini-unix-tape1_05.rk05.dsk   # The BIN disk (RK05)
+p image /var/lib/qunilator/images/dk/mini-unix-tape1_05.rk05.dsk   # The BIN disk (RK05)
 
 en rk1			# enable drive #1
 sd rk1			# select
-p image ../diskimages/mini-unix-tape2.rk05.dsk # The SRC disk (RK05)
+p image /var/lib/qunilator/images/dk/mini-unix-tape2.rk05.dsk # The SRC disk (RK05)
 
 en rk2			# enable drive #2
 sd rk2			# select
-p image ../diskimages/mini-unix-tape3.rk05.dsk       # The MAN disk (RK05)
+p image /var/lib/qunilator/images/dk/mini-unix-tape3.rk05.dsk       # The MAN disk (RK05)
 
 .print Disk drive now on track after 5 secs
 .wait	6000		# wait until drive spins up

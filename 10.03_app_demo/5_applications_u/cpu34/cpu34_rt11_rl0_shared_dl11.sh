@@ -28,7 +28,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 # set type to "rl02"
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/rt11v5.5_games_34.rl02.dsk	# mount image file with test pattern
+p image /var/lib/qunilator/images/dl/rt11v5.5_games_34.rl02.dsk	# mount image file with test pattern
 p shared_filesystem RT11 # now share RT11 image with local Linux directory
 p shared_dir shared_rl0	# relative path of subdir for shared files
 p runstopbutton 1	# press RUN/STOP, will start

@@ -100,19 +100,33 @@ it leaves behind.
 
 ### Where an example looks for its files
 
-An example names its images and boot loaders **relative to itself**
-(`../diskimages/xxdp25.rl02.dsk`, `../bootloaders/dl.lst`), and they are found
-there however the example was started — through the shortcut in `/root`, or from
-another directory entirely. What a run *creates* lands in the directory you
-started it from instead, so a memory dump or a new image never goes back into
-the tree by accident.
+An example names its boot loaders **relative to itself** (`../bootloaders/dl.lst`),
+and they are found there however the example was started — through the shortcut
+in `/root`, or from another directory entirely. What a run *creates* lands in the
+directory you started it from instead, so a memory dump or a new image never goes
+back into the tree by accident.
 
-### The disk images are not in the repository
+Images are the exception: they are named in full, because they are not in the
+tree at all. They live in the board's media tree, the same one the web interface
+serves, sorted into a folder per medium:
 
-They are large, and not all of them are ours to distribute. Each tree's
-`diskimages/*.url` says where the images come from. Put one next to the others
-as `<name>.gz` and the emulator expands it the first time an example mounts it —
-next to its own `.gz`, so it is found again on the next run.
+```
+p image /var/lib/qunilator/images/dl/xxdp25.rl02.dsk
+```
+
+### Getting the disk images
+
+They are in neither the repository nor the package — large, and not all of them
+ours to distribute — so the package ships the tool that fetches them instead:
+
+```
+sudo qunilator-fetch-images
+```
+
+That brings down the set for this board's bus from `files.retrocmp.com`, named
+and filed the way the examples mount them. A repeat run fetches only what is
+missing. The emulator expands an `<image>.gz` the first time something mounts
+it, beside its own `.gz`, so it is found directly on the next run.
 
 An example whose image is missing gets as far as mounting it and stops there.
 That is also the quickest check that the interpreter, the options and the

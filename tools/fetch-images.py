@@ -4,18 +4,17 @@
 We cannot ship these images ourselves, but they are published at
 http://files.retrocmp.com/qunibone/10.03_app_demo/ in a tree of
 per-application directories.  This walks that tree, picks up every
-compressed image (*.gz), and drops the files - and only the files - into
-the target directory named on the command line.
+compressed image (*.gz), and files each one under its medium in the media
+tree - never the directory structure it was published in.
 
 A machine carries one bus, so it gets one set of images.  The server keeps
 the examples in three trees - 5_applications for what runs on either bus,
 5_applications_u for UNIBUS and 5_applications_q for QBUS - and a board
-merges the one that fits it into 5_applications, images and all
-(qunibone-platform.sh).  This fetches exactly that: the common tree plus
-the tree for this machine's bus, which is read from qunibone-platform.env
-or build.env unless --bus says otherwise.  It matters beyond saving a
-download: both bus trees hold an "rsx11m_4_8_bl70" that is a different
-disk, and only one of them belongs in this machine's diskimages/.
+merges the one that fits it into 5_applications (qunibone-platform.sh).
+This fetches the images of exactly that pair, the bus being read from
+qunibone-platform.env or build.env unless --bus says otherwise.  It matters
+beyond saving a download: both bus trees hold an "rsx11m_4_8_bl70" that is a
+different disk, and only one of them belongs on this machine.
 
 The names on the server are a mess: the same kind of image is variously
 called .dsk.gz, .img.gz, .rk.gz, .RL2.gz or nothing at all, and a few
@@ -27,8 +26,11 @@ written out as
 against the catalogue at the bottom of this file; anything unrecognised
 keeps its name but is at least given the .dsk.gz ending.
 
-Usage: tools/fetch-images.py [options] <target-directory>
-       tools/fetch-images.py 10.03_app_demo/5_applications/diskimages
+Images go where the rest of the system keeps them, one folder per medium:
+/var/lib/qunilator/images/dl/rt11v5.5.rl02.dsk.gz. That is what the web
+interface serves and what the example command files mount.
+
+Usage: qunilator-fetch-images [options] [<media-tree>]
 """
 
 from __future__ import annotations
@@ -63,6 +65,22 @@ TYPE_ALIASES = {
     "ra92": "ra92", "rs11": "rs11", "rp06": "rp06", "rm03": "rm03",
     "bin": "bin", "tap": "tap", "ptap": "ptap",
 }
+
+# Where a medium's images live in the media tree: one folder per medium, named
+# by DEC device mnemonic, which is the layout the API documents and the package
+# seeds. An image whose medium is not one of these lands at the root, where the
+# web interface still lists it.
+MEDIA_FOLDERS = {
+    "rk05": "dk", "rk06": "dk", "rk07": "dk",
+    "rl01": "dl", "rl02": "dl",
+    "ra70": "du", "ra80": "du", "ra81": "du", "ra82": "du", "ra92": "du",
+    "rd51": "du", "rd53": "du", "rd54": "du",
+    "rx01": "rx", "rx02": "rx",
+    "rs11": "rf",                       # RF11 controller, RS11 fixed-head disk
+    "tap": "mu", "bin": "mu", "ptap": "mu",
+}
+
+IMAGES_DIR = "/var/lib/qunilator/images"
 
 # Endings that say "this is a disk image" and nothing about the medium.
 GENERIC_EXTS = {"dsk", "img", "image", "disk"}
@@ -130,6 +148,11 @@ class Source:
         self.target = self.filename      # filled in by plan()
         self._size = None
         self._fingerprint = None
+
+    @property
+    def subpath(self) -> str:
+        """Its place in the media tree: <medium folder>/<name>."""
+        return subpath_of(self.target)
 
     def __repr__(self):
         return f"<Source {self.relpath}>"
@@ -245,6 +268,19 @@ def split_name(filename: str) -> tuple[str, str | None]:
     return stem, None
 
 
+def subpath_of(target: str) -> str:
+    """Where <target> belongs in the media tree, as <folder>/<name>.
+
+    Takes the compressed name and the expanded one, since an example names the
+    image it mounts and the fetcher names the ".gz" it brings down.
+    """
+    stem = target[:-3] if target.lower().endswith(".gz") else target
+    stem = stem[:-4] if stem.lower().endswith(".dsk") else stem
+    _, _, disktype = stem.rpartition(".")
+    folder = MEDIA_FOLDERS.get(disktype.lower(), "")
+    return f"{folder}/{target}" if folder else target
+
+
 def ensure_suffix(filename: str) -> str:
     """Whatever else it is, it ends in .dsk.gz."""
     stem = filename[:-3] if filename.lower().endswith(".gz") else filename
@@ -335,15 +371,18 @@ def size_of(fetcher: Fetcher, src: Source) -> int:
 def find_legacy(target_dir: str, src: Source, want: int) -> str | None:
     """A file already in the target that is this image under an older name.
 
-    An earlier run may have written the server's own name, or that name with
+    An earlier run may have left it at the root of the tree rather than in its
+    medium's folder, or under the server's own name, or under that name with
     the source directory glued in front, which is how clashes used to be kept
-    apart.  Same length means the same image; renaming beats downloading it.
+    apart.  Same length means the same image; moving beats downloading it.
     """
     if want <= 0:
         return None
-    for old in (src.filename, f"{src.leafdir}_{src.filename}"):
+    for old in (src.target, src.filename, f"{src.leafdir}_{src.filename}",
+                f"{subpath_of(src.filename)}"):
         path = os.path.join(target_dir, old)
-        if old != src.target and os.path.isfile(path) and os.path.getsize(path) == want:
+        if (old != src.subpath and os.path.isfile(path)
+                and os.path.getsize(path) == want):
             return old
     return None
 
@@ -357,9 +396,11 @@ def human(n: int) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="Download the QUniBone sample disk images into one flat "
-                    "directory, renamed to <software>.<disktype>.dsk.gz.")
-    ap.add_argument("target", help="directory to write the images to")
+        description="Download the QUniBone sample disk images into the media "
+                    "tree, renamed to <software>.<disktype>.dsk.gz and filed "
+                    "under the folder for their medium.")
+    ap.add_argument("target", nargs="?", default=IMAGES_DIR,
+                    help="media tree to write into (default: %(default)s)")
     ap.add_argument("--bus", choices=sorted(set(BUS_NAMES)), metavar="BUS",
                     help="which machine these images are for: unibus (u) or "
                          "qbus (q), fetching 5_applications and the tree for "
@@ -382,6 +423,14 @@ def main() -> int:
     ap.add_argument("--keep-server-names", action="store_true",
                     help="do not rename; only enforce the .dsk.gz ending")
     args = ap.parse_args()
+
+    # The media tree is a board's, and creating one somewhere else is how an
+    # operator ends up with images the service cannot see.
+    if args.target == IMAGES_DIR and not os.path.isdir(IMAGES_DIR):
+        print(f"{IMAGES_DIR} is not here - this is where a board keeps its\n"
+              "images, and the package creates it. Name a directory to write "
+              "somewhere else.", file=sys.stderr)
+        return 1
 
     base = args.base_url if args.base_url.endswith("/") else args.base_url + "/"
     pattern = re.compile(args.pattern, re.I)
@@ -433,7 +482,7 @@ def main() -> int:
     if args.dry_run:
         for src in sources:
             mark = " " if src.target == src.filename else "*"
-            print(f"  {mark} {src.relpath}\n      -> {src.target}")
+            print(f"  {mark} {src.relpath}\n      -> {src.subpath}")
         print(f"Dry run: {len(sources)} file(s), nothing written to {args.target}.")
         return 0
 
@@ -441,26 +490,27 @@ def main() -> int:
     counts = dict(new=0, kept=0, renamed=0, failed=0)
 
     for src in sources:
-        dest = os.path.join(args.target, src.target)
+        dest = os.path.join(args.target, src.subpath)
         want = size_of(fetcher, src)
         have = os.path.getsize(dest) if os.path.isfile(dest) else -1
 
         if not args.force and want > 0 and have == want:
-            log(f"  = {src.target} (already here)")
+            log(f"  = {src.subpath} (already here)")
             counts["kept"] += 1
             continue
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
 
         old = None if args.force or have >= 0 else find_legacy(args.target, src, want)
         if old:
             os.replace(os.path.join(args.target, old), dest)
-            log(f"  > {old} -> {src.target} (already here, renamed)")
+            log(f"  > {old} -> {src.subpath} (already here, moved)")
             counts["renamed"] += 1
             continue
 
-        log(f"  + {src.target} ({human(want)}) <- {src.relpath}")
+        log(f"  + {src.subpath} ({human(want)}) <- {src.relpath}")
         show = sys.stdout.isatty() and not args.quiet
 
-        def progress(done, total, name=src.target):
+        def progress(done, total, name=src.subpath):
             if show and total > 0:
                 sys.stdout.write(f"\r    {name}: {100 * done // total:3d}%")
                 sys.stdout.flush()
@@ -478,14 +528,20 @@ def main() -> int:
                 sys.stdout.write("\r\033[K")
 
     print(f"Done: {counts['new']} downloaded, {counts['kept']} already present, "
-          f"{counts['renamed']} renamed in place, {counts['failed']} failed "
+          f"{counts['renamed']} moved into place, {counts['failed']} failed "
           f"-> {args.target}")
 
-    strays = sorted(set(os.listdir(args.target)) - {s.target for s in sources})
+    # Whatever else is in the tree is the operator's: their own images, the
+    # sample pack, the overlays a drive writes. Said once, so a name that was
+    # expected to be replaced and was not is visible.
+    here = set()
+    for root, _, files in os.walk(args.target):
+        rel = os.path.relpath(root, args.target)
+        here |= {f if rel == "." else f"{rel}/{f}" for f in files}
+    strays = sorted(here - {s.subpath for s in sources})
     if strays and not args.quiet:
-        print(f"{len(strays)} file(s) in {args.target} are not part of this "
-              f"set and were left alone: " + ", ".join(strays[:5])
-              + (", ..." if len(strays) > 5 else ""))
+        print(f"{len(strays)} other file(s) under {args.target}, left alone: "
+              + ", ".join(strays[:5]) + (", ..." if len(strays) > 5 else ""))
     return 1 if counts["failed"] else 0
 
 

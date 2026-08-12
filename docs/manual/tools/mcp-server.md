@@ -141,7 +141,7 @@ do is wait for the guest to say something you recognise.
 ```json
 { "name": "images", "arguments": { "action": "list" } }
 { "name": "images", "arguments": {
-    "action": "attach", "device": "rl0", "image": "images/dl/xxdp25.rl02" } }
+    "action": "attach", "device": "rl0", "image": "images/dl/xxdp25.rl02.dsk" } }
 ```
 
 `attach` writes the drive's `image` parameter; an empty `image` detaches. To

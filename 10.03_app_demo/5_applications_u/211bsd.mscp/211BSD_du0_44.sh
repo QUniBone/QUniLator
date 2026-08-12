@@ -15,7 +15,7 @@ en uda0			# enable drive #0
 sd uda0			# select drive #0
 
 p type RA92
-p image ../diskimages/2.11BSD_44.ra92.dsk # mount image file with test pattern
+p image /var/lib/qunilator/images/du/2.11BSD_44.ra92.dsk # mount image file with test pattern
 
 .print MSCP drives ready.
 .print UDA50 boot loader installed.

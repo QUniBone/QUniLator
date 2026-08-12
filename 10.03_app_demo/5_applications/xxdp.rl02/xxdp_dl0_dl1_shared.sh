@@ -25,7 +25,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 # set type to "rl02"
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/xxdp22.rl02.dsk 	# mount image file with test pattern
+p image /var/lib/qunilator/images/dl/xxdp22.rl02.dsk 	# mount image file with test pattern
 p shared_filesystem XXDP # now switch to shared
 p shared_dir xxdp22_shared_rl0
 p runstopbutton 1	# press RUN/STOP, will start
@@ -38,7 +38,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 # set type to "rl02"
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/xxdp25.rl02.dsk 	# mount image file with test pattern
+p image /var/lib/qunilator/images/dl/xxdp25.rl02.dsk 	# mount image file with test pattern
 p shared_filesystem XXDP # now switch to shared
 p shared_dir xxdp25_shared_rl1
 p runstopbutton 1	# press RUN/STOP, will start
@@ -50,7 +50,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 # set type to "rl02"
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/scratch2.rl02.dsk 	# mount image file with test pattern
+p image /var/lib/qunilator/images/dl/scratch2.rl02.dsk 	# mount image file with test pattern
 p runstopbutton 1	# press RUN/STOP, will start
 
 # mount scratch3 in RL02 #3 and start
@@ -60,7 +60,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 # set type to "rl02"
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/scratch3.rl02.dsk 	# mount image file with test pattern
+p image /var/lib/qunilator/images/dl/scratch3.rl02.dsk 	# mount image file with test pattern
 p runstopbutton 1	# press RUN/STOP, will start
 
 .print Disk drive now on track after 5 secs

@@ -17,15 +17,15 @@ en rk			# enable RK11 controller
 
 en rk0			# enable drive #0
 sd rk0			# select
-p image ../diskimages/v6bin.rk05.dsk
+p image /var/lib/qunilator/images/dk/v6bin.rk05.dsk
 
 en rk1			# enable drive #1
 sd rk1			# select
-p image ../diskimages/v6doc.rk05.dsk
+p image /var/lib/qunilator/images/dk/v6doc.rk05.dsk
 
 en rk2			# enable drive #2
 sd rk2			# select
-p image ../diskimages/v6src.rk05.dsk
+p image /var/lib/qunilator/images/dk/v6src.rk05.dsk
 
 .print Disk drive now on track after 5 secs
 .wait	6000		# wait until drive spins up

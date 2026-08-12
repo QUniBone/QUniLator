@@ -2,9 +2,9 @@ set cpu 11/34
 
 set rk enabled
 
-att rk0 ../diskimages/v6bin.rk05.dsk
-att rk1 ../diskimages/v6doc.rk05.dsk
-att rk2 ../diskimages/v6src.rk05.dsk
+att rk0 v6bin.rk05.dsk
+att rk1 v6doc.rk05.dsk
+att rk2 v6src.rk05.dsk
 
 echo On "@" prompt, enter "rkunix"
 echo Attach 2nd disk: # /etc/mount /dev/rk1 /mnt

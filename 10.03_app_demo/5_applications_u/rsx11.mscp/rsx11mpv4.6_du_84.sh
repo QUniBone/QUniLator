@@ -17,7 +17,7 @@ sd uda0			# select drive #0
 # set type to "RA80"
 p type RA80
 p uis 1
-p image ../diskimages/rsx11mpv4.6_du0_84.ra80.dsk # mount image file with test pattern
+p image /var/lib/qunilator/images/du/rsx11mpv4.6_du0_84.ra80.dsk # mount image file with test pattern
 p
 
 # Decus data disk in uda1:
@@ -25,7 +25,7 @@ en uda1			#enable drive #1
 sd uda1			# select drive #1
 p type RA80
 p uis 1
-p image ../diskimages/rsx11mpv4.6_du1_84.ra80.dsk
+p image /var/lib/qunilator/images/du/rsx11mpv4.6_du1_84.ra80.dsk
 p
 
 en rl			# enable RL11 controller
@@ -37,8 +37,8 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 p type rl02
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/dl0.rl02.dsk  # mount image
-#p image ../diskimages/rsx11mp46.rl02.dsk  # mount image
+p image /var/lib/qunilator/images/dl/dl0.rl02.dsk  # mount image
+#p image /var/lib/qunilator/images/dl/rsx11mp46.rl02.dsk  # mount image
 p runstopbutton 0	# press RUN/STOP, will start
 
 # mount DL1 in RL02 #1 and start
@@ -48,7 +48,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 p type rl02
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/dl1.rl02.dsk         # mount image
+p image /var/lib/qunilator/images/dl/dl1.rl02.dsk         # mount image
 p runstopbutton 0	# press RUN/STOP, will start
 # mount DL1 in RL02 #1 and start
 
@@ -58,7 +58,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 p type rl02
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/dl2.rl02.dsk         # mount image
+p image /var/lib/qunilator/images/dl/dl2.rl02.dsk         # mount image
 p runstopbutton 0	# press RUN/STOP, will start
 # mount DL2 in RL02 #2 and start
 
@@ -68,7 +68,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 p type rl02
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/dl3.rl02.dsk         # mount image
+p image /var/lib/qunilator/images/dl/dl3.rl02.dsk         # mount image
 p runstopbutton 0	# press RUN/STOP, will start
 
 # set up DL11 serial port

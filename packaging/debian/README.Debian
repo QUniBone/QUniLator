@@ -191,7 +191,8 @@ Machines
 --------
 
 A machine is a saved configuration and the media its drives hold. This package
-ships one: the XXDP diagnostic pack as /var/lib/qunilator/images/xxdp25.rl02,
+ships one: the XXDP diagnostic pack as
+/var/lib/qunilator/images/dl/xxdp25.rl02.dsk,
 and a configuration named "xxdp" that attaches it. On a UNIBUS board that
 configuration is a whole emulated PDP-11/20 with the M9312 ROMs, so switching
 that machine on boots the pack with no further setting up, and is the quickest
@@ -335,26 +336,28 @@ another directory. What such a run *creates* lands in the directory it was
 started from instead, so nothing is written back into the tree by accident.
 
 The disk images are in neither the repository nor this package: they are large
-and not all of them are ours to distribute. Each tree's diskimages/*.url says
-where they come from, and qunilator-fetch-images brings them down from
-files.retrocmp.com under the names the examples mount:
+and not all of them are ours to distribute. qunilator-fetch-images brings them
+down from files.retrocmp.com:
 
-    sudo qunilator-fetch-images /root/10.03_app_demo/5_applications/diskimages
+    sudo qunilator-fetch-images
 
-It takes the images for this board's bus -- with no checkout to ask, it reads
-that off the emulator installed here -- and writes each one as
-<software>.<disktype>.dsk.gz, which is the name a command file names. Around 68
-images for a UNIBUS board and 56 for a QBUS one, half a gigabyte either way. A
-run can be repeated: an image already there with the length the server reports
-is left where it is, so an interrupted fetch carries on where it stopped.
+There is one place they go, whether an example mounts them or the web interface
+does: /var/lib/qunilator/images, the media tree, a folder per medium named by
+DEC device mnemonic -- dl/ for RL packs, du/ for MSCP, rx/ for floppies, dk/ for
+RK05, rf/ for the RS11, mu/ for tape. An example names the same path the
+interface lists:
 
-A board with no examples on it - no devkit, just this package - wants them in
-the media tree the web interface serves instead:
+    p image /var/lib/qunilator/images/dl/xxdp25.rl02.dsk
 
-    sudo qunilator-fetch-images /var/lib/qunilator/images
+The tool fetches the set for this board's bus -- with no checkout to ask, it
+reads that off the emulator installed here -- and writes each image as
+<software>.<disktype>.dsk.gz in its medium's folder. Around 68 images for a
+UNIBUS board and 56 for a QBUS one, half a gigabyte either way. A run can be
+repeated: an image already there with the length the server reports is left
+where it is, so an interrupted fetch carries on where it stopped.
 
-Either way, an image put next to the others as "<name>.gz" is expanded by the
-emulator the first time something mounts it.
+An image put in the tree as "<name>.gz" is expanded by the emulator the first
+time something mounts it, beside its own ".gz".
 
 The operator's account
 ----------------------

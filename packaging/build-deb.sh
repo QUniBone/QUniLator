@@ -113,6 +113,7 @@ install -d -m 755 $STAGE/var/lib/qunilator/images/dk \
     $STAGE/var/lib/qunilator/images/dl \
     $STAGE/var/lib/qunilator/images/du \
     $STAGE/var/lib/qunilator/images/mu \
+    $STAGE/var/lib/qunilator/images/rf \
     $STAGE/var/lib/qunilator/images/rx \
     $STAGE/var/lib/qunilator/images/roms
 # The updater's state: staged packages, the cached previous package and the
@@ -192,8 +193,8 @@ install -m 644 packaging/debian/default-config.json $STAGE/usr/share/qunilator/d
 # writes into a copy-on-write overlay, so the shipped file stays as it was.
 # Stored compressed in git, where it is the one binary that is not a build
 # product. It is an RL02 pack, so it goes in dl/ like every other one.
-xz -dc packaging/images/xxdp25.rl02.xz > $STAGE/var/lib/qunilator/images/dl/xxdp25.rl02
-chmod 444 $STAGE/var/lib/qunilator/images/dl/xxdp25.rl02
+xz -dc packaging/images/xxdp25.rl02.xz > $STAGE/var/lib/qunilator/images/dl/xxdp25.rl02.dsk
+chmod 444 $STAGE/var/lib/qunilator/images/dl/xxdp25.rl02.dsk
 # and the machine that boots it, as a template postinst copies in when the
 # board has no configuration of that name. Only a UNIBUS build carries the
 # processors, so that one is a whole PDP-11/20 with the ROMs to boot the pack;
@@ -363,7 +364,7 @@ if [ "$1" = configure ]; then
     install -d -m 2775 /var/lib/qunilator/images
     # the seeded media folders, re-asserted on an upgrade so a board that
     # predates one of them gets it
-    for d in dk dl du mu rx roms; do
+    for d in dk dl du mu rf rx roms; do
         install -d -m 2775 /var/lib/qunilator/images/$d || true
     done
     # The sample pack sits in dl/ with the tree's other RL packs. A board that
@@ -393,6 +394,29 @@ if [ "$1" = configure ]; then
         done
         sed -i -e 's|images/xxdp25\.rl02|images/dl/xxdp25.rl02|g' \
                -e 's|images\\/xxdp25\.rl02|images\\/dl\\/xxdp25.rl02|g' \
+            $cfgs/*.json $cfgs/.*.json 2>/dev/null || true
+    fi
+    # The pack is xxdp25.rl02.dsk now - ".dsk" last, like every image the
+    # examples mount and the fetcher brings down - so a board carrying the older
+    # name follows it again. dpkg deletes the old file itself, it having belonged
+    # to the package; what has to be carried over is the overlay of everything
+    # written to the pack, which is named after it, and the configurations that
+    # name it. Every rewrite is anchored on the closing quote, so running this
+    # over an already-renamed configuration changes nothing.
+    if [ -e "$imgs/dl/xxdp25.rl02.ovl" ] || [ -e "$imgs/dl/xxdp25.rl02.ovl.map" ] \
+            || grep -qs 'xxdp25\.rl02"' $cfgs/*.json $cfgs/.*.json; then
+        if [ -z "$emulator_was_active" ] && [ -d /run/systemd/system ] \
+                && systemctl is-active --quiet qbone.service; then
+            emulator_was_active=yes
+            systemctl stop qbone.service || true
+        fi
+        for f in ovl ovl.map; do
+            if [ -e "$imgs/dl/xxdp25.rl02.$f" ]; then
+                mv -f "$imgs/dl/xxdp25.rl02.$f" "$imgs/dl/xxdp25.rl02.dsk.$f" || true
+            fi
+        done
+        sed -i -e 's|images/dl/xxdp25\.rl02"|images/dl/xxdp25.rl02.dsk"|g' \
+               -e 's|images\\/dl\\/xxdp25\.rl02"|images\\/dl\\/xxdp25.rl02.dsk"|g' \
             $cfgs/*.json $cfgs/.*.json 2>/dev/null || true
     fi
     # The tree belongs to the qunilator group and every member of it may write:

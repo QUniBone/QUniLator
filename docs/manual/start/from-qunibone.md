@@ -35,7 +35,7 @@ on. There is no order to it and nothing to step through:
   "devices": [
     { "name": "rl",     "enabled": true, "params": {} },
     { "name": "rl0",    "enabled": true, "params": {
-        "image": "images/dl/xxdp25.rl02",
+        "image": "images/dl/xxdp25.rl02.dsk",
         "powerswitch": "1", "runstopbutton": "1" } },
     { "name": "DL11",   "enabled": true, "params": {} },
     { "name": "MEM",    "enabled": true, "params": { "size": "1 MB" } },
@@ -76,7 +76,7 @@ en rl                   # enable RL11 controller
 en rl0
 sd rl0
 p powerswitch 1         # power on, now in "load" state
-p image xxdp25.rl02     # mount image file
+p image /var/lib/qunilator/images/dl/xxdp25.rl02.dsk   # mount image file
 p runstopbutton 1       # press RUN/STOP, will start
 
 .wait 6000              # wait until drive spins up

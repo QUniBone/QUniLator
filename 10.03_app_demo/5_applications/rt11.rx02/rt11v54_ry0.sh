@@ -24,11 +24,11 @@ p pwr 1			# power-on drive box
 
 sd ry0
 p it0 1 # track 0 in image
-p img ../diskimages/RT11.rx02.dsk 	# insert floppy into drive #0
+p img /var/lib/qunilator/images/rx/RT11.rx02.dsk 	# insert floppy into drive #0
 
 #sd ry1
 #p it0 1 # track 0 in image
-#p img ../diskimages/NEW_GAMES.rx02.dsk  	# insert floppy into drive #1
+#p img /var/lib/qunilator/images/rx/NEW_GAMES.rx02.dsk  	# insert floppy into drive #1
 ## p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 
 .print Disk drive now on track after 5 secs

@@ -26,12 +26,12 @@ en ke                   # enable PDP-11/20 EAE
 en rf                   # enable RF11 controller
 en rs0                  # enable RS11 drive #0
 sd rs0
-p image ../diskimages/unixv1_rs0.rs11.dsk  # mount image file
+p image /var/lib/qunilator/images/rf/unixv1_rs0.rs11.dsk  # mount image file
 
 en rk			# enable RK11 controller
 en rk0			# enable drive #0
 sd rk0			# select
-p image ../diskimages/unixv1_rk0.rk05.dsk 	# mount image file
+p image /var/lib/qunilator/images/dk/unixv1_rk0.rk05.dsk 	# mount image file
 
 # enable CPU
 sd cpu20

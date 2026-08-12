@@ -19,9 +19,9 @@
 #      executable and creates the shortcuts
 #
 # The disk images the examples mount are NOT in the repository - they are too
-# large and not all of them are ours to distribute. Each example directory's
-# diskimages/*.url says where they come from; the emulator expands an "<image>.gz"
-# by itself once one is there.
+# large and not all of them are ours to distribute. "qunilator-fetch-images"
+# brings them into /var/lib/qunilator/images, which is where the examples name
+# them; the emulator expands an "<image>.gz" by itself once one is there.
 #
 # usage:
 #   qunilator-devkit                  install everything, from the default source
@@ -249,6 +249,10 @@ back when it ends, so nothing has to be stopped first. The machine it rebuilds
 afterwards is switched off, because what a menu session leaves behind is not
 something to start a machine on.
 
-The disk images are not in the repository - see
-10.03_app_demo/5_applications/diskimages/*.url for where they live.
+The disk images are not in the repository. Fetch them with
+
+  sudo qunilator-fetch-images
+
+which brings this board's set into /var/lib/qunilator/images, where the
+examples mount them from and the web interface lists them.
 EOF

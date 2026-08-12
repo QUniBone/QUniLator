@@ -113,7 +113,7 @@ static bool uncompress_gz(const std::string &gz_path, const std::string &out_pat
 //
 // The ".gz" is looked for next to the script (see scriptpath.hpp), so it may
 // sit in quite another directory than the name the script spells:
-// "../diskimages/x.dsk" finds "<script dir>/../diskimages/x.dsk.gz". The
+// "../bootloaders/x.lst" finds "<script dir>/../bootloaders/x.lst". The
 // expansion therefore lands next to its own ".gz" and <fname> is updated to
 // that: writing it to the name as spelled would aim it at the directory this
 // program was started IN - a path which need not even exist - and would leave a

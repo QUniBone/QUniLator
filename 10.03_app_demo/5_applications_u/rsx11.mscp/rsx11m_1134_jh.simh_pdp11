@@ -5,22 +5,22 @@ set tto 8b
 ;set console telnet=10000
 set rq0 autosize
 set rq0 writeenabled
-attach rq0 ../diskimages/rsx11m_4_8_bl70.ra70.dsk
+attach rq0 rsx11m_4_8_bl70.ra70.dsk
 set rq1 autosize
 set rq1 writeenabled
-attach rq1 ../diskimages/rsxm70.ra70.dsk
+attach rq1 rsxm70.ra70.dsk
 set rq2 autosize
 set rq3 autosize
 
 set rl enable
 set rl0 rl02
-attach rl0 ../diskimages/rsxm70.rl02.dsk
+attach rl0 rsxm70.rl02.dsk
 set rl1 rl02
-attach rl1 ../diskimages/rsxdl1.rl02.dsk
+attach rl1 rsxdl1.rl02.dsk
 set rl2 rl02
-attach rl2 ../diskimages/rsxdl2.rl02.dsk
+attach rl2 rsxdl2.rl02.dsk
 set rl3 rl02
-attach rl3 ../diskimages/rsxdl3.rl02.dsk
+attach rl3 rsxdl3.rl02.dsk
 
 set rk disable
 set rx disable

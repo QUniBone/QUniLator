@@ -21,7 +21,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 p type rl02
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/rsx11m4.1_sys_34.rl02.dsk  # mount image
+p image /var/lib/qunilator/images/dl/rsx11m4.1_sys_34.rl02.dsk  # mount image
 p runstopbutton 1	# press RUN/STOP, will start
 
 # mount disk #1 start
@@ -31,7 +31,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 p type rl02
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/rsx11m4.1_user.rl02.dsk 	# mount image
+p image /var/lib/qunilator/images/dl/rsx11m4.1_user.rl02.dsk 	# mount image
 p runstopbutton 1	# press RUN/STOP, will start
 
 # mount scratch2 in RL02 #2 and start
@@ -41,7 +41,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 p type rl02
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/rsx11m4.1_hlpdcl.rl02.dsk 	# mount image
+p image /var/lib/qunilator/images/dl/rsx11m4.1_hlpdcl.rl02.dsk 	# mount image
 p runstopbutton 1	# press RUN/STOP, will start
 
 # mount scratch3 in RL02 #3 and start
@@ -51,7 +51,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 p type rl02
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/rsx11m4.1_excprv.rl02.dsk  # mount image
+p image /var/lib/qunilator/images/dl/rsx11m4.1_excprv.rl02.dsk  # mount image
 p runstopbutton 1	# press RUN/STOP, will start
 
 .print Disk drive now on track after 5 secs

@@ -12,8 +12,12 @@ qbone (1.20.0-1) trixie; urgency=low
     restart, "-N" builds without installing.
   * The example machines are back in the repository, under
     10.03_app_demo/5_applications, as executable command files - one per
-    machine, for both buses. The disk images they mount are not included; each
-    tree's diskimages/*.url says where they come from.
+    machine, for both buses. The disk images they mount are not included:
+    qunilator-fetch-images brings this board's set into
+    /var/lib/qunilator/images, where the examples mount them from and the web
+    interface lists them. The sample XXDP pack is now
+    images/dl/xxdp25.rl02.dsk, ".dsk" last like every other image; an existing
+    board's overlay and saved configurations are moved to the new name.
   * A command file may be named as a bare argument, which is what makes a "#!"
     line work, and the files it names are then looked for next to the script -
     following a symbolic link first, so the shortcuts in /root resolve against

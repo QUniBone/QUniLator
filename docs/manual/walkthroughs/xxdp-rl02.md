@@ -43,7 +43,7 @@ supply memory and a bootstrap ROM as well, and the
 - A QUniLator that passes the [acceptance test](../start/acceptance-test.md),
   fitted to the machine.
 - The **XXDP 2.5 RL02 pack**. It ships on the card image as
-  `dl/xxdp25.rl02` — check **Storage** before going looking for one.
+  `dl/xxdp25.rl02.dsk` — check **Storage** before going looking for one.
 - Your machine's **console line cabled to the card**, if the processor has a
   serial line of its own. On a KDJ11-D that is the console connector on the CPU
   board, running to the QBone's UART2 with a null-modem cable.
@@ -73,7 +73,7 @@ it yourself — it is two devices:
 | Device | |
 |---|---|
 | `rl` | the RLV12 controller, at its default 174400 |
-| `rl0` | an RL02 drive holding `dl/xxdp25.rl02`, with **power** on and **RUN/STOP** pressed in |
+| `rl0` | an RL02 drive holding `dl/xxdp25.rl02.dsk`, with **power** on and **RUN/STOP** pressed in |
 
 The two drive switches are the ones on the front of a real RL02: power it up,
 then press RUN/STOP to spin it up. A drive left in LOAD never becomes ready and

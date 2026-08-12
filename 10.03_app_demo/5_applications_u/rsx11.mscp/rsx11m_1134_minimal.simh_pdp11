@@ -5,7 +5,7 @@ set tto 8b
 ;set console telnet=10000
 set rq0 autosize
 set rq0 writeenabled
-attach rq0 ../diskimages/rsx11m_4_8_bl70.ra70.dsk
+attach rq0 rsx11m_4_8_bl70.ra70.dsk
 set rq1 disable
 set rq2 disable
 set rq3 disable

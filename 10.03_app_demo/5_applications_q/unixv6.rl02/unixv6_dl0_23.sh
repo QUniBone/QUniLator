@@ -17,7 +17,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 # set type to "rl02"
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/unix_v6.rl02.dsk	# mount image file
+p image /var/lib/qunilator/images/dl/unix_v6.rl02.dsk	# mount image file
 p runstopbutton 1	# press RUN/STOP, will start
 
 # mount scratch disk in RL02 #1 and start
@@ -27,7 +27,7 @@ p emulation_speed 10	# 10x speed. Load disk in 5 seconds
 # set type to "rl02"
 p runstopbutton 0	# released: "LOAD"
 p powerswitch 1		# power on, now in "load" state
-p image ../diskimages/scratch01.rl02.dsk	# mount image file with test pattern
+p image /var/lib/qunilator/images/dl/scratch01.rl02.dsk	# mount image file with test pattern
 p runstopbutton 1	# press RUN/STOP, will start
 
 .print Disk drive now on track after 5 secs
