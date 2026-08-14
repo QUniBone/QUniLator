@@ -67,6 +67,10 @@ public:
 	rs232_c();
 	unsigned CharTransmissionTime_us;
 	int OpenComport(const char *devname, int baudrate, const char *mode, bool par_and_break);
+	// The raw descriptor, for a caller that would rather wait on the line with
+	// poll() than ask it for bytes on a timer. -1 while no port is open, and
+	// good only as long as the caller keeps CloseComport() out of the way.
+	int Fd(void) const { return Cport; }
 	int PollComport(unsigned char *buf, int size);
 	int SendByte(unsigned char byte);
 	void LoopbackByte(unsigned char byte);

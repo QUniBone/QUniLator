@@ -32,9 +32,11 @@
 
 #include "rs232.hpp"
 
-rs232_c::rs232_c() 
+rs232_c::rs232_c()
 {
 	CharTransmissionTime_us = 0;
+	Cport = -1; // no port yet: 0 would be stdin
+	error = 0;
 }
 
 // devname without leading "/dev/"
@@ -248,6 +250,7 @@ int rs232_c::OpenComport(const char *devname, int baudrate, const char *mode,
 	/* lock access so that another process can't also use the port */
 	if (flock(Cport, LOCK_EX | LOCK_NB) != 0) {
 		close(Cport);
+		Cport = -1;
 		perror("Another process has locked the comport.");
 		return (1);
 	}
@@ -256,6 +259,7 @@ int rs232_c::OpenComport(const char *devname, int baudrate, const char *mode,
 	if (error == -1) {
 		close(Cport);
 		flock(Cport, LOCK_UN); /* free the port so that others can use it. */
+		Cport = -1;
 		perror("unable to read portsettings ");
 		return (1);
 	}
@@ -276,6 +280,7 @@ int rs232_c::OpenComport(const char *devname, int baudrate, const char *mode,
 		tcsetattr(Cport, TCSANOW, &old_port_settings);
 		close(Cport);
 		flock(Cport, LOCK_UN); /* free the port so that others can use it. */
+		Cport = -1;
 		perror("unable to adjust portsettings ");
 		return (1);
 	}
@@ -378,6 +383,7 @@ void rs232_c::CloseComport(void)
 	close(Cport);
 
 	flock(Cport, LOCK_UN); /* free the port so that others can use it. */
+	Cport = -1; // Fd() must not hand out a descriptor that has been closed
 }
 
 /*
