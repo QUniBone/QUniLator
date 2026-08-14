@@ -224,6 +224,7 @@ void paneldriver_c::reset(void)
 {
 	timeout_c timeout;
 	enabled.set(false); // worker_stop();
+	panel_present = false; // re-decided by the probe below
 
 	// pulse "panel_reset_l"
 	// MC32017: at least 1 us
@@ -251,13 +252,30 @@ void paneldriver_c::reset(void)
 	for (chipnr = 0; chipnr < 2; chipnr++) {
 		uint8_t slave_addr = 0x20 + chipnr;
 
+		// The first write doubles as the probe: a chip that is not on the bus
+		// NAKs its address, so there is nothing here to program. Most boards
+		// carry no panel, and worker() would otherwise spend the machine's life
+		// NAKing four registers every 10 ms - 400 failed I2C transactions a
+		// second, measured at 3% of this board's single CPU on a machine that
+		// was doing nothing at all.
 		// Register order is for BANK=0
 		// A = output, B = input
-		i2c_write_byte(slave_addr, MC23017_IODIRA, 0x00);
+		if (!i2c_write_byte(slave_addr, MC23017_IODIRA, 0x00))
+			continue;
 		i2c_write_byte(slave_addr, MC23017_IODIRB, 0xff);
 		// all pullups enabled
 		i2c_write_byte(slave_addr, MC23017_GPPUA, 0xff);
 		i2c_write_byte(slave_addr, MC23017_GPPUB, 0xff);
+		panel_present = true;
+	}
+
+	if (!panel_present) {
+		// Not an error: a QUniBone without a panel is the normal case. A panel
+		// connected later is found by the next reset() - applying a device
+		// configuration, or "reset I2C" in the panel menu.
+		INFO("No panel found on %s: no MC23017 answers at 0x20 or 0x21. "
+				"Panel polling stays off.", i2c_device_fname);
+		return; // worker stays stopped
 	}
 
 	enabled.set(true); // worker_start();

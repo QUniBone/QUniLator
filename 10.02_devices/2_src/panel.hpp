@@ -88,6 +88,10 @@ private:
 	int i2c_device_file; // file handle to I2C bus devive
 	const char *i2c_device_fname = "/dev/i2c-2"; // BUS I2C2
 
+	// Did an MC23017 answer at the last reset()? Nothing polls a panel that is
+	// not fitted: worker() only runs while this holds.
+	bool panel_present = false;
+
 	std::vector<i2c_chip_register_c> i2c_chip_registers;
 
 public:
