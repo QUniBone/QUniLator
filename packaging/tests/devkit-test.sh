@@ -74,6 +74,35 @@ build_origin() {
     git -C "$src" tag v99.0.0
 }
 
+# A second origin, carrying the personalization script as an older release wrote
+# it: no "cd" to its own directory, and the example trees named through $HOME.
+# The tree qunilator-devkit checks out is the one matching the emulator the
+# board runs, so it is regularly older than the command doing the checking out -
+# and this is the shape that told on a freshly flashed board, where the run died
+# with "Platform settings in file qunibone-platform.env not found!" because the
+# script was looking in whatever directory "sudo qunilator-devkit" was typed in.
+build_legacy_origin() {
+    local src=$SB/origin-legacy
+    mkdir -p "$src"
+    ( cd "$SB/origin" && tar -c --exclude=.git . ) | ( cd "$src" && tar -x )
+
+    local before=$src/qunibone-platform.sh
+    grep -q '^cd "$(dirname "$0")"' "$before" && grep -q '^TREE=\$PWD$' "$before" || {
+        echo "sandbox: qunibone-platform.sh no longer roots itself the way this" >&2
+        echo "sandbox: test undoes to build a legacy tree - update devkit-test.sh" >&2
+        exit 2
+    }
+    sed -e '/^cd "$(dirname "$0")"/d' -e 's/^TREE=\$PWD$/TREE=$HOME/' \
+        "$before" > "$before.legacy"
+    mv "$before.legacy" "$before"
+    chmod +x "$before"
+
+    git -C "$src" init -q
+    git -C "$src" -c user.email=t@t -c user.name=t add -A
+    git -C "$src" -c user.email=t@t -c user.name=t commit -qm "legacy tree"
+    git -C "$src" tag v99.0.0
+}
+
 # The board: stubs on PATH, and the script with its one outside path moved in.
 build_stubs() {
     mkdir -p "$SB/bin" "$SB/cgt/bin"
@@ -130,10 +159,16 @@ EOF
 }
 
 # devkit <target dir> [extra args...]
+#
+# Run from a directory which is not the tree, and with a HOME which is not the
+# tree either - which is what "sudo qunilator-devkit" looks like when it is
+# typed from anywhere but /root. Nothing the run does may depend on either.
 devkit() {
     local dir=$1
     shift
-    OUT=$(SB_DIR=$SB PATH="$SB/bin:$PATH" "$SB/qunilator-devkit" \
+    mkdir -p "$SB/elsewhere"
+    OUT=$(cd "$SB/elsewhere" && SB_DIR=$SB PATH="$SB/bin:$PATH" HOME=$SB/elsewhere \
+        "$SB/qunilator-devkit" \
         --no-apt --url "$SB/origin" --dir "$dir" "$@" 2>&1)
     DEVKIT_RC=$?
     [ $VERBOSE = 1 ] && echo "$OUT"
@@ -143,6 +178,7 @@ devkit() {
 # ----------------------------------------------------------------- the runs ---
 mkdir -p "$SB"
 build_origin
+build_legacy_origin
 build_stubs
 
 ROOT=$SB/root
@@ -255,6 +291,21 @@ if ! devkit "$ROOT_B" --branch testing; then
     fail "the run failed (exit $DEVKIT_RC)"
 else
     expect "branch" "testing" "$(git -C "$ROOT_B" rev-parse --abbrev-ref HEAD)" && ok
+fi
+
+case_begin "a tree whose personalization script predates this command is still personalized"
+ROOT_L=$SB/root_legacy
+if ! devkit "$ROOT_L" --url "$SB/origin-legacy"; then
+    fail "the run failed (exit $DEVKIT_RC)"
+else
+    rc=0
+    appsl=$ROOT_L/10.03_app_demo/5_applications
+    [ -f "$ROOT_L/qunibone-platform.env" ] || { fail "no qunibone-platform.env in the tree"; rc=1; }
+    [ -f "$appsl/211bsd.mscp/211BSD_du0_73.sh" ] || { fail "the examples were not merged"; rc=1; }
+    [ -e "$ROOT_L/10.03_app_demo/5_applications_q" ] && { fail "5_applications_q still there"; rc=1; }
+    [ -e "$SB/elsewhere/qunibone-platform.env" ] \
+        && { fail "the run personalized the directory it was started from"; rc=1; }
+    [ $rc = 0 ] && ok
 fi
 
 case_begin "a board with no emulator package is refused"

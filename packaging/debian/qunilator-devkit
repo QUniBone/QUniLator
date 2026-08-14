@@ -225,8 +225,16 @@ QUNILATOR_PLATFORM_SUFFIX=$SUFFIX
 QUNILATOR_PLATFORM=$PLATFORM
 EOF
 
+# Run it from inside the tree, and with HOME naming the tree as well. The tree
+# checked out is the one matching the emulator this board runs, which is older
+# than this command and may be a good deal older: a released qunibone-platform.sh
+# resolves qunibone-platform.env against the *current* directory and the example
+# trees against $HOME, neither of which is the checkout when the command was
+# typed from somewhere else. Both are set here, so any version of the script
+# works on the tree that was just fetched rather than on wherever the operator
+# happened to be standing.
 chmod +x "$DIR/qunibone-platform.sh"
-"$DIR/qunibone-platform.sh"
+( cd "$DIR" && HOME=$DIR ./qunibone-platform.sh )
 
 # Where the tree went. The login hints look for it there rather than guessing
 # /root, which is only the default, and go quiet once they find it.
