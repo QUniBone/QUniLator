@@ -72,7 +72,34 @@ build_origin() {
     git -C "$src" -c user.email=t@t -c user.name=t add -A
     git -C "$src" -c user.email=t@t -c user.name=t commit -qm "test tree"
     git -C "$src" tag v99.0.0
+    DEFAULT_BRANCH=$(git -C "$src" symbolic-ref --short HEAD)
+
+    # A commit after that release, on a branch of its own: what a package built
+    # between releases is built from, and what the tag-less resolution has to
+    # find. It carries a file the released tree has not, so a test can tell
+    # which of the two was checked out by looking at the tree.
+    git -C "$src" checkout -q -b devbuild
+    echo "built from here" > "$src/devbuild-marker"
+    git -C "$src" -c user.email=t@t -c user.name=t add -A
+    git -C "$src" -c user.email=t@t -c user.name=t commit -qm "a commit between releases"
+    DEV_COMMIT=$(git -C "$src" rev-parse HEAD)
+    git -C "$src" checkout -q "$DEFAULT_BRANCH"
 }
+
+# What the installed package says about the tree it came from - the file
+# packaging/build-deb.sh writes as /usr/share/qunilator/build-ref.
+#   build_ref <commit> <branch> <dirty>
+build_ref() {
+    cat > "$SB/build-ref" <<EOF
+BUILD_VERSION=$(cat "$SB/version")
+BUILD_COMMIT=$1
+BUILD_BRANCH=$2
+BUILD_DIRTY=$3
+EOF
+}
+# a package built before this file existed, or by something that is not the
+# packaging script
+no_build_ref() { rm -f "$SB/build-ref"; }
 
 # A second origin, carrying the personalization script as an older release wrote
 # it: no "cd" to its own directory, and the example trees named through $HOME.
@@ -101,6 +128,22 @@ build_legacy_origin() {
     git -C "$src" -c user.email=t@t -c user.name=t add -A
     git -C "$src" -c user.email=t@t -c user.name=t commit -qm "legacy tree"
     git -C "$src" tag v99.0.0
+}
+
+# A third origin: the legacy tree with no example machines in it at all, which
+# is what a ref older than "the example machines are back in the repository"
+# looks like. A board whose emulator version was never tagged is checked out
+# from the default branch, so this is a tree an operator really gets, and the
+# run has to come through it saying what it did rather than only "cp: cannot
+# stat .../5_applications_u/*".
+build_bare_origin() {
+    local src=$SB/origin-bare
+    mkdir -p "$src"
+    ( cd "$SB/origin-legacy" && tar -c --exclude=.git --exclude=./10.03_app_demo . ) \
+        | ( cd "$src" && tar -x )
+    git -C "$src" init -q
+    git -C "$src" -c user.email=t@t -c user.name=t add -A
+    git -C "$src" -c user.email=t@t -c user.name=t commit -qm "tree without examples"
 }
 
 # The board: stubs on PATH, and the script with its one outside path moved in.
@@ -143,6 +186,7 @@ EOF
 
     sed -e "s#^PRU_CGT_DIR=/usr/share/ti/cgt-pru#PRU_CGT_DIR=$SB/cgt#" \
         -e "s#^ETC_DIR=/etc/qunilator#ETC_DIR=$SB/etc#" \
+        -e "s#^BUILD_REF_FILE=/usr/share/qunilator/build-ref#BUILD_REF_FILE=$SB/build-ref#" \
         "$REPO_ROOT/packaging/debian/qunilator-devkit" > "$SB/qunilator-devkit"
     chmod +x "$SB/qunilator-devkit"
     grep -q "^PRU_CGT_DIR=$SB/cgt\$" "$SB/qunilator-devkit" || {
@@ -154,6 +198,12 @@ EOF
         echo "sandbox: qunilator-devkit no longer sets ETC_DIR the way this" >&2
         echo "sandbox: test rewrites it - update devkit-test.sh; without the" >&2
         echo "sandbox: rewrite the run would write into the real /etc" >&2
+        exit 2
+    }
+    grep -q "^BUILD_REF_FILE=$SB/build-ref\$" "$SB/qunilator-devkit" || {
+        echo "sandbox: qunilator-devkit no longer sets BUILD_REF_FILE the way" >&2
+        echo "sandbox: this test rewrites it - update devkit-test.sh; without" >&2
+        echo "sandbox: the rewrite it would read this machine's own /usr/share" >&2
         exit 2
     }
 }
@@ -179,6 +229,7 @@ devkit() {
 mkdir -p "$SB"
 build_origin
 build_legacy_origin
+build_bare_origin
 build_stubs
 
 ROOT=$SB/root
@@ -187,6 +238,10 @@ mkdir -p "$ROOT"
 # happens to carry the name of an example shortcut
 echo "the operator's shell" > "$ROOT/.bashrc"
 echo "not a shortcut" > "$ROOT/memory.sh"
+
+# The package records a commit, as one built between releases does - and this
+# board's version has a tag, which is the better answer and has to win.
+build_ref "$DEV_COMMIT" devbuild 0
 
 case_begin "a QBUS board is populated from an empty-but-for-dotfiles /root"
 if ! devkit "$ROOT"; then
@@ -293,6 +348,73 @@ else
     expect "branch" "testing" "$(git -C "$ROOT_B" rev-parse --abbrev-ref HEAD)" && ok
 fi
 
+# ------------------------------------------- which tree matches the binaries --
+# A released board finds its sources by the tag of its version. A board running
+# a build from between releases has no such tag, and the package's record of the
+# commit it was built from is what keeps the checkout off a default branch that
+# may be a long way from the binaries. These four cases are that ladder, top to
+# bottom. The version is moved to one no tag answers for; the last one puts it
+# back, since the cases after these are about other things.
+echo 99.1.0-1 > "$SB/version"
+
+case_begin "with no tag for its version, the commit the package records is checked out"
+build_ref "$DEV_COMMIT" devbuild 0
+ROOT_C=$SB/root_commit
+if ! devkit "$ROOT_C"; then
+    fail "the run failed (exit $DEVKIT_RC)"
+else
+    rc=0
+    expect "HEAD" "$DEV_COMMIT" "$(git -C "$ROOT_C" rev-parse HEAD)" || rc=1
+    expect "detached, not on a branch" "HEAD" \
+        "$(git -C "$ROOT_C" rev-parse --abbrev-ref HEAD)" || rc=1
+    [ -f "$ROOT_C/devbuild-marker" ] || { fail "the tree is not that commit's"; rc=1; }
+    grep -q "^DEVKIT_REF=$DEV_COMMIT\$" "$SB/etc/devkit.env" \
+        || { fail "devkit.env does not record the commit"; rc=1; }
+    [ $rc = 0 ] && ok
+fi
+
+case_begin "a package built from a modified tree says so"
+build_ref "$DEV_COMMIT" devbuild 1
+if ! devkit "$SB/root_dirty"; then
+    fail "the run failed (exit $DEVKIT_RC)"
+else
+    case "$OUT" in
+        *"built from a modified tree"*) ok ;;
+        *) fail "the run never said the package's tree was not the commit" ;;
+    esac
+fi
+
+case_begin "a commit the server does not have falls back to the branch it was built on"
+build_ref 0000000000000000000000000000000000000001 devbuild 0
+ROOT_F=$SB/root_nocommit
+if ! devkit "$ROOT_F"; then
+    fail "the run failed (exit $DEVKIT_RC)"
+else
+    rc=0
+    expect "branch" "devbuild" "$(git -C "$ROOT_F" rev-parse --abbrev-ref HEAD)" || rc=1
+    case "$OUT" in
+        *"is not on"*) ;;
+        *) fail "the run never said the commit could not be had"; rc=1 ;;
+    esac
+    [ $rc = 0 ] && ok
+fi
+
+case_begin "a package that records nothing falls back to the default branch, and says it is a guess"
+no_build_ref
+ROOT_G=$SB/root_noref
+if ! devkit "$ROOT_G"; then
+    fail "the run failed (exit $DEVKIT_RC)"
+else
+    rc=0
+    expect "branch" "$DEFAULT_BRANCH" "$(git -C "$ROOT_G" rev-parse --abbrev-ref HEAD)" || rc=1
+    case "$OUT" in
+        *"is a guess"*) ;;
+        *) fail "the run never said the branch is only a guess"; rc=1 ;;
+    esac
+    [ $rc = 0 ] && ok
+fi
+echo 99.0.0-1 > "$SB/version"
+
 case_begin "a tree whose personalization script predates this command is still personalized"
 ROOT_L=$SB/root_legacy
 if ! devkit "$ROOT_L" --url "$SB/origin-legacy"; then
@@ -305,6 +427,23 @@ else
     [ -e "$ROOT_L/10.03_app_demo/5_applications_q" ] && { fail "5_applications_q still there"; rc=1; }
     [ -e "$SB/elsewhere/qunibone-platform.env" ] \
         && { fail "the run personalized the directory it was started from"; rc=1; }
+    [ $rc = 0 ] && ok
+fi
+
+case_begin "a tree with no example machines says so, and finishes"
+ROOT_N=$SB/root_noex
+if ! devkit "$ROOT_N" --url "$SB/origin-bare"; then
+    fail "the run failed (exit $DEVKIT_RC)"
+else
+    rc=0
+    [ -f "$ROOT_N/compile.sh" ] || { fail "the sources are not there"; rc=1; }
+    case "$OUT" in
+        *"carries no example machines"*) ;;
+        *) fail "the run never said the tree has no examples"; rc=1 ;;
+    esac
+    case "$OUT" in
+        *"The examples are in"*) fail "the closing text points at examples which are not there"; rc=1 ;;
+    esac
     [ $rc = 0 ] && ok
 fi
 

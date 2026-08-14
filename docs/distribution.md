@@ -14,8 +14,11 @@ Most of the work is done and scattered across three places.
 `packaging/build-deb.sh` produces a complete `qbone_*_armhf.deb`: a static
 `/usr/bin/qbone` with the PRU firmware inside it, the frontend under
 `/usr/share/qunilator/frontend`, both cape overlays in `/lib/firmware`, the
-modprobe and modules-load drop-ins, two systemd units, and empty state
-directories under `/var/lib/qunilator`.
+modprobe and modules-load drop-ins, two systemd units, empty state directories
+under `/var/lib/qunilator`, and `/usr/share/qunilator/build-ref` - the commit,
+branch and clean-or-not state of the tree it was built from, which is how
+`qunilator-devkit` finds the sources of a board running a build with no release
+tag to its name.
 
 `packaging/debian/qunilator-setup` performs the whole board-side procedure:
 rewrites `/boot/uEnv.txt`, checks the hardware, bridges the uplink with an

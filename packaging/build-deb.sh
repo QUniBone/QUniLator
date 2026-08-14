@@ -41,6 +41,29 @@ elif [ ! -d "$FRONTEND/dist" ]; then
     exit 1
 fi
 
+# What tree this package was built from. A released board finds its sources by
+# the tag of the version it carries, but between releases there is no tag, and
+# the version alone then names nothing - which is what qunilator-devkit on the
+# board falls back from. The commit does name it, so it travels in the package.
+#
+# Read here rather than in the container: the container has no git, and would
+# see the checkout through a bind mount git calls dubious ownership anyway.
+# Exported so the re-entry below carries it in.
+: "${QUNILATOR_BUILD_COMMIT:=}"
+: "${QUNILATOR_BUILD_BRANCH:=}"
+: "${QUNILATOR_BUILD_DIRTY:=0}"
+if [ -z "$QUNILATOR_BUILD_COMMIT" ] && command -v git >/dev/null 2>&1 \
+    && git rev-parse --git-dir >/dev/null 2>&1; then
+    QUNILATOR_BUILD_COMMIT=$(git rev-parse HEAD)
+    QUNILATOR_BUILD_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    # a detached head is on no branch, and "HEAD" is not a name to check out
+    if [ "$QUNILATOR_BUILD_BRANCH" = HEAD ]; then QUNILATOR_BUILD_BRANCH=; fi
+    # Uncommitted work, tracked or not: the commit is then the nearest thing to
+    # this package rather than a description of it, and saying so is the point.
+    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then QUNILATOR_BUILD_DIRTY=1; fi
+fi
+export QUNILATOR_BUILD_COMMIT QUNILATOR_BUILD_BRANCH QUNILATOR_BUILD_DIRTY
+
 # dpkg-deb, GNU find and dtc are all Debian tools, and the host is usually
 # macOS, so the packaging runs in a container. Re-enter one when the tools are
 # not here; inside, the check passes and the script continues.
@@ -60,8 +83,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 EOF
     fi
-    exec docker run --rm -v "$PWD:/qunibone" -w /qunibone $IMAGE \
-        ./packaging/build-deb.sh "$@"
+    exec docker run --rm -v "$PWD:/qunibone" -w /qunibone \
+        -e QUNILATOR_BUILD_COMMIT -e QUNILATOR_BUILD_BRANCH -e QUNILATOR_BUILD_DIRTY \
+        $IMAGE ./packaging/build-deb.sh "$@"
 fi
 
 SUFFIX=_q
@@ -125,6 +149,23 @@ install -d -m 700 $STAGE/var/lib/qunilator/updates
 # The emulator, built for this board's bus
 install -m 755 $BINARY $STAGE/usr/bin/$NAME
 install -m 755 $BINARY_DEMO $STAGE/usr/bin/$NAME-cli
+
+# The tree those two came out of, for qunilator-devkit to check out. Shell
+# syntax, like the other files this packaging writes for programs to read.
+# BUILD_DIRTY=1 says the build had uncommitted work in it, so the commit is the
+# nearest published thing to these binaries rather than what they were built
+# from - the devkit repeats that to the operator instead of quietly checking out
+# something which is not quite what the board is running.
+cat > $STAGE/usr/share/qunilator/build-ref <<EOF
+# build-ref
+# Written by packaging/build-deb.sh: the tree this package was built from.
+
+BUILD_VERSION=$VERSION
+BUILD_COMMIT=$QUNILATOR_BUILD_COMMIT
+BUILD_BRANCH=$QUNILATOR_BUILD_BRANCH
+BUILD_DIRTY=$QUNILATOR_BUILD_DIRTY
+EOF
+chmod 644 $STAGE/usr/share/qunilator/build-ref
 # its unit, the one that names the binary
 rebrand < packaging/debian/qbone.service > $STAGE/lib/systemd/system/$NAME.service
 # the seed unit runs that binary and orders itself before that unit, so it

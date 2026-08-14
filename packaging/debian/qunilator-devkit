@@ -11,8 +11,9 @@
 #
 # What it does, in order, and all of it may be run again:
 #   1. installs what a build needs (compiler, headers, the TI PRU tools)
-#   2. puts the repository into /root, at the tag matching the installed
-#      version of the emulator
+#   2. puts the repository into /root, at the sources the installed emulator
+#      was built from: the tag of its version when that version was released,
+#      otherwise the commit the package records (see BUILD_REF_FILE below)
 #   3. writes qunibone-platform.env for the bus this board bridges
 #   4. runs qunibone-platform.sh, which merges the bus-specific examples into
 #      10.03_app_demo/5_applications, links 4_deploy, makes every *.sh
@@ -40,6 +41,13 @@ DO_APT=1
 # Where the board's own configuration lives. A finished run records the tree it
 # made here, which is what the login hints read to stop offering this command.
 ETC_DIR=/etc/qunilator
+
+# What the package says about the tree it was built from: BUILD_COMMIT,
+# BUILD_BRANCH and BUILD_DIRTY, written by packaging/build-deb.sh. A released
+# board does not need it - the version names a tag - but a board running a build
+# from between releases has no tag to find, and this is what stops the checkout
+# falling back to a default branch which may be nowhere near its sources.
+BUILD_REF_FILE=/usr/share/qunilator/build-ref
 
 # The PRU code generation tools, pinned to the version the shipped firmware is
 # built with (see crossbuild.sh). PRU_CGT_DIR is where the makefiles look:
@@ -186,19 +194,73 @@ fi
 say "fetching from $URL ..."
 git -C "$DIR" fetch -q --tags origin
 
+# Is a commit here, or can the server be made to send it? The fetch above brings
+# every branch, so a commit on one of them is already in the object store. One
+# on none of them - a build from a branch since deleted, a pull request head -
+# is asked for by hash, which a server allows for anything a published ref leads
+# to and refuses otherwise ("upload-pack: not our ref"). A commit which never
+# left the machine that built the package is in that second class, and no
+# arrangement of this can conjure it: hence the fallbacks below.
+commit_available() {
+    if git -C "$DIR" rev-parse -q --verify "$1^{commit}" >/dev/null 2>&1; then
+        return 0
+    fi
+    git -C "$DIR" fetch -q origin "$1" >/dev/null 2>&1 || return 1
+    git -C "$DIR" rev-parse -q --verify "$1^{commit}" >/dev/null 2>&1
+}
+
+# a hash an operator can read out loud, and still paste into "git show"
+short() { printf %.12s "$1"; }
+
 if [ -z "$REF" ]; then
-    # The tree that matches the binaries this board runs: the package version
-    # without its Debian revision is the release tag.
+    # Which tree matches the binaries this board runs, in the order the answers
+    # get worse. Only the first two are the sources /usr/bin/$PKG was built
+    # from; past them the tree is a near relation, and an operator about to run
+    # ./compile.sh over it has to be told which one this is.
+    #
+    #   1. the release tag, for a board running a released version
+    #   2. the commit the package records, for a build between releases
+    #   3. the branch it was built on, if that commit is not on the server
+    #   4. the default branch, which is a guess and may be far behind
     tag="v${VERSION%%-*}"
+    BUILD_COMMIT=; BUILD_BRANCH=; BUILD_DIRTY=0
+    if [ -f "$BUILD_REF_FILE" ]; then
+        # shellcheck source=/dev/null
+        . "$BUILD_REF_FILE"
+    fi
+
     if git -C "$DIR" rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
         REF=$tag
         say "checking out $REF, the release this board runs"
+    elif [ -n "$BUILD_COMMIT" ] && commit_available "$BUILD_COMMIT"; then
+        REF=$BUILD_COMMIT
+        say "no tag $tag published; checking out $(short "$REF"), the commit this"
+        say "board's package was built from"
+        if [ "$BUILD_DIRTY" = 1 ]; then
+            say "note: that package was built from a modified tree, so its sources"
+            say "note: are that commit plus changes which were never committed"
+        fi
     else
-        git -C "$DIR" remote set-head -a origin >/dev/null 2>&1 || true
-        REF=$(git -C "$DIR" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null \
-            | sed 's|^origin/||')
-        [ -n "$REF" ] || die "cannot tell which branch to check out; name one with --branch"
-        say "no tag $tag published; checking out the $REF branch instead"
+        if [ -n "$BUILD_COMMIT" ]; then
+            say "note: commit $(short "$BUILD_COMMIT"), which this board's package"
+            say "note: was built from, is not on $URL - it was never pushed there,"
+            say "note: or it has since been removed"
+        fi
+        if [ -n "$BUILD_BRANCH" ] \
+            && git -C "$DIR" rev-parse -q --verify "refs/remotes/origin/$BUILD_BRANCH" >/dev/null
+        then
+            REF=$BUILD_BRANCH
+            say "no tag $tag published; checking out the $REF branch, which this"
+            say "board's package was built on - its tip now, which is not the same"
+            say "thing as what the board is running"
+        else
+            git -C "$DIR" remote set-head -a origin >/dev/null 2>&1 || true
+            REF=$(git -C "$DIR" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null \
+                | sed 's|^origin/||')
+            [ -n "$REF" ] || die "cannot tell which branch to check out; name one with --branch"
+            say "no tag $tag published; checking out the $REF branch instead, which"
+            say "is a guess at this board's sources and may be a long way from them"
+        fi
     fi
 fi
 
@@ -213,6 +275,19 @@ else
 fi
 
 # ------------------------------------------------------------ personalizing ---
+# Does this tree carry the example machines at all? The ref is chosen by the
+# version of the emulator installed, so a board running a release that was never
+# tagged lands on the default branch - which can be a long way behind, and older
+# trees keep no examples in the repository. Worth saying here, in one line: the
+# personalization that follows can only report it as a copy that found nothing.
+HAVE_EXAMPLES=1
+if [ ! -d "$DIR/10.03_app_demo/5_applications" ] \
+    && [ ! -d "$DIR/10.03_app_demo/5_applications$SUFFIX" ]; then
+    HAVE_EXAMPLES=0
+    say "note: $REF carries no example machines under 10.03_app_demo, so this run"
+    say "note: installs none. \"--branch <name>\" checks out a ref that has them."
+fi
+
 # The one file that says which hardware this tree is built for. It is not in the
 # repository, exactly because it describes a board rather than the software.
 say "writing qunibone-platform.env for $PLATFORM"
@@ -261,6 +336,10 @@ The development tree is in $DIR.
 builds it, and installs what it built as /usr/bin/$PKG and /usr/bin/$PKG-cli,
 restarting the service - which takes the emulated machine down with it. "-n"
 installs without the restart, "-N" builds without installing.
+EOF
+
+if [ "$HAVE_EXAMPLES" = 1 ]; then
+cat <<EOF
 
 The examples are in $DIR/10.03_app_demo/5_applications, with a shortcut to each
 in $DIR. Each one is executable and names the emulator on its "#!" line:
@@ -271,6 +350,18 @@ The service hands the board over for the length of that session and takes it
 back when it ends, so nothing has to be stopped first. The machine it rebuilds
 afterwards is switched off, because what a menu session leaves behind is not
 something to start a machine on.
+EOF
+else
+cat <<EOF
+
+There are no example machines in this tree: $REF predates them, so there is no
+10.03_app_demo/5_applications and no shortcuts beside the sources. Everything
+builds all the same. Running this again with "--branch <name>", on a ref that
+carries the examples, installs them and their shortcuts.
+EOF
+fi
+
+cat <<EOF
 
 The disk images are not in the repository. Fetch them with
 

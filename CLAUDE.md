@@ -183,12 +183,21 @@ installs without the restart, `-N` builds only. Off a board — no
 
 `sudo qunilator-devkit` is what puts that checkout on a flashed board: build
 prerequisites (including the TI PRU tools, without which no build on the board
-can produce PRU firmware), the repository fetched into `/root` at the tag
-matching the installed package, `qunibone-platform.env` written for the board's
+can produce PRU firmware), the repository fetched into `/root` at the sources
+the installed package was built from, `qunibone-platform.env` written for the board's
 bus, and `qunibone-platform.sh` run — which merges `5_applications_u|_q` into
 `10.03_app_demo/5_applications`, links `4_deploy`, and puts a shortcut to every
 example in the tree's root. `packaging/tests/devkit-test.sh` exercises all of
 that against a stubbed board, so it needs neither hardware nor root.
+
+Which sources those are is decided in this order: the tag of the installed
+version, for a released board; otherwise the commit recorded in
+`/usr/share/qunilator/build-ref`, which `packaging/build-deb.sh` writes from the
+tree it packaged; otherwise the branch that build was on; otherwise the default
+branch, which is a guess. Every step but the first two says so, because past
+them the tree is not what `/usr/bin/<name>` was built from. A commit that was
+never pushed cannot be fetched by hash — `upload-pack: not our ref` — which is
+what the fallbacks are for.
 
 ## Deploying to the board
 
