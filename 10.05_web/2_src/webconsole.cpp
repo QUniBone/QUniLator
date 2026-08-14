@@ -24,6 +24,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <mutex>
 #include <ostream>
 #include <sstream>
@@ -42,6 +43,10 @@
 #include "webrecording.hpp"
 #include "webconsole.hpp"
 
+// Wakes the flush thread; defined with the flusher below, declared here because
+// the tap that calls it is part of the bridge state.
+static void flush_wake(void);
+
 // per-SLU bridge state
 struct console_c {
 	// ostream sink for the rs232adapter's stream_xmt_tap
@@ -51,8 +56,16 @@ struct console_c {
 	protected:
 		int overflow(int c) override {
 			if (c != EOF) {
-				std::lock_guard<std::mutex> lock(owner->xmt_mutex);
-				owner->xmt_buffer.push_back((char) c);
+				bool was_empty;
+				{
+					std::lock_guard<std::mutex> lock(owner->xmt_mutex);
+					was_empty = owner->xmt_buffer.empty();
+					owner->xmt_buffer.push_back((char) c);
+				}
+				// Outside the buffer lock: this runs on the device thread, which
+				// must not be held up, and nothing may take the two in one hand.
+				if (was_empty)
+					flush_wake();
 			}
 			return c;
 		}
@@ -101,9 +114,44 @@ static console_c consoles[CONSOLE_COUNT];
 static std::atomic<bool> running(false);
 static std::thread flusher;
 
+// How long a first byte waits while the rest of its burst arrives. The tap
+// hands over one character at a time and a guest at 38400 baud sends four per
+// millisecond, so this is what keeps a WebSocket frame per character off the
+// wire — the reason the flush is batched at all.
+static const unsigned FLUSH_MS = 20;
+// The flusher used to run that batch on a fixed cadence, which cost 50 wakeups
+// a second whether or not any line had spoken. It now sleeps until a tap says
+// there is something, and this bounded wait is only a safety net: a
+// notification lost to a race is recovered within the second rather than never,
+// and shutdown never waits longer than this for the thread to notice.
+static const unsigned FLUSH_IDLE_MS = 1000;
+
+static std::mutex flush_mutex;
+static std::condition_variable flush_cv;
+static bool flush_pending = false;
+
+// Called by a tap when its buffer goes from empty to holding something. Only
+// that transition signals: every further byte of the same burst lands in a
+// buffer the flusher has not drained yet, and goes out in the same batch.
+static void flush_wake(void) {
+	{
+		std::lock_guard<std::mutex> lock(flush_mutex);
+		flush_pending = true;
+	}
+	flush_cv.notify_one();
+}
+
 static void flush_loop(void) {
 	while (running) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(20));
+		{
+			std::unique_lock<std::mutex> lock(flush_mutex);
+			flush_cv.wait_for(lock, std::chrono::milliseconds(FLUSH_IDLE_MS),
+					[] { return flush_pending || !running; });
+			flush_pending = false;
+		}
+		if (!running)
+			break;
+		std::this_thread::sleep_for(std::chrono::milliseconds(FLUSH_MS));
 		for (console_c &console : consoles) {
 			std::string batch;
 			{
@@ -207,6 +255,7 @@ void webconsole_shutdown(void) {
 		if (console.adapter != nullptr)
 			console.adapter->stream_xmt_tap = nullptr;
 	running = false;
+	flush_cv.notify_all(); // do not wait out the idle timeout
 	flusher.join();
 	for (console_c &console : consoles)
 		console.channel.clear_clients();
