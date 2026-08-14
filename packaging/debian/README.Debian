@@ -359,6 +359,26 @@ where it is, so an interrupted fetch carries on where it stopped.
 An image put in the tree as "<name>.gz" is expanded by the emulator the first
 time something mounts it, beside its own ".gz".
 
+What a login says
+-----------------
+
+Neither the source tree nor the disk images are in the image, so a login on a
+freshly flashed board names the two commands that fetch them:
+
+    To restore the old .sh files and source code tree run the command
+    'sudo qunilator-devkit'.
+
+    To fetch disk images for booting: run the command 'sudo qunilator-fetch-images'.
+
+Each line goes away once what it offers is there -- a development tree, and an
+image in the media tree beyond the XXDP pack the package seeds -- and comes
+back if that is deleted again. A board that has both says nothing at all.
+Nothing is remembered about who has logged in: qunilator-hints decides from
+what the board carries, and /etc/profile.d/qunilator-hints.sh runs it at an
+interactive login shell. It says nothing over "ssh <board> <command>", so a
+deploy or a script sees no extra output. Delete the profile snippet to be rid
+of the hints; it is a conffile, so an upgrade will not put it back.
+
 The operator's account
 ----------------------
 

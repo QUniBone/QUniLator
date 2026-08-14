@@ -113,11 +113,18 @@ EOF
     chmod +x "$SB/bin/dpkg-query" "$SB/bin/id"
 
     sed -e "s#^PRU_CGT_DIR=/usr/share/ti/cgt-pru#PRU_CGT_DIR=$SB/cgt#" \
+        -e "s#^ETC_DIR=/etc/qunilator#ETC_DIR=$SB/etc#" \
         "$REPO_ROOT/packaging/debian/qunilator-devkit" > "$SB/qunilator-devkit"
     chmod +x "$SB/qunilator-devkit"
     grep -q "^PRU_CGT_DIR=$SB/cgt\$" "$SB/qunilator-devkit" || {
         echo "sandbox: qunilator-devkit no longer sets PRU_CGT_DIR the way this" >&2
         echo "sandbox: test rewrites it - update devkit-test.sh" >&2
+        exit 2
+    }
+    grep -q "^ETC_DIR=$SB/etc\$" "$SB/qunilator-devkit" || {
+        echo "sandbox: qunilator-devkit no longer sets ETC_DIR the way this" >&2
+        echo "sandbox: test rewrites it - update devkit-test.sh; without the" >&2
+        echo "sandbox: rewrite the run would write into the real /etc" >&2
         exit 2
     }
 }
@@ -203,6 +210,13 @@ rc=0
 case_begin "4_deploy points at the directory of this board's bus"
 expect "4_deploy" "$ROOT/10.03_app_demo/4_deploy_q" \
     "$(readlink "$ROOT/10.03_app_demo/4_deploy")" && ok
+
+case_begin "the run records the tree it made, which is what silences the login hint"
+rc=0
+[ -f "$SB/etc/devkit.env" ] || { fail "no devkit.env was written"; rc=1; }
+grep -q "^DEVKIT_DIR=$ROOT\$" "$SB/etc/devkit.env" \
+    || { fail "devkit.env does not name the tree: $(cat "$SB/etc/devkit.env" 2>&1)"; rc=1; }
+[ $rc = 0 ] && ok
 
 case_begin "a second run changes nothing and still succeeds"
 if ! devkit "$ROOT"; then

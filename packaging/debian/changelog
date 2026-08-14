@@ -6,6 +6,12 @@ qbone (1.20.0-1) trixie; urgency=low
     matching the installed package, writes qunibone-platform.env for the card's
     bus, and personalizes the tree - the examples merged into one tree, 4_deploy
     linked, every *.sh executable, and a shortcut in /root to each example.
+  * A login on a freshly flashed board names the two commands that fetch what
+    the image does not carry: "sudo qunilator-devkit" for the source tree and
+    the example .sh files, "sudo qunilator-fetch-images" for the disk images.
+    Each line goes away once what it offers is there and comes back if that is
+    deleted again; a board that has both says nothing. Printed at an
+    interactive login shell only, so "ssh <board> <command>" is unaffected.
   * compile.sh on the card now installs what it built: qbone-web as /usr/bin/
     <name> and demo as /usr/bin/<name>-cli, set-user-id root and executable by
     qunilator-admin, and restarts the service. "-n" installs without the

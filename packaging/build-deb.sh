@@ -140,8 +140,14 @@ stage_frontend $STAGE/usr/share/qunilator/frontend
 install -m 755 packaging/debian/qunilator-network packaging/debian/qunilator-setup \
     packaging/debian/qunilator-resize packaging/debian/qunilator-announce \
     packaging/debian/qunilator-rename packaging/debian/qunilator-update \
-    packaging/debian/qunilator-devkit \
+    packaging/debian/qunilator-devkit packaging/debian/qunilator-hints \
     packaging/debian/qunilator-usb-gadget $STAGE/usr/sbin/
+# The login hints: what this board still lacks - the source tree, the disk
+# images - said at an interactive login shell and nothing once both are there.
+# A profile snippet rather than a motd, for the reasons the file gives.
+install -d -m 755 $STAGE/etc/profile.d
+install -m 644 packaging/debian/qunilator-hints.profile \
+    $STAGE/etc/profile.d/qunilator-hints.sh
 # The sample disk images are in neither the repository nor this package - too
 # large, and not all of them ours to distribute - so the tool that fetches them
 # from retrocmp ships instead, under the name the other board commands have. It
@@ -283,6 +289,9 @@ INSTALLED_KB=$(du -sk $STAGE | cut -f1)
     echo "/etc/modules-load.d/bone.conf"
     echo "/etc/apt/apt.conf.d/51qunilator-unattended"
     echo "/etc/sudoers.d/qunilator-admin"
+    # a conffile so an operator who deletes it is not given it back on the
+    # next upgrade
+    echo "/etc/profile.d/qunilator-hints.sh"
 } > $STAGE/DEBIAN/conffiles
 
 cat > $STAGE/DEBIAN/preinst <<'PREINST'
@@ -445,6 +454,21 @@ if [ "$1" = configure ]; then
         install -d -m 755 /var/lib/qunilator/configs
         install -m 644 /usr/share/qunilator/sample-config.json \
             /var/lib/qunilator/configs/xxdp.json || true
+    fi
+    # The login hints read /etc/qunilator/devkit.env to tell a board that has a
+    # development tree from one that has not, because /root is readable by root
+    # alone and a hint is printed to whoever logs in. A tree made before that
+    # record existed is recorded here, once, so such a board goes quiet without
+    # its operator having to run qunilator-devkit again.
+    if [ ! -e /etc/qunilator/devkit.env ] && [ -f /root/qunibone-platform.env ]; then
+        install -d -m 755 /etc/qunilator
+        cat > /etc/qunilator/devkit.env <<'DEVKITENV'
+# devkit.env
+# Written on upgrade: this board already carried a development tree in /root.
+
+DEVKIT_DIR=/root
+DEVKITENV
+        chmod 644 /etc/qunilator/devkit.env
     fi
     if [ -d /run/systemd/system ]; then
         systemctl daemon-reload || true

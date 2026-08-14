@@ -37,6 +37,10 @@ REF=
 DIR=/root
 DO_APT=1
 
+# Where the board's own configuration lives. A finished run records the tree it
+# made here, which is what the login hints read to stop offering this command.
+ETC_DIR=/etc/qunilator
+
 # The PRU code generation tools, pinned to the version the shipped firmware is
 # built with (see crossbuild.sh). PRU_CGT_DIR is where the makefiles look:
 # 10.01_base/2_src/pru*/Makefile calls $PRU_CGT/bin/clpru and $PRU_CGT/bin/hexpru.
@@ -223,6 +227,17 @@ EOF
 
 chmod +x "$DIR/qunibone-platform.sh"
 "$DIR/qunibone-platform.sh"
+
+# Where the tree went. The login hints look for it there rather than guessing
+# /root, which is only the default, and go quiet once they find it.
+mkdir -p "$ETC_DIR"
+cat > "$ETC_DIR/devkit.env" <<EOF
+# devkit.env
+# Written by qunilator-devkit: the development tree this board carries.
+
+DEVKIT_DIR=$DIR
+DEVKIT_REF=$REF
+EOF
 
 tree_version=$("$DIR/packaging/version.sh" 2>/dev/null || echo "")
 if [ -n "$tree_version" ] && [ "$tree_version" != "$VERSION" ]; then
