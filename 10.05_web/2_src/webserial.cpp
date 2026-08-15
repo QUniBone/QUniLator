@@ -25,6 +25,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <map>
 #include <mutex>
 #include <string>
@@ -59,6 +60,32 @@ static std::mutex bridges_mutex;
 static std::map<std::string, serial_bridge_c *> bridges; // key "dev/line"
 static std::atomic<bool> running(false);
 static std::thread flusher;
+
+// How long a first byte waits while the rest of its burst arrives — what keeps
+// a WebSocket frame per character off the wire, and the reason this flush is
+// batched at all.
+static const unsigned FLUSH_MS = 20;
+// The flusher used to run that batch on a fixed cadence, which cost 50 wakeups
+// a second whether or not any line had spoken - and a board with no websocket
+// line configured has not even a bridge to drain. It now sleeps until a tap
+// says there is something; this bounded wait is only a safety net, so a
+// notification lost to a race is recovered within the second rather than never.
+static const unsigned FLUSH_IDLE_MS = 1000;
+
+static std::mutex flush_mutex;
+static std::condition_variable flush_cv;
+static bool flush_pending = false;
+
+// Called by a line's tap when its buffer goes from empty to holding something.
+// Only that transition signals: every further byte of the same burst lands in a
+// buffer the flusher has not drained yet, and goes out in the same batch.
+static void flush_wake(void) {
+	{
+		std::lock_guard<std::mutex> lock(flush_mutex);
+		flush_pending = true;
+	}
+	flush_cv.notify_one();
+}
 
 // dev + line -> the serial line, or nullptr. device_configuration and the mux
 // instances are created once at startup, so no lock is needed to read them.
@@ -112,8 +139,16 @@ static serial_bridge_c *get_bridge(const std::string &key, serial_tcp_line_c *li
 	line->data_tap = [b](const uint8_t *d, size_t n, bool from_pdp) {
 		if (!from_pdp)
 			return;
-		std::lock_guard<std::mutex> lk(b->xmt_mutex);
-		b->xmt_buffer.append((const char *) d, n);
+		bool was_empty;
+		{
+			std::lock_guard<std::mutex> lk(b->xmt_mutex);
+			was_empty = b->xmt_buffer.empty();
+			b->xmt_buffer.append((const char *) d, n);
+		}
+		// Outside the buffer lock: this runs on the mux worker, which must not
+		// be held up, and nothing may take the two in one hand.
+		if (was_empty)
+			flush_wake();
 	};
 	bridges[key] = b;
 	return b;
@@ -127,7 +162,15 @@ static serial_bridge_c *lookup_bridge(const std::string &key) {
 
 static void flush_loop(void) {
 	while (running) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(20));
+		{
+			std::unique_lock<std::mutex> lock(flush_mutex);
+			flush_cv.wait_for(lock, std::chrono::milliseconds(FLUSH_IDLE_MS),
+					[] { return flush_pending || !running; });
+			flush_pending = false;
+		}
+		if (!running)
+			break;
+		std::this_thread::sleep_for(std::chrono::milliseconds(FLUSH_MS));
 		std::vector<serial_bridge_c *> bs;
 		{
 			std::lock_guard<std::mutex> lock(bridges_mutex);
@@ -209,6 +252,7 @@ void webserial_shutdown(void) {
 	if (!running)
 		return;
 	running = false;
+	flush_cv.notify_all(); // do not wait out the idle timeout
 	flusher.join();
 	std::lock_guard<std::mutex> lock(bridges_mutex);
 	for (std::map<std::string, serial_bridge_c *>::iterator it = bridges.begin();

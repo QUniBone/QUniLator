@@ -17,6 +17,8 @@
    one device node.
 */
 
+#include <errno.h>
+#include <poll.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -148,20 +150,70 @@ static std::string console_conflict(const std::string &port) {
 	return "";
 }
 
+// How long the reader blocks on the line before looking at `running` and at the
+// port configuration again. It is not a receive latency: poll() returns on the
+// character, not on the timeout, so a byte is forwarded as soon as the kernel
+// has it — sooner than the 5 ms sleep this replaced. Asking the tty for bytes
+// on a timer instead cost 300 wakeups a second, 2.3% of this board's single
+// CPU, on a console line that had not carried a byte since boot.
+static const unsigned RX_WAIT_MS = 50;
+// Paces a retry after something that answers at once and forever: a descriptor
+// closed under us, or a poll() error that is not EINTR.
+static const unsigned RX_RETRY_MS = 20;
+
 static void reader_loop(void) {
 	unsigned char buf[512];
 	while (running) {
+		// The descriptor is taken under the lock and waited on outside it:
+		// holding port_mutex across the wait would stall tx_writer_loop, which
+		// takes it for every byte it paces out. A port closed in that window
+		// makes poll() answer POLLNVAL, or wake on whatever unrelated file
+		// inherited the number; neither loses or misplaces a byte, because the
+		// read below happens under the lock and only while the port is open.
+		int fd = -1;
+		{
+			std::lock_guard<std::mutex> lock(port_mutex);
+			if (port_open)
+				fd = port_io.Fd();
+		}
+		if (fd < 0) {
+			// No external console configured: nothing to wait on.
+			std::this_thread::sleep_for(std::chrono::milliseconds(RX_WAIT_MS));
+			continue;
+		}
+
+		struct pollfd pfd;
+		pfd.fd = fd;
+		pfd.events = POLLIN;
+		pfd.revents = 0;
+		int r = poll(&pfd, 1, (int) RX_WAIT_MS);
+		if (r < 0) {
+			if (errno == EINTR)
+				continue;
+			std::this_thread::sleep_for(std::chrono::milliseconds(RX_RETRY_MS));
+			continue;
+		}
+		if (r == 0)
+			continue; // idle line: round again to re-read `running` and the port
+		if ((pfd.revents & POLLIN) == 0) {
+			// POLLNVAL/POLLERR/POLLHUP: a closed or broken descriptor answers
+			// immediately and would spin this loop, so pace it.
+			std::this_thread::sleep_for(std::chrono::milliseconds(RX_RETRY_MS));
+			continue;
+		}
+
 		int n = 0;
 		{
 			std::lock_guard<std::mutex> lock(port_mutex);
 			if (port_open)
 				n = port_io.PollComport(buf, sizeof(buf));
 		}
-		if (n > 0) {
+		if (n > 0)
 			channel.append((const char *) buf, (size_t) n);
-		} else {
-			std::this_thread::sleep_for(std::chrono::milliseconds(n == 0 ? 5 : 20));
-		}
+		else
+			// Readable but nothing read: the port was closed or reconfigured
+			// between the wait and the read. Pace it rather than spin.
+			std::this_thread::sleep_for(std::chrono::milliseconds(RX_RETRY_MS));
 	}
 }
 
