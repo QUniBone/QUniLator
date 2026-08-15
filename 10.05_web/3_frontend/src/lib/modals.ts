@@ -577,6 +577,63 @@ export const USER_NAME_HELP =
 // said where the rule is already on the page, so it points at it rather than repeating it
 export const USER_NAME_REFUSAL = 'The user name does not follow that rule.';
 
+// What to do with the board now that it has a name and an account. It is shown
+// once, at the end of the first-run dialog, because this is the moment the two
+// things an operator needs are both settled and neither is anywhere on screen:
+// the page was opened on an address handed out by DHCP, which the next lease
+// may change, and <name>.local is what follows the board instead. The ssh line
+// is the same account, said here because the dialog is where the key was given.
+function setupDoneModal(user: string, board: string): Promise<void> {
+  const dotLocal = board + '.local';
+  const url = 'http://' + dotLocal + '/';
+  return new Promise((resolve) => {
+    const host = document.createElement('div');
+    host.className = 'modal-overlay';
+    host.innerHTML =
+      '<div class="card modal-card"><div class="card-head"><h3>This QUniLator is ' +
+      esc(board) +
+      '</h3>' +
+      '<button class="modal-close" data-sd-ok aria-label="Close" title="Close">&times;</button></div>' +
+      '<div class="card-body"><p class="muted" style="margin:0 0 12px; font-size:var(--fs-1)">' +
+      'Reach it by that name rather than by the address this page was opened on — the address ' +
+      'comes from the network and can change, the name stays with the board:</p>' +
+      '<p style="margin:0 0 16px"><a class="mono" style="color:var(--accent)" href="' +
+      esc(url) +
+      '">' +
+      esc(url) +
+      '</a></p>' +
+      '<p class="muted" style="margin:0 0 12px; font-size:var(--fs-1)">' +
+      'The same account reaches a shell on the board, with sudo:</p>' +
+      '<p class="mono" style="margin:0 0 16px">ssh ' +
+      esc(user) +
+      '@' +
+      esc(dotLocal) +
+      '</p>' +
+      '<p class="muted" style="margin:0; font-size:var(--fs-1)">' +
+      'The browser asks for the name and password now.</p>' +
+      '<div style="display:flex; justify-content:flex-end; margin-top:16px">' +
+      '<button class="btn primary" data-sd-ok>Got it</button></div></div></div>';
+    const done = () => {
+      host.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve();
+    };
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key === 'Escape' || ev.key === 'Enter') done();
+    }
+    host.addEventListener('click', (ev) => {
+      const target = ev.target as HTMLElement;
+      // the link is the point of the dialog: let it open, and leave the dialog
+      // standing behind it rather than closing on the way out
+      if (target.closest('a')) return;
+      if (target === host || target.closest('[data-sd-ok]')) done();
+    });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(host);
+    (host.querySelector('[data-sd-ok]') as HTMLElement).focus();
+  });
+}
+
 function setCredentialsModal(minLength: number, hostname: string): Promise<boolean> {
   return new Promise((resolve) => {
     const host = document.createElement('div');
@@ -668,8 +725,15 @@ function setCredentialsModal(minLength: number, hostname: string): Promise<boole
         return err(res.data.error || 'The credentials could not be set.');
       }
       host.remove();
-      const warns = (res.data.warnings || []).join('; ');
+      const warnings = res.data.warnings || [];
+      const warns = warnings.join('; ');
       toast('auth', warns || 'Credentials set for ' + user);
+      // The name in force is the one that was asked for, unless the field was
+      // left empty (which keeps the board's own) or the backend refused it and
+      // said so in a warning — in either of those the old name still stands.
+      const refused = warnings.some((w) => w.indexOf('host name') >= 0);
+      const name = board && !refused ? board : hostname;
+      if (name) await setupDoneModal(user, name);
       resolve(true);
     }
     host.addEventListener('click', (ev) => {

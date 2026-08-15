@@ -203,6 +203,11 @@ use — a name and a password, and it will not go further without both. That one
 pair serves **both** the web login and the Linux account behind it, so the same
 credentials get you into the file shares and `ssh` in later.
 
+The dialog also settles the host name and takes an ssh public key, and when it
+is done it says what both are for: `http://<name>.local/` is where to reach the
+interface from now on — an address handed out by DHCP can change, the name
+cannot — and `ssh <user>@<name>.local` is the same account on a shell.
+
 ## Getting back in
 
 A [`qunilator.toml`](#settling-the-identity-before-first-boot) dropped on the
