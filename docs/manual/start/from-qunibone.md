@@ -35,7 +35,7 @@ on. There is no order to it and nothing to step through:
   "devices": [
     { "name": "rl",     "enabled": true, "params": {} },
     { "name": "rl0",    "enabled": true, "params": {
-        "image": "images/dl/xxdp25.rl02",
+        "image": "images/dl/xxdp25.rl02.dsk",
         "powerswitch": "1", "runstopbutton": "1" } },
     { "name": "DL11",   "enabled": true, "params": {} },
     { "name": "MEM",    "enabled": true, "params": { "size": "1 MB" } },
@@ -76,7 +76,7 @@ en rl                   # enable RL11 controller
 en rl0
 sd rl0
 p powerswitch 1         # power on, now in "load" state
-p image xxdp25.rl02     # mount image file
+p image /var/lib/qunilator/images/dl/xxdp25.rl02.dsk   # mount image file
 p runstopbutton 1       # press RUN/STOP, will start
 
 .wait 6000              # wait until drive spins up
@@ -129,6 +129,18 @@ with the same menus, and it reads a command file exactly as `demo` did:
 ```sh
 qbone-cli --cmdfile xxdp.cmd
 ```
+
+A command file may also name itself: give it a `#!` first line and it runs as a
+program, and the images and listings it names are then looked for **next to the
+script** rather than in the directory you happen to stand in.
+
+```sh
+#!/usr/bin/qbone-cli --verbose
+```
+
+That is the form the example machines ship in — see [Building on the
+card](../tools/development-board.md), which puts the whole set of them on a card
+with one command.
 
 > [!NOTE]
 > **You do not have to stop the service**

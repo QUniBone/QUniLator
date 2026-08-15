@@ -63,6 +63,7 @@
 #include "getopt2.hpp"
 #include "kbhit.h"
 #include "inputline.hpp"
+#include "scriptpath.hpp"
 #include "pru.hpp"
 #include "mailbox.h"
 #include "gpios.hpp"
@@ -200,6 +201,15 @@ void application_c::parse_commandline(int argc, char **argv)
                          "", "/usr/share/qunilator/frontend", "installed frontend");
 #endif
 
+    getopt_parser.define("", "", "cmdfile", "", "",
+                         "File from which commands are read, like --cmdfile, but a file\n"
+                         "named in it is also looked for next to <cmdfile> itself, so a\n"
+                         "script and its images may travel together. Files the script\n"
+                         "creates still appear in the current directory.\n"
+                         "Allows use as \"#!\" script interpreter.\n"
+                         "Options may be given before and after <cmdfile>.", "testseq",
+                         "read commands from file \"testseq\" and execute line by line", "", "");
+
 	// test options
 
     getopt_parser.define("t", "test", "iarg1,iarg2", "soptarg", "8 15",
@@ -219,6 +229,9 @@ void application_c::parse_commandline(int argc, char **argv)
         } else if (getopt_parser.isoption("debug")) {
             logger->default_level = LL_DEBUG;
         } else if (getopt_parser.isoption("cmdfile")) {
+            if (!opt_cmdfilename.empty())
+                commandline_option_error((char *)"Command file already set to \"%s\"",
+                                         opt_cmdfilename.c_str());
             if (getopt_parser.arg_s("cmdfilename", opt_cmdfilename) < 0)
                 commandline_option_error(NULL);
 #if defined(QBUS)
@@ -271,6 +284,16 @@ void application_c::parse_commandline(int argc, char **argv)
             if (getopt_parser.arg_s("soptarg", s))
                 std::cout << ", soptarg=" << s;
             std::cout << "\n";
+        } else if (getopt_parser.isoption("")) {	// non-option: the command file itself
+            if (!opt_cmdfilename.empty())
+                commandline_option_error((char *)"Command file already set to \"%s\"",
+                                         opt_cmdfilename.c_str());
+            if (getopt_parser.arg_s("cmdfile", opt_cmdfilename) < 0)
+                commandline_option_error(NULL);
+            else
+                // Only this form resolves against the script's directory:
+                // --cmdfile never did, and its users expect the current one.
+                opt_script_relative = true;
         }
         res = getopt_parser.next();
     }
@@ -389,6 +412,16 @@ int application_c::run(int argc, char *argv[])
                    fileErrorText("Could not open command file \"%s\"",
                                  opt_cmdfilename.c_str()));
             return -1;
+        }
+
+        if (opt_script_relative) {
+            // A script names further files - disk images, MACRO-11 listings, a
+            // shared directory - relative to itself, not to wherever the user
+            // stands. Remember its directory, so those are found there.
+            // Deliberately not a chdir() into it: everything the application
+            // *creates* shall still appear in the directory the script was
+            // started from. See 90_common/src/scriptpath.hpp.
+            scriptpath_set(opt_cmdfilename);
         }
     }
 

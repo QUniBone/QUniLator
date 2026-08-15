@@ -47,6 +47,7 @@
 
 #include "utils.hpp"
 #include "logger.hpp"
+#include "scriptpath.hpp"
 #include "memoryimage.hpp" // own
 
 // single multi purpose memory image buffer
@@ -166,9 +167,11 @@ bool memoryimage_c::load_binary(const char *fname)
 {
 	FILE *fin;
 	unsigned wordidx, n;
-	fin = fopen(fname, "rb");
+	// a file a script names is looked for next to the script, see scriptpath.hpp
+	std::string fpath = scriptpath_resolve(fname);
+	fin = fopen(fpath.c_str(), "rb");
 	if (!fin) {
-		printf("%s\n", fileErrorText("Error opening file %s for read", fname));
+		printf("%s\n", fileErrorText("Error opening file %s for read", fpath.c_str()));
 		return false;
 	}
 	// try to read max address range, shorter files are OK
@@ -240,9 +243,10 @@ bool memoryimage_c::load_addr_value_text(const char *fname)
 	unsigned val;
 	unsigned addr;
 
-	fin = fopen(fname, "r");
+	std::string fpath = scriptpath_resolve(fname);
+	fin = fopen(fpath.c_str(), "r");
 	if (!fin) {
-		printf("%s\n", fileErrorText("Error opening file %s for write", fname));
+		printf("%s\n", fileErrorText("Error opening file %s for write", fpath.c_str()));
 		return false;
 	}
 	while (fgets(linebuff, sizeof(linebuff), fin)) {
@@ -482,9 +486,10 @@ bool memoryimage_c::load_macro11_listing(const char *fname, codelabel_map_c *cod
 	char *endptr;
 	int wlen;
 
-	fin = fopen(fname, "r");
+	std::string fpath = scriptpath_resolve(fname);
+	fin = fopen(fpath.c_str(), "r");
 	if (!fin) {
-		printf("%s\n", fileErrorText("Error opening file %s", fname));
+		printf("%s\n", fileErrorText("Error opening file %s", fpath.c_str()));
 		return false;
 	}
 	if (codelabels)
@@ -595,9 +600,10 @@ bool memoryimage_c::load_papertape(const char *fname, codelabel_map_c *codelabel
 	int block_byte_size, sum = 0, addr;
 	int stream_byte_index; // absolute index of byte in file
 
-	fin = fopen(fname, "rb");
+	std::string fpath = scriptpath_resolve(fname);
+	fin = fopen(fpath.c_str(), "rb");
 	if (!fin) {
-		printf("%s\n", fileErrorText("Error opening file %s for read", fname));
+		printf("%s\n", fileErrorText("Error opening file %s for read", fpath.c_str()));
 		return false;
 	}
 

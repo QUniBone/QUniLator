@@ -1,0 +1,85 @@
+#!/bin/sh
+# What a freshly flashed board can still be given, said at a login.
+#
+# The image is a finished appliance: two binaries, a web root and a state
+# directory. Two things a QUniBone board used to come with are not in it - the
+# source tree with the example .sh files, and the disk images the examples and
+# the web interface mount - because both are fetched rather than shipped. A
+# login says so, until they are there.
+#
+# Nothing is remembered about who has seen this: each line is decided from what
+# the board actually carries, so a hint disappears when the command that
+# answers it has been run, and comes back if what it produced is deleted again.
+#
+#   qunilator-hints          print the hints that still apply, nothing if none
+#
+# /etc/profile.d/qunilator-hints.sh runs this at an interactive login shell.
+
+set -u
+
+# The media tree, the file the package seeds it with, and where a development
+# tree records itself. Absolute, because this runs from a login rather than
+# from a checkout; packaging/tests/hints-test.sh rewrites the three to point
+# into its sandbox and fails if their names change.
+IMAGES_DIR=/var/lib/qunilator/images
+SAMPLE_IMAGE=xxdp25.rl02.dsk
+DEVKIT_ENV=/etc/qunilator/devkit.env
+DEFAULT_TREE=/root
+
+# The development tree, if this board has one. qunilator-devkit puts it in
+# /root unless it was given --dir, and records where it put it - which is what
+# is read first, because this is printed to whoever logs in and the default
+# place, /root, is root's alone to look into.
+#
+# So the record is what answers for an ordinary login: the directory it names
+# is looked at, but only entered by a login allowed to. A tree which is gone
+# is visible either way - the directory itself is not there - and the hint
+# comes back. With no record at all the default place decides, which is what a
+# root login on a board whose tree predates the record sees; the package's
+# postinst writes the record for such a board on the upgrade that brings these
+# hints, so its other logins are not told to run the devkit again.
+devkit_done() {
+    dir=$DEFAULT_TREE
+    recorded=
+    if [ -f "$DEVKIT_ENV" ]; then
+        recorded=$(sed -n 's/^DEVKIT_DIR=//p' "$DEVKIT_ENV" | tail -n 1)
+        [ -n "$recorded" ] && dir=$recorded
+    fi
+    if [ -n "$recorded" ]; then
+        [ -d "$dir" ] || return 1              # the recorded tree is gone
+        [ -x "$dir" ] || return 0              # there, but not ours to enter
+    fi
+    # qunibone-platform.env is written by qunilator-devkit and by nothing else -
+    # it is not in the repository, exactly because it describes a board - so a
+    # tree carrying one was made here rather than cloned by hand.
+    [ -f "$dir/qunibone-platform.env" ]
+}
+
+# Images in the media tree beyond the one pack the package seeds. Compressed
+# masters are what a fetch brings (every name ends .gz); a ".dsk" counts too,
+# so an operator who unpacked one or copied their own in over a file share is
+# not told to fetch. roms/ is boot ROM listings, not media.
+images_fetched() {
+    [ -d "$IMAGES_DIR" ] || return 1
+    found=$(find "$IMAGES_DIR" -path "$IMAGES_DIR/roms" -prune -o \
+        -type f \( -name '*.gz' -o -name '*.dsk' \) ! -name "$SAMPLE_IMAGE" \
+        -print 2>/dev/null | head -n 1)
+    [ -n "$found" ]
+}
+
+# Each hint is a paragraph of its own, blank line and all, so the two read as
+# two things to do rather than one sentence.
+hints=""
+devkit_done || hints="${hints}To restore the old .sh files and source code tree run the command
+'sudo qunilator-devkit'.
+
+"
+images_fetched || hints="${hints}To fetch disk images for booting: run the command 'sudo qunilator-fetch-images'.
+
+"
+
+# Silence when the board has both. A login on a board that is finished being
+# set up says nothing at all.
+[ -n "$hints" ] || exit 0
+
+printf '\n%s' "$hints"

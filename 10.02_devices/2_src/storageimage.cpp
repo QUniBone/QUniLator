@@ -106,6 +106,41 @@ static bool uncompress_gz(const std::string &gz_path, const std::string &out_pat
     return false;
 }
 
+// The image a script or the operator names may only exist compressed: the
+// example trees ship "<image>.gz" and their scripts name "<image>", because a
+// disk image is what travels in the repository and expanding it is this
+// program's job.
+//
+// The ".gz" is looked for next to the script (see scriptpath.hpp), so it may
+// sit in quite another directory than the name the script spells:
+// "../bootloaders/x.lst" finds "<script dir>/../bootloaders/x.lst". The
+// expansion therefore lands next to its own ".gz" and <fname> is updated to
+// that: writing it to the name as spelled would aim it at the directory this
+// program was started IN - a path which need not even exist - and would leave a
+// copy of every image wherever that happened to be. Next to its own ".gz" it is
+// found again on the next run.
+//
+// result: an expansion happened, and <fname> now names the expanded file
+static bool expand_gz_image(std::string &fname)
+{
+    std::string compressed_fname = scriptpath_resolve(fname + ".gz") ;
+    FILE *fz = fopen(compressed_fname.c_str(), "r") ;
+    if (!fz)
+        return false ;	// no compressed master either
+    fclose(fz) ;
+
+    std::string expanded_fname = compressed_fname.substr(0, compressed_fname.size() - 3) ;
+    printf("Only compressed image file %s found, expanding into %s ...\n",
+           compressed_fname.c_str(), expanded_fname.c_str()) ;
+    if (!uncompress_gz(compressed_fname, expanded_fname)) {
+        printf(" FAILED!\n") ;
+        return false ;
+    }
+    printf("... complete.\n") ;
+    fname = expanded_fname ;
+    return true ;
+}
+
 // http://www.cplusplus.com/doc/tutorial/files/
 
 // open a file, if possible.
@@ -140,18 +175,11 @@ bool storageimage_binfile_c::open(storagedrive_c *_drive, bool create)
         if (retries > 0) {
             // file could not be opened, neither rw nor read only
             // try to unzip, then retry opening
-            std::string compressed_image_fname = image_fname + ".gz" ;
-            if (FILE *fz = fopen(compressed_image_fname.c_str(), "r")) {
-                fclose(fz);
-                printf("Only compressed image file %s found, expanding %s ...\n",
-                       image_fname.c_str(), compressed_image_fname.c_str()) ;
-                if (!uncompress_gz(compressed_image_fname, image_fname)) {
-                    printf(" FAILED!\n") ;
-                    retries = 0 ; // not again
-                } else
-                    printf("... complete.\n") ;
-
-            } else
+            if (expand_gz_image(image_fname))
+                // the pack in the drive is now that file, so its mode is the
+                // medium's write protection
+                write_protected = medium_write_protected(image_fname) ;
+            else
                 retries = 0 ; // not again
         }
     }
@@ -457,6 +485,15 @@ bool storageimage_cow_c::open(storagedrive_c *_drive, bool create)
         return true ; // detached: ! is_open
 
     base_fd = ::open(base_fname.c_str(), O_RDONLY) ;
+    if (base_fd < 0) {
+        // only the compressed master is there? expand it and use that, before
+        // "create" would start this drive from an empty disk instead
+        std::string expanded_fname = base_fname ;
+        if (expand_gz_image(expanded_fname)) {
+            set_base(expanded_fname) ;
+            base_fd = ::open(base_fname.c_str(), O_RDONLY) ;
+        }
+    }
     if (base_fd < 0 && create) {
         // no base yet: let a "create a new disk" attach still work by starting
         // from an empty base, exactly as the plain binfile would create one
@@ -853,7 +890,9 @@ bool storageimage_memory_c::load_from_file(std::string _host_filename,
     bool result ;
     bool file_created = false ;
     try {
-        host_filename = absolute_path(&_host_filename) ;
+        // existing image next to the script, new one in the current directory
+        std::string resolved = scriptpath_resolve(_host_filename) ;
+        host_filename = absolute_path(&resolved) ;
 
         // opens image file or creates it
         int32_t file_descriptor;

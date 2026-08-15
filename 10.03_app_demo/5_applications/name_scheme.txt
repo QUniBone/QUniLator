@@ -1,0 +1,250 @@
+
+Naming of the example applications
+==================================
+
+One directory per example, one script per way of running it.
+
+
+The three trees
+---------------
+An example is either bus independent or it is not, and that decides which of
+three directories it lives in:
+
+	5_applications		runs on UniBone and on QBone
+	5_applications_u	UNIBUS only
+	5_applications_q	QBUS only
+
+qunibone-platform.sh builds the running system out of two of them: it copies
+5_applications_<u|q> over 5_applications, so an installed machine has one
+directory, "5_applications", holding the common examples plus the ones for the
+bus it is.
+
+A file belongs in the common tree when the UNIBUS and the QBUS copy are
+identical, and nowhere else.
+
+The images are in none of the three trees - see "Images" below - so a disk that
+differs between the buses needs no rule here at all: a machine has one bus, its
+media tree gets that bus's disk, and both buses call it the same thing.
+rsxm70.ra70.dsk is such a case - the UNIBUS and QBUS packs are both RSX-11M V4.8
+BL70 labelled RSXM70, and 4.4% of their blocks differ - and so is
+rsx11m_4_8_bl70.ra70.dsk. A script may therefore name one image on either bus,
+and does.
+
+
+Directories
+-----------
+<OS>.<boot medium>		rt11.rl02, unixv6.rk05, rsx11.mscp, rt11.rx01
+
+The medium is the drive the example boots from, not the controller: rl02, rk05,
+rx01, rx02, mscp. Directories without a medium hold something else: "cpu20" and
+"cpu34" the two emulated CPUs, "memory" the memory emulation, "m9312" the boot
+ROM, "unixv1" the single UNIX V1 setup.
+
+"cpu20" and "cpu34" hold the same set of examples for the two emulated CPU
+models, script for script: the same setup with "en cpu20" or "en cpu34" and the
+model named in what it prints. The exception is cpu20_zqkc.sh, which has no
+counterpart: ZQKC is the MAINDEC 11/20 family instruction exerciser and needs
+"p swab 1", a parameter the 11/20 emulation alone has. Both are UNIBUS only -
+QBone emulates no CPU - as is m9312, the M9312 being a UNIBUS boot ROM, and
+unixv1, whose RF11/RS11 disk is a UNIBUS device.
+
+Three QBUS examples run a MicroVAX II (KA630) instead of a PDP-11 and say so
+with "_uvax" in front of the medium: 43bsd_uvax.mscp, vms44_uvax.rl02,
+vms73_uvax.mscp. A MicroVAX boots from its own console ROM, so those scripts
+deposit no bootloader - they only emulate the drives.
+
+An example directory holds only what belongs to that setup alone: its scripts, a
+MACRO-11 source or program it is the only user of (serial.lst, zkma.ptap,
+ZQKC_E_05_20.abs), a SimH configuration for comparison, a note on the system it
+boots (NanoVMS044-1M.txt). What several examples share sits in a directory of
+its own beside them:
+
+	bootloaders	the bootloader and boot-ROM listings a script deposits
+
+It exists in all three trees, and the install-time copy merges them. Images are
+not among them: they live in the board's media tree, "Images" below.
+
+
+Scripts
+-------
+<OS><version>[_<pdp11-model>].<boot device><unit>.sh
+
+	rt11v5.5.dlx.sh
+	rt11v5.5_34.dlx.sh
+	xxdp22-25.dlx.sh
+
+A script is no longer a shell wrapper around a .cmd file - there is no .cmd file
+any more. The script IS the demo command file and starts with
+
+	#!/root/10.03_app_demo/4_deploy/demo --verbose
+
+so it runs as "sudo ./rt11v5.5.dlx.sh", with further options if wanted. demo
+ignores the "#!" line as it ignores any line starting with "#". A file the
+script names relatively is looked up next to the script, so no "cd" is needed:
+"../bootloaders/dl.lst", or a plain name for the one file that belongs to this
+example alone. The images are the exception and are named in full, because they
+are not in the tree: "/var/lib/qunilator/images/dl/<image>". Files the run
+creates land in the directory it was started from.
+
+<OS><version>	rt11v5.5, rsx11m4.8, unixv6, xxdp22-25, mini-unix, 211BSD,
+		vms73. A script that serves two versions names both: xxdp22-25.
+<pdp11-model>	The PDP-11 the setup is for, when it matters: _05, _20, _23,
+		_34, _44, _73, _84. Two models where the setup serves both:
+		_23_73. Omitted when the setup is model independent, and on the
+		MicroVAX examples.
+<boot device>	The DEC bootstrap mnemonic of the drive booted from, which is
+		also the name of the bootloader listing the script deposits
+		from "bootloaders":
+			dl	RL11, RLV12 / RL01, RL02	dl.lst
+			dk	RK11, RKV11 / RK05		dk.lst
+			du	MSCP (UDA50, RQDX3, RA.., RD..)	du.lst
+			dx	RX11, RXV11 / RX01		dx.lst
+			dy	RX211, RXV21 / RX02		dy.lst
+		demo names a device the same on both buses (rl, rk, uda, rx,
+		ry), so a script that mentions no image can be bus independent
+		even though the controller behind it is not the same board.
+<unit>		The drive number booted from: dl0, dl1, du0, ...
+		"x" when the script mounts several units and leaves the choice
+		to the operator: a script for a real PDP-11 cannot start the
+		CPU, it only installs the bootloader and prints the start
+		addresses (10000 for unit 0, 10010 for unit 1, ...). So
+		rt11v5.5.dlx.sh serves DL0 and DL1 and is one file, where there
+		used to be an identical rt11v5.5fb_dl0.sh and rt11v5.5sj_dl1.sh.
+
+Suffix "_shared" instead of a unit: the drive is not an image file but a shared
+host directory, exposed as a DEC filesystem (rt11v5.5_dl_shared.sh).
+
+Most scripts still carry the older form, <OS>_<boot device><unit>_<pdp11-model>
+(rsx11m4.1_dl0_34.sh, unixv6_dk0_34.sh, 211BSD_du0_44.sh); they get the name
+above when they are next revised.
+
+A script whose disk image is not available is renamed to ".sh.MISSING-IMAGE"
+and made non-executable, so it cannot be started by accident and says why in its
+name. One exists: 5_applications_q/rsx11.mscp/
+rsx11mp4.8_du0+rl_23_73.sh.MISSING-IMAGE, which mounts rsx11mp_4_8_bl70 on DU0,
+an RSX-11M-PLUS V4.8 pack that is in neither tree. Rename it back when the image
+turns up.
+
+
+Images
+------
+Images are in no tree and in no repository. They live in the board's media tree,
+/var/lib/qunilator/images, which is the one place the emulator, the web
+interface and these examples all read from, and every script names them in full:
+
+	p image /var/lib/qunilator/images/dl/rt11v5.5.rl02.dsk
+	p img   /var/lib/qunilator/images/rx/rt11v03-1.rx01.dsk  (RX drives: "p img")
+
+They used to sit next to the script that mounts them, and then in one
+"diskimages" directory per tree. Each was a second place for images beside the
+media tree the rest of the system already had, so a disk an example booted and
+the same disk offered in the web interface were two files. One tree means one
+copy, whoever mounts it.
+
+	<medium folder>/<OS><version>[_<content>][_<pdp11-model>].<medium>.dsk
+
+	dl/rt11v5.5.rl02.dsk		system disk
+	dl/rt11v5.5_games.rl02.dsk	second volume, named by content
+	dl/rt11v5.5_games_34.rl02.dsk	the same, built for a PDP-11/34
+	dl/rsx11m4.1_hlpdcl.rl02.dsk	help and DCL volume
+	dk/v6bin.rk05.dsk		UNIX V6 binaries
+	rx/rt11v03-1.rx01.dsk		RT-11 v3 distribution floppy 1
+	du/vms073.rd54.dsk		VMS 7.3 for the MicroVAX
+
+<medium folder>	One folder per medium, by DEC device mnemonic - the layout the
+		API documents and the package seeds. The medium in the name
+		decides it, so the two never disagree:
+			dk  RK05		du  MSCP: ra.., rd..
+			dl  RL01, RL02		rx  RX01, RX02
+			rf  RS11		mu  tape, and .bin
+		Folders below these are the operator's own; the web interface
+		lists a subpath, "dl/rt11v5.5.rl02.dsk", and so does the API.
+<medium>	The drive the image is mounted in, NOT the file format - the
+		format is a plain block image in every case:
+			rl02  rk05  rx01  rx02  rs11	and the MSCP drives
+			ra70  ra80  ra82  ra92  rd53  rd54
+		Where a script sets "p type", that is where the medium comes
+		from. An MSCP volume keeps the type it is mounted as even when
+		"p uis 1" takes the block count from the file, so a .ra80 image
+		may well be larger than a real RA80. rd53/rd54 are the
+		MicroVAX-era disks of the RQDX3 and appear on a QBUS
+		machine only; ra92 and rs11 on a UNIBUS one only.
+.dsk		Always last, so every image has one known extension whatever
+		the medium is, and so a name like "RTRKV4.00" - where the ".00"
+		is a version, not a medium - cannot be read as one.
+		RTRKV4.00.rk05.dsk says both.
+
+Two images of the same disk that have genuinely diverged are told apart by a
+suffix, not left as two files of the same name: mini-unix-tape1_20.rk05.dsk and
+mini-unix-tape1_05.rk05.dsk differ in 3% of their blocks and belong to the 11/20
+and the 11/05 setup respectively. Both are UNIBUS, so both sit in one media tree
+and the suffix is what keeps them apart; the per-bus disks of "The three trees"
+need none, never being on one machine.
+
+
+Where they come from
+--------------------
+tools/fetch-images.py, which the package installs on a board as
+qunilator-fetch-images, brings the images down from files.retrocmp.com and puts
+each one in its medium's folder under the name above:
+
+	sudo qunilator-fetch-images
+
+It fetches the set for the machine's bus - the common tree's images and that
+bus's - so the per-bus disks above arrive without anything having to choose
+between them by hand. A repeated run brings only what is missing.
+
+Only "<image>.dsk.gz" is fetched. When demo cannot open the image a script
+names, it looks for "<image>.gz" beside it and expands it with zcat into the
+directory it found it in (10.02_devices/2_src/storageimage.cpp) - so the
+expanded disk lands in the media tree next to its own ".gz", and every later
+run, from wherever it is started, opens it directly.
+
+Nothing here is bounded by what a repository will hold any more. The two second
+data disks that were too large for GitHub, about 300 MB each -
+rsx11mpv4.6_du1_84.ra80.dsk on UNIBUS and JH_DU1.ra70.dsk on QBUS - are fetched
+with everything else, and the notes that stood in for them are gone.
+
+mu/mini-unix-tape0.bin.dsk is the one image that is not a disk: it is the
+Mini-UNIX bootstrap tape, no script mounts it, and it kept its ".bin".
+
+
+Bootloaders
+-----------
+"bootloaders" holds one copy of each MACRO-11 listing a script deposits into
+memory, and every script reaches it the same way:
+
+	m ll ../bootloaders/dl.lst
+
+The name is the boot device code of the drive the listing boots from, so a
+script and its bootloader spell the same thing:
+
+	dl.lst		RL11, RLV12 / RL01, RL02	dy.lst	RX211, RXV21 / RX02
+	dk.lst		RK11, RKV11 / RK05		rf11.lst  RF11 / RS11 (_u)
+	du.lst		MSCP (UDA50, RQDX3)
+	dx.lst		RX11, RXV11 / RX01
+
+Each is a modified copy of the DEC M9312 boot PROM for its controller, with one
+entry address per unit: 10000 boots unit 0, 10010 unit 1, and so on. A "d"
+script cannot start a real PDP-11, so it deposits the listing, prints those
+addresses and leaves the rest to the operator.
+
+Those five listings are bus independent and live in the common tree: a
+bootloader addresses controller registers in the I/O page, which are the same on
+both buses. The QBUS copies were the UNIBUS files with CRLF line endings and
+nothing else, so one copy serves both.
+
+UNIBUS only, in 5_applications_u/bootloaders: rf11.lst, whose RF11 has no QBUS
+counterpart, and the four 23-*.lst, the original M9312 PROM listings, used by
+the m9312 emulation rather than deposited into memory:
+
+	23-248F1.lst	console / diagnostic PROM, plugged in with "p cer"
+	23-751A9.lst	'DL' boot PROM, RL11
+	23-756A9.lst	'DK/DT' boot PROM, RK03/05 and TU55/56
+	23-767A9.lst	'DU' boot PROM, MSCP
+
+Not here, because they are not bootloaders: serial.lst (a serial I/O test),
+cpu20/ZQKC_E_05_20.abs (a MAINDEC diagnostic, loaded with "m lp") and
+memory/zkma.ptap (the same, loaded with "lp"). serial.lst sits in both cpu20 and
+cpu34, the one place a file is deliberately kept twice - each directory is a
+self-contained set of examples for its CPU.

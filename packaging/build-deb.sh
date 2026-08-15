@@ -41,6 +41,29 @@ elif [ ! -d "$FRONTEND/dist" ]; then
     exit 1
 fi
 
+# What tree this package was built from. A released board finds its sources by
+# the tag of the version it carries, but between releases there is no tag, and
+# the version alone then names nothing - which is what qunilator-devkit on the
+# board falls back from. The commit does name it, so it travels in the package.
+#
+# Read here rather than in the container: the container has no git, and would
+# see the checkout through a bind mount git calls dubious ownership anyway.
+# Exported so the re-entry below carries it in.
+: "${QUNILATOR_BUILD_COMMIT:=}"
+: "${QUNILATOR_BUILD_BRANCH:=}"
+: "${QUNILATOR_BUILD_DIRTY:=0}"
+if [ -z "$QUNILATOR_BUILD_COMMIT" ] && command -v git >/dev/null 2>&1 \
+    && git rev-parse --git-dir >/dev/null 2>&1; then
+    QUNILATOR_BUILD_COMMIT=$(git rev-parse HEAD)
+    QUNILATOR_BUILD_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    # a detached head is on no branch, and "HEAD" is not a name to check out
+    if [ "$QUNILATOR_BUILD_BRANCH" = HEAD ]; then QUNILATOR_BUILD_BRANCH=; fi
+    # Uncommitted work, tracked or not: the commit is then the nearest thing to
+    # this package rather than a description of it, and saying so is the point.
+    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then QUNILATOR_BUILD_DIRTY=1; fi
+fi
+export QUNILATOR_BUILD_COMMIT QUNILATOR_BUILD_BRANCH QUNILATOR_BUILD_DIRTY
+
 # dpkg-deb, GNU find and dtc are all Debian tools, and the host is usually
 # macOS, so the packaging runs in a container. Re-enter one when the tools are
 # not here; inside, the check passes and the script continues.
@@ -60,8 +83,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 EOF
     fi
-    exec docker run --rm -v "$PWD:/qunibone" -w /qunibone $IMAGE \
-        ./packaging/build-deb.sh "$@"
+    exec docker run --rm -v "$PWD:/qunibone" -w /qunibone \
+        -e QUNILATOR_BUILD_COMMIT -e QUNILATOR_BUILD_BRANCH -e QUNILATOR_BUILD_DIRTY \
+        $IMAGE ./packaging/build-deb.sh "$@"
 fi
 
 SUFFIX=_q
@@ -113,6 +137,7 @@ install -d -m 755 $STAGE/var/lib/qunilator/images/dk \
     $STAGE/var/lib/qunilator/images/dl \
     $STAGE/var/lib/qunilator/images/du \
     $STAGE/var/lib/qunilator/images/mu \
+    $STAGE/var/lib/qunilator/images/rf \
     $STAGE/var/lib/qunilator/images/rx \
     $STAGE/var/lib/qunilator/images/roms
 # The updater's state: staged packages, the cached previous package and the
@@ -124,6 +149,23 @@ install -d -m 700 $STAGE/var/lib/qunilator/updates
 # The emulator, built for this board's bus
 install -m 755 $BINARY $STAGE/usr/bin/$NAME
 install -m 755 $BINARY_DEMO $STAGE/usr/bin/$NAME-cli
+
+# The tree those two came out of, for qunilator-devkit to check out. Shell
+# syntax, like the other files this packaging writes for programs to read.
+# BUILD_DIRTY=1 says the build had uncommitted work in it, so the commit is the
+# nearest published thing to these binaries rather than what they were built
+# from - the devkit repeats that to the operator instead of quietly checking out
+# something which is not quite what the board is running.
+cat > $STAGE/usr/share/qunilator/build-ref <<EOF
+# build-ref
+# Written by packaging/build-deb.sh: the tree this package was built from.
+
+BUILD_VERSION=$VERSION
+BUILD_COMMIT=$QUNILATOR_BUILD_COMMIT
+BUILD_BRANCH=$QUNILATOR_BUILD_BRANCH
+BUILD_DIRTY=$QUNILATOR_BUILD_DIRTY
+EOF
+chmod 644 $STAGE/usr/share/qunilator/build-ref
 # its unit, the one that names the binary
 rebrand < packaging/debian/qbone.service > $STAGE/lib/systemd/system/$NAME.service
 # the seed unit runs that binary and orders itself before that unit, so it
@@ -139,7 +181,20 @@ stage_frontend $STAGE/usr/share/qunilator/frontend
 install -m 755 packaging/debian/qunilator-network packaging/debian/qunilator-setup \
     packaging/debian/qunilator-resize packaging/debian/qunilator-announce \
     packaging/debian/qunilator-rename packaging/debian/qunilator-update \
+    packaging/debian/qunilator-devkit packaging/debian/qunilator-hints \
     packaging/debian/qunilator-usb-gadget $STAGE/usr/sbin/
+# The login hints: what this board still lacks - the source tree, the disk
+# images - said at an interactive login shell and nothing once both are there.
+# A profile snippet rather than a motd, for the reasons the file gives.
+install -d -m 755 $STAGE/etc/profile.d
+install -m 644 packaging/debian/qunilator-hints.profile \
+    $STAGE/etc/profile.d/qunilator-hints.sh
+# The sample disk images are in neither the repository nor this package - too
+# large, and not all of them ours to distribute - so the tool that fetches them
+# from retrocmp ships instead, under the name the other board commands have. It
+# needs no checkout to work: with no qunibone-platform.env or build.env to read,
+# it takes the bus from which emulator is installed here.
+install -m 755 tools/fetch-images.py $STAGE/usr/sbin/qunilator-fetch-images
 # status LEDs: a tiny standalone daemon, cross-compiled here
 arm-linux-gnueabihf-gcc -O2 -Wall -o $STAGE/usr/sbin/qunilator-leds packaging/debian/qunilator-leds.c
 install -m 644 packaging/debian/qunilator-network.service \
@@ -185,8 +240,8 @@ install -m 644 packaging/debian/default-config.json $STAGE/usr/share/qunilator/d
 # writes into a copy-on-write overlay, so the shipped file stays as it was.
 # Stored compressed in git, where it is the one binary that is not a build
 # product. It is an RL02 pack, so it goes in dl/ like every other one.
-xz -dc packaging/images/xxdp25.rl02.xz > $STAGE/var/lib/qunilator/images/dl/xxdp25.rl02
-chmod 444 $STAGE/var/lib/qunilator/images/dl/xxdp25.rl02
+xz -dc packaging/images/xxdp25.rl02.xz > $STAGE/var/lib/qunilator/images/dl/xxdp25.rl02.dsk
+chmod 444 $STAGE/var/lib/qunilator/images/dl/xxdp25.rl02.dsk
 # and the machine that boots it, as a template postinst copies in when the
 # board has no configuration of that name. Only a UNIBUS build carries the
 # processors, so that one is a whole PDP-11/20 with the ROMs to boot the pack;
@@ -275,6 +330,9 @@ INSTALLED_KB=$(du -sk $STAGE | cut -f1)
     echo "/etc/modules-load.d/bone.conf"
     echo "/etc/apt/apt.conf.d/51qunilator-unattended"
     echo "/etc/sudoers.d/qunilator-admin"
+    # a conffile so an operator who deletes it is not given it back on the
+    # next upgrade
+    echo "/etc/profile.d/qunilator-hints.sh"
 } > $STAGE/DEBIAN/conffiles
 
 cat > $STAGE/DEBIAN/preinst <<'PREINST'
@@ -356,7 +414,7 @@ if [ "$1" = configure ]; then
     install -d -m 2775 /var/lib/qunilator/images
     # the seeded media folders, re-asserted on an upgrade so a board that
     # predates one of them gets it
-    for d in dk dl du mu rx roms; do
+    for d in dk dl du mu rf rx roms; do
         install -d -m 2775 /var/lib/qunilator/images/$d || true
     done
     # The sample pack sits in dl/ with the tree's other RL packs. A board that
@@ -388,6 +446,29 @@ if [ "$1" = configure ]; then
                -e 's|images\\/xxdp25\.rl02|images\\/dl\\/xxdp25.rl02|g' \
             $cfgs/*.json $cfgs/.*.json 2>/dev/null || true
     fi
+    # The pack is xxdp25.rl02.dsk now - ".dsk" last, like every image the
+    # examples mount and the fetcher brings down - so a board carrying the older
+    # name follows it again. dpkg deletes the old file itself, it having belonged
+    # to the package; what has to be carried over is the overlay of everything
+    # written to the pack, which is named after it, and the configurations that
+    # name it. Every rewrite is anchored on the closing quote, so running this
+    # over an already-renamed configuration changes nothing.
+    if [ -e "$imgs/dl/xxdp25.rl02.ovl" ] || [ -e "$imgs/dl/xxdp25.rl02.ovl.map" ] \
+            || grep -qs 'xxdp25\.rl02"' $cfgs/*.json $cfgs/.*.json; then
+        if [ -z "$emulator_was_active" ] && [ -d /run/systemd/system ] \
+                && systemctl is-active --quiet qbone.service; then
+            emulator_was_active=yes
+            systemctl stop qbone.service || true
+        fi
+        for f in ovl ovl.map; do
+            if [ -e "$imgs/dl/xxdp25.rl02.$f" ]; then
+                mv -f "$imgs/dl/xxdp25.rl02.$f" "$imgs/dl/xxdp25.rl02.dsk.$f" || true
+            fi
+        done
+        sed -i -e 's|images/dl/xxdp25\.rl02"|images/dl/xxdp25.rl02.dsk"|g' \
+               -e 's|images\\/dl\\/xxdp25\.rl02"|images\\/dl\\/xxdp25.rl02.dsk"|g' \
+            $cfgs/*.json $cfgs/.*.json 2>/dev/null || true
+    fi
     # The tree belongs to the qunilator group and every member of it may write:
     # the service account owns the files, and the operator account the web
     # interface creates for the file shares reaches them through the group.
@@ -414,6 +495,21 @@ if [ "$1" = configure ]; then
         install -d -m 755 /var/lib/qunilator/configs
         install -m 644 /usr/share/qunilator/sample-config.json \
             /var/lib/qunilator/configs/xxdp.json || true
+    fi
+    # The login hints read /etc/qunilator/devkit.env to tell a board that has a
+    # development tree from one that has not, because /root is readable by root
+    # alone and a hint is printed to whoever logs in. A tree made before that
+    # record existed is recorded here, once, so such a board goes quiet without
+    # its operator having to run qunilator-devkit again.
+    if [ ! -e /etc/qunilator/devkit.env ] && [ -f /root/qunibone-platform.env ]; then
+        install -d -m 755 /etc/qunilator
+        cat > /etc/qunilator/devkit.env <<'DEVKITENV'
+# devkit.env
+# Written on upgrade: this board already carried a development tree in /root.
+
+DEVKIT_DIR=/root
+DEVKITENV
+        chmod 644 /etc/qunilator/devkit.env
     fi
     if [ -d /run/systemd/system ]; then
         systemctl daemon-reload || true

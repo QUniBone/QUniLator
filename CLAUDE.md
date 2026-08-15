@@ -174,6 +174,31 @@ naming the ones that do not. The last line of a run says what came out:
 
     Built UNIBUS (unibone): 10.03_app_demo/4_deploy_u/qbone-web
 
+`./compile.sh` is the same build **on the board**, out of a checkout there, and
+it installs what it built: `qbone-web` as `/usr/bin/<name>`, `demo` as
+`/usr/bin/<name>-cli` (setuid root, group `qunilator-admin`), then restarts the
+service — so it costs the running machine exactly what a deploy does. `-n`
+installs without the restart, `-N` builds only. Off a board — no
+`<name>.service` — it builds and installs nothing.
+
+`sudo qunilator-devkit` is what puts that checkout on a flashed board: build
+prerequisites (including the TI PRU tools, without which no build on the board
+can produce PRU firmware), the repository fetched into `/root` at the sources
+the installed package was built from, `qunibone-platform.env` written for the board's
+bus, and `qunibone-platform.sh` run — which merges `5_applications_u|_q` into
+`10.03_app_demo/5_applications`, links `4_deploy`, and puts a shortcut to every
+example in the tree's root. `packaging/tests/devkit-test.sh` exercises all of
+that against a stubbed board, so it needs neither hardware nor root.
+
+Which sources those are is decided in this order: the tag of the installed
+version, for a released board; otherwise the commit recorded in
+`/usr/share/qunilator/build-ref`, which `packaging/build-deb.sh` writes from the
+tree it packaged; otherwise the branch that build was on; otherwise the default
+branch, which is a guess. Every step but the first two says so, because past
+them the tree is not what `/usr/bin/<name>` was built from. A commit that was
+never pushed cannot be fetched by hash — `upload-pack: not our ref` — which is
+what the fallbacks are for.
+
 ## Deploying to the board
 
 `./crossbuild.sh -d` sends the build to `QUNILATOR_HOST`. In `appliance` mode —

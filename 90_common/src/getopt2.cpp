@@ -337,29 +337,29 @@ int getopt_c::next() {
 		cur_option = &nonoption_descr;
 
 	// find the arg at wich to stop parsing args for this option
-	// in case of nonoption-args: end of cmdlineor
+	// in case of nonoption-args: the next -option, or end of cmdline.
+	//	So -options may follow the non-option args, as in
+	//	"cmd nonopt0 -option": needed for use as "#!" script interpreter,
+	//	where the kernel puts the script name before the user's options.
 	// else for options:
-	//	it's either the next -option,
+	//	if the arg count is fixed, it's exactly that count. Non-option args
+	//	may then follow the option's args, as in "cmd -option arg nonopt0".
+	//  else it's the next -option,
 	//  or if no -option: collision with trailing non-option args.
-	//	   if no variable: amount of fix args
-	//		else: line end. So in case
 	//		-option fix0 fix1 var0 var 1 nonopt0 nonopt1
 	//			all also nonopt0/1 is read, resulting in an error
 	//			this is intended to force unambiguous syntax declaration!
-	if (cur_option == &nonoption_descr)
-		max_scan_arg_count = INT_MAX;
-	else {
+	if (cur_option == &nonoption_descr || cur_option->fix_arg_count != cur_option->max_arg_count) {
 		// search next -option
 		i = cur_cline_arg_idx;
 		while (i < cline_argcount && get_dashed_option_name(cline_args[i]).empty())
 			i++;
 		if (i < cline_argcount) // terminating -option found
 			max_scan_arg_count = i - cur_cline_arg_idx;
-		else if (cur_option->fix_arg_count == cur_option->max_arg_count)
-			max_scan_arg_count = cur_option->fix_arg_count;
 		else
 			max_scan_arg_count = INT_MAX;
-	}
+	} else
+		max_scan_arg_count = cur_option->fix_arg_count;
 
 	// option (or rest of cline) valid, parse args
 	// parse until
@@ -413,6 +413,21 @@ int getopt_c::first(int argc, char **argv) {
 	// 3) append user commandline tokens, so they are processed after defaults
 	for (i = 1; i < argc; i++) { // skip program name of
 		std::string arg(argv[i]); // convert char * to std::string
+		// Linux passes everything behind the interpreter on a "#!" script line
+		// as a single argument, so "#!/path/prog -a -b" arrives as argv[1]
+		// "-a -b". Split such a bundle into separate options. Only argv[1] can
+		// come from a "#!" line, and only when it starts with a dash: argument
+		// values and filenames (which may contain spaces) are never touched.
+		if (i == 1 && !get_dashed_option_name(arg).empty()
+				&& arg.find_first_of(" \t") != std::string::npos) {
+			std::stringstream ss(arg);
+			std::string token;
+			while (ss >> token) {
+				cline_args.push_back(token);
+				cline_argcount++;
+			}
+			continue;
+		}
 		cline_args.push_back(arg);
 		cline_argcount++;
 	}

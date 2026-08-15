@@ -1,0 +1,372 @@
+#!/bin/sh
+# Turn an appliance board into a development board: the source tree under
+# /root, buildable there, with the example scripts of 10.03_app_demo in place
+# and a shortcut to each of them in /root itself.
+#
+# The board an image flashes is a finished appliance - two binaries, a web root
+# and a state directory - and carries no sources at all. This puts them back,
+# which is what the original QUniBone board looked like: a checkout in /root,
+# ./compile.sh building it there, and "sudo ./rt11v5.5_dl_shared.sh" starting a
+# machine from the home directory.
+#
+# What it does, in order, and all of it may be run again:
+#   1. installs what a build needs (compiler, headers, the TI PRU tools)
+#   2. puts the repository into /root, at the sources the installed emulator
+#      was built from: the tag of its version when that version was released,
+#      otherwise the commit the package records (see BUILD_REF_FILE below)
+#   3. writes qunibone-platform.env for the bus this board bridges
+#   4. runs qunibone-platform.sh, which merges the bus-specific examples into
+#      10.03_app_demo/5_applications, links 4_deploy, makes every *.sh
+#      executable and creates the shortcuts
+#
+# The disk images the examples mount are NOT in the repository - they are too
+# large and not all of them are ours to distribute. "qunilator-fetch-images"
+# brings them into /var/lib/qunilator/images, which is where the examples name
+# them; the emulator expands an "<image>.gz" by itself once one is there.
+#
+# usage:
+#   qunilator-devkit                  install everything, from the default source
+#   qunilator-devkit --branch main    check out a branch or tag of your choosing
+#   qunilator-devkit --url <url>      clone from somewhere else
+#   qunilator-devkit --dir <path>     put the tree somewhere other than /root
+#   qunilator-devkit --no-apt         install nothing, only populate the tree
+
+set -eu
+
+URL=https://github.com/QUniBone/QUniLator
+REF=
+DIR=/root
+DO_APT=1
+
+# Where the board's own configuration lives. A finished run records the tree it
+# made here, which is what the login hints read to stop offering this command.
+ETC_DIR=/etc/qunilator
+
+# What the package says about the tree it was built from: BUILD_COMMIT,
+# BUILD_BRANCH and BUILD_DIRTY, written by packaging/build-deb.sh. A released
+# board does not need it - the version names a tag - but a board running a build
+# from between releases has no tag to find, and this is what stops the checkout
+# falling back to a default branch which may be nowhere near its sources.
+BUILD_REF_FILE=/usr/share/qunilator/build-ref
+
+# The PRU code generation tools, pinned to the version the shipped firmware is
+# built with (see crossbuild.sh). PRU_CGT_DIR is where the makefiles look:
+# 10.01_base/2_src/pru*/Makefile calls $PRU_CGT/bin/clpru and $PRU_CGT/bin/hexpru.
+PRU_CGT_VERSION=2.3.1
+PRU_CGT_DIR=/usr/share/ti/cgt-pru
+PRU_CGT_INSTALLER=ti_cgt_pru_${PRU_CGT_VERSION}_armlinuxa8hf_busybox_installer.sh
+PRU_CGT_URL=https://software-dl.ti.com/codegen/esd/cgt_public_sw/PRU/${PRU_CGT_VERSION}/${PRU_CGT_INSTALLER}
+
+# What a build of the emulator needs beyond the appliance's own dependencies:
+# the C++ compiler and make, the Sun RPC library the blinkenlight API client
+# speaks (glibc dropped it), X11 for the VCB01 window, and git to fetch this.
+BUILD_PACKAGES="git build-essential libtirpc-dev libx11-dev"
+
+say() { echo "qunilator-devkit: $*"; }
+die() { echo "qunilator-devkit: $*" >&2; exit 1; }
+
+usage() {
+    sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --url)    [ $# -ge 2 ] || die "--url needs an argument";    URL=$2; shift 2 ;;
+        --branch) [ $# -ge 2 ] || die "--branch needs an argument"; REF=$2; shift 2 ;;
+        --dir)    [ $# -ge 2 ] || die "--dir needs an argument";    DIR=$2; shift 2 ;;
+        --no-apt) DO_APT=0; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "qunilator-devkit: unknown option \"$1\"" >&2; usage >&2; exit 1 ;;
+    esac
+done
+
+[ "$(id -u)" = 0 ] || die "run this as root: sudo qunilator-devkit"
+
+# ---------------------------------------------------------------- identity ----
+# Which board this is decides the bus the tree is built for and the names the
+# binaries are installed under. Same resolution the other qunilator-* tools use:
+# the emulator package that is installed.
+PKG=
+for p in qbone unibone; do
+    if dpkg-query -W -f '${Status}' "$p" 2>/dev/null | grep -q 'install ok installed'; then
+        PKG=$p
+        break
+    fi
+done
+[ -n "$PKG" ] || die "no emulator package is installed, so this is not a board"
+
+if [ "$PKG" = unibone ]; then
+    PLATFORM=UNIBUS; SUFFIX=_u
+else
+    PLATFORM=QBUS;   SUFFIX=_q
+fi
+VERSION=$(dpkg-query -W -f '${Version}' "$PKG")
+say "$PKG $VERSION, a $PLATFORM board"
+
+# ----------------------------------------------------------- prerequisites ----
+install_pru_cgt() {
+    # already there, in either of the two shapes the tools come in
+    [ -x "$PRU_CGT_DIR/bin/clpru" ] && return 0
+
+    # A Debian package puts the compiler in /usr/bin and the rest of the
+    # toolchain under /usr/share/ti/cgt-pru; the makefiles want both under one
+    # root, so that directory gets a "bin" pointing at /usr/bin.
+    if command -v clpru >/dev/null 2>&1; then
+        mkdir -p "$PRU_CGT_DIR"
+        ln -sfn /usr/bin "$PRU_CGT_DIR/bin"
+        [ -x "$PRU_CGT_DIR/bin/clpru" ] && return 0
+    fi
+
+    # ti-pru-cgt-v2.3 is what the appliance image carries and what the board's
+    # own clpru has always come from; the other two are what the BeagleBoard
+    # repositories have called the same thing over the years.
+    for pkg in ti-pru-cgt-v2.3 ti-pru-cgt-installer ti-cgt-pru; do
+        if apt-get install -y "$pkg" >/dev/null 2>&1; then
+            say "installed $pkg"
+            if [ ! -x "$PRU_CGT_DIR/bin/clpru" ] && command -v clpru >/dev/null 2>&1; then
+                mkdir -p "$PRU_CGT_DIR"
+                ln -sfn /usr/bin "$PRU_CGT_DIR/bin"
+            fi
+            [ -x "$PRU_CGT_DIR/bin/clpru" ] && return 0
+        fi
+    done
+
+    # Nothing in this board's repositories: take the version the shipped
+    # firmware was built with, straight from TI.
+    say "no PRU tools in apt, fetching $PRU_CGT_INSTALLER from TI"
+    tmp=$(mktemp -d)
+    if ! curl --fail -sSL -o "$tmp/$PRU_CGT_INSTALLER" "$PRU_CGT_URL"; then
+        rm -rf "$tmp"
+        return 1
+    fi
+    chmod +x "$tmp/$PRU_CGT_INSTALLER"
+    ( cd "$tmp" && ./"$PRU_CGT_INSTALLER" --prefix /opt/ti --mode unattended >/dev/null )
+    rm -rf "$tmp"
+    if [ -x "/opt/ti/ti-cgt-pru_$PRU_CGT_VERSION/bin/clpru" ]; then
+        mkdir -p "$(dirname "$PRU_CGT_DIR")"
+        ln -sfn "/opt/ti/ti-cgt-pru_$PRU_CGT_VERSION" "$PRU_CGT_DIR"
+    fi
+    [ -x "$PRU_CGT_DIR/bin/clpru" ]
+}
+
+if [ "$DO_APT" = 1 ]; then
+    say "installing what a build needs ..."
+    export DEBIAN_FRONTEND=noninteractive
+    # Neither of these is allowed to end the run: a board carrying a repository
+    # which is broken, mid-sync or simply unreachable can still have everything
+    # a build needs, and the check below is what actually decides. An install
+    # which did not happen shows up there, by name.
+    apt-get -o DPkg::Lock::Timeout=300 -qq update \
+        || say "apt-get update did not complete; using the index this board has"
+    # shellcheck disable=SC2086
+    apt-get -o DPkg::Lock::Timeout=300 -o Dpkg::Options::=--force-confold \
+        -qq install -y $BUILD_PACKAGES \
+        || say "apt-get install did not complete; checking what is here anyway"
+    install_pru_cgt || die "could not install the TI PRU code generation tools.
+Install them by hand so that $PRU_CGT_DIR/bin/clpru exists - the download page is
+https://www.ti.com/tool/PRU-CGT - then run this again with --no-apt."
+fi
+
+# The build needs all of these, whether this run installed them or a previous
+# one did. Said now rather than fifty source files into the compile.
+for tool in git gcc make; do
+    command -v "$tool" >/dev/null 2>&1 || die "$tool is missing; run without --no-apt"
+done
+[ -x "$PRU_CGT_DIR/bin/clpru" ] && [ -x "$PRU_CGT_DIR/bin/hexpru" ] \
+    || die "no PRU compiler at $PRU_CGT_DIR/bin; run without --no-apt"
+
+# ------------------------------------------------------------------- clone ----
+# /root is never empty - the shell's dotfiles live there - so this is a fetch
+# into a repository created in place rather than a "git clone <url> /root",
+# which refuses a directory with anything in it. Files which belong to no
+# checkout are left alone.
+mkdir -p "$DIR"
+if [ ! -d "$DIR/.git" ]; then
+    say "creating the repository in $DIR"
+    git init -q "$DIR"
+fi
+if git -C "$DIR" remote | grep -qx origin; then
+    git -C "$DIR" remote set-url origin "$URL"
+else
+    git -C "$DIR" remote add origin "$URL"
+fi
+
+say "fetching from $URL ..."
+git -C "$DIR" fetch -q --tags origin
+
+# Is a commit here, or can the server be made to send it? The fetch above brings
+# every branch, so a commit on one of them is already in the object store. One
+# on none of them - a build from a branch since deleted, a pull request head -
+# is asked for by hash, which a server allows for anything a published ref leads
+# to and refuses otherwise ("upload-pack: not our ref"). A commit which never
+# left the machine that built the package is in that second class, and no
+# arrangement of this can conjure it: hence the fallbacks below.
+commit_available() {
+    if git -C "$DIR" rev-parse -q --verify "$1^{commit}" >/dev/null 2>&1; then
+        return 0
+    fi
+    git -C "$DIR" fetch -q origin "$1" >/dev/null 2>&1 || return 1
+    git -C "$DIR" rev-parse -q --verify "$1^{commit}" >/dev/null 2>&1
+}
+
+# a hash an operator can read out loud, and still paste into "git show"
+short() { printf %.12s "$1"; }
+
+if [ -z "$REF" ]; then
+    # Which tree matches the binaries this board runs, in the order the answers
+    # get worse. Only the first two are the sources /usr/bin/$PKG was built
+    # from; past them the tree is a near relation, and an operator about to run
+    # ./compile.sh over it has to be told which one this is.
+    #
+    #   1. the release tag, for a board running a released version
+    #   2. the commit the package records, for a build between releases
+    #   3. the branch it was built on, if that commit is not on the server
+    #   4. the default branch, which is a guess and may be far behind
+    tag="v${VERSION%%-*}"
+    BUILD_COMMIT=; BUILD_BRANCH=; BUILD_DIRTY=0
+    if [ -f "$BUILD_REF_FILE" ]; then
+        # shellcheck source=/dev/null
+        . "$BUILD_REF_FILE"
+    fi
+
+    if git -C "$DIR" rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+        REF=$tag
+        say "checking out $REF, the release this board runs"
+    elif [ -n "$BUILD_COMMIT" ] && commit_available "$BUILD_COMMIT"; then
+        REF=$BUILD_COMMIT
+        say "no tag $tag published; checking out $(short "$REF"), the commit this"
+        say "board's package was built from"
+        if [ "$BUILD_DIRTY" = 1 ]; then
+            say "note: that package was built from a modified tree, so its sources"
+            say "note: are that commit plus changes which were never committed"
+        fi
+    else
+        if [ -n "$BUILD_COMMIT" ]; then
+            say "note: commit $(short "$BUILD_COMMIT"), which this board's package"
+            say "note: was built from, is not on $URL - it was never pushed there,"
+            say "note: or it has since been removed"
+        fi
+        if [ -n "$BUILD_BRANCH" ] \
+            && git -C "$DIR" rev-parse -q --verify "refs/remotes/origin/$BUILD_BRANCH" >/dev/null
+        then
+            REF=$BUILD_BRANCH
+            say "no tag $tag published; checking out the $REF branch, which this"
+            say "board's package was built on - its tip now, which is not the same"
+            say "thing as what the board is running"
+        else
+            git -C "$DIR" remote set-head -a origin >/dev/null 2>&1 || true
+            REF=$(git -C "$DIR" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null \
+                | sed 's|^origin/||')
+            [ -n "$REF" ] || die "cannot tell which branch to check out; name one with --branch"
+            say "no tag $tag published; checking out the $REF branch instead, which"
+            say "is a guess at this board's sources and may be a long way from them"
+        fi
+    fi
+fi
+
+# A tag is checked out detached, a branch as a branch which tracks the remote,
+# so a later "git pull" in the tree does what it looks like it does.
+if git -C "$DIR" rev-parse -q --verify "refs/tags/$REF" >/dev/null; then
+    git -C "$DIR" checkout -f -q --detach "refs/tags/$REF"
+elif git -C "$DIR" rev-parse -q --verify "refs/remotes/origin/$REF" >/dev/null; then
+    git -C "$DIR" checkout -f -q -B "$REF" "origin/$REF"
+else
+    git -C "$DIR" checkout -f -q --detach "$REF"
+fi
+
+# ------------------------------------------------------------ personalizing ---
+# Does this tree carry the example machines at all? The ref is chosen by the
+# version of the emulator installed, so a board running a release that was never
+# tagged lands on the default branch - which can be a long way behind, and older
+# trees keep no examples in the repository. Worth saying here, in one line: the
+# personalization that follows can only report it as a copy that found nothing.
+HAVE_EXAMPLES=1
+if [ ! -d "$DIR/10.03_app_demo/5_applications" ] \
+    && [ ! -d "$DIR/10.03_app_demo/5_applications$SUFFIX" ]; then
+    HAVE_EXAMPLES=0
+    say "note: $REF carries no example machines under 10.03_app_demo, so this run"
+    say "note: installs none. \"--branch <name>\" checks out a ref that has them."
+fi
+
+# The one file that says which hardware this tree is built for. It is not in the
+# repository, exactly because it describes a board rather than the software.
+say "writing qunibone-platform.env for $PLATFORM"
+cat > "$DIR/qunibone-platform.env" <<EOF
+# qunibone-platform.env
+# Written by qunilator-devkit for this board: $PKG, $PLATFORM.
+# Bound to specific hardware, not part of the repository.
+
+QUNILATOR_PLATFORM_SUFFIX=$SUFFIX
+QUNILATOR_PLATFORM=$PLATFORM
+EOF
+
+# Run it from inside the tree, and with HOME naming the tree as well. The tree
+# checked out is the one matching the emulator this board runs, which is older
+# than this command and may be a good deal older: a released qunibone-platform.sh
+# resolves qunibone-platform.env against the *current* directory and the example
+# trees against $HOME, neither of which is the checkout when the command was
+# typed from somewhere else. Both are set here, so any version of the script
+# works on the tree that was just fetched rather than on wherever the operator
+# happened to be standing.
+chmod +x "$DIR/qunibone-platform.sh"
+( cd "$DIR" && HOME=$DIR ./qunibone-platform.sh )
+
+# Where the tree went. The login hints look for it there rather than guessing
+# /root, which is only the default, and go quiet once they find it.
+mkdir -p "$ETC_DIR"
+cat > "$ETC_DIR/devkit.env" <<EOF
+# devkit.env
+# Written by qunilator-devkit: the development tree this board carries.
+
+DEVKIT_DIR=$DIR
+DEVKIT_REF=$REF
+EOF
+
+tree_version=$("$DIR/packaging/version.sh" 2>/dev/null || echo "")
+if [ -n "$tree_version" ] && [ "$tree_version" != "$VERSION" ]; then
+    say "note: the tree is version $tree_version, the installed package is $VERSION"
+fi
+
+cat <<EOF
+
+The development tree is in $DIR.
+
+  cd $DIR && ./compile.sh
+
+builds it, and installs what it built as /usr/bin/$PKG and /usr/bin/$PKG-cli,
+restarting the service - which takes the emulated machine down with it. "-n"
+installs without the restart, "-N" builds without installing.
+EOF
+
+if [ "$HAVE_EXAMPLES" = 1 ]; then
+cat <<EOF
+
+The examples are in $DIR/10.03_app_demo/5_applications, with a shortcut to each
+in $DIR. Each one is executable and names the emulator on its "#!" line:
+
+  sudo $DIR/<example>.sh
+
+The service hands the board over for the length of that session and takes it
+back when it ends, so nothing has to be stopped first. The machine it rebuilds
+afterwards is switched off, because what a menu session leaves behind is not
+something to start a machine on.
+EOF
+else
+cat <<EOF
+
+There are no example machines in this tree: $REF predates them, so there is no
+10.03_app_demo/5_applications and no shortcuts beside the sources. Everything
+builds all the same. Running this again with "--branch <name>", on a ref that
+carries the examples, installs them and their shortcuts.
+EOF
+fi
+
+cat <<EOF
+
+The disk images are not in the repository. Fetch them with
+
+  sudo qunilator-fetch-images
+
+which brings this board's set into /var/lib/qunilator/images, where the
+examples mount them from and the web interface lists them.
+EOF

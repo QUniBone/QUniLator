@@ -75,12 +75,29 @@ jobs:
         # stubbed apt/dpkg/systemd.
         run: ./packaging/tests/updater-test.sh
 
+      - name: Run the devkit against a fake board
+        # The source-tree install: fetching into a /root which is not empty, the
+        # bus-specific examples merged into one tree, and a shortcut for each
+        # example which resolves - none of which needs a board to check.
+        run: ./packaging/tests/devkit-test.sh
+
+      - name: Run the login hints against a fake board
+        # What a login says a board still lacks, and - the part worth a test -
+        # when it stops saying it: a development tree, images in the media tree
+        # beyond the pack the package seeds, and a tree recorded in a place
+        # this login may not look into.
+        run: ./packaging/tests/hints-test.sh
+
       - name: Check the shell tools parse
         run: |
           for s in packaging/version.sh packaging/build-deb.sh \
                    packaging/tests/updater-test.sh \
                    packaging/tests/updater-sandbox.sh \
+                   packaging/tests/devkit-test.sh \
+                   packaging/tests/hints-test.sh \
                    packaging/debian/qunilator-update \
+                   packaging/debian/qunilator-devkit \
+                   packaging/debian/qunilator-hints \
                    packaging/debian/qunilator-network \
                    packaging/debian/qunilator-setup \
                    packaging/debian/qunilator-resize \

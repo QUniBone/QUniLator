@@ -14,8 +14,11 @@ Most of the work is done and scattered across three places.
 `packaging/build-deb.sh` produces a complete `qbone_*_armhf.deb`: a static
 `/usr/bin/qbone` with the PRU firmware inside it, the frontend under
 `/usr/share/qunilator/frontend`, both cape overlays in `/lib/firmware`, the
-modprobe and modules-load drop-ins, two systemd units, and empty state
-directories under `/var/lib/qunilator`.
+modprobe and modules-load drop-ins, two systemd units, empty state directories
+under `/var/lib/qunilator`, and `/usr/share/qunilator/build-ref` - the commit,
+branch and clean-or-not state of the tree it was built from, which is how
+`qunilator-devkit` finds the sources of a board running a build with no release
+tag to its name.
 
 `packaging/debian/qunilator-setup` performs the whole board-side procedure:
 rewrites `/boot/uEnv.txt`, checks the hardware, bridges the uplink with an
@@ -94,6 +97,51 @@ The disk images left this repository in commit `a11c388` and live at
 `files.retrocmp.com/qunibone/`. Runtime expects them in
 `/var/lib/qunilator/images`, registered through the web interface, each paired
 with the `.cmd` script that boots it.
+
+**The scripts came back, the images did not.** `10.03_app_demo/5_applications`
+holds one executable command file per example machine again, for both buses, and
+`qunilator-devkit` puts them on a card. So the decision below is still open, and
+it is now only about the images.
+
+**`qunilator-fetch-images` fetches them in the meantime**, from the example tree
+at `files.retrocmp.com/qunibone/10.03_app_demo/`. `tools/fetch-images.py` in the
+repository, and the package installs it in `/usr/sbin` beside the other board
+commands, because a board that never gets a checkout needs the images just as
+much. Nothing about it assumes a repository: with no `qunibone-platform.env` and
+no `build.env` to read, the bus comes from which emulator is installed.
+
+    sudo qunilator-fetch-images
+
+**There is one place images live: `/var/lib/qunilator/images`**, the media tree
+the web interface already serves, a folder per medium by DEC device mnemonic.
+The examples name that path in full and mount exactly what the interface lists;
+they used to carry a `diskimages/` directory of their own per tree, which meant
+a disk an example booted and the same disk offered in the interface were two
+files. There is no second location left to keep in step.
+
+The tool takes one bus's set: `5_applications` plus `5_applications_u` or `_q`,
+the same pair `qunibone-platform.sh` merges, unless `--bus` says otherwise. That
+is not only about size - both bus trees carry an `rsx11m_4_8_bl70` and they are
+different disks, but a machine has one bus, so its media tree takes one of them
+under the plain name. 68 images and 0.4 GB for UNIBUS, 56 and 0.5 GB for QBUS,
+each filed by medium.
+
+The names on the server are not the ones the command files mount - the same kind
+of image is variously `.dsk.gz`, `.img.gz`, `.rk.gz` or `.RL2.gz`, and a few
+appear in two directories - so each file is matched against a catalogue in the
+script and written as `<medium>/<software>.<disktype>.dsk.gz`. A run is
+idempotent: a file already present with the length the server reports is left
+alone, so an interrupted fetch resumes, and identical copies of one image are
+fetched once.
+
+Two images that could not be in the repository at all are ordinary downloads
+here: `rsx11mpv4.6_du1_84.ra80` and `JH_DU1.ra70`, around 300 MB each, were over
+GitHub's limit for a single file and had a note standing in for them. A limit on
+what a repository holds says nothing about what a board may fetch.
+
+That is a downloader, which takes some of the new code out of option C below,
+but it is a command line on the board and not a catalogue the web interface can
+offer.
 
 **A. Baked into the image.** Simplest, and it makes every download carry
 every sample whether or not it is wanted. It also welds the samples to the
