@@ -155,7 +155,20 @@ typedef struct {
 
 	uint8_t	ifs_intr_arbitration_pending ; // produce GRANTS from requests
 
-	uint8_t _dummy[2];	// keep 32 bit borders
+	// BR4-7 request-line state, bits as PRIORITY_ARBITRATION_BIT_*, written
+	// by the PRU on every pass of sm_arb_worker_cpu() from the same latch
+	// read that pass grants from. The ARM's unibone_grant_interrupts() reads
+	// it to skip the ARM2PRU_ARB_GRANT_INTR_REQUESTS round trip when no
+	// grantable request is standing - which is almost every instruction. It
+	// is stale by at most one arbitration pass, and only in the safe
+	// direction: a request raised after the ARM's read is granted at the
+	// next instruction boundary, exactly as one raised just after an
+	// arbitration pass always was. sm_arb_reset() parks it at "all four
+	// requesting", which sends the ARM down the slow path until the first
+	// real pass writes the truth.
+	uint8_t ifs_intr_request_mask;
+
+	uint8_t _dummy[1];	// keep 32 bit borders
 
 } mailbox_arbitrator_t;
 

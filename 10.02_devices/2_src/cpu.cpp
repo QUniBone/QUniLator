@@ -86,6 +86,30 @@ void unibone_logdump(void)
 // (PRU implementation may limit NPR GRANTs also to this time)
 void unibone_grant_interrupts(void)
 {
+    // Fast path: ifs_intr_request_mask is the BR4-7 request-line state, kept
+    // in the mailbox by the PRU's arbitration pass (see mailbox.h). When no
+    // device is requesting, or every standing request is masked by the CPU's
+    // priority level, the grant window below would grant nothing - skip the
+    // round trip, which otherwise costs most of an emulated instruction.
+    // The predicate mirrors sm_arb_worker_cpu(): grant only a request above
+    // ifs_priority_level, and none while the level is
+    // CPU_PRIORITY_LEVEL_FETCHING (>= 8 here). Both fields are written by
+    // this thread or by the PRU toward "less grantable" only, so a skip is
+    // always a pass the PRU would have refused too; a request or a level
+    // drop arriving after the read is caught at the next instruction
+    // boundary, as it always was when it arrived after the arbitration pass.
+    uint8_t intr_requests = mailbox->arbitrator.ifs_intr_request_mask
+                            & PRIORITY_ARBITRATION_INTR_MASK;
+    if (intr_requests == 0)
+        return;
+    uint8_t level = mailbox->arbitrator.ifs_priority_level;
+    if (level >= 4) {
+        // bit 0 = BR4: above level 7 (and FETCHING) nothing is grantable,
+        // at 4..6 only the bits above the level are
+        if (level >= 7 || (intr_requests >> (level - 3)) == 0)
+            return;
+    }
+
     // after that the CPU should check for received INTR vectors
     // in its microcode service() step.c
     // allow PRU do to produce GRANT for device requests
