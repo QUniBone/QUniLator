@@ -474,7 +474,7 @@ infrastructure already in place (`cpu_access_profile_note`,
 cores, in the per-instruction engine round trips.
 
 
-### 3.1 One PRU round trip per instruction for interrupt granting
+### 3.1 One PRU round trip per instruction for interrupt granting — FIXED in 5f6a1f0
 `cpu.cpp:87-105` — `unibone_grant_interrupts()` runs before **every** opcode
 fetch (`kd11ea_condstep`/`ka11_condstep`) and costs a full
 `mailbox_execute(ARM2PRU_ARB_GRANT_INTR_REQUESTS)` plus a spin on
@@ -487,6 +487,44 @@ byte in the mailbox (it already sees the request lines every loop); the ARM
 then reads one uncached byte and skips the whole round trip in the common
 no-interrupt case. That is the single biggest speedup available to the
 emulated processors.
+
+Done as proposed. `sm_arb_worker_cpu()` publishes the BR4-7 request-line
+state into a new mailbox byte, `ifs_intr_request_mask`, from the same latch
+read it grants from; `unibone_grant_interrupts()` reads that one uncached
+byte and takes the round trip only when a standing request could actually
+be granted. One refinement beyond the proposal: the ARM also mirrors the
+PRU's grant predicate against `ifs_priority_level`, so a standing request
+the CPU's priority masks — an interrupt handler running at or above the
+request's level, or the FETCHING window between vector and PSW fetch —
+skips the round trip too, instead of paying it every instruction for a
+grant the PRU would refuse. A skipped pass is therefore always one the PRU
+would have refused: the mask is stale by at most one arbitration pass, and
+only toward "fewer grants" — a request raised after the ARM's read is
+granted at the next instruction boundary, exactly as one raised just after
+the arbitration pass always was. `sm_arb_reset()` parks the mask at "all
+four requesting", which keeps the ARM on the slow path until the first real
+pass writes the truth. Both PRU trees carry the store, so the shared struct
+means the same thing on either bus.
+
+Measured on ubx (UniBone, emulated CPU20, non-PMI), A/B against the
+unpatched binary on the same board and configuration:
+
+| workload | before | after |
+|---|---|---|
+| branch-to-self loop | 117k instr/s | 871k instr/s (7.4×) |
+| XXDP monitor idle | 92k instr/s | 290k instr/s (3.1×) |
+
+PMI made no measurable difference on the tight loop either side, which
+confirms the grant round trip — not memory access — was the per-instruction
+ceiling. Interrupt delivery verified live: XXDP boots from RL and serves a
+directory listing, and a DL11 transmit-interrupt storm (ISR writes XBUF and
+counts into memory) sustains ~600 vectors/s through the new path,
+exercising request → grant → vector → FETCHING → RTI continuously,
+priority filter included. One measurement caveat for whoever repeats this:
+the xxdp configuration autoboots and keeps the RL DMAing well past the
+first prompt, so an "idle" `cycle_count` sample taken too early catches the
+boot tail and reads several times low — wait for `/api/debug/pru` to show
+the dma events near zero first.
 
 ### 3.2 The CPU bus-access spin loop contends on the global request mutex
 `qunibusadapter.cpp:822-851`: while the PRU performs a single-word CPU access,
