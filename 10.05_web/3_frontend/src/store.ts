@@ -80,8 +80,10 @@ export const store: Store = {
   notice: '',
   bus: { halted: false, init: false },
   hw: {
-    dcok: true,
-    pok: true,
+    // unknown until a state frame says otherwise: a page that has not heard
+    // from the board has not measured anything
+    dcok: null,
+    pok: null,
     // the live board (pre-deploy) never sends `powered`; default on so the
     // machine reads powered-up until a dc_off arrives
     powered: true,

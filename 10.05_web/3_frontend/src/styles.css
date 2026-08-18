@@ -232,6 +232,10 @@ button { font: inherit; color: inherit; }
   font-family: var(--font-mono); font-size: var(--fs-0);
   color: var(--ink-muted); white-space: nowrap;
 }
+/* A pill whose signal is not being measured: dimmed, and carrying a question
+   mark, so the state reads as unknown at a glance and not only on hover. */
+.pill.unknown { opacity: .65; }
+.pill .pill-q { font-weight: 700; }
 /* A chip is one word of state, so it keeps its shape: a hyphenated label like
    READ-ONLY reads as two chips when it wraps. */
 .chip {
@@ -386,6 +390,15 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
      lamps do) rather than a hot dot in a ring, and a wider, gentler halo */
   background: radial-gradient(circle at 50% 41%, var(--lens-core) 0%, var(--lens) 78%);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18), 0 0 8px 0 var(--lens-glow);
+}
+/* A lamp for something nobody is measuring: an empty seat, not a dark lens.
+   A dark lens is a reading — the lamp is out — and this is the absence of one,
+   so it is drawn hollow and cannot be mistaken for either state. */
+.led.unknown {
+  background: none;
+  box-shadow: none;
+  border: 1px dashed var(--ink-muted);
+  opacity: .7;
 }
 
 /* ---- PDP-11/03 control panel ---- the run-state and power controls on the

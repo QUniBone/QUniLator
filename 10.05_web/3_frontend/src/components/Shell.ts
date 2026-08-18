@@ -58,6 +58,40 @@ function Sidebar({ active }: { active: string }) {
   </aside>`;
 }
 
+/* One of the backplane's two power signals, as the board read it off the bus.
+ *
+ * These are bus lines, not the machine's power switch: a supply drives them and
+ * the board reads them, the emulated processor and the emulated cards never
+ * touch them, and switching the machine off in this interface leaves them where
+ * the backplane holds them. So the pill says what was measured and the hover
+ * says what that means — including the third answer, that nothing is reading
+ * the bus and the signal's state is therefore not known.
+ */
+const SIGNAL_INFO: Record<string, Record<string, string>> = {
+  DCOK: {
+    what: 'BDCOK, the backplane signal that says the DC supply is good. Measured on the bus — it is not the machine’s power switch.',
+    asserted: 'Asserted: DC power on the backplane is good.',
+    negated: 'Negated: DC power is failing or absent. The bus is being held in reset.',
+    unknown: 'Not known: nothing is reading the bus, so this signal has not been measured.',
+  },
+  POK: {
+    what: 'BPOK, the backplane signal that says the AC supply is good. Measured on the bus — it is not the machine’s power switch.',
+    asserted: 'Asserted: AC power is good.',
+    negated: 'Negated: AC power is failing. A processor that is running takes its power-fail trap.',
+    unknown: 'Not known: nothing is reading the bus, so this signal has not been measured.',
+  },
+};
+
+function BusSignalPill({ name, state }: { name: string; state: boolean | null }) {
+  const info = SIGNAL_INFO[name];
+  const key = state === null ? 'unknown' : state ? 'asserted' : 'negated';
+  return html`<span class=${'pill' + (state === null ? ' unknown' : '')}
+    title=${info.what + '\n\n' + info[key]}
+    >${html`<${Led} on=${state} green=${true} title=${name} />`}${name}${
+      state === null ? html`<span class="pill-q">?</span>` : null
+    }</span>`;
+}
+
 function Topbar({
   title,
   hw,
@@ -83,8 +117,8 @@ function Topbar({
               title="a newer ${update!.package} package is published">Update ${update!.candidate}</button>`
           : null
     }
-    <span class="pill">${html`<${Led} on=${hw.dcok} green=${true} title="DCOK" />`}DCOK</span>
-    <span class="pill">${html`<${Led} on=${hw.pok} green=${true} title="POK" />`}POK</span>
+    ${html`<${BusSignalPill} name="DCOK" state=${hw.dcok} />`}
+    ${html`<${BusSignalPill} name="POK" state=${hw.pok} />`}
     <span class="pill mono">addr ${settings.address_width}-bit</span>
     <span class="pill">${html`<${Led} on=${connected} green=${true} title="link" />`}${
       connected ? 'connected' : 'disconnected'

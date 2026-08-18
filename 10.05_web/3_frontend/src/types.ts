@@ -270,8 +270,11 @@ export interface UpdateStatus {
 
 // ---- hardware / bus state ----
 export interface HwState {
-  dcok: boolean;
-  pok: boolean;
+  // The backplane's power signals as the board read them, or null for a bus
+  // nothing is reading — see 10.05_web/2_src/webbuspower.hpp. They are the
+  // state of the bus, not of the emulated machine's power switch.
+  dcok: boolean | null;
+  pok: boolean | null;
   powered: boolean; // logical power flag (dc_on/dc_off); defaults on
   leds: boolean[];
   dip: boolean[];

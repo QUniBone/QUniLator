@@ -19,6 +19,7 @@
 
 #include "device_status.hpp"
 #include "webcontrol.hpp"
+#include "webbuspower.hpp"
 
 static int failures = 0;
 static int checks = 0;
@@ -195,9 +196,39 @@ static void test_power_gate(void) {
 			"a power cycle of a dark machine leaves the cards out");
 }
 
+// The bus power signals: three states, and the one that matters is that a bus
+// nobody is reading answers "unknown" rather than "good". See webbuspower.hpp.
+static void test_bus_power(void) {
+	bus_power_reading_c r;
+
+	r = bus_power_read(false, false, false);
+	check(r.dcok == BUS_SIGNAL_UNKNOWN && r.pok == BUS_SIGNAL_UNKNOWN,
+			"a bus nobody reads answers unknown, not good");
+	// the levels are ignored entirely when nothing sampled them: a stale
+	// mailbox must not leak out as a measurement
+	r = bus_power_read(false, true, true);
+	check(r.dcok == BUS_SIGNAL_UNKNOWN && r.pok == BUS_SIGNAL_UNKNOWN,
+			"an unsampled bus stays unknown whatever the last levels were");
+
+	r = bus_power_read(true, false, false);
+	check(r.dcok == BUS_SIGNAL_ASSERTED && r.pok == BUS_SIGNAL_ASSERTED,
+			"neither rail failing -> DCOK and POK asserted");
+	r = bus_power_read(true, true, true);
+	check(r.dcok == BUS_SIGNAL_NEGATED && r.pok == BUS_SIGNAL_NEGATED,
+			"both rails failing -> DCOK and POK negated");
+	// the two are independent: DCLO without ACLO, and the other way round
+	r = bus_power_read(true, true, false);
+	check(r.dcok == BUS_SIGNAL_NEGATED && r.pok == BUS_SIGNAL_ASSERTED,
+			"DC failing alone negates DCOK only");
+	r = bus_power_read(true, false, true);
+	check(r.dcok == BUS_SIGNAL_ASSERTED && r.pok == BUS_SIGNAL_NEGATED,
+			"AC failing alone negates POK only");
+}
+
 int main(void) {
 	test_disk_status();
 	test_power_gate();
+	test_bus_power();
 
 	printf("status_power_test: %d checks, %d failures\n", checks, failures);
 	return failures == 0 ? 0 : 1;

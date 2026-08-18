@@ -42,12 +42,14 @@
 #include "device.hpp"
 #include "parameter.hpp"
 #include "qunibus.h"
+#include "mailbox.h"
 #include "qunibusadapter.hpp"
 #include "device_configuration.hpp"
 
 #include "device_status.hpp"
 
 #include "webevents.hpp"
+#include "webbuspower.hpp"
 #include "webconfigs.hpp"
 #include "webpower.hpp"
 #include "webstorage.hpp"
@@ -71,7 +73,10 @@ static std::thread broadcaster;
 static std::mutex state_mutex;
 static bool last_halt = false;
 static int cur_leds = 0, cur_switches = 0;
-static bool cur_init = false, cur_dcok = false, cur_pok = false;
+static bool cur_init = false;
+// The bus power signals as last read. They start unknown, which is what they
+// are before the first poll has established that anything is reading the bus.
+static bus_power_reading_c cur_power = { BUS_SIGNAL_UNKNOWN, BUS_SIGNAL_UNKNOWN };
 // Logical power flag: runtime only. The board comes up dark - it loads the
 // configuration the switches name without putting any of it on the bus - so
 // this starts false and the panel switch, or an autostart, raises it.
@@ -82,6 +87,13 @@ static bool cur_powered = false;
 static std::string cur_held_by;
 // The standing notice, "" when there is none. See webevents.hpp.
 static std::string cur_notice;
+
+// a tri-state bus signal as JSON: true, false, or null for one nothing read
+static picojson::value signal_json(bus_signal_e s) {
+	if (s == BUS_SIGNAL_UNKNOWN)
+		return picojson::value();
+	return picojson::value(s == BUS_SIGNAL_ASSERTED);
+}
 
 // serialized {"t":"state",...} of the current values; caller holds state_mutex
 static std::string state_json(void) {
@@ -97,8 +109,11 @@ static std::string state_json(void) {
 	event["leds"] = picojson::value(led_arr);
 	event["switches"] = picojson::value(switch_arr);
 	event["init"] = picojson::value(cur_init);
-	event["dcok"] = picojson::value(cur_dcok);
-	event["pok"] = picojson::value(cur_pok);
+	// null is "not being read", which is neither true nor false: see
+	// webbuspower.hpp. A client showing it as either would be inventing a
+	// measurement nobody made.
+	event["dcok"] = signal_json(cur_power.dcok);
+	event["pok"] = signal_json(cur_power.pok);
 	event["held_by"] = cur_held_by.empty() ?
 			picojson::value() : picojson::value(cur_held_by);
 	event["notice"] = cur_notice.empty() ?
@@ -565,6 +580,51 @@ static void poll_status_params(void) {
 	}
 }
 
+/* The bus power signals, read rather than assumed. See webbuspower.hpp for what
+ * they are and are not.
+ *
+ * The value is the PRU's own sample: do_event_initializationsignals() reads the
+ * initialization latch once per pass of the main loop and leaves what it read
+ * in mailbox->events.power_signals_cur. The adapter's line_DCLO/line_ACLO are
+ * not used here - those are an edge-tracked copy that starts life at "power
+ * good" and only moves when an event arrives, so a board that has never seen a
+ * power event reports good power it never measured.
+ *
+ * Whether the sample is current is decided by the same loop-pass counter
+ * /api/debug/pru reports, compared against the previous poll. The counter turns
+ * tens of thousands of times in the 100 ms between two of these, so any advance
+ * at all settles it - and a firmware whose mailbox layout this build does not
+ * recognise is not read from at all, the way that endpoint refuses to report
+ * its counters.
+ */
+static bus_power_reading_c poll_bus_power(void) {
+	static uint32_t last_passes = 0;
+	static bool have_last = false;
+
+	if (qunibusadapter == nullptr || mailbox == nullptr
+			|| mailbox->diag.magic != MAILBOX_DIAG_MAGIC) {
+		have_last = false;
+		return bus_power_read(false, false, false);
+	}
+	uint32_t passes = mailbox->diag.loop_passes;
+	bool sampling = have_last && passes != last_passes;
+	last_passes = passes;
+	have_last = true;
+
+	// The wire encoding differs by bus and is decoded exactly as the adapter's
+	// power event does it: UNIBUS carries the two failing-rail signals, QBUS
+	// the two good-rail ones.
+	uint8_t signals = mailbox->events.power_signals_cur;
+#if defined(UNIBUS)
+	bool dclo = (signals & INITIALIZATIONSIGNAL_DCLO) != 0;
+	bool aclo = (signals & INITIALIZATIONSIGNAL_ACLO) != 0;
+#elif defined(QBUS)
+	bool dclo = (signals & INITIALIZATIONSIGNAL_DCOK) == 0;
+	bool aclo = (signals & INITIALIZATIONSIGNAL_POK) == 0;
+#endif
+	return bus_power_read(sampling, dclo, aclo);
+}
+
 // 10 Hz hardware poll: publish LED/DIP/bus-line state on change
 static void poll_hardware(void) {
 	static bool first = true;
@@ -598,20 +658,18 @@ static void poll_hardware(void) {
 	}
 #endif
 
-	bool line_init = false, dcok = false, pok = false;
-	if (qunibusadapter != nullptr) {
+	bool line_init = false;
+	if (qunibusadapter != nullptr)
 		line_init = qunibusadapter->line_INIT;
-		dcok = !qunibusadapter->line_DCLO; // DCLO asserted = DC power bad
-		pok = !qunibusadapter->line_ACLO;  // ACLO asserted = AC power failing
-	}
+	bus_power_reading_c power = poll_bus_power();
 
 	bool halt_changed = false, machine_running = false;
 	{
 		std::lock_guard<std::mutex> lock(state_mutex);
 		bool halt = have_cpu ? cpu_halt : last_halt;
 		if (!first && leds == cur_leds && switches == cur_switches
-				&& line_init == cur_init && dcok == cur_dcok && pok == cur_pok
-				&& halt == last_halt)
+				&& line_init == cur_init && power.dcok == cur_power.dcok
+				&& power.pok == cur_power.pok && halt == last_halt)
 			return;
 		first = false;
 		halt_changed = (halt != last_halt);
@@ -620,8 +678,7 @@ static void poll_hardware(void) {
 		cur_leds = leds;
 		cur_switches = switches;
 		cur_init = line_init;
-		cur_dcok = dcok;
-		cur_pok = pok;
+		cur_power = power;
 		std::string msg = state_json();
 		{
 			std::lock_guard<std::mutex> qlock(queue_mutex);
