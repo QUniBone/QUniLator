@@ -37,7 +37,9 @@ function DashHeader({ tools }: { tools?: ComponentChildren }) {
 
 // One switch of the 11/03 bezel: a bat-handle toggle with a silkscreen legend
 // above (two-position) and/or below it. `momentary` springs back and fires on
-// click; `two` reflects and sets a position.
+// click; `two` reflects and sets a position. A momentary switch rests up, as
+// the machine's does — resting centred read as a switch sitting off beside two
+// that were up.
 function PanelSwitch({
   kind,
   label,
@@ -57,12 +59,26 @@ function PanelSwitch({
   onFire?: () => void;
   onToggle?: () => void;
 }) {
+  // A momentary switch is over before the eye catches it: the click releases in
+  // a few milliseconds, so :active alone shows nothing and the operator cannot
+  // tell the press landed. Firing throws the bat for a moment and lets it
+  // spring back. The reset is a timer rather than the animation's end so the
+  // throw is still shown where animation is off (prefers-reduced-motion).
+  const [firing, setFiring] = useState(false);
+  const throwTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(throwTimer.current), []);
   const click = () => {
     if (disabled) return;
-    if (kind === 'momentary') onFire?.();
-    else onToggle?.();
+    if (kind === 'momentary') {
+      setFiring(true);
+      window.clearTimeout(throwTimer.current);
+      throwTimer.current = window.setTimeout(() => setFiring(false), 320);
+      onFire?.();
+    } else onToggle?.();
   };
-  return html`<div class=${'cp-ctrl cp-sw ' + kind + (disabled ? ' off' : '')} data-pos=${pos || 'mid'}
+  return html`<div
+    class=${'cp-ctrl cp-sw ' + kind + (disabled ? ' off' : '') + (firing ? ' firing' : '')}
+    data-pos=${pos || 'top'}
     title=${info || null}>
     <span class="cp-el"><button class="cp-toggle" type="button" disabled=${!!disabled}
       role=${kind === 'two' ? 'switch' : undefined}
@@ -141,9 +157,11 @@ function ControlPanel() {
       ? liveControl('dc_off', 'DC off — machine powered down')
       : liveControl('dc_on', 'DC on — machine powered up');
 
+  // The console is one plate let into the machine's front: the card surface is
+  // the front, the plate carries the window, the logo and the switches.
   return html`<div class="card cp-card">
     <div class="card-head"><h3>Control panel</h3></div>
-    <div class="cp-body">
+    <div class="card-body cp-body"><div class="cp-plate">
       <div class="cp-lamps">
         <div class="cp-lampbezel">
           <span class="cp-lampcell" title=${CP_INFO.pwr}
@@ -163,7 +181,7 @@ function ControlPanel() {
         ${html`<${PanelSwitch} kind="two" label="AUX" posLabels=${['ON', 'OFF']} info=${CP_INFO.aux}
           pos=${powered ? 'top' : 'bottom'} onToggle=${setPower} />`}
       </div>
-    </div>
+    </div></div>
   </div>`;
 }
 
