@@ -275,7 +275,10 @@ export interface HwState {
   // state of the bus, not of the emulated machine's power switch.
   dcok: boolean | null;
   pok: boolean | null;
-  powered: boolean; // logical power flag (dc_on/dc_off); defaults on
+  // Whether the emulation is installed on the bus (dc_on/dc_off). null until a
+  // state frame says; everything that gates on it asks `!== false`, so an
+  // unknown reads as installed the way the old default did.
+  powered: boolean | null;
   leds: boolean[];
   dip: boolean[];
 }

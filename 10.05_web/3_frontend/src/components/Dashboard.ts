@@ -41,6 +41,7 @@ function DashHeader({ tools }: { tools?: ComponentChildren }) {
 function PanelSwitch({
   kind,
   label,
+  info,
   pos,
   posLabels,
   disabled,
@@ -49,6 +50,7 @@ function PanelSwitch({
 }: {
   kind: 'momentary' | 'two';
   label: string;
+  info?: string;
   pos?: 'top' | 'bottom';
   posLabels?: [string, string];
   disabled?: boolean;
@@ -60,7 +62,8 @@ function PanelSwitch({
     if (kind === 'momentary') onFire?.();
     else onToggle?.();
   };
-  return html`<div class=${'cp-ctrl cp-sw ' + kind + (disabled ? ' off' : '')} data-pos=${pos || 'mid'}>
+  return html`<div class=${'cp-ctrl cp-sw ' + kind + (disabled ? ' off' : '')} data-pos=${pos || 'mid'}
+    title=${info || null}>
     <span class="cp-el"><button class="cp-toggle" type="button" disabled=${!!disabled}
       role=${kind === 'two' ? 'switch' : undefined}
       aria-checked=${kind === 'two' ? pos === 'top' : undefined}
@@ -76,7 +79,38 @@ function PanelSwitch({
 
 // The PDP-11/03 control bezel: PWR OK + RUN lamps and the RESTART /
 // HALT-ENABLE / AUX-ON-OFF switches, the single run-state and power controls.
-// AUX ON/OFF is the auxiliary DC power switch, driving the dc_on/dc_off flag.
+//
+// The legends are the console's, and two of them do not describe what they
+// drive here: PWR OK is lit by the emulation being on the bus rather than by a
+// supply rail, and AUX ON/OFF switches that emulation rather than any DC. The
+// artwork is kept as it is - it is a reproduction of a real bezel - so the
+// explanation goes in the hover text instead, one line per control saying what
+// it actually does. The backplane's own power is reported apart, by the DCOK
+// and POK indicators of the title bar, which read the bus lines themselves.
+const CP_INFO = {
+  pwr:
+    'PWR OK — lit while QUniLator’s emulation is on the bus: the configuration’s ' +
+    'cards are installed and answering their addresses. Despite the legend this is ' +
+    'not a supply rail. The backplane’s own DC and AC power are the DCOK and POK ' +
+    'indicators in the title bar, which read the bus lines.',
+  run: 'RUN — lit while the processor is executing. Dark when it is halted, and dark while the emulation is off the bus.',
+  restart:
+    'RESTART — resets the machine and restarts it from its power-up vector. It ' +
+    'releases HALT and runs a DCOK/POK sequence on the bus, which asserts BINIT; ' +
+    'every emulated card is taken out and put back, dropping the state a card loses ' +
+    'with its supply. Not a bare INIT: the processor comes up executing from the ' +
+    'power-up vector rather than continuing where it was.',
+  halt:
+    'HALT — stops and starts the processor. The emulated cards stay on the bus ' +
+    'either way: this is the processor’s run state, not the emulation’s.',
+  aux:
+    'AUX ON/OFF — switches QUniLator’s emulation on and off; it moves no real power ' +
+    'and puts no edge on the bus’s power lines. OFF stops the processor and takes ' +
+    'every emulated card out of the machine, so nothing of it answers an address and ' +
+    'each drive gives up its medium — the board goes on carrying the configuration. ' +
+    'ON puts the cards back, with the media they held, and starts the machine.',
+};
+
 function ControlPanel() {
   const s = useStore();
   const powered = s.hw.powered !== false;
@@ -112,17 +146,21 @@ function ControlPanel() {
     <div class="cp-body">
       <div class="cp-lamps">
         <div class="cp-lampbezel">
-          <span class="cp-lampcell">${html`<${Led} on=${powered} title="PWR OK" />`}</span>
-          <span class="cp-lampcell">${html`<${Led} on=${run} title="RUN" />`}</span>
+          <span class="cp-lampcell" title=${CP_INFO.pwr}
+            >${html`<${Led} on=${powered} title="PWR OK" info=${CP_INFO.pwr} />`}</span>
+          <span class="cp-lampcell" title=${CP_INFO.run}
+            >${html`<${Led} on=${run} title="RUN" info=${CP_INFO.run} />`}</span>
         </div>
-        <div class="cp-lamplegs"><span class="cp-lampcell">PWR OK</span><span class="cp-lampcell">RUN</span></div>
+        <div class="cp-lamplegs"><span class="cp-lampcell" title=${CP_INFO.pwr}>PWR OK</span
+          ><span class="cp-lampcell" title=${CP_INFO.run}>RUN</span></div>
       </div>
       <img class="cp-logo" src="/digital-logo.svg" alt="digital" width="72" height="21" />
       <div class="cp-switches">
-        ${html`<${PanelSwitch} kind="momentary" label="RESTART" disabled=${!powered} onFire=${restart} />`}
-        ${html`<${PanelSwitch} kind="two" label="HALT"
+        ${html`<${PanelSwitch} kind="momentary" label="RESTART" info=${CP_INFO.restart}
+          disabled=${!powered} onFire=${restart} />`}
+        ${html`<${PanelSwitch} kind="two" label="HALT" info=${CP_INFO.halt}
           pos=${halted ? 'bottom' : 'top'} disabled=${!powered} onToggle=${setHalt} />`}
-        ${html`<${PanelSwitch} kind="two" label="AUX" posLabels=${['ON', 'OFF']}
+        ${html`<${PanelSwitch} kind="two" label="AUX" posLabels=${['ON', 'OFF']} info=${CP_INFO.aux}
           pos=${powered ? 'top' : 'bottom'} onToggle=${setPower} />`}
       </div>
     </div>
@@ -131,6 +169,19 @@ function ControlPanel() {
 
 // The cape's own front panel: activity LEDs and DIP switches, display-only, in
 // the shared LED visual language. Dark while the machine is powered off.
+//
+// Neither row is labelled with what it carries, so both say it on hover: the
+// lamps are the board's four drive-activity LEDs, and the switches are the
+// board's own DIP block, which is read once at startup and not again.
+const fpLedInfo = (i: number) =>
+  'Drive activity LED ' + i + ' — pulses while a drive assigned to it reads or writes. ' +
+  'Each drive carries an activity-LED number, which defaults to its unit number, so ' +
+  'several drives can share one lamp. Dark while the emulation is off the bus.';
+const fpDipInfo = (i: number) =>
+  'DIP switch ' + i + ' — one of the board’s four physical switches, shown as it stands. ' +
+  'They are read only when the backend starts, to choose which saved configuration to ' +
+  'load; moving one now loads nothing. To use them, set them and restart the backend.';
+
 function FrontPanel() {
   const s = useStore();
   const powered = s.hw.powered !== false;
@@ -138,12 +189,14 @@ function FrontPanel() {
     <div class="card-body">
       <div class="fp-block">
         <div class="fp-cells fp-cells-led">${s.hw.leds.map(
-          (v, i) => html`<div class="fp-cell">${html`<${Led} on=${powered && v} title=${'Activity ' + i} />`}
+          (v, i) => html`<div class="fp-cell" title=${fpLedInfo(i)}
+            >${html`<${Led} on=${powered && v} title=${'Activity ' + i} info=${fpLedInfo(i)} />`}
             <span class="fp-n">${i}</span></div>`
         )}</div></div>
       <div class="fp-block">
         <div class="fp-cells fp-cells-sw">${s.hw.dip.map(
-          (v, i) => html`<div class="fp-cell"><span class=${'dip' + (v ? ' on' : '')}></span>
+          (v, i) => html`<div class="fp-cell" title=${fpDipInfo(i + 1)}
+            ><span class=${'dip' + (v ? ' on' : '')}></span>
             <span class="fp-n">${i + 1}</span></div>`
         )}</div></div>
     </div></div>`;
