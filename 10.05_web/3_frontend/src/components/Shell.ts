@@ -58,6 +58,76 @@ function Sidebar({ active }: { active: string }) {
   </aside>`;
 }
 
+/* One of the backplane's two power signals, as the board read it off the bus.
+ *
+ * These are bus lines, not the machine's power switch: a supply drives them and
+ * the board reads them, the emulated processor and the emulated cards never
+ * touch them, and switching the machine off in this interface leaves them where
+ * the backplane holds them. So the pill says what was measured and the hover
+ * says what that means — including the third answer, that nothing is reading
+ * the bus and the signal's state is therefore not known.
+ */
+const SIGNAL_INFO: Record<string, Record<string, string>> = {
+  DCOK: {
+    what: 'BDCOK, the backplane signal that says the DC supply is good. Measured on the bus — it is not the machine’s power switch.',
+    asserted: 'Asserted: DC power on the backplane is good.',
+    negated: 'Negated: DC power is failing or absent. The bus is being held in reset.',
+    unknown: 'Not known: nothing is reading the bus, so this signal has not been measured.',
+  },
+  POK: {
+    what: 'BPOK, the backplane signal that says the AC supply is good. Measured on the bus — it is not the machine’s power switch.',
+    asserted: 'Asserted: AC power is good.',
+    negated: 'Negated: AC power is failing. A processor that is running takes its power-fail trap.',
+    unknown: 'Not known: nothing is reading the bus, so this signal has not been measured.',
+  },
+};
+
+/* Whether QUniLator's emulation is on the bus at all.
+ *
+ * A different question from DCOK and POK, and about a different thing: those
+ * are signals the backplane carries and the board reads, this is the state of
+ * the board's own emulation. The machine's power switch installs and removes
+ * the configuration's cards, and while they are out nothing of the emulation
+ * answers an address, though the board goes on carrying it.
+ *
+ * Whether the processor is executing is a third question again, and stays where
+ * it is: a real machine can sit halted with a fully populated bus, so RUN and
+ * HALT belong to the machine and are on the dashboard's console.
+ */
+const BUS_INFO: Record<string, string> = {
+  what:
+    'QUniLator’s emulation, as it stands on the bus. This is the board’s own state — ' +
+    'not the backplane’s power, which DCOK and POK report, and not whether the ' +
+    'processor is executing, which the RUN lamp reports.',
+  active:
+    'Active: the configuration’s cards are installed and answering their addresses, ' +
+    'and the emulated processor, if the machine has one, is on the bus.',
+  dark:
+    'Dark: no emulated card is on the bus and no emulated processor is running. The ' +
+    'board still carries the configuration — AUX ON on the dashboard puts it back.',
+  unknown: 'Not known: this page has not yet heard from the board.',
+};
+
+function EmulationPill({ powered }: { powered: boolean | null }) {
+  const key = powered === null ? 'unknown' : powered ? 'active' : 'dark';
+  const word = powered === null ? 'bus' : powered ? 'bus active' : 'bus dark';
+  return html`<span class=${'pill' + (powered === null ? ' unknown' : '')}
+    title=${BUS_INFO.what + '\n\n' + BUS_INFO[key]}
+    >${html`<${Led} on=${powered} green=${true} title="emulation" />`}${word}${
+      powered === null ? html`<span class="pill-q">?</span>` : null
+    }</span>`;
+}
+
+function BusSignalPill({ name, state }: { name: string; state: boolean | null }) {
+  const info = SIGNAL_INFO[name];
+  const key = state === null ? 'unknown' : state ? 'asserted' : 'negated';
+  return html`<span class=${'pill' + (state === null ? ' unknown' : '')}
+    title=${info.what + '\n\n' + info[key]}
+    >${html`<${Led} on=${state} green=${true} title=${name} />`}${name}${
+      state === null ? html`<span class="pill-q">?</span>` : null
+    }</span>`;
+}
+
 function Topbar({
   title,
   hw,
@@ -83,8 +153,9 @@ function Topbar({
               title="a newer ${update!.package} package is published">Update ${update!.candidate}</button>`
           : null
     }
-    <span class="pill">${html`<${Led} on=${hw.dcok} green=${true} title="DCOK" />`}DCOK</span>
-    <span class="pill">${html`<${Led} on=${hw.pok} green=${true} title="POK" />`}POK</span>
+    ${html`<${BusSignalPill} name="DCOK" state=${hw.dcok} />`}
+    ${html`<${BusSignalPill} name="POK" state=${hw.pok} />`}
+    ${html`<${EmulationPill} powered=${hw.powered} />`}
     <span class="pill mono">addr ${settings.address_width}-bit</span>
     <span class="pill">${html`<${Led} on=${connected} green=${true} title="link" />`}${
       connected ? 'connected' : 'disconnected'

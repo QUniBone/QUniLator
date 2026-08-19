@@ -1432,10 +1432,37 @@ Text frames, one JSON event each, pushed to every connected client:
 | `{"t":"param","dev":…,"param":…,"value":…}` | committed parameter change (includes enable/disable, image attach, panel lamps) |
 | `{"t":"status","dev":…,"status":…}` | a disk drive's verbal state — the same word [`GET /api/devices`](#get-apidevices) reports as `status`, published on change (10 Hz poll) so a state the machine reaches by itself (a pack spinning down, a transfer starting) reaches the client without a refetch |
 | `{"t":"log","id":n,"time":…,"level":n,"label":…,"text":…}` | log message; levels 1 FATAL … 5 DEBUG. `id` and `time` (server clock) match the journal ([`GET /api/log`](#get-apilogbeforeidlimitn)), so a client merges live lines with a fetched page by `id` |
-| `{"t":"state","halt":…,"powered":…,"leds":[…],"switches":[…],"init":…,"dcok":…,"pok":…,"held_by":…,"notice":…}` | activity LEDs, DIP switches, HALT, the logical power flag, bus INIT/DCOK/POK, and what holds the board — published on change (10 Hz poll); a full snapshot opens every connection. `powered` is the runtime power flag driven by `dc_on`/`dc_off`; the dashboard derives RUN from `!halt && powered` and PWR OK from `powered`. Transitions may arrive as partial `state` frames (e.g. `{"t":"state","powered":false}`), which the client merges onto the last snapshot. `held_by` is described below. `notice` is the standing notice (see [the standing notice](#the-standing-notice)), a string or `null` |
+| `{"t":"state","halt":…,"powered":…,"leds":[…],"switches":[…],"init":…,"dcok":…,"pok":…,"held_by":…,"notice":…}` | activity LEDs, DIP switches, HALT, the logical power flag, bus INIT/DCOK/POK, and what holds the board — published on change (10 Hz poll); a full snapshot opens every connection. `powered` is the runtime power flag driven by `dc_on`/`dc_off`; the dashboard derives RUN from `!halt && powered` and PWR OK from `powered`. Transitions may arrive as partial `state` frames (e.g. `{"t":"state","powered":false}`), which the client merges onto the last snapshot. `held_by` is described below. `dcok` and `pok` are described below. `notice` is the standing notice (see [the standing notice](#the-standing-notice)), a string or `null` |
 | `{"t":"config","current":…,"modified":…}` | current configuration and the live modified flag — published on apply, save, rename, and whenever the modified flag flips (10 Hz poll); a snapshot opens every connection |
 | `{"t":"settings"}` | a machine setting changed. **No payload** — a client rereads [`GET /api/settings`](#get-apisettings), which is the one description of what the settings now are. This is how a page follows a change it did not make itself, and in particular how a console whose port has moved re-points itself instead of going quietly dead |
 | `{"t":"update", …}` | the update status, the same object [`GET /api/update`](#get-apiupdate) answers. Published whenever the updater's status file changes (the service stats it once a second), and as a snapshot on every new connection — so a second tab, and a tab opened during an install, both know what is going on |
+
+#### The bus power signals
+
+`dcok` and `pok` are BDCOK and BPOK **as read off the backplane**, and they are
+three-valued: `true` asserted, `false` negated, **`null` for a bus nothing is
+reading**, whose signals therefore have no known state.
+
+They are not the machine's power switch, and they do not follow it. A supply
+drives these lines and every card reads them; the emulated processor and the
+emulated cards never touch one. `dc_off` takes the cards out of the machine and
+clears `powered` without putting an edge on the bus, so a machine switched off
+through this API leaves `dcok`/`pok` exactly where the backplane holds them.
+`powered` is the question "is the emulated machine switched on"; these two are
+the question "what is on the bus", and they are answered apart.
+
+What the board reads is not necessarily another supply's doing: a power cycle
+drives the DCOK/POK sequence itself (see [what a power cycle
+resets](#what-a-power-cycle-resets)), so afterwards the lines carry what the
+board last put on them. That is still the state of the bus, which is all this
+reports.
+
+`null` is not a fault. The board reads these lines through the PRU, which
+samples them once per pass of its main loop; the value is reported only while
+that loop is turning, which is the same liveness
+[`GET /api/debug/pru`](#get-apidebugpru) reports as `looping`. A stale sample is
+a reading of an unknown moment, and publishing it as `true` would be the one
+wrong answer indistinguishable from the right one.
 
 #### The board held
 

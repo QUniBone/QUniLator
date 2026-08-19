@@ -61,6 +61,16 @@
   --led-green-dark:  #123521;   /* green lens, unlit */
   --led-green-glow:  rgba(33, 179, 86, .36);
 
+  /* PDP-11/03 console insert: on the real machine the panel is one dark plate
+     with rounded ends, let into the beige front, and its legends are
+     silkscreened on the plate itself — so the plate is one world in both
+     themes, like the rest of the panel artwork, and carries its own legend
+     colour rather than the page's muted ink. */
+  --cp-plate:     #2F343A;
+  --cp-plate-lip: #43494F;   /* the raised lip around the recessed plate */
+  --cp-rail:      #474E58;   /* the strip the lamps and switches stand on */
+  --cp-legend:    #C4CAD2;   /* silkscreen, light on the plate */
+
   /* PDP-11/03 panel switch: a flat dark slot with a pale bat handle. Drawn
      2D — solid fills, one hairline, no gloss. */
   --sw-slot:    #23262B;
@@ -232,6 +242,10 @@ button { font: inherit; color: inherit; }
   font-family: var(--font-mono); font-size: var(--fs-0);
   color: var(--ink-muted); white-space: nowrap;
 }
+/* A pill whose signal is not being measured: dimmed, and carrying a question
+   mark, so the state reads as unknown at a glance and not only on hover. */
+.pill.unknown { opacity: .65; }
+.pill .pill-q { font-weight: 700; }
 /* A chip is one word of state, so it keeps its shape: a hyphenated label like
    READ-ONLY reads as two chips when it wraps. */
 .chip {
@@ -387,28 +401,83 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
   background: radial-gradient(circle at 50% 41%, var(--lens-core) 0%, var(--lens) 78%);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18), 0 0 8px 0 var(--lens-glow);
 }
+/* A lamp for something nobody is measuring: an empty seat, not a dark lens.
+   A dark lens is a reading — the lamp is out — and this is the absence of one,
+   so it is drawn hollow and cannot be mistaken for either state. */
+.led.unknown {
+  background: none;
+  box-shadow: none;
+  border: 1px dashed var(--ink-muted);
+  opacity: .7;
+}
 
-/* ---- PDP-11/03 control panel ---- the run-state and power controls on the
-   app's own card surface, laid out like the real 11/03 operator console in one
-   wide bezel: a large recessed lamp window on the left (PWR OK, RUN), the
-   digital logo in the middle, and the three bat-handle switches on the right.
-   Switches are drawn flat (2D). */
-/* the bezel wraps its own contents, keeping the real console's compact
+/* ---- PDP-11/03 control panel ---- the run-state and power controls, laid out
+   like the real 11/03 operator console, which is three things one inside the
+   next:
+     · a dark plate with rounded corners, let into the machine's front;
+     · a raised strip mounted on it, its ends fully round — half its own height,
+       so no straight run remains at either side — carrying the lamp window, the
+       digital logo and the three bat-handle switches, all centred on it;
+     · the lamp window itself, recessed into that strip, a pill for the same
+       reason.
+   The legends are on none of that: they are silkscreened on the plate below the
+   strip, under what each one names. Switches are drawn flat (2D), and the card
+   surface around the plate is the machine's front. */
+/* the plate wraps its own contents, keeping the real console's compact
    landscape proportions rather than stretching the dashboard width */
 .cp-card { width: fit-content; max-width: 100%; }
-.cp-body {
-  display: flex; align-items: flex-start; gap: 18px;
-  padding: 12px 34px 18px 24px; /* extra right room for AUX's ON/OFF marker */
+/* The plate is inset from the card edge so the surface it is let into shows all
+   round it, and the inset is kept tighter than a card body's usual 14px for a
+   reason that is not taste: the dashboard packs cards by their measured size in
+   whole grid cells, so a card that grows past a cell boundary takes another
+   cell and shoves the operator's saved layout about. This card measures 12×3
+   cells and has to go on doing so. */
+.cp-card .card-head { padding-bottom: 4px; }
+.cp-card .cp-body { padding: 0 10px 8px; }
+.cp-plate {
+  position: relative;
+  display: flex; align-items: flex-start; gap: 16px;
+  padding: 16px 22px 8px 24px; /* extra right room for AUX's ON/OFF marker */
+  background: var(--cp-plate);
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px var(--cp-plate-lip);
+  /* the legends are silkscreen on a dark plate, not ink on the page */
+  --sw-legend: var(--cp-legend);
 }
-/* the large recessed lamp window holds the left block of the bezel: the two
-   indicators sit at its left edge and the dark window runs on past them */
-.cp-lamps { display: flex; flex-direction: column; gap: 7px; }
+/* The raised strip everything is mounted on. It is drawn rather than wrapped
+   around the controls: the lamps and switches keep the column-per-control
+   rhythm that aligns each legend under its own element, and the strip runs
+   behind their 34px band — 8px proud of it above and below — so it holds the
+   elements while the legends fall clear of it onto the plate. Its ends are
+   half its height, leaving no straight side. The band was 42px and gave the
+   strip nowhere to stand: the card has three grid cells and no more. */
+.cp-plate::before {
+  content: ''; position: absolute; left: 14px; right: 12px; top: 8px; height: 50px;
+  border-radius: 999px; background: var(--cp-rail);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), 0 2px 4px rgba(0, 0, 0, .40);
+}
+/* what is mounted on the strip draws over it */
+.cp-plate > * { position: relative; }
+/* the recessed lamp window: a pill, as the machine's lens strip is. The two
+   indicators sit at its left end and the dark window runs on past them */
+.cp-lamps { display: flex; flex-direction: column; gap: 12px; }
 .cp-lampbezel {
   display: flex; align-items: center; justify-content: flex-start;
-  min-width: 230px; height: 42px; padding: 0 8px; border-radius: 6px; background: var(--bezel);
+  min-width: 230px; height: 34px; padding: 0 14px; background: var(--bezel);
+  border-radius: 999px; /* round ends, radius half the window's height */
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, .55);
 }
-.cp-lampbezel .led:not(.on) { background: var(--bezel); box-shadow: none; }
-.cp-lamplegs { display: flex; padding: 0 8px; }
+/* An unlit lamp on the window still has to show its lens. Filling it with the
+   window's own colour made it vanish, so a machine that is off showed a
+   featureless dark rectangle where the real 11/03 shows two lenses whatever the
+   lamps are doing. The lens keeps its dark red and is seated in the window by a
+   near-black ring with a faint catch of light inside it — visible as a lens,
+   without reading as lit. */
+.cp-lampbezel .led:not(.on):not(.unknown) {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .5), inset 0 0 0 1px rgba(255, 255, 255, .13);
+}
+/* the legends carry the window's own left inset, so each sits under its lamp */
+.cp-lamplegs { display: flex; padding: 0 14px; }
 /* one fixed-width cell for every lamp and its legend, so each caption centres on
    its indicator and the two never crowd each other */
 .cp-lampcell {
@@ -417,17 +486,17 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
   letter-spacing: .04em; white-space: nowrap; color: var(--sw-legend);
 }
 /* the digital logo, next to the window and centred on the lamp band */
-.cp-logo { display: block; align-self: flex-start; margin-top: 11px; height: 21px; width: auto; }
+.cp-logo { display: block; align-self: flex-start; margin-top: 7px; height: 21px; width: auto; }
 /* the three switches follow the logo, set a little apart from it */
-.cp-switches { margin-left: 30px; display: flex; align-items: flex-start; gap: 26px; }
+.cp-switches { margin-left: 22px; display: flex; align-items: flex-start; gap: 26px; }
 /* every lamp and switch shares one three-row rhythm — an upper position legend,
    the element in a fixed band, and the lower legend — so the elements sit on one
    line and every legend beneath them aligns on a common baseline */
 .cp-ctrl {
-  display: grid; grid-template-rows: 42px auto; row-gap: 7px;
+  display: grid; grid-template-rows: 34px auto; row-gap: 12px;
   justify-items: center; align-items: center;
 }
-.cp-el { position: relative; display: flex; align-items: center; justify-content: center; height: 42px; }
+.cp-el { position: relative; display: flex; align-items: center; justify-content: center; height: 34px; }
 /* every legend gets the two-line height of AUX's ON/OFF marker and is centred
    in it, so the single legends drop to sit level with AUX, which itself centres
    on its ON/OFF pair */
@@ -443,20 +512,33 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
   display: inline-flex; flex-direction: column; line-height: 1.02; text-align: center;
 }
 .cp-toggle {
-  width: 48px; height: 42px; border-radius: 4px; padding: 3px;
+  width: 48px; height: 34px; border-radius: 4px; padding: 2px;
   border: 1px solid var(--sw-slot-lo); position: relative; cursor: pointer;
   background: var(--sw-slot); display: block;
 }
 .cp-bat {
-  position: absolute; left: 3px; right: 3px; height: 17px;
+  position: absolute; left: 2px; right: 2px; height: 15px;
   border-radius: 3px; background: var(--sw-bat);
   border: 1px solid var(--sw-bat-lo); /* flat: no raised bevel */
   transition: top .12s ease;
 }
-.cp-sw[data-pos="top"] .cp-bat { top: 3px; }
-.cp-sw[data-pos="bottom"] .cp-bat { top: 20px; }
-.cp-sw[data-pos="mid"] .cp-bat { top: 11px; }
-.cp-sw.momentary .cp-toggle:active .cp-bat { top: 14px; }
+.cp-sw[data-pos="top"] .cp-bat { top: 2px; }
+.cp-sw[data-pos="bottom"] .cp-bat { top: 13px; }
+.cp-sw.momentary .cp-toggle:active .cp-bat { top: 13px; }
+/* the throw a momentary switch makes when it fires: down under the finger and
+   springing back, so a press that is over in a moment is still seen to happen */
+@keyframes cp-throw {
+  0%   { top: 2px; }
+  16%  { top: 13px; }
+  58%  { top: 13px; }
+  100% { top: 2px; }
+}
+.cp-sw.momentary.firing .cp-bat { animation: cp-throw .32s ease-out; }
+/* with animation off the throw is a jump: the bat holds down for the same
+   moment, which is what the class is timed for */
+@media (prefers-reduced-motion: reduce) {
+  .cp-sw.momentary.firing .cp-bat { top: 13px; }
+}
 .cp-sw.off { opacity: .4; }
 .cp-sw.off .cp-toggle, .cp-toggle:disabled { cursor: default; }
 

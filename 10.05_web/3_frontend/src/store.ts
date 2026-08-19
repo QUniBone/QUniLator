@@ -80,11 +80,14 @@ export const store: Store = {
   notice: '',
   bus: { halted: false, init: false },
   hw: {
-    dcok: true,
-    pok: true,
-    // the live board (pre-deploy) never sends `powered`; default on so the
-    // machine reads powered-up until a dc_off arrives
-    powered: true,
+    // unknown until a state frame says otherwise: a page that has not heard
+    // from the board has not measured anything
+    dcok: null,
+    pok: null,
+    // unknown until a state frame says. The gates elsewhere ask `!== false`, so
+    // an unknown still reads as installed the way the old default did — only
+    // the title bar's indicator, which asks explicitly, shows it as not known.
+    powered: null,
     leds: [false, false, false, false],
     dip: [false, false, false, false],
   },

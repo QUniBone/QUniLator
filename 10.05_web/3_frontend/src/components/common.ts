@@ -17,10 +17,30 @@ export function Chip({ cls, children }: { cls: string; children: ComponentChildr
 // DC ON / RUN lamps, the front-panel activity LEDs. One flat LED at one size on
 // every surface. The default lens is red (the machine's own panel lamps); the
 // topbar status row passes `green`.
-export function Led({ on, green, title }: { on: boolean; green?: boolean; title?: string }) {
-  return html`<span class=${'led' + (green ? ' green' : '') + (on ? ' on' : '')}
-    role="img" aria-label=${(title ? title + ' — ' : '') + (on ? 'lit' : 'dark')}
-    title=${title || null}></span>`;
+// One panel lamp. `on` is normally a boolean, but a lamp that stands for a
+// signal nobody is reading takes null: it draws as an empty seat rather than as
+// a dark lens, because "not lit" and "not known" are different answers and only
+// one of them may be shown as a measurement.
+// `title` names the lamp and is what a screen reader hears; `info` is the
+// explanation shown on hover, for a lamp whose legend does not say what it
+// really signals. The name stays short for the aria label either way.
+export function Led({
+  on,
+  green,
+  title,
+  info,
+}: {
+  on: boolean | null;
+  green?: boolean;
+  title?: string;
+  info?: string;
+}) {
+  const unknown = on === null;
+  const state = unknown ? 'unknown' : on ? 'lit' : 'dark';
+  return html`<span
+    class=${'led' + (green ? ' green' : '') + (on ? ' on' : '') + (unknown ? ' unknown' : '')}
+    role="img" aria-label=${(title ? title + ' — ' : '') + state}
+    title=${info || title || null}></span>`;
 }
 
 // Shared image-assignment field: a button showing the drive's current medium
