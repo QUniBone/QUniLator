@@ -34,12 +34,22 @@
    often would cost more than serving the page. A password that verified once
    is therefore remembered as a single SHA-256 over a salt generated afresh
    each time the process starts, and later requests are checked against that.
+
+   Basic auth is also all a browser is given to hold, and browsers hold it
+   badly: Chrome forgets the credentials after a while and asks again, which is
+   a sign-in dialog in the middle of somebody's work. So an answer from
+   GET /api/auth carries a cookie holding a signed session, good for five days
+   and pushed out again by every answer after it. The key that signs it is
+   derived from a secret in settings.json - so a restart of the service, or of
+   the board, keeps every session open - and from the stored password digest -
+   so changing the credentials closes every one of them at once.
 */
 
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <mutex>
 #include <string>
@@ -267,6 +277,14 @@ static uint8_t stored_salt[SALT_LEN];
 static uint8_t stored_hash[SHA256_LEN];
 static unsigned stored_iterations = PBKDF2_ITERATIONS;
 
+// The secret that signs session cookies. It lives in settings.json beside the
+// digest, so the sessions a board handed out still open it after a restart,
+// and it is made the first time one is asked for.
+#define SESSION_SECRET_LEN 32
+#define SESSION_COOKIE "qunilator_session"
+static uint8_t session_secret[SESSION_SECRET_LEN];
+static bool session_secret_valid = false;
+
 // A password that has verified once, kept as a hash over a salt that exists
 // only for this run of the process.
 static uint8_t cache_salt[SALT_LEN];
@@ -338,6 +356,112 @@ bool webauth_verify_password(const std::string &password) {
 		return false;
 	cache_store(password);
 	return true;
+}
+
+/*** the browser's session ***/
+
+// The cookie carries "1.<user>.<expiry>.<mac>": the operator's name, the unix
+// second the session ends at, and an HMAC-SHA256 over the three fields before
+// it. Nothing in it is secret - it is a claim this QUniLator signed, and the
+// mac is what makes it unforgeable.
+//
+// The signing key is derived from the stored secret and the stored password
+// digest together, so a password or name change ends every session that was
+// open, while a restart - which reloads both from settings.json - ends none.
+
+// caller holds auth_mutex; result false when there is nothing to sign with.
+// *created is set when this made the secret, which the caller then persists.
+static bool session_key_locked(uint8_t out[SHA256_LEN], bool *created) {
+	*created = false;
+	if (!configured)
+		return false;
+	if (!session_secret_valid) {
+		if (!random_bytes(session_secret, sizeof(session_secret)))
+			return false;
+		session_secret_valid = true;
+		*created = true;
+	}
+	hmac_sha256(session_secret, sizeof(session_secret), stored_hash, SHA256_LEN, out);
+	return true;
+}
+
+std::string webauth_session_cookie(void) {
+	std::string token;
+	bool created = false;
+	{
+		std::lock_guard<std::mutex> lock(auth_mutex);
+		uint8_t key[SHA256_LEN], mac[SHA256_LEN];
+		if (!session_key_locked(key, &created))
+			return std::string();
+		char expiry[32];
+		snprintf(expiry, sizeof(expiry), "%lld",
+				(long long) time(nullptr) + WEBAUTH_SESSION_SECONDS);
+		std::string message = "1." + stored_user + "." + expiry;
+		hmac_sha256(key, sizeof(key), (const uint8_t *) message.data(), message.size(),
+				mac);
+		token = message + "." + to_hex(mac, sizeof(mac));
+	}
+	if (created)
+		websettings_save(); // outside the lock: the save reads back through us
+	// No Secure: a QUniLator serves plain HTTP on a workshop network. SameSite
+	// is Lax so a link into the interface arrives signed in, and HttpOnly
+	// keeps the token out of reach of anything running on the page.
+	char header[512];
+	snprintf(header, sizeof(header),
+			"Set-Cookie: " SESSION_COOKIE "=%s; Path=/; Max-Age=%d; HttpOnly; "
+			"SameSite=Lax\r\n", token.c_str(), WEBAUTH_SESSION_SECONDS);
+	return header;
+}
+
+static bool session_token_valid(const std::string &token) {
+	std::lock_guard<std::mutex> lock(auth_mutex);
+	// A board that has signed nothing cannot have signed this; asked here so
+	// verification never makes a secret of its own.
+	if (!configured || !session_secret_valid)
+		return false;
+	size_t mac_sep = token.rfind('.');
+	if (mac_sep == std::string::npos)
+		return false;
+	std::string message = token.substr(0, mac_sep);
+	uint8_t given[SHA256_LEN], mac[SHA256_LEN], key[SHA256_LEN];
+	bool created;
+	if (from_hex(token.substr(mac_sep + 1), given, sizeof(given)) != sizeof(given))
+		return false;
+	if (!session_key_locked(key, &created))
+		return false;
+	hmac_sha256(key, sizeof(key), (const uint8_t *) message.data(), message.size(), mac);
+	if (!equal_constant_time(mac, given, SHA256_LEN))
+		return false;
+	// The fields, now that they are known to be this QUniLator's own.
+	if (message.compare(0, 2, "1.") != 0)
+		return false;
+	size_t expiry_sep = message.rfind('.');
+	if (expiry_sep < 2)
+		return false;
+	if (message.substr(2, expiry_sep - 2) != stored_user)
+		return false; // signed for an operator this board no longer carries
+	return strtoll(message.c_str() + expiry_sep + 1, nullptr, 10) > (long long) time(nullptr);
+}
+
+bool webauth_verify_session(const char *cookies) {
+	static const size_t name_len = sizeof(SESSION_COOKIE) - 1;
+	if (cookies == nullptr)
+		return false;
+	// "a=1; qunilator_session=…; b=2", and any of the three may be ours
+	for (const char *p = cookies; *p != 0; ) {
+		while (*p == ' ' || *p == ';')
+			p++;
+		const char *eq = strchr(p, '=');
+		if (eq == nullptr)
+			break;
+		const char *end = strchr(eq, ';');
+		if (end == nullptr)
+			end = eq + strlen(eq);
+		if ((size_t) (eq - p) == name_len && strncmp(p, SESSION_COOKIE, name_len) == 0)
+			return session_token_valid(std::string(eq + 1, end - eq - 1));
+		p = *end == ';' ? end + 1 : end;
+	}
+	return false;
 }
 
 bool webauth_set_credentials(const std::string &user, const std::string &password,
@@ -427,6 +551,12 @@ void webauth_load(const picojson::value &admin) {
 		return;
 	}
 	std::lock_guard<std::mutex> lock(auth_mutex);
+	// The secret that signs sessions, so the ones this board handed out before
+	// a restart still open it. A record from before sessions existed carries
+	// none, and the first cookie asked for makes one.
+	session_secret_valid = admin.get("session_secret").is<std::string>()
+			&& from_hex(admin.get("session_secret").get<std::string>(), session_secret,
+					sizeof(session_secret)) == sizeof(session_secret);
 	memcpy(stored_salt, salt, sizeof(stored_salt));
 	memcpy(stored_hash, hash, sizeof(stored_hash));
 	stored_user = admin.get("user").get<std::string>();
@@ -448,19 +578,27 @@ picojson::value webauth_json(void) {
 	o["iterations"] = picojson::value((double) stored_iterations);
 	o["salt"] = picojson::value(to_hex(stored_salt, sizeof(stored_salt)));
 	o["hash"] = picojson::value(to_hex(stored_hash, sizeof(stored_hash)));
+	if (session_secret_valid)
+		o["session_secret"] = picojson::value(
+				to_hex(session_secret, sizeof(session_secret)));
 	return picojson::value(o);
 }
 
 /*** /api/auth ***/
 
-static void send_json(struct mg_connection *conn, int status, const picojson::value &val) {
+// extra is whole header lines, "\r\n" and all, or empty: this is where the
+// session cookie rides out.
+static void send_json(struct mg_connection *conn, int status, const picojson::value &val,
+		const std::string &extra = std::string()) {
 	std::string body = val.serialize();
 	mg_printf(conn,
 			"HTTP/1.1 %d %s\r\n"
 			"Content-Type: application/json\r\n"
 			"Cache-Control: no-store\r\n"
+			"%s"
 			"Content-Length: %u\r\n\r\n",
-			status, status == 200 ? "OK" : "Error", (unsigned) body.size());
+			status, status == 200 ? "OK" : "Error", extra.c_str(),
+			(unsigned) body.size());
 	mg_write(conn, body.c_str(), body.size());
 }
 
@@ -485,7 +623,11 @@ static void auth_get(struct mg_connection *conn) {
 	o["configured"] = picojson::value(webauth_configured());
 	o["user"] = picojson::value(webauth_user());
 	o["min_length"] = picojson::value((double) MIN_PASSWORD_LEN);
-	send_json(conn, 200, picojson::value(o));
+	// Nothing reaches this on a QUniLator with an operator without having
+	// authenticated, so the answer renews the session: a page opened today is
+	// good for another five days, and the sign-in dialog is asked for once
+	// rather than whenever the browser has forgotten the password.
+	send_json(conn, 200, picojson::value(o), webauth_session_cookie());
 }
 
 static void auth_put(struct mg_connection *conn) {
@@ -552,7 +694,9 @@ static void auth_put(struct mg_connection *conn) {
 	o["ok"] = picojson::value(true);
 	o["user"] = picojson::value(webauth_user());
 	o["warnings"] = picojson::value(warnings);
-	send_json(conn, 200, picojson::value(o));
+	// The change ended every session, this browser's included - the signing key
+	// follows the digest. It leaves with one for the credentials it just set.
+	send_json(conn, 200, picojson::value(o), webauth_session_cookie());
 }
 
 static int api_auth_handler(struct mg_connection *conn, void * /*cbdata*/) {
