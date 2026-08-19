@@ -423,9 +423,12 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
    The legends are on none of that: they are silkscreened on the plate below the
    strip, under what each one names. Switches are drawn flat (2D), and the card
    surface around the plate is the machine's front. */
-/* the plate wraps its own contents, keeping the real console's compact
-   landscape proportions rather than stretching the dashboard width */
-.cp-card { width: fit-content; max-width: 100%; }
+/* The card fills its grid block, which the dashboard makes as wide as the
+   console's: the panel is the machine's bezel and the console the terminal in
+   front of it, and the two read as one stack only if they line up. The plate
+   spans that width; the slack goes to the lamp window, as it does on the real
+   machine, so the switches stay together at the right. */
+.cp-card { width: 100%; max-width: 100%; }
 /* The plate is inset from the card edge so the surface it is let into shows all
    round it, and the inset is kept tighter than a card body's usual 14px for a
    reason that is not taste: the dashboard packs cards by their measured size in
@@ -458,12 +461,13 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
 }
 /* what is mounted on the strip draws over it */
 .cp-plate > * { position: relative; }
-/* the recessed lamp window: a pill, as the machine's lens strip is. The two
-   indicators sit at its left end and the dark window runs on past them */
-.cp-lamps { display: flex; flex-direction: column; gap: 12px; }
+/* the recessed lamp window: a pill, as the machine's lens strip is. It wraps its
+   two indicators and does not grow with the card — the window's inset at the
+   right is the one it carries at the left, so the pair sits centred in it */
+.cp-lamps { display: flex; flex-direction: column; gap: 12px; flex: 0 0 auto; }
 .cp-lampbezel {
   display: flex; align-items: center; justify-content: flex-start;
-  min-width: 230px; height: 34px; padding: 0 14px; background: var(--bezel);
+  height: 34px; padding: 0 14px; background: var(--bezel);
   border-radius: 999px; /* round ends, radius half the window's height */
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, .55);
 }
@@ -485,10 +489,15 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
   font-family: var(--font-mono); font-size: var(--fs-0); font-weight: 700;
   letter-spacing: .04em; white-space: nowrap; color: var(--sw-legend);
 }
-/* the digital logo, next to the window and centred on the lamp band */
-.cp-logo { display: block; align-self: flex-start; margin-top: 7px; height: 21px; width: auto; }
-/* the three switches follow the logo, set a little apart from it */
-.cp-switches { margin-left: 22px; display: flex; align-items: flex-start; gap: 26px; }
+/* The digital logo, centred on the lamp band. It takes whatever width the card
+   is given over and above the window and the switches: the auto margins split
+   that slack in two, so the logo sits in the middle of the plate's open span
+   however wide the card is drawn. */
+.cp-logo {
+  display: block; align-self: flex-start; margin: 7px auto 0; height: 21px; width: auto;
+}
+/* the three switches follow the logo and stay at the plate's right end */
+.cp-switches { display: flex; align-items: flex-start; gap: 26px; flex: 0 0 auto; }
 /* every lamp and switch shares one three-row rhythm — an upper position legend,
    the element in a fixed band, and the lower legend — so the elements sit on one
    line and every legend beneath them aligns on a common baseline */

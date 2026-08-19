@@ -504,12 +504,21 @@ function DashGrid() {
       if (m) found[key] = m;
     });
     setMeasured((prev) => {
+      const next = { ...prev, ...found };
+      // The control panel is the machine's bezel and the console the terminal in
+      // front of it: they read as one stack, so the panel takes the console's
+      // width rather than the narrower one its plate lays out at. Both are
+      // measured in the same pass; a hidden console is not on the grid, and
+      // leaves the panel at its own measured width.
+      const cw = isHidden('console') ? 0 : next.console?.w;
+      if (cw && next.controlpanel && next.controlpanel.w !== cw)
+        next.controlpanel = { ...next.controlpanel, w: cw };
       let changed = false;
-      for (const k in found) {
+      for (const k in next) {
         const c = prev[k];
-        if (!c || c.w !== found[k].w || c.h !== found[k].h) changed = true;
+        if (!c || c.w !== next[k].w || c.h !== next[k].h) changed = true;
       }
-      return changed ? { ...prev, ...found } : prev;
+      return changed ? next : prev;
     });
   };
   // What changes the shape of the cards: the set on the grid, the edit mode's
