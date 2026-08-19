@@ -253,6 +253,7 @@ OBJECTS = $(OBJDIR)/application.o	\
     $(OBJDIR)/qunibusdevice.o	\
     $(OBJDIR)/unibuscpu.o	\
     $(OBJDIR)/parameter.o	\
+    $(OBJDIR)/metric.o	\
 	$(OBJDIR)/panel.o	\
 	$(OBJDIR)/priorityrequest.o	\
 	$(OBJDIR)/qunibusadapter.o	\
@@ -294,6 +295,7 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/webapi.o	\
 	$(OBJDIR)/device_label.o	\
 	$(OBJDIR)/device_status.o	\
+	$(OBJDIR)/device_metrics.o	\
 	$(OBJDIR)/webcontrol.o	\
 	$(OBJDIR)/webdebug.o	\
 	$(OBJDIR)/webpower.o	\
@@ -628,6 +630,9 @@ $(OBJDIR)/device.o :  $(BASE_SRC_DIR)/device.cpp $(BASE_SRC_DIR)/device.hpp
 $(OBJDIR)/parameter.o :  $(BASE_SRC_DIR)/parameter.cpp $(BASE_SRC_DIR)/parameter.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
+$(OBJDIR)/metric.o :  $(BASE_SRC_DIR)/metric.cpp $(BASE_SRC_DIR)/metric.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
 $(OBJDIR)/panel.o :  $(DEVICE_SRC_DIR)/panel.cpp $(DEVICE_SRC_DIR)/panel.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
@@ -702,6 +707,9 @@ $(OBJDIR)/device_label.o :  $(WEB_SRC_DIR)/device_label.cpp $(WEB_SRC_DIR)/devic
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/device_status.o :  $(WEB_SRC_DIR)/device_status.cpp $(WEB_SRC_DIR)/device_status.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/device_metrics.o :  $(WEB_SRC_DIR)/device_metrics.cpp $(WEB_SRC_DIR)/device_metrics.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webcontrol.o :  $(WEB_SRC_DIR)/webcontrol.cpp $(WEB_SRC_DIR)/webcontrol.hpp

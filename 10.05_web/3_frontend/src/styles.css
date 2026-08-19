@@ -724,6 +724,41 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
 .dash-term .term { border-radius: var(--r-md); }
 .term-tabs #serial-bar { align-items: center; gap: 6px; margin-left: auto; }
 
+/* ---- the performance panel ----
+   A block per device, a row per metric. The rows are a grid rather than a flex
+   run so the numbers of every device line up in one column whatever their
+   labels are: a column of rates that does not align cannot be scanned, which is
+   the only thing this panel is for. */
+.perf-card .card-body { padding-bottom: 10px; }
+.perf-body { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.perf-cadence { font-size: var(--fs-1); }
+.perf-empty { margin: 2px 0 4px; color: var(--ink-muted); font-size: var(--fs-2); }
+
+.perf-dev { display: flex; flex-direction: column; gap: 1px; }
+.perf-dev-head {
+  display: flex; align-items: baseline; gap: 8px;
+  padding-bottom: 3px; margin-bottom: 2px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.perf-dev-name { font-weight: 650; font-size: var(--fs-2); }
+.perf-dev-type { color: var(--ink-muted); font-size: var(--fs-1); }
+.perf-dev-kind { margin-left: auto; color: var(--ink-faint); font-size: var(--fs-1); }
+
+.perf-row {
+  display: grid;
+  grid-template-columns: minmax(6.5em, auto) minmax(3.5em, max-content) minmax(4em, max-content) 1fr auto;
+  align-items: center; gap: 0 8px;
+  padding: 1px 0;
+}
+.perf-label { color: var(--ink-muted); font-size: var(--fs-2); white-space: nowrap; }
+.perf-num { text-align: right; font-variant-numeric: tabular-nums; font-size: var(--fs-2); }
+.perf-unit { color: var(--ink-faint); font-size: var(--fs-1); white-space: nowrap; }
+.perf-pct { color: var(--ink-muted); font-size: var(--fs-1); white-space: nowrap; }
+
+.perf-spark { width: 78px; height: 20px; display: block; }
+.perf-spark-line { fill: none; stroke: var(--accent); stroke-width: 1.25; stroke-linejoin: round; }
+.perf-spark-fill { fill: var(--accent-soft); stroke: none; }
+
 /* ============================ devices ============================ */
 .dev-card { margin-bottom: 14px; }
 .dev-head { cursor: pointer; user-select: none; }

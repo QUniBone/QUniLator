@@ -13,6 +13,7 @@ import type {
   BusState,
   LogLevelName,
   UpdateStatus,
+  MetricsState,
 } from './types';
 
 export interface Store {
@@ -48,6 +49,9 @@ export interface Store {
   notice: string;
   bus: BusState;
   hw: HwState;
+  // What each device is doing, from the 1 Hz `metrics` event, plus the history
+  // the performance panel draws its sparklines from. See types.ts.
+  metrics: MetricsState;
   log: LogLine[]; // ascending by id; newest appended, older pages prepended
   logMore: boolean; // older entries remain in the journal to page in
   activeLevels: Set<LogLevelName>;
@@ -79,6 +83,7 @@ export const store: Store = {
   heldBy: '',
   notice: '',
   bus: { halted: false, init: false },
+  metrics: { devs: [], history: {}, seen: false },
   hw: {
     // unknown until a state frame says otherwise: a page that has not heard
     // from the board has not measured anything

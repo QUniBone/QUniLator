@@ -209,6 +209,17 @@ public:
                                          true, "", "%u", "Instructions executed since the last start", 63, 10);
 
 public:
+    // How fast the machine is running, for the performance panel. Like the
+    // PDP-11 cores it reads the opcode counter rather than counting again; that
+    // the counter restarts with the machine costs nothing, the sampler dropping
+    // any interval a total fell across. See metric.hpp and cpu.hpp.
+    metric_c instructions{this, "instructions", metric_c::UNIT_INSTRUCTION,
+                                     "Instructions",
+                                     [this]() { return cycle_count.value; }};
+
+    // an emulated processor, to the interfaces that group devices by what they are
+    const char *category(void) const override { return "cpu"; }
+
     // reached from the seam's C callbacks
     bool bus_read(unsigned addr, unsigned *data);
     bool bus_write(unsigned addr, unsigned data, bool byte);

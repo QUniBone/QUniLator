@@ -243,6 +243,8 @@ void storagedrive_c::image_read(uint8_t *buffer, uint64_t position, unsigned len
         return ;
     set_activity_led(true) ; // indicate only read/write access
     image->read(buffer, position, len) ;
+    read_bytes.add(len) ;
+    transfers.add(1) ;
     set_activity_led(false) ;
 }
 
@@ -252,6 +254,8 @@ void storagedrive_c::image_write(uint8_t *buffer, uint64_t position, unsigned le
         return ;
     set_activity_led(true) ;
     image->write(buffer, position, len) ;
+    write_bytes.add(len) ;
+    transfers.add(1) ;
     set_activity_led(false) ;
 }
 // Service function for disk drive who need to clear unwritten bytes in last block of transaction

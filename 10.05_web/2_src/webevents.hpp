@@ -91,6 +91,11 @@ void webevents_note_settings(void);
 // timer. A committed parameter change marks it here on its own.
 void webevents_note_config_dirty(void);
 
+// What each device is doing, as the 1 Hz poll last measured it: the same
+// {"devs":[…]} the metrics event carries, for GET /api/metrics. See
+// poll_metrics() in webevents.cpp for what a rate is and when there is none.
+std::string webevents_metrics_json(void);
+
 // current (soft) halt state, as last set via the control API
 bool webevents_is_halted(void);
 

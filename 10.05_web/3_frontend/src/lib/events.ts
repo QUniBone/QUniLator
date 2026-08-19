@@ -5,7 +5,7 @@ import { patchParam, patchStatus } from './devmodel';
 import { clearConsole, updateConsoleSource } from './terminals';
 import { wsURL } from './util';
 import { syncVersion } from './version';
-import type { LogLevelName, LogLine, UpdateStatus } from '../types';
+import type { DevMetrics, LogLevelName, LogLine, UpdateStatus } from '../types';
 
 const LOG_LEVELS: Record<number, LogLevelName> = {
   1: 'FATAL',
@@ -14,6 +14,11 @@ const LOG_LEVELS: Record<number, LogLevelName> = {
   4: 'INFO',
   5: 'DEBUG',
 };
+
+// How many 1 Hz samples the performance panel keeps per metric: a minute, which
+// is long enough to show a burst against the idle around it and short enough to
+// draw legibly in the width of a card.
+export const METRIC_HISTORY = 60;
 
 export let eventsWs: WebSocket | null = null;
 
@@ -121,6 +126,31 @@ export function initEvents(): void {
         store.heldBy = held;
       }
       return 'now';
+    } else if (ev.t === 'metrics') {
+      // The whole set, once a second: the devices reporting, each with the rate
+      // it measured over the last interval. It replaces what was held rather
+      // than merging, so a device that has stopped reporting — switched off,
+      // taken out of the configuration — simply leaves.
+      const devs: DevMetrics[] = ev.devs || [];
+      const history = store.metrics.history;
+      const live = new Set<string>();
+      for (const d of devs)
+        for (const m of d.metrics || []) {
+          const key = d.dev + '/' + m.name;
+          live.add(key);
+          const h = history[key] || (history[key] = []);
+          h.push(m.rate);
+          // a minute of samples, which is what the sparkline draws
+          if (h.length > METRIC_HISTORY) h.shift();
+        }
+      // A device that stopped reporting keeps nothing: coming back, its old
+      // trace beside a fresh one would draw a minute that never happened.
+      for (const key of Object.keys(history)) if (!live.has(key)) delete history[key];
+      store.metrics.devs = devs;
+      store.metrics.seen = true;
+      // A rate that moves once a second is not what a page is repainting for;
+      // let it ride with whatever else the cycle brought.
+      return 'soon';
     } else if (ev.t === 'update') {
       // the whole update status, as GET /api/update answers it; the frame is
       // broadcast on every change and opens each connection

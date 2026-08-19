@@ -287,6 +287,46 @@ export interface BusState {
   init: boolean;
 }
 
+// ---- what the machine is doing, from the `metrics` event ----
+
+// What one count is, which is what decides how a rate is rendered: bytes become
+// KB/s, everything else is counted per second. See 10.01_base/2_src/arm/metric.hpp.
+export type MetricUnit = 'count' | 'byte' | 'instruction';
+
+// One measured rate of one device. `pct` and `reference` are present only where
+// there is something to compare against, which today is an emulated processor
+// and nothing else.
+export interface DevMetric {
+  name: string; // the key an API caller matches on
+  unit: MetricUnit;
+  label: string; // a couple of words for the head of the row
+  rate: number; // units a second, over the last sampling interval
+  pct?: number; // percentage of what the original machine ran at
+  reference?: number;
+}
+
+// One device's report. `kind` is the device's category — "cpu", "disk",
+// "network" — which is what groups the rows and picks how they read.
+export interface DevMetrics {
+  dev: string;
+  type: string;
+  kind: string;
+  metrics: DevMetric[];
+}
+
+// The panel's own memory of the stream: the latest report per device, in the
+// order the board sent it, and a bounded history per (device, metric) for the
+// sparklines. History is the client's — the board publishes a rate and keeps
+// nothing — so it starts when the page opens and is lost with it.
+export interface MetricsState {
+  devs: DevMetrics[];
+  // key is "<dev>/<metric>"; oldest first, newest last
+  history: Record<string, number[]>;
+  // whether any metrics frame has arrived, so the panel can tell "nothing to
+  // report" from "not heard from the board yet"
+  seen: boolean;
+}
+
 // What carries the machine's console: the ttyS2 bridge to a physical console
 // SLU, a Web Serial port in the browser, or the emulated DL11 at 777560.
 export type ConsoleSource = 'ttys2' | 'webserial' | 'dl11' | 'vax';

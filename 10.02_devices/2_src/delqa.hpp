@@ -94,6 +94,24 @@ public:
     parameter_bool_c loopback_connector = parameter_bool_c(this, "loopback", "lb", false,
             "loopback connector installed on the transceiver port");
 
+
+    // What the board has moved, for the performance panel. Frames and bytes are
+    // counted apart because they answer different questions: a line carrying
+    // 900 KB/s in 600 frames is doing bulk transfer, the same 900 KB/s in 15000
+    // frames is a machine in trouble. Counted where the frame crosses between
+    // the guest and the host interface, so what is reported is this board's
+    // traffic and not the segment's - the bridge sees every frame on a shared
+    // interface, and the ones this station does not accept are none of its
+    // business.
+    metric_c tx_frames{this, "tx_frames", metric_c::UNIT_COUNT,
+                                  "Frames sent"};
+    metric_c tx_bytes{this, "tx_bytes", metric_c::UNIT_BYTE,
+                                 "Sent"};
+    metric_c rx_frames{this, "rx_frames", metric_c::UNIT_COUNT,
+                                  "Frames received"};
+    metric_c rx_bytes{this, "rx_bytes", metric_c::UNIT_BYTE,
+                                 "Received"};
+
     dma_request_c dma_request{this};
     intr_request_c intr_request{this};
 

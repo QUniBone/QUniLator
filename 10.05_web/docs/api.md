@@ -503,6 +503,82 @@ configuration without putting any of it on the bus (see
 frozen and dark: `restart`, `halt`, and `continue` are refused with `409`, and
 `dc_on` is the only transition back up.
 
+## Performance
+
+What the machine is doing, as rates measured over the last second: an emulated
+processor's instruction rate, a drive's throughput and access count, an
+Ethernet board's traffic in each direction.
+
+Devices count what they have done and nothing else - a total, never reset,
+meaningless on its own because it only says how long the board has been up. The
+service samples those totals once a second and publishes the difference; the
+rate is the only number here, and there is no endpoint that reports a total.
+
+**Only an enabled device on a machine that is switched on reports.** A card the
+machine carries but has not been given power is off the bus and its counters
+cannot move, so it is absent rather than reported as zero - the difference
+between "not running" and "running and doing nothing" is one an operator needs.
+A device that stops reporting simply leaves the set; the frame is always the
+whole set, so a client replaces rather than merges.
+
+There is no rate until a metric has been sampled twice, so a device that has
+just been enabled is absent for one interval. A total that falls between two
+samples - an emulated processor's opcode count restarts at every HALT - drops
+the interval it fell across rather than reporting the difference, which would be
+a large negative rate.
+
+### `GET /api/metrics`
+
+```json
+{"devs": [
+  {"dev": "CPU34", "type": "PDP-11/34", "kind": "cpu",
+   "metrics": [
+     {"name": "instructions", "unit": "instruction", "label": "Instructions",
+      "rate": 412345.2, "pct": 103.1, "reference": 400000}]},
+  {"dev": "RL0", "type": "RL02", "kind": "disk",
+   "metrics": [
+     {"name": "read_bytes",  "unit": "byte",  "label": "Read",     "rate": 61440},
+     {"name": "write_bytes", "unit": "byte",  "label": "Written",  "rate": 26624},
+     {"name": "transfers",   "unit": "count", "label": "Accesses", "rate": 42}]},
+  {"dev": "XQ0", "type": "DELQA", "kind": "network",
+   "metrics": [
+     {"name": "tx_frames", "unit": "count", "label": "Frames sent",     "rate": 12},
+     {"name": "tx_bytes",  "unit": "byte",  "label": "Sent",            "rate": 1433},
+     {"name": "rx_frames", "unit": "count", "label": "Frames received", "rate": 240},
+     {"name": "rx_bytes",  "unit": "byte",  "label": "Received",        "rate": 31744}]}]}
+```
+
+| field | |
+|---|---|
+| `dev` | the device handle, as [`GET /api/devices`](#get-apidevices) names it |
+| `type` | its type name (`PDP-11/34`, `RL02`, `DELQA`) |
+| `kind` | the device's category, as `GET /api/devices` reports it: `cpu`, `disk`, `tape`, `network` |
+| `name` | the metric's key, stable across versions; match on this, not on the label |
+| `unit` | `instruction`, `byte` or `count`. What one count is, which is what decides how the rate reads: bytes per second, or things per second |
+| `label` | a couple of words for a person, in the device's own terms. Not a key |
+| `rate` | units per second over the last sampling interval, a floating-point number |
+| `pct` | the rate as a percentage of what the original machine ran at. **Present only for an emulated processor**; a drive's or a board's rate is set by what the guest asks of it and has nothing to be a percentage of |
+| `reference` | what `pct` is against, in units a second |
+
+This answers with what the once-a-second poll last measured rather than
+sampling on the spot: a rate exists only between two samples, and a request
+arriving a millisecond after the last one has no interval to measure. Polling
+this endpoint faster than once a second returns the same numbers again.
+
+#### What the percentage means
+
+`pct` is an emulated processor's instruction rate against an approximation of
+what the model it emulates ran at: 285,000 instructions a second for a
+PDP-11/20, 400,000 for a PDP-11/34, 500,000 for a VAX-11/780. Those are averages
+over an ordinary instruction mix taken from the processor handbooks' timings,
+and no two programs average the same instruction - the figures are a yardstick
+and the panel says "about" for that reason. Each is set in one place, its
+model's constructor (`cpu20.cpp`, `cpu34.cpp`, `cpuvax.cpp`), where the
+derivation is written down.
+
+A percentage over 100 is not an error: a BeagleBone executing PDP-11 opcodes can
+outrun the machine it is emulating, and on a quiet guest it usually does.
+
 ## Memory
 
 The board is bus master, so it reads and writes the machine's memory - its own
@@ -1435,6 +1511,7 @@ Text frames, one JSON event each, pushed to every connected client:
 | `{"t":"state","halt":…,"powered":…,"leds":[…],"switches":[…],"init":…,"dcok":…,"pok":…,"held_by":…,"notice":…}` | activity LEDs, DIP switches, HALT, the logical power flag, bus INIT/DCOK/POK, and what holds the board — published on change (10 Hz poll); a full snapshot opens every connection. `powered` is the runtime power flag driven by `dc_on`/`dc_off`; the dashboard derives RUN from `!halt && powered` and PWR OK from `powered`. Transitions may arrive as partial `state` frames (e.g. `{"t":"state","powered":false}`), which the client merges onto the last snapshot. `held_by` is described below. `dcok` and `pok` are described below. `notice` is the standing notice (see [the standing notice](#the-standing-notice)), a string or `null` |
 | `{"t":"config","current":…,"modified":…}` | current configuration and the live modified flag — published on apply, save, rename, and whenever the modified flag flips (10 Hz poll); a snapshot opens every connection |
 | `{"t":"settings"}` | a machine setting changed. **No payload** — a client rereads [`GET /api/settings`](#get-apisettings), which is the one description of what the settings now are. This is how a page follows a change it did not make itself, and in particular how a console whose port has moved re-points itself instead of going quietly dead |
+| `{"t":"metrics","devs":[…]}` | what each enabled device is doing, once a second: the same set [`GET /api/metrics`](#get-apimetrics) answers, described under [Performance](#performance). The frame is the whole set, so a client replaces rather than merges; an empty set is sent once when the last device stops reporting and then not again |
 | `{"t":"update", …}` | the update status, the same object [`GET /api/update`](#get-apiupdate) answers. Published whenever the updater's status file changes (the service stats it once a second), and as a snapshot on every new connection — so a second tab, and a tab opened during an install, both know what is going on |
 
 #### The bus power signals

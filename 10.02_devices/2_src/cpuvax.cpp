@@ -59,6 +59,13 @@ cpuvax_c::cpuvax_c() :
     emulation_speed.readonly = true;
     emulation_speed.value = 1;
 
+    // What a VAX-11/780 did in a second, for the percentage beside the
+    // instruction rate. The 780 is the machine the VUP is defined against, and
+    // its native rate is about half a million instructions a second - the
+    // "1 MIPS" it was sold as counts differently. See cpu20.cpp for what this
+    // number is and is not.
+    instructions.reference_per_second = 500000;
+
     memory_mb.value = 8;
     bootdevice.value = "RQ0";
     batch_size.value = 10000;

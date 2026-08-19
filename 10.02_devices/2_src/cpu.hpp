@@ -243,6 +243,21 @@ public:
     parameter_unsigned64_c cycle_count = parameter_unsigned64_c(this, "cycle_count", "cc",/*readonly*/
                                          true, "", "%u", "CPU opcodes executed since last HALT", 63, 10);
 
+    // How fast the machine is running, for the performance panel. It reads
+    // cycle_count rather than counting for itself: the opcode counter is
+    // incremented in the instruction loop, and an atomic add per instruction
+    // would be a cost paid a million times a second to measure a number sampled
+    // once. That cycle_count restarts at every HALT costs nothing here - the
+    // sampler drops any interval a total fell across.
+    //
+    // The model this is emulating sets reference_per_second in its constructor,
+    // and that is what the percentage is against. cpu_base_c leaves it at 0, so
+    // a model that has not said how fast its original ran reports a rate and no
+    // percentage rather than a percentage of nothing.
+    metric_c instructions{this, "instructions", metric_c::UNIT_INSTRUCTION,
+                                     "Instructions",
+                                     [this]() { return cycle_count.value; }};
+
     parameter_unsigned_c breakpoint = parameter_unsigned_c(this, "breakpoint", "bp",/*readonly*/
                                       false, "", "%06o", "Stop when CPU fetches opcode from octal address. 0 = disable", 16, 8);
 
@@ -252,6 +267,10 @@ public:
 
     void start(void);
     void stop(const char * info, int show_options=show_none);
+
+    // Every emulated processor is a "cpu" to the interfaces that group devices
+    // by what they are; nothing else on a backplane executes instructions.
+    const char *category(void) const override { return "cpu"; }
 
     // the front panel's view of the console switches
     parameter_bool_c *panel_run_led(void) override { return &runmode; }

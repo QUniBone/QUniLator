@@ -1464,6 +1464,29 @@ static int api_notice_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	return 200;
 }
 
+// GET /api/metrics — what each device is doing, as rates over the last second.
+//
+// The same set the `metrics` event carries on /ws/events, for a caller that has
+// no socket open. It reports what the 1 Hz poll last measured rather than
+// sampling on the spot: a rate exists only between two samples, and a request
+// arriving a millisecond after the last one has no interval to measure.
+static int api_metrics_handler(struct mg_connection *conn, void * /*cbdata*/) {
+	const struct mg_request_info *ri = mg_get_request_info(conn);
+	if (strcmp(ri->request_method, "GET") != 0) {
+		send_error(conn, 405, "GET required");
+		return 405;
+	}
+	std::string body = webevents_metrics_json();
+	mg_printf(conn,
+			"HTTP/1.1 200 OK\r\n"
+			"Content-Type: application/json\r\n"
+			"Cache-Control: no-store\r\n"
+			"Content-Length: %u\r\n\r\n",
+			(unsigned) body.size());
+	mg_write(conn, body.c_str(), body.size());
+	return 200;
+}
+
 static int api_log_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	const struct mg_request_info *ri = mg_get_request_info(conn);
 	if (strcmp(ri->request_method, "GET") != 0) {
@@ -1502,6 +1525,7 @@ void webapi_register(struct mg_context *ctx) {
 	webdebug_register(ctx);
 	mg_set_request_handler(ctx, "/api/log", api_log_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/notice", api_notice_handler, nullptr);
+	mg_set_request_handler(ctx, "/api/metrics", api_metrics_handler, nullptr);
 	webstorage_register(ctx);
 	webconfigs_register(ctx);
 	websettings_register(ctx);

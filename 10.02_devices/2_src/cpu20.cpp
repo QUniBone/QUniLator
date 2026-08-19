@@ -46,6 +46,17 @@ cpu20_c::cpu20_c() :
 
     swab_vbit.value = false;
 
+    // What a KA11 did in a second, for the percentage beside the instruction
+    // rate. The 11/20 runs out of 1.2 us core: a register-to-register operation
+    // takes 2.3 us, one memory operand about 3.5 us and two about 5.9 us
+    // (PDP-11/20 processor handbook, instruction timings). A mix weighted the
+    // way ordinary code runs comes out near 3.5 us, which is the 285 kHz below.
+    //
+    // It is a yardstick rather than a specification: no two programs average
+    // the same instruction, and the panel says "about" for that reason. One
+    // number per model, here, is what keeps it correctable.
+    instructions.reference_per_second = 285000;
+
     // emulation core state. Not in the header, so cpu20.hpp stays free of ka11.h
     ka11 = (struct KA11 *) calloc(1, sizeof(struct KA11));
     assert(ka11);

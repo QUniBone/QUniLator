@@ -100,6 +100,20 @@ public:
     parameter_unsigned64_c stat_tx_errors = parameter_unsigned64_c(this, "tx_errors", "txe", true, "",
             "%llu", "Transmit error count", 64, 10);
 
+    // What the board has moved, for the performance panel; see delqa.hpp for
+    // why frames and bytes are counted apart and why the count is taken where
+    // the frame crosses between the guest and the host interface rather than at
+    // the socket. These are the live rates, unrelated to the stat_* counters
+    // above, which are the controller's own registers as the driver reads them.
+    metric_c tx_frames{this, "tx_frames", metric_c::UNIT_COUNT,
+                                  "Frames sent"};
+    metric_c tx_bytes{this, "tx_bytes", metric_c::UNIT_BYTE,
+                                 "Sent"};
+    metric_c rx_frames{this, "rx_frames", metric_c::UNIT_COUNT,
+                                  "Frames received"};
+    metric_c rx_bytes{this, "rx_bytes", metric_c::UNIT_BYTE,
+                                 "Received"};
+
     /*
      * QUniBone device framework callbacks
      */
