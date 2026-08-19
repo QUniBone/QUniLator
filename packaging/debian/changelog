@@ -33,8 +33,42 @@ qbone (1.20.0-1) trixie; urgency=low
     master is there. It did so only for images opened without the
     copy-on-write overlay, which is not how a disk is attached by default, so
     an example naming a compressed image got an empty disk instead.
+  * A guest that asks the bus engine for something impossible no longer takes
+    the emulator down with it. A DMA range running past the end of memory, a
+    zero-length MSCP read, a register address another card already answers, a
+    slot two devices share, an interrupt vector wider than a byte - each was an
+    assert or a FATAL in the deployed binary, and each is now a refusal the
+    device reports as the NXM or the denied enable it is. A refused enable
+    gives the slot and the handle back, so the address can be moved and the
+    device enabled again. Beside those: a transfer the PRU never completes can
+    be abandoned instead of leaving its slot dead for the life of the process,
+    a cancelled transfer keeps the mailbox until the PRU signals, an image is
+    expanded and cleared without a shell, a memory probe bounds every cycle so
+    a dark machine cannot park the whole interface in one, and the KD11-EA
+    divides -2^31 by -1 the way the processor does.
+  * An idle board costs about 1% of its CPU where it cost 7%. A board with no
+    panel fitted stops polling for one - the first register write to each
+    MC23017 doubles as the probe, the worker starts only if a chip answers, and
+    the decision is remade at every configuration apply - and the external
+    console waits on its line with poll() rather than asking it 300 times a
+    second, which also hands a received byte on as soon as the kernel has it.
+  * The DCOK and POK lamps report the backplane signals the PRU measured on its
+    last pass, and show unknown - an empty dashed seat, a dimmed pill carrying
+    "?" - while no live sample stands behind them. They are the rails the
+    backplane drives, so switching the emulated machine off leaves them where
+    the backplane holds them.
+  * Every control and lamp of the console bezel says in hover text what it
+    drives: PWR OK follows the emulation being on the bus and points at
+    DCOK/POK for the rails, AUX ON/OFF switches the emulation and puts no edge
+    on the bus, HALT leaves the cards on the bus, and RESTART spells out the
+    power-cycle sequence it performs.
+  * The first-run dialog closes by saying where the board answers: the
+    <name>.local URL as a link, why to prefer it to the address DHCP handed
+    out, and "ssh <user>@<name>.local" for the account it just created. The
+    name shown is the one in force, so a host name the backend refused does not
+    appear.
 
- -- Frits Jalvingh <jal@etc.to>  Mon, 10 Aug 2026 23:28:01 +0200
+ -- Hans Huebner <hans@huebner.org>  Wed, 19 Aug 2026 09:00:00 +0200
 
 qbone (1.19.2-1) trixie; urgency=low
 
