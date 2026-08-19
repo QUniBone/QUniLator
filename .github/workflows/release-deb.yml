@@ -72,6 +72,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # release notes: the top changelog stanza as markdown, plus a summary.
+          # docs/release-notes.md is the style that stanza is written in.
           # awk prints the stanza body (past the version header, up to the
           # signature); sed turns "  * " bullets into "- " and reindents
           # continuation lines.
