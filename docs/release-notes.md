@@ -29,7 +29,7 @@ differently. It does not list the bullets in prose.
 Each bullet opens with a **short topic phrase closed by a period**, then says
 what the change does:
 
-    * Development kit in one command. "sudo qunilator-devkit" installs what a
+    * Development kit in one command. `sudo qunilator-devkit` installs what a
       build needs - compiler, headers, the TI PRU code generation tools - and
       fetches the repository into /root at the tag the installed package
       carries.
@@ -46,8 +46,11 @@ grouped.
 - **Present tense, declarative.** The version does this; it does not "will" do
   it and nobody "has added" it.
 - **Name the subject.** `compile.sh`, `qunilator-devkit`, DCOK and POK, the
-  first-run dialog. Commands, paths and parameters are written as they are
-  typed.
+  first-run dialog. Commands, options and paths are written as they are typed,
+  in backticks — which is also what keeps a placeholder intact, since the
+  release page is Markdown and swallows a bare `<name>` as an HTML tag. A
+  backticked command must not be broken across two lines; rephrase the sentence
+  so it fits.
 - **Say what it means for the operator**, not what was edited. "An idle board
   costs about 1% of its CPU" is the change; "the panel worker now probes before
   polling" is the implementation, and belongs after it if at all.

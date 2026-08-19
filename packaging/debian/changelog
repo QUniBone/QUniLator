@@ -10,40 +10,39 @@ qbone (1.20.0-1) trixie; urgency=low
   overlay and saved configurations with it, and the images an example mounts
   now live only in /var/lib/qunilator/images.
 
-  * Development kit in one command. "sudo qunilator-devkit" installs what a
+  * Development kit in one command. `sudo qunilator-devkit` installs what a
     build needs - compiler, headers, the TI PRU code generation tools - fetches
     the repository into /root at the tag matching the installed package, writes
     qunibone-platform.env for the card's bus, and personalizes the tree: the
     examples merged into one tree, 4_deploy linked, every *.sh executable, and
     a shortcut in /root to each example.
-  * Building on the card installs what it built. compile.sh puts qbone-web in
-    /usr/bin/<name> and demo in /usr/bin/<name>-cli, set-user-id root and
-    executable by qunilator-admin, then restarts the service. "-n" installs
-    without the restart, "-N" builds without installing.
+  * Building on the card installs what it built. `compile.sh` puts `qbone-web`
+    in `/usr/bin/<name>` and `demo` in `/usr/bin/<name>-cli`, set-user-id root
+    and executable by qunilator-admin, then restarts the service. `-n` installs
+    without the restart, `-N` builds without installing.
   * The example machines are back, under 10.03_app_demo/5_applications: one
     executable command file per machine, for both buses. The disk images they
-    mount travel separately - "sudo qunilator-fetch-images" brings this board's
+    mount travel separately - `sudo qunilator-fetch-images` brings this board's
     set into /var/lib/qunilator/images, where the examples mount them from and
     the web interface lists them, and there is no second copy anywhere else.
   * Command files run from anywhere. One may be named as a bare argument, which
-    is what makes a "#!" line work, and the files it names are looked for
+    is what makes a `#!` line work, and the files it names are looked for
     beside the script - following a symbolic link first, so the shortcuts in
     /root resolve against the example's own directory. What a run creates still
-    lands in the directory it was started from. A drive given "<image>.gz"
+    lands in the directory it was started from. A drive given `<image>.gz`
     expands the compressed master even when it is opened with a copy-on-write
     overlay, which is how a disk is attached by default; an example naming a
     compressed image used to come up with an empty disk.
-  * First login names what the image does not carry: "sudo qunilator-devkit"
-    for the source tree and the example .sh files, and
-    "sudo qunilator-fetch-images" for the disk images. Each line goes away once
-    what it offers is there and comes back if that is deleted again, and it is
-    printed at interactive login shells only, so "ssh <board> <command>" is
-    unaffected.
+  * First login names what the image does not carry: the source tree and the
+    example .sh files from `sudo qunilator-devkit`, the disk images from
+    `sudo qunilator-fetch-images`. Each line goes away once what it offers is
+    there and comes back if that is deleted again, and it is printed at
+    interactive login shells only, so `ssh <board> <command>` is unaffected.
   * Setup ends by saying where the board is. The first-run dialog closes with
-    the <name>.local URL as a link, why to prefer it to the address DHCP handed
-    out, and "ssh <user>@<name>.local" for the account it just created. The
-    name shown is the one in force, so a host name the backend refused does not
-    appear.
+    the `<name>.local` URL as a link, why to prefer it to the address DHCP
+    handed out, and `ssh <user>@<name>.local` for the account it just created.
+    The name shown is the one in force, so a host name the backend refused does
+    not appear.
   * The bus engine refuses what it used to abort on. A DMA range running past
     the end of memory, a zero-length MSCP read, a register address another card
     already answers, a slot two devices share, an interrupt vector wider than a
