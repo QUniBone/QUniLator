@@ -33,6 +33,12 @@ void webconfigs_startup(const std::string &override_config);
 // only when the machine has changed, and skips a busy registry.
 void webconfigs_mirror_current(void);
 
+// The device set was destroyed and reconstructed (the board came back from the
+// interactive menu or a self-test): drop the captured parameter defaults, whose
+// keys are the old set's addresses, and capture the fresh set's. Call right
+// after devices_startup(), before anything is applied to the new set.
+void webconfigs_devices_rebuilt(void);
+
 // Re-select and apply the DIP-matched configuration, as a power-on does. The
 // the configuration the running machine currently represents
 std::string webconfigs_current(void);

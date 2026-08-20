@@ -478,6 +478,13 @@ int main(int argc, char *argv[])
 		{
 			std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
 			app->devices_startup(internal_bus);
+			// The parameter defaults webconfigs holds are keyed by the OLD
+			// set's parameter addresses; left in place, the apply below reads
+			// stale entries through reused heap addresses and resets parameters
+			// to values that were never theirs (seen dying on the backplane
+			// slot assertion). Re-captured here, while the fresh set still
+			// stands at its construction defaults.
+			webconfigs_devices_rebuilt();
 			webconsole_register(web_server.context());
 			webconsole_ext_register(web_server.context());
 			// Registering starts the bridge's threads; the tty it carries is
