@@ -17,6 +17,8 @@
        as "aborted";
      - a cli path that cannot be exec'd ends as "error" with the reason in the
        output;
+     - a "HINT: " line is lifted out of the stream into the status while
+       staying in the output, and the last one of a run stands;
      - the changed callback fires on start and on end.
 
    Build & run: 10.05_web/tools/run_config_test.sh.
@@ -84,6 +86,11 @@ static const char *stub_script =
 		"pass) echo out1; echo out2; exit 0;;\n"
 		"fail) echo bad; exit 1;;\n"
 		"refuse) echo no; exit 2;;\n"
+		// a hint line among the output, and a run whose hint is superseded by a
+		// later one; the CR is what a progress bar ends its line with
+		"hint) echo scrollback; printf 'HINT: fit the jumpers   \\r'; echo done; exit 1;;\n"
+		"hint2) echo 'HINT: first'; echo 'HINT: second'; exit 1;;\n"
+		"nohint) echo 'not a HINT: line'; exit 1;;\n"
 		// the background sleep gets /dev/null, so its inherited pipe end does
 		// not hold the runner's EOF open after the script exits on SIGINT
 		"wait-int) trap 'exit 0' INT; echo ready; sleep 30 >/dev/null 2>&1 & wait $!; exit 0;;\n"
@@ -214,6 +221,24 @@ int main(void) {
 		CHECK(output().find("cannot run") != std::string::npos,
 				"missing cli says why");
 	}
+
+	/*** a hint the test named for itself ***/
+	reset_sink();
+	CHECK(runner.start("hint", 0, 0, &error), "start hint");
+	CHECK(wait_done(runner, 5000), "hint run ends");
+	CHECK(runner.status().hint == "fit the jumpers", "hint is lifted out, trailing blanks gone");
+	CHECK(output().find("HINT: fit the jumpers") != std::string::npos,
+			"the hint line stays in the output too");
+
+	reset_sink();
+	CHECK(runner.start("hint2", 0, 0, &error), "start hint2");
+	CHECK(wait_done(runner, 5000), "hint2 run ends");
+	CHECK(runner.status().hint == "second", "the last hint of a run stands");
+
+	reset_sink();
+	CHECK(runner.start("nohint", 0, 0, &error), "start nohint");
+	CHECK(wait_done(runner, 5000), "nohint run ends");
+	CHECK(runner.status().hint.empty(), "a run that names no cause carries no hint");
 
 	unlink(stub.c_str());
 	rmdir(dir);

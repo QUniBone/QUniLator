@@ -93,10 +93,16 @@ public:
 
 	void exerciser_random_order();
 
-	// false = stopped on a read-back mismatch
-	bool test_simple_pattern(unsigned pattern, buslatch_c *bl);
-	// returns the number of failed accesses, 0 = clean run
-	uint64_t test_simple_pattern_multi(unsigned pattern, bool stop_on_error);
+	// false = stopped on a read-back mismatch. error_mask, when given, comes
+	// back with the bits that did not read back - which wires failed, not just
+	// that some did, so a caller can tell one wiring mistake from another.
+	bool test_simple_pattern(unsigned pattern, buslatch_c *bl,
+			uint8_t *error_mask = nullptr);
+	// returns the number of failed accesses, 0 = clean run. error_masks, when
+	// given, is BUSLATCHES_COUNT bytes and collects the failing bits per
+	// register over the whole run.
+	uint64_t test_simple_pattern_multi(unsigned pattern, bool stop_on_error,
+			uint8_t *error_masks = nullptr);
 
 	void test_timing(uint8_t addr_0_7, uint8_t addr_8_15, uint8_t data_0_7, uint8_t data_8_15);
 

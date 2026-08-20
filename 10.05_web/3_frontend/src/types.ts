@@ -287,11 +287,13 @@ export interface SelftestInfo {
 export interface SelftestRun {
   test: string;
   started_at: number;
+  hint: string; // a likely cause the test named for itself; '' = it named none
 }
 
 export interface SelftestResult {
   test: string;
   verdict: string; // 'passed' | 'failed' | 'error' | 'aborted'
+  hint: string; // a likely cause the test named for itself; '' = it named none
   exit_code: number; // -1: ended by a signal
   started_at: number;
   ended_at: number;

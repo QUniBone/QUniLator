@@ -1657,6 +1657,14 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
 .selftest-output-card:not(.has-output) .card-body { display: none; }
 .selftest-output-card:not(.has-output) .card-head { padding-bottom: 14px; }
 .selftest-output-card.running { border-color: var(--accent); }
+/* what the test made of its own failure - read before the scrollback, since
+   it is the answer the scrollback has to be read to reach */
+.selftest-hint {
+  margin: 0 0 10px; padding: 8px 10px; border-radius: var(--r-sm);
+  border: 1px solid var(--warn); background: var(--warn-soft);
+  font-size: var(--fs-1); line-height: 1.45;
+}
+.selftest-hint strong { color: var(--warn); }
 /* the raw child output; the pane keeps its own scrollback like the changelog */
 .selftest-output { max-height: min(340px, 40vh); min-height: 120px; }
 .selftest-verdict-passed { color: var(--ok); background: var(--ok-soft); }

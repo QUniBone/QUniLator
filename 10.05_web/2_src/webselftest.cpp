@@ -75,6 +75,9 @@ static void status_members(picojson::object *out) {
 		picojson::object run;
 		run["test"] = picojson::value(st.test);
 		run["started_at"] = picojson::value((double) st.started_at);
+		// a test can name a cause before it ends - a stepped run says so at the
+		// step that failed, and there is no reason to sit on it until the verdict
+		run["hint"] = picojson::value(st.hint);
 		out->insert(std::make_pair("running", picojson::value(run)));
 	} else
 		out->insert(std::make_pair("running", picojson::value()));
@@ -82,6 +85,7 @@ static void status_members(picojson::object *out) {
 		picojson::object last;
 		last["test"] = picojson::value(st.test);
 		last["verdict"] = picojson::value(st.verdict);
+		last["hint"] = picojson::value(st.hint);
 		last["exit_code"] = picojson::value((double) st.exit_code);
 		last["started_at"] = picojson::value((double) st.started_at);
 		last["ended_at"] = picojson::value((double) st.ended_at);

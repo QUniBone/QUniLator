@@ -997,8 +997,9 @@ to the one for the board's bus.
   "setup": "Fit the 5 loopback jumpers on BG4, BG5, BG6, BG7 and NPG…",
   "machine_safe": false, "unbounded": true, "default_seconds": 10}],
  "running": null,
- "last": {"test": "latch-multi", "verdict": "passed", "exit_code": 0,
-  "started_at": 1766140000, "ended_at": 1766140010}}
+ "last": {"test": "latch-multi", "verdict": "failed", "hint": "every error was on
+   the grant lines (BG4, BG5, BG6, BG7 and NPG) and on nothing else…",
+  "exit_code": 1, "started_at": 1766140000, "ended_at": 1766140010}}
 ```
 
 The catalog is platform-specific (the M9302 SACK test exists only on UNIBUS, and
@@ -1008,6 +1009,15 @@ has to be fitted before it, `machine_safe` whether it may be run with the board
 in a machine rather than on the bench; each is `""`/`false` where it does not
 apply. `unbounded` marks a test that loops until stopped and takes a `seconds`
 bound; `default_seconds` is the suggested bound, `0` a test that ends by itself.
+
+`hint`, on both `running` and `last`, is a likely cause the test named for
+itself, or `""`. A failure shape a test recognises says so on a `HINT: ` line,
+which the service lifts out of the stream as it passes — the latch tests
+recognise the one that matters, every error on the grant lines and nowhere
+else, which is what a board tested without its loopback jumpers does. The line
+stays in the output as well, for anyone reading the run in a terminal. A hint
+can appear before the verdict, and publishes a `selftest` event when it does;
+the last one of a run stands.
 
 `running` is the test in progress or `null`; `last` is the previous run's
 outcome, in memory only — a service restart forgets it. `verdict` is `passed`

@@ -95,6 +95,44 @@ static void selftest_claim_watchdog(void)
 }
 #endif
 
+// ---- reading a failure ---------------------------------------------------
+
+// The grant chain leaves the board on one pin and comes back on another, so a
+// latch test run without the loopback jumpers fails on exactly those bits and
+// on nothing else. It is the commonest way to run these tests wrong, and what
+// it leaves behind is a screenful of signal paths for the operator to read and
+// draw the conclusion from - so draw it for them.
+#if defined(UNIBUS)
+static const unsigned grant_latch = 0;      // BG4567, NPG - the whole latch
+static const uint8_t grant_mask = 0x1f;
+static const char *grant_signals = "BG4, BG5, BG6, BG7 and NPG";
+static const char *grant_jumpers = "the 5 loopback jumpers on BG4/5/6/7 and NPG (IN to OUT)";
+#else
+static const unsigned grant_latch = 6;      // IAKI/IAKO on .5, DMGI/DMGO on .6
+static const uint8_t grant_mask = 0x60;
+static const char *grant_signals = "IAKI/IAKO and DMGI/DMGO";
+static const char *grant_jumpers = "the 2 loopback jumpers on IAKI-IAKO and DMGI-DMGO";
+#endif
+
+// error_masks is BUSLATCHES_COUNT bytes of "these bits of this latch failed".
+// Only the clean signature is named: grant bits wrong and nothing else wrong.
+// Errors elsewhere as well mean something the jumpers do not explain, and a
+// wrong cause is worse than none.
+static void selftest_diagnose_latches(const uint8_t *error_masks)
+{
+    if ((error_masks[grant_latch] & grant_mask) == 0)
+        return; // the grant lines were not the problem
+    for (unsigned i = 0; i < BUSLATCHES_COUNT; i++) {
+        uint8_t other = (i == grant_latch) ? (error_masks[i] & ~grant_mask) : error_masks[i];
+        if (other != 0)
+            return; // something failed that the jumpers would not explain
+    }
+    printf(SELFTEST_HINT_PREFIX
+            "every error was on the grant lines (%s) and on nothing else - which is "
+            "what this test does when %s are not fitted. Fit them and run it again.\n",
+            grant_signals, grant_jumpers);
+}
+
 // ---- the tests, one function per test id ---------------------------------
 
 // menu "tl", commands <id> u/o/z/t/r: every latch through every ARM-driven
@@ -105,22 +143,27 @@ static int selftest_latch_single(unsigned seconds)
 {
     unsigned failed_steps = 0;
     unsigned step_seconds = seconds ? (seconds + 31) / 32 : 1;
+    uint8_t error_masks[BUSLATCHES_COUNT] = { 0 };
 
     for (unsigned pattern = 2; pattern <= 5; pattern++) {
         for (unsigned i = 0; i < 8; i++) {
             selftest_alarm(step_seconds);
-            if (!buslatches.test_simple_pattern(pattern, buslatches[i]))
+            if (!buslatches.test_simple_pattern(pattern, buslatches[i], &error_masks[i]))
                 failed_steps++;
             if (selftest_stopped_by_operator()) {
                 printf("Stopped; %u of the 32 latch/pattern steps were run.\n",
                         pattern * 8 + i - 15);
+                if (failed_steps)
+                    selftest_diagnose_latches(error_masks);
                 return failed_steps ? SELFTEST_EXIT_FAIL : SELFTEST_EXIT_PASS;
             }
         }
     }
     alarm(0);
-    if (failed_steps)
+    if (failed_steps) {
         printf("\n%u of 32 latch/pattern steps failed.\n", failed_steps);
+        selftest_diagnose_latches(error_masks);
+    }
     return failed_steps ? SELFTEST_EXIT_FAIL : SELFTEST_EXIT_PASS;
 }
 
@@ -128,8 +171,12 @@ static int selftest_latch_single(unsigned seconds)
 // the PRU exerciser. Runs through errors and reports the count.
 static int selftest_latch_multi(unsigned seconds)
 {
+    uint8_t error_masks[BUSLATCHES_COUNT] = { 0 };
     selftest_alarm(seconds);
-    uint64_t errors = buslatches.test_simple_pattern_multi(5, /*stop_on_error*/false);
+    uint64_t errors = buslatches.test_simple_pattern_multi(5, /*stop_on_error*/false,
+            error_masks);
+    if (errors)
+        selftest_diagnose_latches(error_masks);
     return errors ? SELFTEST_EXIT_FAIL : SELFTEST_EXIT_PASS;
 }
 
@@ -149,7 +196,14 @@ static int selftest_latch_timing(unsigned seconds)
 static int selftest_m9302_sack(unsigned seconds)
 {
     selftest_alarm(seconds);
-    return buslatches_m9302_sack_test() ? SELFTEST_EXIT_PASS : SELFTEST_EXIT_FAIL;
+    if (buslatches_m9302_sack_test())
+        return SELFTEST_EXIT_PASS;
+    // the mirror image of the latch tests: here the grants must reach the far
+    // end of the bus, so the jumpers that make those tests pass make this one fail
+    printf(SELFTEST_HINT_PREFIX
+            "the M9302 answers SACK only when the grants reach it: check that an M9302 "
+            "terminates the bus, and that the BG*/NPG loopback jumpers are removed.\n");
+    return SELFTEST_EXIT_FAIL;
 }
 #endif
 

@@ -52,6 +52,10 @@ public:
 	struct status_t {
 		bool running = false;
 		std::string test;      // the running test, or the last one; "" = never ran
+		// A likely cause the test named for itself, from the last "HINT: " line
+		// it printed (SELFTEST_HINT_PREFIX in the cli's selftest.hpp): the
+		// missing loopback jumpers, above all. "" = the test said nothing.
+		std::string hint;
 		std::string verdict;   // "" while running: "passed","failed","error","aborted"
 		int exit_code = -1;    // -1: killed by signal, or still running
 		time_t started_at = 0;
@@ -86,6 +90,10 @@ public:
 
 private:
 	void supervise(int pipe_fd, pid_t pid);
+	// Assemble the child's output into lines as it streams past and keep the
+	// text of any that announces a likely cause. Bare CR ends a line too: the
+	// progress bars redraw with it, so a line that never sees LF still ends.
+	void scan_for_hint(const char *data, size_t len);
 
 	std::string cli_path_;
 	output_fn_t output_;
@@ -99,6 +107,7 @@ private:
 	status_t status_;
 	pid_t pid_ = -1;             // running child, -1 when idle
 	time_t stop_requested_ = 0;  // when SIGINT was sent, 0 = not asked to stop
+	std::string line_;           // the child's output line being assembled
 	std::thread supervisor_;     // joined before reuse and at shutdown
 };
 

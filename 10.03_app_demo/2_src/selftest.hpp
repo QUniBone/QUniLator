@@ -20,4 +20,11 @@
 // test, no panel fitted.
 #define SELFTEST_EXIT_ERROR	2
 
+// A line naming a likely cause, when the failure has a shape the test can
+// recognise - the missing loopback jumpers, above all. The service lifts such
+// a line out of the stream and shows it beside the verdict, so it is read
+// rather than scrolled past; what follows the prefix to the end of the line is
+// operator-facing text and nothing else.
+#define SELFTEST_HINT_PREFIX	"HINT: "
+
 #endif

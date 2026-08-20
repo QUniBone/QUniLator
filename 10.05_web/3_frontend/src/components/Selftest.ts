@@ -172,6 +172,7 @@ export function SelftestPage() {
   const last = s.selftest.last;
   const busy = running !== null;
   const doc = ACCEPTANCE_DOC[s.platform];
+  const hint = (running ? running.hint : last ? last.hint : '') || '';
 
   // The output is docked to the bottom of the page and the tests scroll behind
   // it: a run is watched, not scrolled to, and Stop stays under the hand
@@ -233,6 +234,14 @@ export function SelftestPage() {
         }
       </div>
       <div class="card-body">
+        ${
+          // What the test made of its own failure: the missing loopback jumpers
+          // produce an exact set of errors, and the operator should not have to
+          // read eight signal paths to recognise it.
+          hint
+            ? html`<div class="selftest-hint"><strong>Likely cause:</strong> ${hint}</div>`
+            : null
+        }
         <${OutputPane} onData=${() => setHasOutput(true)} />
         ${
           last && !running

@@ -161,7 +161,8 @@ void buslatches_c::set_pin_val(buslatches_wire_info_t *wi, unsigned val)
 // read back and compare values
 // stop with ^C
 // DOES TEST MUXED ADDR
-bool buslatches_c::test_simple_pattern(unsigned pattern, buslatch_c *bl)
+bool buslatches_c::test_simple_pattern(unsigned pattern, buslatch_c *bl,
+		uint8_t *error_mask)
 {
 	unsigned idx, setval = 0, chkval;
 	unsigned count;
@@ -228,6 +229,8 @@ bool buslatches_c::test_simple_pattern(unsigned pattern, buslatch_c *bl)
 			chkval = ~chkval; // input latches invert
 		chkval &= bl->rw_bitmask;
 		if (chkval != setval) {
+			if (error_mask != nullptr)
+				*error_mask |= (chkval ^ setval) & bl->rw_bitmask;
 			printf("pass %u test_register_simple_pattern(%d, %d): wrote 0x%x, read 0x%x\n",
 					count, pattern, bl->addr, setval, chkval);
 			if (bl->addr == 6) {
@@ -261,7 +264,8 @@ void buslatches_c::exerciser_random_order()
 // always reg0..7 are read&written, but muxed ADDR in 3,4,5 are ignored
 // because of "rw_bitmask" == 0
 // DOES NOT TEST MUXED ADDR
-uint64_t buslatches_c::test_simple_pattern_multi(unsigned pattern, bool stop_on_error)
+uint64_t buslatches_c::test_simple_pattern_multi(unsigned pattern, bool stop_on_error,
+		uint8_t *error_masks)
 {
 	unsigned pass_no; // global test number counter
 	uint64_t total_errors, total_tests;
@@ -399,6 +403,8 @@ uint64_t buslatches_c::test_simple_pattern_multi(unsigned pattern, bool stop_on_
 			if (((readval ^ writeval) & ~ignoremask) != 0)  {
 //			if (readval != writeval) {
 				total_errors++;
+				if (error_masks != nullptr)
+					error_masks[reg_sel] |= (readval ^ writeval) & ~ignoremask;
 				printf(
 						"Error buslatches_test_simple_pattern_multi(pattern=%d), pass %u, PRU exerciser pattern=%d:\n",
 						pattern, pass_no, (unsigned) mailbox->buslatch_exerciser.pattern);

@@ -21,6 +21,14 @@
 // seconds means the child is stuck, not slow.
 static const time_t stop_grace_seconds = 5;
 
+// What a test prints when it can name a likely cause for what it just found;
+// the contract is SELFTEST_HINT_PREFIX in the cli's selftest.hpp, repeated
+// here for the same reason the exit codes are - this module builds without the
+// cli's headers. A hint is one line of prose, so a line longer than this is
+// not one and is left in the scrollback where it belongs.
+static const char hint_prefix[] = "HINT: ";
+static const size_t max_line_length = 1024;
+
 // The loopback jumpers the latch tests need. The grant chain leaves the board
 // on one pin and comes back on another, so the grant bits of latch 0 (UNIBUS)
 // or 6 (QBUS) read back nothing unless the two are strapped together - a test
@@ -199,11 +207,40 @@ bool selftest_runner_c::start(const std::string &test, unsigned seconds,
 		status_.started_at = time(nullptr);
 		pid_ = pid;
 		stop_requested_ = 0;
+		line_.clear(); // the previous run's last line is not this run's first
 	}
 	supervisor_ = std::thread(&selftest_runner_c::supervise, this, pipefd[0], pid);
 	if (changed_)
 		changed_();
 	return true;
+}
+
+void selftest_runner_c::scan_for_hint(const char *data, size_t len) {
+	for (size_t i = 0; i < len; i++) {
+		char c = data[i];
+		if (c != '\n' && c != '\r') {
+			// a line past the bound is not a hint; keep dropping until it ends
+			if (line_.size() < max_line_length)
+				line_ += c;
+			continue;
+		}
+		if (!line_.compare(0, sizeof hint_prefix - 1, hint_prefix)) {
+			std::string text = line_.substr(sizeof hint_prefix - 1);
+			while (!text.empty() && (text.back() == ' ' || text.back() == '\t'))
+				text.pop_back();
+			bool fresh;
+			{
+				std::lock_guard<std::mutex> lock(mutex_);
+				fresh = status_.hint != text;
+				status_.hint = text; // the last one stands: it saw the most
+			}
+			// a stepped test names the cause at the step that failed, so say so
+			// then rather than at the verdict
+			if (fresh && changed_)
+				changed_();
+		}
+		line_.clear();
+	}
 }
 
 // The supervisor owns the child from fork to waitpid: it streams the pipe,
@@ -218,6 +255,7 @@ void selftest_runner_c::supervise(int pipe_fd, pid_t pid) {
 			ssize_t n = read(pipe_fd, buf, sizeof buf);
 			if (n <= 0)
 				break; // EOF or error: the child is gone
+			scan_for_hint(buf, (size_t) n);
 			if (output_)
 				output_(buf, (size_t) n);
 		}
