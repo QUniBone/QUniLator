@@ -178,16 +178,10 @@ export function SelftestPage() {
   // wherever in the list the test that is running was started from.
   return html`<section class="page active" data-page="selftest">
     <div class="selftest-scroll">
-    <p class="lede">
-      The board's own test routines, from the interactive test menus. Running
-      one takes the machine down for the length of the test - the board is
-      handed to the test program and the machine comes back${' '}
-      <strong>switched off</strong>.
-      ${' '}<a href="#" onClick=${(e: Event) => {
+    <p class="selftest-back"><a href="#" onClick=${(e: Event) => {
         e.preventDefault();
         loc.route('/system');
-      }}>Back to System.</a>
-    </p>
+      }}>Back to System</a></p>
 
     <div class="selftest-danger" role="alert" style="max-width:720px">
       <div class="selftest-danger-head">Never run these tests in a real machine</div>
