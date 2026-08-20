@@ -82,6 +82,13 @@ $CXX -std=c++11 -Wall -Wextra -I "$WEB" \
 	"$WEB/webrecording.cpp" \
 	-lpthread -o "$OUT/recording_test"
 
+# The self-test child supervisor is civetweb-free: it forks a program and owns
+# it to the exit code, so the test drives it with a shell script for a child.
+$CXX -std=c++11 -Wall -Wextra -I "$WEB" \
+	"$TOOLS/selftest_test.cpp" \
+	"$WEB/selftest_runner.cpp" \
+	-lpthread -o "$OUT/selftest_test"
+
 # The disk-status and power-gate helpers are pure functions with no device or
 # civetweb dependency, so they link against nothing but their own units.
 $CXX -std=c++11 -Wall -Wextra -I "$WEB" \
@@ -117,6 +124,7 @@ $CXX -std=c++11 -Wall -Wextra -I "$DEV" \
 "$OUT/seed_test"
 "$OUT/console_channel_test"
 "$OUT/recording_test"
+"$OUT/selftest_test"
 "$OUT/status_power_test"
 "$OUT/metrics_test"
 "$OUT/serial_tcp_line_test"

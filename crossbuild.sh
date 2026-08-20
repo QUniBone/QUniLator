@@ -403,6 +403,18 @@ deploy_appliance() {
         && rm -f /tmp/$NAME.new \
         && sudo systemctl restart $NAME.service"
 
+    # The interactive/self-test program rides along: the service runs it as a
+    # child for the hardware self-tests, and the two came out of one build, so
+    # deploying one without the other leaves the board running mixed versions.
+    # Ownership and mode as the package installs it (see build-deb.sh postinst).
+    echo "Deploying $BINARY to $QUNILATOR_HOST:/usr/bin/$NAME-cli ..."
+    scp "$BINARY" "$QUNILATOR_HOST:/tmp/$NAME-cli.new"
+    ssh "$QUNILATOR_HOST" "sudo install -m 755 /tmp/$NAME-cli.new /usr/bin/$NAME-cli.new \
+        && sudo mv /usr/bin/$NAME-cli.new /usr/bin/$NAME-cli \
+        && rm -f /tmp/$NAME-cli.new \
+        && sudo chown root:qunilator-admin /usr/bin/$NAME-cli \
+        && sudo chmod 4750 /usr/bin/$NAME-cli"
+
     # The frontend is served from disk, so swapping it needs no restart. The
     # bundles are content-hashed, so this unpacks over what is there: index.html
     # names the new ones and the superseded ones are simply no longer asked for.

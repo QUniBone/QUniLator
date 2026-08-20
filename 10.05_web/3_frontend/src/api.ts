@@ -17,6 +17,8 @@ import type {
   PackageRom,
   DebugCpu,
   DebugListing,
+  SelftestInfo,
+  SelftestState,
 } from './types';
 
 export interface ApiResult<T = Record<string, unknown>> {
@@ -174,6 +176,32 @@ export async function putSettings(
   toast('PUT /api/settings', warns || (res.ok ? okMsg : res.data.error || 'rejected'));
   await refreshSettings().catch(() => {});
   return res;
+}
+
+// ---- hardware self-tests ----
+// The catalog with the current run state. The live state after this comes from
+// the "selftest" event frame; this is the page's initial read.
+export async function fetchSelftests(): Promise<({ tests: SelftestInfo[] } & SelftestState) | null> {
+  const r = await apiJSON<{ tests: SelftestInfo[] } & SelftestState>('/api/selftest');
+  return r.ok ? r.data : null;
+}
+
+// Start one test. seconds bounds an unbounded test; 0 = until stopped. The
+// board answers 409 while a test runs or while something else holds it, and
+// that refusal belongs on the page, so it is returned rather than only toasted.
+export async function runSelftest(test: string, seconds: number): Promise<ApiResult<{ error?: string }>> {
+  const res = await apiJSON<{ error?: string }>('/api/selftest/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ test, seconds }),
+  });
+  toast('selftest: ' + test, res.ok ? 'started' : res.data.error || 'refused');
+  return res;
+}
+
+export async function stopSelftest(): Promise<void> {
+  const res = await apiJSON<{ error?: string }>('/api/selftest/stop', { method: 'POST' });
+  if (!res.ok) toast('selftest: stop', res.data.error || 'refused');
 }
 
 // ---- diagnostics log ----

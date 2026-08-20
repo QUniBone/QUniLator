@@ -1594,3 +1594,30 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
   color: var(--ink-faint);
   flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
 }
+
+/* ---- hardware self-tests (/system/selftest) ---- */
+/* One test per row: what it is on the left, how to run it on the right. The
+   warning is the operator-facing constraint (empty bus, memory overwritten),
+   styled like the other warnings on the System page. */
+.selftest-row {
+  display: flex; gap: 14px; align-items: flex-start;
+  padding: 11px 0; border-top: 1px solid var(--line-soft);
+}
+.selftest-row:first-child { border-top: none; padding-top: 0; }
+.selftest-row-text { flex: 1 1 auto; min-width: 0; font-size: var(--fs-1); }
+.selftest-row-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 2px; }
+.selftest-warning {
+  margin-top: 4px; font-size: var(--fs-1); color: var(--warn);
+}
+.selftest-row-run {
+  flex: 0 0 auto; display: flex; gap: 8px; align-items: center;
+  font-size: var(--fs-1);
+}
+.selftest-seconds { width: 64px; margin-left: 4px; }
+/* the raw child output; the pane keeps its own scrollback like the changelog */
+.selftest-output { max-height: 340px; min-height: 120px; }
+.selftest-verdict-passed { color: var(--ok); background: var(--ok-soft); }
+.selftest-verdict-failed { color: var(--err); background: var(--err-soft); }
+.selftest-verdict-error { color: var(--warn); background: var(--warn-soft); }
+.selftest-verdict-aborted { color: var(--warn); background: var(--warn-soft); }
+.pill.busy { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }

@@ -55,5 +55,9 @@ bool boardclaim_take(std::string *error);
 // Give the board back. Called on the way out; the claim ends with the process
 // either way.
 void boardclaim_release(void);
+// The claim connection's fd, or -1 when no service was there to yield. The
+// service closing its end (a restart) means the claim is void and whatever runs
+// on it must stop; a watchdog polls this fd for that.
+int boardclaim_fd(void);
 
 #endif // _BOARDCLAIM_HPP_

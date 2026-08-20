@@ -819,7 +819,7 @@ void qunibus_c::test_mem_print_error(uint32_t mismatch_count, uint32_t start_add
 }
 
 // arbitration_active: if 1, perform NPR/NPG/SACK arbitration before mem accesses
-void qunibus_c::test_mem(uint32_t start_addr, uint32_t end_addr, unsigned mode)
+bool qunibus_c::test_mem(uint32_t start_addr, uint32_t end_addr, unsigned mode)
 {
 #define MAX_ERROR_COUNT	8
     progress_c progress = progress_c(80);
@@ -910,5 +910,6 @@ void qunibus_c::test_mem(uint32_t start_addr, uint32_t end_addr, unsigned mode)
     else
         printf("All OK! Total %d passes, split into %d block writes and %d block reads\n",
                pass_count, total_write_block_count, total_read_block_count);
+    return !has_timeout && mismatch_count == 0;
 }
 

@@ -44,7 +44,7 @@
  * */
 
 #if defined(UNIBUS)
-static void buslatches_m9302_sack_test() 
+bool buslatches_m9302_sack_test()
 {
 #define GRANT_LINE_COUNT	5
 	unsigned count;
@@ -113,6 +113,7 @@ static void buslatches_m9302_sack_test()
 	else
 	printf("Test stopped by user after %d operations.\n", count);
 	printf("\n");
+	return !error;
 }
 #endif
 

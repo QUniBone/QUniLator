@@ -161,7 +161,7 @@ void buslatches_c::set_pin_val(buslatches_wire_info_t *wi, unsigned val)
 // read back and compare values
 // stop with ^C
 // DOES TEST MUXED ADDR
-void buslatches_c::test_simple_pattern(unsigned pattern, buslatch_c *bl) 
+bool buslatches_c::test_simple_pattern(unsigned pattern, buslatch_c *bl)
 {
 	unsigned idx, setval = 0, chkval;
 	unsigned count;
@@ -236,11 +236,12 @@ void buslatches_c::test_simple_pattern(unsigned pattern, buslatch_c *bl)
 				printf("                                      \"--\" position?\n");
 			}
 			buslatches_wire_info_print_path(bl, setval ^ chkval);
-			return;
+			return false;
 		}
 		count++;
 	}
 	printf("\n%u tests successful.\n", count);
+	return true;
 }
 
 // shuffles entries in mailbox.exerciser work list
@@ -260,7 +261,7 @@ void buslatches_c::exerciser_random_order()
 // always reg0..7 are read&written, but muxed ADDR in 3,4,5 are ignored
 // because of "rw_bitmask" == 0
 // DOES NOT TEST MUXED ADDR
-void buslatches_c::test_simple_pattern_multi(unsigned pattern, bool stop_on_error) 
+uint64_t buslatches_c::test_simple_pattern_multi(unsigned pattern, bool stop_on_error)
 {
 	unsigned pass_no; // global test number counter
 	uint64_t total_errors, total_tests;
@@ -441,6 +442,7 @@ void buslatches_c::test_simple_pattern_multi(unsigned pattern, bool stop_on_erro
 		printf("\n%llu of %llu tests failed, error rate = %0.5f%% = %gppm)\n", total_errors,
 				total_tests, 100.0 * total_errors / total_tests,
 				1000000.0 * total_errors / total_tests);
+	return total_errors;
 }
 
 /* stress test on highspeed timing

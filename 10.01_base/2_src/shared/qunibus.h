@@ -258,7 +258,8 @@ public:
 
 	uint16_t testwords[QUNIBUS_MAX_WORDCOUNT];
 
-	void test_mem(uint32_t start_addr,	uint32_t end_addr, unsigned mode);
+	// false = stopped on a bus timeout or a data mismatch
+	bool test_mem(uint32_t start_addr,	uint32_t end_addr, unsigned mode);
 	
 	void test_mem_print_error(uint32_t mismatch_count, uint32_t start_addr, uint32_t end_addr,  uint32_t cur_test_addr, uint16_t cur_mem_val) ;
 

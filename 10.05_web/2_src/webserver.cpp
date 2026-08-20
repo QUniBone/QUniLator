@@ -129,6 +129,12 @@ static int refuse_while_board_held(struct mg_connection *conn) {
 	const char *method = ri->request_method;
 	if (method == nullptr || !strcmp(method, "GET") || !strcmp(method, "HEAD"))
 		return 0;
+	// The self-test endpoints stay reachable while the board is held: the test
+	// child holding the claim is exactly when Stop must work. Run does its own
+	// holder check (webselftest.cpp), so this opens nothing else.
+	if (ri->local_uri != nullptr
+			&& strncmp(ri->local_uri, "/api/selftest", 13) == 0)
+		return 0;
 	std::string held = webevents_board_held_by();
 	if (held.empty())
 		return 0;

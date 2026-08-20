@@ -295,6 +295,10 @@ bool boardclaim_take(std::string *error) {
 	return true;
 }
 
+int boardclaim_fd(void) {
+	return claim_fd;
+}
+
 void boardclaim_release(void) {
 	if (claim_fd >= 0) {
 		close(claim_fd);

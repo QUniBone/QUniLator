@@ -960,6 +960,68 @@ asks for. `complete` is false when memory stopped answering before the count was
 met — a listing running into the end of what a card answers ends there, with
 `reason` saying where.
 
+## Hardware self-tests
+
+The interactive program's test menus — bus latches and signals, panel and
+board, the machine's memory — reachable without a shell. The service does not
+run a test itself: it starts `<name>-cli --selftest <test>` as a child, and the
+child takes the board claim exactly as the interactive menu does. The service
+therefore yields the machine (halt, power off, device set down) before the test
+touches a pin, and rebuilds it when the child exits — **the machine comes back
+switched off**, like after any hand-over.
+
+While a test runs the board is held (`held_by` in the state frame), and every
+other mutating request answers `409`. The `/api/selftest` endpoints themselves
+are exempt from that refusal — the hold is on for the whole run, and stopping
+the run must still work.
+
+The bus tests drive raw bus signals with the DS8641 drivers enabled. **They
+belong on an empty bus**: a machine full of cards, or a live CPU, sees arbitrary
+SYNC/DIN/DOUT/GRANT traffic. The catalog says which tests carry that warning.
+
+### `GET /api/selftest`
+
+```json
+{"tests": [{"id": "latch-multi", "label": "Bus latches, all at once",
+  "category": "bus", "description": "The PRU exercises all 8 latch registers…",
+  "warning": "Drives raw bus signals: run only on an empty bus.",
+  "unbounded": true, "default_seconds": 10}],
+ "running": null,
+ "last": {"test": "latch-multi", "verdict": "passed", "exit_code": 0,
+  "started_at": 1766140000, "ended_at": 1766140010}}
+```
+
+The catalog is platform-specific (the M9302 SACK test exists only on UNIBUS).
+`unbounded` marks a test that loops until stopped and takes a `seconds` bound;
+`default_seconds` is the suggested bound, `0` a test that ends by itself.
+
+`running` is the test in progress or `null`; `last` is the previous run's
+outcome, in memory only — a service restart forgets it. `verdict` is `passed`
+(exit 0 — an operator stop with no errors counts, these are endurance tests),
+`failed` (exit 1, errors found), `error` (the test could not run: no memory
+found, no panel fitted, no bus grant), or `aborted` (the child was killed).
+
+### `POST /api/selftest/run`
+
+```json
+{"test": "latch-multi", "seconds": 10}
+```
+
+Answers `202` and starts the child; the run's progress is the `/ws/selftest`
+stream and the `selftest` event. `seconds` bounds an unbounded test, `0` (or
+omitting it on a self-bounded one) runs until stopped; omitted on an unbounded
+test, the catalog's `default_seconds` applies. `400` for an unknown test, `409`
+while a test already runs or while something else holds the board (the
+interactive menu, a power-up's checks). On QBUS the memory tests need the
+machine's address width, which the service passes from its settings; unset, the
+run is refused with `409`.
+
+### `POST /api/selftest/stop`
+
+Answers `202` and sends the child SIGINT, which every test loop honours; a
+child that has not exited five seconds later is killed and the run ends
+`aborted`. `409` when nothing runs.
+
 ## Disk images
 
 Image files live in a folder hierarchy under `$QUNILATOR_DIR/images/`. The
@@ -1546,6 +1608,7 @@ Text frames, one JSON event each, pushed to every connected client:
 | `{"t":"settings"}` | a machine setting changed. **No payload** — a client rereads [`GET /api/settings`](#get-apisettings), which is the one description of what the settings now are. This is how a page follows a change it did not make itself, and in particular how a console whose port has moved re-points itself instead of going quietly dead |
 | `{"t":"metrics","devs":[…]}` | what each enabled device is doing, once a second: the same set [`GET /api/metrics`](#get-apimetrics) answers, described under [Performance](#performance). The frame is the whole set, so a client replaces rather than merges; an empty set is sent once when the last device stops reporting and then not again |
 | `{"t":"update", …}` | the update status, the same object [`GET /api/update`](#get-apiupdate) answers. Published whenever the updater's status file changes (the service stats it once a second), and as a snapshot on every new connection — so a second tab, and a tab opened during an install, both know what is going on |
+| `{"t":"selftest","running":…,"last":…}` | the hardware self-test state, the same `running`/`last` members [`GET /api/selftest`](#get-apiselftest) answers. Published when a run starts or ends, and as a snapshot on every new connection. The run's output is not here — it streams on [`/ws/selftest`](#wsselftest) |
 
 #### The bus power signals
 
@@ -1696,6 +1759,16 @@ Removes it. Answers `{"ok": true}`; `404` when there is no such recording.
 Binary frames bridged to the real console SLU on `/dev/ttyS2` (the external
 console bridge); no emulated device sits behind it. Same shape and same
 history replay on connect as `/ws/console/<n>`.
+
+### `/ws/selftest`
+
+Binary frames carrying the running self-test child's stdout and stderr, raw.
+One-way — client frames are ignored, Stop is [`POST
+/api/selftest/stop`](#post-apiselfteststop). The channel retains the current
+run's output and replays it on connect with the same `{"live":true}`
+end-of-replay marker as the console channels, so a page opened mid-run sees the
+whole run; the retained output is cleared when the next run starts. The bytes
+are terminal-ish — the memory tests redraw a progress line with bare CR.
 
 ### `/ws/serial/<dev>/<line>`
 

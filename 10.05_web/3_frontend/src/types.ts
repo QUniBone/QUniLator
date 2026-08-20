@@ -268,6 +268,38 @@ export interface UpdateStatus {
   journal: string[];
 }
 
+// ---- hardware self-tests ----
+// GET /api/selftest and the "selftest" event frame. The tests run in the cli
+// as a child of the service; their output streams on /ws/selftest.
+
+export interface SelftestInfo {
+  id: string;
+  label: string;
+  category: string; // 'bus' | 'panel' | 'memory'
+  description: string;
+  warning: string; // '' = none
+  unbounded: boolean; // loops until stopped; takes a seconds bound
+  default_seconds: number; // suggested bound, 0 = self-bounded
+}
+
+export interface SelftestRun {
+  test: string;
+  started_at: number;
+}
+
+export interface SelftestResult {
+  test: string;
+  verdict: string; // 'passed' | 'failed' | 'error' | 'aborted'
+  exit_code: number; // -1: ended by a signal
+  started_at: number;
+  ended_at: number;
+}
+
+export interface SelftestState {
+  running: SelftestRun | null;
+  last: SelftestResult | null;
+}
+
 // ---- hardware / bus state ----
 export interface HwState {
   // The backplane's power signals as the board read them, or null for a bus

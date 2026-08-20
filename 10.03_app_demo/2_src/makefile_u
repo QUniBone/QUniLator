@@ -177,6 +177,7 @@ VAX_CFLAGS = \
 OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/getopt2.o	\
 	$(OBJDIR)/menus.o	\
+	$(OBJDIR)/selftest.o	\
 	$(OBJDIR)/menu_gpio.o	\
 	$(OBJDIR)/menu_panel.o	\
 	$(OBJDIR)/menu_mailbox.o	\
@@ -301,6 +302,8 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/webpower.o	\
 	$(OBJDIR)/webevents.o	\
 	$(OBJDIR)/boardclaim.o	\
+	$(OBJDIR)/selftest_runner.o	\
+	$(OBJDIR)/webselftest.o	\
 	$(OBJDIR)/webconsole.o	\
 	$(OBJDIR)/webconsole_ext.o	\
 	$(OBJDIR)/webconsole_channel.o	\
@@ -372,6 +375,9 @@ $(OBJDIR)/application.o :  application.cpp application.hpp $(QUNILATOR_ROOT)/pac
 
 
 $(OBJDIR)/menus.o :  menus.cpp application.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/selftest.o :  selftest.cpp selftest.hpp application.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/menu_gpio.o :  menu_gpio.cpp application.hpp
@@ -725,6 +731,12 @@ $(OBJDIR)/webevents.o :  $(WEB_SRC_DIR)/webevents.cpp $(WEB_SRC_DIR)/webevents.h
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/boardclaim.o :  $(WEB_SRC_DIR)/boardclaim.cpp $(WEB_SRC_DIR)/boardclaim.hpp $(WEB_SRC_DIR)/webevents.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/selftest_runner.o :  $(WEB_SRC_DIR)/selftest_runner.cpp $(WEB_SRC_DIR)/selftest_runner.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/webselftest.o :  $(WEB_SRC_DIR)/webselftest.cpp $(WEB_SRC_DIR)/webselftest.hpp $(WEB_SRC_DIR)/selftest_runner.hpp $(WEB_SRC_DIR)/webconsole_channel.hpp $(WEB_SRC_DIR)/webevents.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/webconsole.o :  $(WEB_SRC_DIR)/webconsole.cpp $(WEB_SRC_DIR)/webconsole.hpp $(WEB_SRC_DIR)/webconsole_channel.hpp device_configuration.hpp

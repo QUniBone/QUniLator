@@ -68,6 +68,7 @@
 #include "weblogging.hpp"
 #include "webversion.hpp"
 #include "webupdate.hpp"
+#include "webselftest.hpp"
 #include "webserialports.hpp"
 #include "websystem.hpp"
 
@@ -1540,6 +1541,8 @@ void webapi_register(struct mg_context *ctx) {
 	websystem_register(ctx);
 	// which UART carries the Linux login, and which is left for the emulator
 	webserialports_register(ctx);
+	// the hardware self-tests, run in the cli as a child of the service
+	webselftest_register(ctx);
 	webevents_register(ctx);
 	webconsole_register(ctx);
 	webconsole_ext_register(ctx);
@@ -1555,6 +1558,9 @@ void webapi_register(struct mg_context *ctx) {
 
 // called by webserver_c::stop() before the connections close
 void webapi_shutdown(void) {
+	// first: a running test child holds the board claim, and its exit has to be
+	// seen before the claim socket goes down with the server
+	webselftest_shutdown();
 	webvcb01_shutdown();
 	webserial_shutdown();
 	webconsole_ext_shutdown();
