@@ -977,7 +977,16 @@ the run must still work.
 
 The bus tests drive raw bus signals with the DS8641 drivers enabled. **They
 belong on an empty bus**: a machine full of cards, or a live CPU, sees arbitrary
-SYNC/DIN/DOUT/GRANT traffic. The catalog says which tests carry that warning.
+SYNC/DIN/DOUT/GRANT traffic, and the latch tests short the grant chain with the
+loopback jumpers they need. **They are never run with the board in a real
+machine** — only the tests the catalog marks `machine_safe` are (the panel tests
+and the memory tests, which are about what the machine carries). The board
+belongs in an empty, terminated backplane for the rest; the acceptance-test
+procedure —
+[UNIBUS](https://retrocmp.com/projects/unibone/287-unibone-acceptance-test),
+[QBUS](https://retrocmp.com/projects/qbone/320-qbone-acceptance-test) — says
+which backplane, which terminator and which jumpers, and the web interface links
+to the one for the board's bus.
 
 ### `GET /api/selftest`
 
@@ -985,15 +994,20 @@ SYNC/DIN/DOUT/GRANT traffic. The catalog says which tests carry that warning.
 {"tests": [{"id": "latch-multi", "label": "Bus latches, all at once",
   "category": "bus", "description": "The PRU exercises all 8 latch registers…",
   "warning": "Drives raw bus signals: run only on an empty bus.",
-  "unbounded": true, "default_seconds": 10}],
+  "setup": "Fit the 5 loopback jumpers on BG4, BG5, BG6, BG7 and NPG…",
+  "machine_safe": false, "unbounded": true, "default_seconds": 10}],
  "running": null,
  "last": {"test": "latch-multi", "verdict": "passed", "exit_code": 0,
   "started_at": 1766140000, "ended_at": 1766140010}}
 ```
 
-The catalog is platform-specific (the M9302 SACK test exists only on UNIBUS).
-`unbounded` marks a test that loops until stopped and takes a `seconds` bound;
-`default_seconds` is the suggested bound, `0` a test that ends by itself.
+The catalog is platform-specific (the M9302 SACK test exists only on UNIBUS, and
+the latch tests name that bus's loopback jumpers — BG\*/NPG IN-OUT on UNIBUS,
+IAKI-IAKO and DMGI-DMGO on QBUS). `warning` is what a run costs, `setup` what
+has to be fitted before it, `machine_safe` whether it may be run with the board
+in a machine rather than on the bench; each is `""`/`false` where it does not
+apply. `unbounded` marks a test that loops until stopped and takes a `seconds`
+bound; `default_seconds` is the suggested bound, `0` a test that ends by itself.
 
 `running` is the test in progress or `null`; `last` is the previous run's
 outcome, in memory only — a service restart forgets it. `verdict` is `passed`

@@ -25,6 +25,20 @@ const CATEGORIES: [string, string][] = [
   ['memory', 'Machine memory'],
 ];
 
+// The acceptance-test procedure for this board: which backplane, which
+// terminator, which jumpers. It is the same set of tests this page runs, so it
+// is the setup instruction for them - one page per bus.
+const ACCEPTANCE_DOC: Record<string, [string, string]> = {
+  UNIBUS: [
+    'https://retrocmp.com/projects/unibone/287-unibone-acceptance-test',
+    'the UniBone acceptance test',
+  ],
+  QBUS: [
+    'https://retrocmp.com/projects/qbone/320-qbone-acceptance-test',
+    'the QBone acceptance test',
+  ],
+};
+
 function verdictLabel(verdict: string): string {
   switch (verdict) {
     case 'passed':
@@ -107,9 +121,20 @@ function TestRow({ t, busy }: { t: SelftestInfo; busy: boolean }) {
   return html`<div class="selftest-row">
     <div class="selftest-row-text">
       <div class="selftest-row-head"><strong>${t.label}</strong>
-        <span class="muted mono">${t.id}</span></div>
+        <span class="muted mono">${t.id}</span>
+        ${
+          t.machine_safe
+            ? html`<span class="chip ok" title="this one may be run with the board in a machine"
+                >machine safe</span>`
+            : null
+        }</div>
       <div class="muted">${t.description}</div>
       ${t.warning ? html`<div class="selftest-warning">${t.warning}</div>` : null}
+      ${
+        t.setup
+          ? html`<div class="selftest-setup"><strong>Before the run:</strong> ${t.setup}</div>`
+          : null
+      }
     </div>
     <div class="selftest-row-run">
       ${
@@ -138,20 +163,38 @@ export function SelftestPage() {
   const running = s.selftest.running;
   const last = s.selftest.last;
   const busy = running !== null;
+  const doc = ACCEPTANCE_DOC[s.platform];
 
   return html`<section class="page active" data-page="selftest">
     <p class="lede">
       The board's own test routines, from the interactive test menus. Running
       one takes the machine down for the length of the test - the board is
       handed to the test program and the machine comes back${' '}
-      <strong>switched off</strong>. The bus tests drive raw bus signals and
-      belong on an${' '}<strong>empty bus</strong>: run them on a board on the
-      bench, not in a backplane full of cards.
+      <strong>switched off</strong>.
       ${' '}<a href="#" onClick=${(e: Event) => {
         e.preventDefault();
         loc.route('/system');
       }}>Back to System.</a>
     </p>
+
+    <div class="selftest-danger" role="alert" style="max-width:720px">
+      <div class="selftest-danger-head">Never run these tests in a real machine</div>
+      <p>
+        Except the ones marked${' '}<span class="chip ok">machine safe</span>, these
+        tests are for a board on the bench, in an${' '}<strong>empty, terminated
+        backplane</strong>. They switch the board's bus drivers on and put arbitrary
+        patterns on the address, data, control and grant lines: with cards or a live
+        CPU in the backplane that is traffic nothing can make sense of, and the
+        latch tests short the grant chain with loopback jumpers on top of it.
+      </p>
+      ${
+        doc
+          ? html`<p>What the board needs to be sitting in - backplane, terminator
+              and jumpers - is${' '}<a href=${doc[0]} target="_blank" rel="noreferrer"
+                >${doc[1]}</a>.</p>`
+          : null
+      }
+    </div>
 
     ${
       tests === null

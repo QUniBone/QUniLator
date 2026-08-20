@@ -32,6 +32,11 @@ struct selftest_info_t {
 	const char *category;      // "bus" | "panel" | "memory"
 	const char *description;
 	const char *warning;       // "" = none
+	const char *setup;         // hardware to fit before the run, "" = none
+	// May be run with the board fitted in a machine that is more than an empty
+	// terminated backplane. False for everything that drives raw bus signals:
+	// see the acceptance-test procedure the frontend links to.
+	bool machine_safe;
 	bool unbounded;            // loops until stopped; wants a seconds bound
 	unsigned default_seconds;  // suggested bound, 0 = self-bounded
 	bool needs_addr_width;     // QBUS: pass the configured address width along

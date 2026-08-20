@@ -21,10 +21,27 @@
 // seconds means the child is stuck, not slow.
 static const time_t stop_grace_seconds = 5;
 
-// The catalog. Descriptions and warnings are operator-facing text the frontend
-// shows verbatim; ids are the cli's --selftest names. QBUS and UNIBUS carry
-// almost the same list - the M9302 terminator test exists only where there is
-// an M9302, and the probe board has a bus-specific name.
+// The loopback jumpers the latch tests need. The grant chain leaves the board
+// on one pin and comes back on another, so the grant bits of latch 0 (UNIBUS)
+// or 6 (QBUS) read back nothing unless the two are strapped together - a test
+// run without them fails on exactly those wires. They are fitted for the test
+// and pulled again afterwards: a machine cannot arbitrate over a shorted chain.
+#if defined(UNIBUS)
+static const char *latch_jumper_setup =
+		"Fit the 5 loopback jumpers on BG4, BG5, BG6, BG7 and NPG (each IN to "
+		"OUT) before the run, and remove them again afterwards - the grant "
+		"bits read back nothing without them.";
+#else
+static const char *latch_jumper_setup =
+		"Fit the 2 loopback jumpers on IAKI-IAKO and DMGI-DMGO before the run, "
+		"and remove them again afterwards - the grant bits read back nothing "
+		"without them.";
+#endif
+
+// The catalog. Descriptions, warnings and setup notes are operator-facing text
+// the frontend shows verbatim; ids are the cli's --selftest names. QBUS and
+// UNIBUS carry almost the same list - the M9302 terminator test exists only
+// where there is an M9302, and the probe board has a bus-specific name.
 const std::vector<selftest_info_t> &selftest_catalog(void) {
 	static const std::vector<selftest_info_t> catalog = {
 		{ "latch-single", "Bus latches, one by one", "bus",
@@ -32,59 +49,66 @@ const std::vector<selftest_info_t> &selftest_catalog(void) {
 			"and reads them back over the bus wires. Names the wire when a bit "
 			"does not come back.",
 			"Drives raw bus signals: run only on an empty bus.",
-			true, 32, false },
+			latch_jumper_setup, false, true, 32, false },
 		{ "latch-multi", "Bus latches, all at once", "bus",
 			"The PRU exercises all 8 latch registers at full speed with random "
 			"values and counts every access that reads back wrong.",
 			"Drives raw bus signals: run only on an empty bus.",
-			true, 10, false },
+			latch_jumper_setup, false, true, 10, false },
 		{ "latch-timing", "Latch timing stress", "bus",
 			"Maximum-speed read/write sequences on the address and data latches. "
 			"Errors are signalled on PRU1.12 for a logic analyzer; the run "
 			"itself only reports that it ran.",
 			"Drives raw bus signals: run only on an empty bus.",
-			true, 10, false },
+			latch_jumper_setup, false, true, 10, false },
 #if defined(UNIBUS)
 		{ "m9302-sack", "M9302 SACK turnaround", "bus",
 			"Stimulates the GRANT lines BG4-BG7 and NPG and checks that the "
 			"M9302 terminator answers with SACK.",
 			"Drives raw bus signals: run only on an empty bus with an M9302 "
 			"terminator.",
-			true, 10, false },
+			"The M9302 must be the terminator, and the BG*/NPG loopback "
+			"jumpers of the latch tests must be off: the M9302 answers SACK "
+			"only when the grants reach it.",
+			false, true, 10, false },
 #endif
 		{ "probe-leds", "Probe board LEDs", "bus",
 			"Switches every bus signal on, then oscillates them one by one in "
 			"the order of the probe board's LEDs. The LEDs are the result; "
 			"watch them.",
 			"Drives raw bus signals: run only on an empty bus.",
-			false, 0, false },
+			"The probe board must be plugged into the backplane; its LEDs are "
+			"what the test reports.",
+			false, false, 0, false },
 		{ "panel-lamps", "Panel lamps", "panel",
 			"Lights each lamp of the I2C console panel for half a second. "
 			"Refuses when no panel is fitted.",
-			"", false, 0, false },
+			"", "", true, false, 0, false },
 		{ "panel-loopback", "Panel loopback", "panel",
 			"Every panel switch drives its lamp until the test is stopped. "
 			"Refuses when no panel is fitted.",
-			"", true, 0, false },
+			"", "", true, true, 0, false },
 		{ "gpio-loopback", "Board switches and LEDs", "panel",
 			"The board's 4 switches drive its 4 LEDs and the button drives "
 			"bus_enable, until the test is stopped.",
-			"", true, 0, false },
+			"The button switches the board's bus drivers on: run it on an "
+			"empty bus.",
+			"", false, true, 0, false },
 		{ "mem-sizer", "Size the memory", "memory",
 			"Reads upward from address 0 until the bus times out and reports "
 			"the range the machine's memory answers.",
 			"The machine goes down while the test runs.",
-			false, 0, true },
+			"", true, false, 0, true },
 		{ "mem-address", "Memory test, address pattern", "memory",
 			"Fills the machine's memory with each word's own address, then "
 			"reads it back over and over.",
 			"Overwrites all memory; the machine goes down while the test runs.",
-			true, 30, true },
+			"", true, true, 30, true },
 		{ "mem-random", "Memory test, random", "memory",
 			"Fills the machine's memory with fresh random values each pass and "
 			"reads them back in random order.",
 			"Overwrites all memory; the machine goes down while the test runs.",
-			true, 30, true },
+			"", true, true, 30, true },
 	};
 	return catalog;
 }

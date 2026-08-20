@@ -129,6 +129,20 @@ int main(void) {
 			ids_unique = false;
 	}
 	CHECK(ids_unique, "catalog ids are unique");
+	// Every field is operator-facing text, and a null one would be printed as
+	// such; a bus test calling itself machine-safe is the mistake that matters.
+	bool text_present = true, bus_tests_unsafe = true;
+	for (const selftest_info_t &t : selftest_catalog()) {
+		if (t.label == nullptr || t.description == nullptr || t.warning == nullptr
+				|| t.setup == nullptr || t.category == nullptr)
+			text_present = false;
+		if (!strcmp(t.category, "bus") && t.machine_safe)
+			bus_tests_unsafe = false;
+	}
+	CHECK(text_present, "catalog entries carry every text field");
+	CHECK(bus_tests_unsafe, "no bus test claims to be machine-safe");
+	CHECK(*selftest_info_by_id("latch-single")->setup != 0,
+			"the latch tests name the loopback jumpers");
 
 	std::string error;
 

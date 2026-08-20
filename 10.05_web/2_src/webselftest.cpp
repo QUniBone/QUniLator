@@ -112,6 +112,8 @@ static void handle_get(struct mg_connection *conn) {
 		o["category"] = picojson::value(t.category);
 		o["description"] = picojson::value(t.description);
 		o["warning"] = picojson::value(t.warning);
+		o["setup"] = picojson::value(t.setup);
+		o["machine_safe"] = picojson::value(t.machine_safe);
 		o["unbounded"] = picojson::value(t.unbounded);
 		o["default_seconds"] = picojson::value((double) t.default_seconds);
 		tests.push_back(picojson::value(o));

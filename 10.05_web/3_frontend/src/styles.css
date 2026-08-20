@@ -1609,6 +1609,28 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
 .selftest-warning {
   margin-top: 4px; font-size: var(--fs-1); color: var(--warn);
 }
+/* what has to be fitted before the run - jumpers, terminator, probe board.
+   Not a warning about what the test costs: a precondition without which it
+   simply fails. */
+.selftest-setup {
+  margin-top: 4px; font-size: var(--fs-1); color: var(--ink-muted);
+  border-left: 2px solid var(--line); padding-left: 8px;
+}
+/* The one thing on this page an operator must read before pressing anything:
+   the bus tests destroy nothing but will confuse or crash a machine they are
+   run in. Loud on purpose. */
+.selftest-danger {
+  margin: 0 0 16px; padding: 12px 14px; border-radius: var(--r-md);
+  border: 1px solid var(--err); background: var(--err-soft); color: var(--ink);
+  font-size: var(--fs-1);
+}
+.selftest-danger-head {
+  color: var(--err); font-weight: 700; text-transform: uppercase;
+  letter-spacing: .04em; margin-bottom: 6px;
+}
+.selftest-danger p { margin: 6px 0 0; line-height: 1.45; }
+.selftest-danger p:first-of-type { margin-top: 0; }
+.selftest-danger a { color: var(--err); }
 .selftest-row-run {
   flex: 0 0 auto; display: flex; gap: 8px; align-items: center;
   font-size: var(--fs-1);
