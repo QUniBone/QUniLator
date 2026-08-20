@@ -10,6 +10,7 @@
      {"t":"status","dev":…,"status":…}           drive's verbal state, on change
      {"t":"log","level":n,"label":…,"text":…}    log message
      {"t":"state","halt":…,"leds":[…],"switches":[…]}   hardware, on change
+     {"t":"metrics","devs":[…]}                  what each device is doing, 1 Hz
 
    Producers (parameter_c::change_hook on device threads, the logger sink
    under its fifo mutex) only append to a bounded event_queue; a broadcast thread
@@ -47,6 +48,8 @@
 #include "device_configuration.hpp"
 
 #include "device_status.hpp"
+#include "device_metrics.hpp"
+#include "metric.hpp"
 
 #include "webevents.hpp"
 #include "webbuspower.hpp"
@@ -580,6 +583,151 @@ static void poll_status_params(void) {
 	}
 }
 
+// What each device is doing, once a second.
+//
+// The counters themselves are meaningless to an operator - a device's totals
+// only say how long the board has been up - so what travels is the rate over the
+// interval, computed by device_metrics.cpp, which is where the cases with no
+// rate to report are decided.
+//
+// Once a second rather than at POLL_MS, for two reasons that point the same way:
+// a rate over 100 ms of a disk that moves in bursts is mostly noise, and a
+// number that changes ten times a second cannot be read. A second is also what
+// makes the panel's history mean something - sixty samples is a minute.
+//
+// The frame is the whole set, not a difference: a device that has stopped
+// reporting - switched off, taken out of the configuration - simply is not in
+// the next one, and the panel drops its row without needing to be told. That is
+// also what implements "only when enabled": a disabled device is skipped here,
+// and its samplers are dropped so re-enabling it anchors afresh instead of
+// dividing a year of standing still into the first interval.
+//
+// A machine that is switched off reports nothing at all. Its cards are off the
+// bus and their counters cannot move, so every rate would be a zero that looks
+// like a measurement of a running machine.
+struct metric_cache_t {
+	std::vector<metric_c *> metrics;          // the device's metrics
+	std::vector<metric_sampler_c> samplers;   // one per metric, by index
+	unsigned seen = 0;                        // the pass that last found the device
+	bool was_enabled = false;
+};
+static std::map<device_c *, metric_cache_t> metric_cache;
+// The last set published, so an idle board does not send the same empty frame
+// once a second for the client to re-render — and so GET /api/metrics can
+// answer with what was last measured. Written by the broadcast thread, read by
+// request threads, so it has a mutex of its own rather than borrowing the
+// queue's.
+static std::mutex metrics_mutex;
+static std::string last_metrics_devs;
+
+// Build the "devs" array of a metrics frame, sampling every enabled device.
+static picojson::array sample_metrics(bool powered) {
+	static unsigned pass = 0;
+	pass++;
+	picojson::array devs;
+	uint64_t now_ms = (uint64_t) std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now().time_since_epoch()).count();
+
+	std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
+	for (device_c *dev : device_c::mydevices) {
+		if (dev->metrics.empty())
+			continue;
+		metric_cache_t &c = metric_cache[dev];
+		c.seen = pass;
+		if (c.samplers.size() != dev->metrics.size()) {
+			c.metrics = dev->metrics;
+			c.samplers.assign(c.metrics.size(), metric_sampler_c());
+		}
+		bool enabled = powered && dev->enabled.value;
+		if (!enabled) {
+			// forget where the counters stood, so the interval across the gap
+			// is never divided into
+			if (c.was_enabled)
+				c.samplers.assign(c.metrics.size(), metric_sampler_c());
+			c.was_enabled = false;
+			continue;
+		}
+		c.was_enabled = true;
+
+		picojson::array metrics;
+		for (size_t i = 0; i < c.metrics.size(); i++) {
+			metric_c *m = c.metrics[i];
+			if (!c.samplers[i].sample(m->total(), now_ms)
+					&& !c.samplers[i].known())
+				continue; // nothing measured yet
+			double rate = c.samplers[i].rate();
+			picojson::object o;
+			o["name"] = picojson::value(m->name);
+			o["unit"] = picojson::value(
+					m->unit == metric_c::UNIT_BYTE ? "byte"
+					: m->unit == metric_c::UNIT_INSTRUCTION ? "instruction"
+					: "count");
+			o["label"] = picojson::value(m->label);
+			o["rate"] = picojson::value(rate);
+			double pct = metric_percent(rate, m->reference_per_second);
+			if (pct >= 0) {
+				o["pct"] = picojson::value(pct);
+				o["reference"] = picojson::value(m->reference_per_second);
+			}
+			metrics.push_back(picojson::value(o));
+		}
+		if (metrics.empty())
+			continue; // enabled, but nothing measured over an interval yet
+
+		picojson::object d;
+		d["dev"] = picojson::value(dev->name.value);
+		d["type"] = picojson::value(dev->type_name.value);
+		d["kind"] = picojson::value(std::string(dev->category()));
+		d["metrics"] = picojson::value(metrics);
+		devs.push_back(picojson::value(d));
+	}
+	// forget devices that have gone, so a reused allocation address does not
+	// inherit another device's samples
+	for (std::map<device_c *, metric_cache_t>::iterator it = metric_cache.begin();
+			it != metric_cache.end(); ) {
+		if (it->second.seen != pass)
+			metric_cache.erase(it++);
+		else
+			++it;
+	}
+	return devs;
+}
+
+static void poll_metrics(void) {
+	bool powered;
+	{
+		std::lock_guard<std::mutex> lock(state_mutex);
+		powered = cur_powered;
+	}
+	picojson::array devs = sample_metrics(powered);
+	std::string rendered = picojson::value(devs).serialize();
+	{
+		std::lock_guard<std::mutex> lock(metrics_mutex);
+		// An empty set is published once - so a panel showing rows drops them
+		// when the machine goes off - and then not again until there is
+		// something to say.
+		if (devs.empty() && last_metrics_devs == rendered)
+			return;
+		last_metrics_devs = rendered;
+	}
+	enqueue_str("{\"t\":\"metrics\",\"devs\":" + rendered + "}");
+}
+
+// The same set as a one-shot answer, for GET /api/metrics. It reports what the
+// 1 Hz poll last measured rather than sampling again: two samples a millisecond
+// apart measure nothing, and a caller polling this endpoint would otherwise
+// destroy the very interval the poll is built on.
+std::string webevents_metrics_json(void) {
+	std::string devs;
+	{
+		std::lock_guard<std::mutex> lock(metrics_mutex);
+		devs = last_metrics_devs;
+	}
+	if (devs.empty())
+		devs = "[]";
+	return "{\"devs\":" + devs + "}";
+}
+
 /* The bus power signals, read rather than assumed. See webbuspower.hpp for what
  * they are and are not.
  *
@@ -698,6 +846,12 @@ static void poll_hardware(void) {
 // drives without announcing it, and the cost of the three polls themselves.
 static const unsigned POLL_MS = 100;
 
+// The performance counters are sampled on a slower cadence of their own: a rate
+// over a tenth of a second is noise, and a number that moves ten times a second
+// cannot be read. A whole multiple of POLL_MS, counted off in the same loop.
+static const unsigned METRICS_POLL_MS = 1000;
+static unsigned metrics_divider = 0;
+
 // One frame carrying the whole cycle's events, rather than one frame each.
 // Server side that is one send per cycle instead of one per event; client side
 // it is one macrotask, so the store's microtask coalescing merges the whole
@@ -736,6 +890,12 @@ static void broadcast_loop(void) {
 			next_poll = now + std::chrono::milliseconds(POLL_MS);
 			poll_hardware();
 			poll_status_params();
+			// The performance counters are sampled a tenth as often; see
+			// poll_metrics() for why a rate over 100 ms is not worth having.
+			if (++metrics_divider >= METRICS_POLL_MS / POLL_MS) {
+				metrics_divider = 0;
+				poll_metrics();
+			}
 			publish_config(false); // emit a config event when the modified flag flips
 			flush_journal();
 			// The updater writes its progress to a status file from its own unit,

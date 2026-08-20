@@ -1425,6 +1425,12 @@ void delqa_c::bridge_receive(const uint8_t *frame, unsigned len)
     memcpy(last_head, frame, headlen);
     last_ts = now;
 
+    // Counted here rather than at the socket: what reaches this point is what
+    // the station accepted and the duplicate filter kept, which is the traffic
+    // the guest will see.
+    rx_frames.add(1);
+    rx_bytes.add(len);
+
     std::vector<uint8_t> data(frame, frame + len);
     enqueue_packet(packet_c::NORMAL, data);
 
@@ -1541,6 +1547,10 @@ bool delqa_c::transmit_packet(const std::vector<uint8_t> &data)
         pthread_mutex_unlock(&on_after_register_access_mutex);
         enqueue_packet(packet_c::NORMAL, frame);
         DEBUG("loopback connector: returned %d bytes", (int) frame.size());
+        // The board transmitted it, so it counts; the copy coming back does not
+        // pass bridge_receive() and so is not counted again as received.
+        tx_frames.add(1);
+        tx_bytes.add(data.size());
         note_activity();
         return true;
     }
@@ -1552,6 +1562,8 @@ bool delqa_c::transmit_packet(const std::vector<uint8_t> &data)
         return false;
 
     DEBUG("bridge: transmitted %d bytes", (int) data.size());
+    tx_frames.add(1);
+    tx_bytes.add(data.size());
     note_activity();
     return true;
 }

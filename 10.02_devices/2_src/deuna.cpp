@@ -2072,6 +2072,8 @@ bool deuna_c::process_transmit(unsigned max_descriptors)
                     txhdr[2] |= TXR_ERRS;
                     stats.ftransa++;
                 } else {
+                    tx_frames.add(1);
+                    tx_bytes.add(write_buffer.len);
                     note_activity();
                 }
             }
@@ -2287,6 +2289,10 @@ void deuna_c::worker_rx(void)
                     should_accept = accept_packet(pkt_buf, len);
                 }
                 if (should_accept) {
+                    // counted after the address filter, so what is reported is
+                    // the traffic this station takes rather than the segment's
+                    rx_frames.add(1);
+                    rx_bytes.add(len);
                     note_activity();
                     enqueue_readq(pkt_buf, len, false);
                 }

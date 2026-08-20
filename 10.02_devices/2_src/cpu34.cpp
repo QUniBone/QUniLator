@@ -49,6 +49,14 @@ cpu34_c::cpu34_c() :
     mmr2.kind = parameter_c::PARAM_STATUS;
     mmu_enabled.kind = parameter_c::PARAM_STATUS;
 
+    // What a KD11-EA did in a second; see cpu20.cpp for what this number is and
+    // is not. The 11/34 fetches from 1.2 us MOS memory over a shorter
+    // microcycle than the 11/20: a register-to-register operation takes about
+    // 1 us and a memory reference about 2.5 us (PDP-11/34 processor handbook,
+    // instruction timings), so an ordinary mix averages near 2.5 us - roughly
+    // half again the 11/20's throughput.
+    instructions.reference_per_second = 400000;
+
     // emulation core state. Not in the header, so cpu34.hpp stays free of kd11ea.h
     kd11ea = (struct KD11EA *) calloc(1, sizeof(struct KD11EA));
     assert(kd11ea);

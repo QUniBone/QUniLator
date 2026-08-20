@@ -546,6 +546,110 @@ each `buslatches_getbyte` is ~store+load over the 100 MHz latch bus. Just make
 sure release firmware builds define it off; a stray enable costs every DMA and
 slave cycle its margin.
 
+### 3.7 An emulated CPU talking to an emulated device pays the full physical bus
+
+Measured on `ubx` (UNIBUS, emulated KA11 + emulated `DL11` at 777560, XXDP-SM
+on an RL02). Idle at the monitor prompt the machine runs at **280 K instr/s,
+about 98% of a real 11/20**; while the same monitor prints a directory listing
+it falls to **127 K instr/s, 45%** — and stays there after the disk has gone
+quiet, so the cost is the console and not the drive:
+
+```
+cpu= 281072 (99%)  disk=    0      idle at the prompt
+cpu= 255354 (90%)  disk= 8361      directory blocks being read
+cpu= 119978 (42%)  disk= 8369
+cpu= 130713 (46%)  disk=    0      disk done, still printing
+```
+
+It is not that reaching a DL11 register is slow. The idle loop is *already* an
+I/O-page poll — `150670: tstb @#177560 / bpl 150670` — and it sustains 98%,
+because `reg_rcsr->active_on_dati` and `reg_xcsr->active_on_dati` are false
+(`dl11w.cpp:79,93`) and the PRU answers those from its own shadow cell.
+`/api/latency` counts **zero** deviceregister events a second at the prompt.
+
+The print loop is the same shape plus one write: `150000: tstb @154332 / bpl
+150000 / movb r0,@154334`. `reg_xbuf->active_on_dato` is true
+(`dl11w.cpp:101`), and `qunibusdevice.hpp:63-66` says what that costs —
+*"PRU generates an event after DATI and/or DATO on that register (context
+switch to ARM: slow!)"*. `/api/latency` then counts **~690 events/s against
+~700 characters/s**: exactly one stretched bus cycle per character, the PRU
+holding SSYN across `worker_deviceregister_event()` (`qunibusadapter.cpp:1877`).
+
+Where the 55 points go, from per-thread jiffies over matched 8-10 s windows
+(single core, so the accounting is coarse — treat as ± a few points):
+
+| | idle | printing |
+|---|---|---|
+| `CPU20.0` share of core | 98.0% | **75.4%** |
+| `DL11.0` / `DL11.1` | 5.6 / ~0 | 6.8 / **7.0** |
+| `QUNIBUSADAPTE.0` | 0.1 | **4.8** |
+| unnamed `unibone` thread | 1.9 | **8.7** |
+| `CPU20.0` involuntary ctx switches | 2164/s | **2955/s** |
+
+Two roughly equal halves:
+
+- **~23 points: the emulation loses the core.** Every thread above runs
+  SCHED_RR 60; `CPU20.0` is the only SCHED_OTHER thread in the process
+  (`cpu.cpp:476`, `worker_init_realtime_priority(none_rt)` — deliberate, since
+  the thread spins, and why RT throttling sits at 95%).
+- **~32 points: the emulation holds the core and does not execute.**
+  `qunibusadapter.cpp:969`: *"NO wait for PRU signal, instead busy waiting.
+  CPU thread blocked. Reason: SPEED."* Only ~3.4 of those points are the
+  measured stretch (690/s × 49 µs); the rest is ordinary CPU bus cycles
+  lengthening while PRU and ARM are busy.
+
+`/api/latency` over 250 K samples: mean 49 µs, max 901 µs, and a **32 µs floor**
+— 81% of samples land in the 32-64 µs bucket. That floor is Linux getting round
+to the adapter thread, which the sampling site says in as many words
+(`qunibusadapter.cpp:1862-1865`).
+
+Options, in order of payoff:
+
+- **Short-circuit emulated-CPU → emulated-device register access.** The
+  structural fix, and the register-file twin of 3.5. An emulated KA11 writing
+  an emulated DL11 goes ARM → PRU → bus → PRU → ARM when both ends are one
+  process on one board. `unibone_dati()` already takes exactly this shortcut for
+  memory (`ddrmem->pmi_exam`) and for emulated ROM
+  (`qunibusadapter->is_rom(addr)`, `cpu.cpp:213-217`); extending it to the
+  emulated register file turns a ~5 µs bus cycle — 49 µs for XBUF — into a
+  function call, and speeds the idle poll loop too. Opt-in beside `pmi`, with
+  fall-through to the real bus for any address a physical card claims. The
+  hazard is locking, not speed: `on_after_register_access` would run on the CPU
+  thread rather than the adapter's, against device mutexes written for the
+  latter.
+- **Let the PRU ack an XBUF-class DATO without stretching the cycle.** The guest
+  does not need the ARM to have *seen* the byte before SSYN. A per-register
+  "notify, do not stretch" flag beside `active_on_dato`: PRU latches the data,
+  acks, signals asynchronously. Removes the per-character stretch and the 901 µs
+  tail. Safe only where the device cannot influence the cycle's outcome — XBUF
+  qualifies, a computed-on-read register does not.
+- **Run a PREEMPT_RT kernel.** The board is `6.12.93-bone63 #1 PREEMPT`, not
+  `PREEMPT RT` — which `worker_init_realtime_priority()` itself warns to check
+  for. The 32 µs latency floor is scheduling latency; RT cuts it severalfold,
+  for no code change.
+- **Take console fan-out off the realtime device threads.** `DL11.1` (7.0%) and
+  the unnamed thread (8.7%) are 16 points of core at priority 60 spent largely
+  on ring-buffer and WebSocket bookkeeping. Making those cheaper is the safe way
+  to give the emulation its core back — safer than promoting a thread that
+  spins.
+- **Do not expect the baud rate to help.** The cost is per character, so the
+  same listing at 38400 loses the same total emulation time in a quarter of the
+  wall clock: the percentage gets *worse* and it merely ends sooner. The same
+  reasoning applies to `worker_xmt` using real `timeout_c` for the character
+  time while `worker_rcv` uses `flexi_timeout_c` with the comment "if emulated
+  CPU, use emulated timing" (`dl11w.cpp:493,571,612`) — an asymmetry that looks
+  unintended, but fixing it shortens duration, not cost.
+- **Make it self-diagnosing.** `chars_in`/`chars_out` metrics on the SLU
+  (`metric.hpp`) plus the `/api/latency` event rate on the performance panel
+  would put this whole diagnosis on the dashboard as two rows.
+
+Before building the first option, take the measurement that settles the split:
+set `cycle_tracefilepath` on the CPU and halt mid-listing. It timestamps every
+bus access with the iopage flag, which would confirm directly that the ~28
+points unaccounted for by the stretch are ordinary cycles lengthening — that
+part is inferred from the thread accounting, not measured per cycle.
+
+
 ---
 
 ## 4. Structural improvements

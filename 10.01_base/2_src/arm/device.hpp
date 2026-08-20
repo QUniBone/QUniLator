@@ -34,6 +34,7 @@
 
 #include "utils.hpp"
 #include "parameter.hpp"
+#include "metric.hpp"
 #include "logsource.hpp"
 
 // instance of a worker thread for a device
@@ -137,6 +138,13 @@ public:
 	// controllers and drives report their role so the frontend can pick
 	// a widget without parsing the free-form type name.
 	virtual const char *category(void) const { return "other"; }
+
+	// What this device counts, for the performance panel: the metrics it
+	// declared as members, registering themselves here. Empty for a device that
+	// counts nothing, which is most of them. See metric.hpp; the web layer
+	// samples this list once a second and only for an enabled device, so a card
+	// the machine carries but does not run contributes nothing.
+	std::vector<metric_c *> metrics;
 
 	// Bring activity indicators up to date. I/O sets them in bursts far
 	// shorter than the interval at which they are sampled, so a device holds

@@ -11,6 +11,7 @@ import { placeItems, gridRows, fits, occupancyExcept } from '../lib/dashlayout';
 import type { GridItem } from '../lib/dashlayout';
 import { toast } from '../lib/toast';
 import { Led, Chip } from './common';
+import { PerfCard } from './Perf';
 import { widgetFor, widgetOptions, WidgetCard } from './widgets';
 import type { Cells, WidgetOpts } from './widgets';
 import type { LiveDev, DashLayout } from '../types';
@@ -305,7 +306,17 @@ const CELL = 47; // px per grid square
 const GAP = 6;
 // the always-present cards; their size, like every widget's, comes from measuring
 // what they draw, so only their keys are fixed here
-const FIXED = ['controlpanel', 'frontpanel', 'console'];
+const FIXED = ['controlpanel', 'frontpanel', 'console', 'performance'];
+// Cards that are off until an operator asks for them. A stored layout that
+// names one overrides this either way, so the choice is remembered per
+// configuration like every other part of the arrangement — this is only what a
+// dashboard that has never been arranged starts as.
+//
+// The performance panel is here because it answers a question an operator asks
+// occasionally and deliberately ("is this thing keeping up?"), not one they want
+// in front of them while they work. Adding it to every existing dashboard
+// unasked would rearrange screens that people have already laid out.
+const DEFAULT_HIDDEN = new Set(['performance']);
 // the size a card is drawn at for the one frame before it is measured, in px: big
 // enough that a card does not visibly grow into place, small enough not to shove
 // the grid around. Every card starts here and settles to its measured size.
@@ -351,6 +362,7 @@ const FIXED_LABEL: Record<string, string> = {
   controlpanel: 'Control panel',
   frontpanel: 'Front panel',
   console: 'Console',
+  performance: 'Performance',
 };
 // a hidden card shows compact in edit mode: just enough cells for its name row
 const HIDDEN_CELLS = { w: 6, h: 2 };
@@ -359,6 +371,7 @@ function renderCard(key: string, devByName: Record<string, LiveDev>, opts: Widge
   if (key === 'controlpanel') return html`<${ControlPanel} />`;
   if (key === 'frontpanel') return html`<${FrontPanel} />`;
   if (key === 'console') return html`<${ConsoleCard} />`;
+  if (key === 'performance') return html`<${PerfCard} />`;
   const d = devByName[key];
   return d ? html`<${WidgetCard} d=${d} opts=${opts} />` : null;
 }
@@ -426,7 +439,9 @@ function DashGrid() {
   const devs = enabledDevices().filter((d) => widgetFor(d));
   const devByName: Record<string, LiveDev> = {};
   devs.forEach((d) => (devByName[d.name] = d));
-  const isHidden = (key: string) => !!layout[key]?.hidden;
+  // A card the stored layout says nothing about stands at its default, which is
+  // shown for everything but the cards in DEFAULT_HIDDEN.
+  const isHidden = (key: string) => layout[key]?.hidden ?? DEFAULT_HIDDEN.has(key);
   // The widget options stored for a card. A card the layout does not name, or
   // one whose entry sets none, leaves every option at its widget's default.
   const optsOf = (key: string): WidgetOpts => layout[key]?.opts || {};

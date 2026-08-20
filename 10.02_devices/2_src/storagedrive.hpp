@@ -136,6 +136,21 @@ public:
 
     void refresh_activity(void) override ;
 
+    // What the drive has moved, for the performance panel. Counted in
+    // image_read()/image_write(), which is where every drive family reaches its
+    // medium - a pack, a cartridge, a floppy, an MSCP unit and a tape all pass
+    // through those two - so a drive added later is counted without touching
+    // this. The transfer count is the accesses the controller made, not blocks:
+    // one request of the guest is one access here whatever its length, which is
+    // what makes the two numbers together say something (256 KB/s in 8 accesses
+    // is a different machine from 256 KB/s in 500).
+    metric_c read_bytes{this, "read_bytes", metric_c::UNIT_BYTE,
+                                   "Read"};
+    metric_c write_bytes{this, "write_bytes", metric_c::UNIT_BYTE,
+                                    "Written"};
+    metric_c transfers{this, "transfers", metric_c::UNIT_COUNT,
+                                  "Accesses"};
+
     // host lock, reported to the API as the drive's locked() state
     parameter_bool_c lock = parameter_bool_c(this, "lock", "lk", false,
                             "Host lock: medium cannot be changed while set");
