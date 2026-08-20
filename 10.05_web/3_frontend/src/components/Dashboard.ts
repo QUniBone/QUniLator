@@ -189,9 +189,19 @@ function ControlPanel() {
 // The cape's own front panel: activity LEDs and DIP switches, display-only, in
 // the shared LED visual language. Dark while the machine is powered off.
 //
+// It is titled after the board rather than "Front panel", which read as the
+// machine's front panel — the card above it, which is exactly what these lamps
+// and switches are not. A board is a QBone or a UniBone by the bus it carries.
+//
 // Neither row is labelled with what it carries, so both say it on hover: the
 // lamps are the board's four drive-activity LEDs, and the switches are the
 // board's own DIP block, which is read once at startup and not again.
+const BOARD_LABEL: Record<string, string> = { QBUS: 'QBone', UNIBUS: 'UniBone' };
+// The board's own name, for a backend that has said which bus it carries; one
+// that has not yet (or runs on neither) leaves the panel named after the board
+// in general terms rather than after the machine.
+const boardPanelLabel = () => (BOARD_LABEL[store.platform] || 'Board') + ' panel';
+
 const fpLedInfo = (i: number) =>
   'Drive activity LED ' + i + ' — pulses while a drive assigned to it reads or writes. ' +
   'Each drive carries an activity-LED number, which defaults to its unit number, so ' +
@@ -204,7 +214,7 @@ const fpDipInfo = (i: number) =>
 function FrontPanel() {
   const s = useStore();
   const powered = s.hw.powered !== false;
-  return html`<div class="card frontpanel"><div class="card-head"><h3>Front panel</h3></div>
+  return html`<div class="card frontpanel"><div class="card-head"><h3>${boardPanelLabel()}</h3></div>
     <div class="card-body">
       <div class="fp-block">
         <div class="fp-cells fp-cells-led">${s.hw.leds.map(
@@ -360,10 +370,13 @@ function measureCards(cards: HTMLElement[]): (Cells | null)[] {
 }
 const FIXED_LABEL: Record<string, string> = {
   controlpanel: 'Control panel',
-  frontpanel: 'Front panel',
   console: 'Console',
   performance: 'Performance',
 };
+// what a fixed card is called where it is named rather than drawn: the hidden
+// tile in edit mode. The board's panel is named after the board it is on.
+const fixedLabel = (key: string): string =>
+  key === 'frontpanel' ? boardPanelLabel() : FIXED_LABEL[key] || key;
 // a hidden card shows compact in edit mode: just enough cells for its name row
 const HIDDEN_CELLS = { w: 6, h: 2 };
 
@@ -381,7 +394,7 @@ function renderCard(key: string, devByName: Record<string, LiveDev>, opts: Widge
 // it taking a full widget's space.
 function renderHidden(key: string, devByName: Record<string, LiveDev>) {
   const d = devByName[key];
-  const title = d ? d.label || d.name : FIXED_LABEL[key] || key;
+  const title = d ? d.label || d.name : fixedLabel(key);
   const info = d ? d.img || d.type : '';
   return html`<div class="card hidden-card">
     <div class="card-head"><h3>${title}</h3></div>
@@ -519,12 +532,21 @@ function DashGrid() {
       if (m) found[key] = m;
     });
     setMeasured((prev) => {
+      const next = { ...prev, ...found };
+      // The control panel is the machine's bezel and the console the terminal in
+      // front of it: they read as one stack, so the panel takes the console's
+      // width rather than the narrower one its plate lays out at. Both are
+      // measured in the same pass; a hidden console is not on the grid, and
+      // leaves the panel at its own measured width.
+      const cw = isHidden('console') ? 0 : next.console?.w;
+      if (cw && next.controlpanel && next.controlpanel.w !== cw)
+        next.controlpanel = { ...next.controlpanel, w: cw };
       let changed = false;
-      for (const k in found) {
+      for (const k in next) {
         const c = prev[k];
-        if (!c || c.w !== found[k].w || c.h !== found[k].h) changed = true;
+        if (!c || c.w !== next[k].w || c.h !== next[k].h) changed = true;
       }
-      return changed ? { ...prev, ...found } : prev;
+      return changed ? next : prev;
     });
   };
   // What changes the shape of the cards: the set on the grid, the edit mode's
