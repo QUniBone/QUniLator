@@ -47,6 +47,17 @@ async function initLive(): Promise<void> {
 resumeInstallIfPending();
 initLive();
 
+// The sign-in lasts five days and every answer from /api/auth pushes that out
+// again, which a page load does on its own. A tab left open on a dashboard for
+// a week never reloads, so it renews on its own clock as well - well inside the
+// five days, and cheap enough to be beneath notice.
+setInterval(
+  () => {
+    fetch('/api/auth').catch(() => {});
+  },
+  12 * 60 * 60 * 1000
+);
+
 // Close every WebSocket when the page goes away, so a reload or navigation
 // frees the server's per-socket worker thread at once rather than leaving it to
 // the ping/pong timeout.

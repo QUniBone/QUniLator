@@ -33,6 +33,27 @@ bool webauth_verify_password(const std::string &password);
 // of the credential: the right password under another name does not pass.
 bool webauth_verify(const std::string &user, const std::string &password);
 
+// The browser's session. Basic auth is what a script uses and what settles a
+// browser's first contact, but a browser keeps those credentials only as long
+// as it cares to - Chrome drops them after a while, and each time it does the
+// sign-in dialog is back. So a request that has authenticated leaves with a
+// signed cookie, and a request carrying that cookie needs no password.
+
+// How long a session lasts, and how long each answer from GET /api/auth pushes
+// it out again: a browser that is used stays signed in, one that is not asks
+// again after five idle days.
+#define WEBAUTH_SESSION_SECONDS (5 * 24 * 60 * 60)
+
+// The Set-Cookie header line, "\r\n" included, for a request that has just
+// authenticated. Empty on an installation with no operator - there is no
+// session to hand out - and empty when no randomness was available for the
+// signing secret.
+std::string webauth_session_cookie(void);
+
+// True when the Cookie header carries a session this QUniLator signed, for the
+// operator in force and not yet expired. cookies may be nullptr.
+bool webauth_verify_session(const char *cookies);
+
 // Stores new credentials and returns true. The password is handed to the file
 // shares as well, so a request that changes only the name passes the password
 // that stays in force. On refusal, false with the reason in *error - a missing

@@ -63,8 +63,10 @@ static void *webserver_init_thread(const struct mg_context *ctx, int thread_type
      password, both of which a request must carry. An installation nobody has
      set up yet is open, which is how the frontend reaches /api/auth to set it
      up.
-     Browsers replay the credentials on the WebSocket handshakes, so /ws/
-     is covered as well. ***/
+     A request may carry the session cookie instead, which is what a browser
+     that has signed in once has: see webauth.cpp for what is in it and how
+     long it lasts. Cookies and basic credentials both ride the WebSocket
+     handshakes, so /ws/ is covered either way. ***/
 
 // decode base64 into out; result false on illegal input
 static bool base64_decode(const char *in, std::string *out) {
@@ -144,8 +146,10 @@ static int refuse_while_board_held(struct mg_connection *conn) {
 // result 0: request continues (authorized or auth disabled), 1: handled here
 static int begin_request_handler(struct mg_connection *conn) {
 	if (webauth_configured()) {
-		const char *auth = mg_get_header(conn, "Authorization");
-		bool ok = false;
+		// The cookie first: it is what a browser carries once it has signed in,
+		// and checking it costs two HMACs against basic auth's password path.
+		bool ok = webauth_verify_session(mg_get_header(conn, "Cookie"));
+		const char *auth = ok ? nullptr : mg_get_header(conn, "Authorization");
 		if (auth != nullptr && strncmp(auth, "Basic ", 6) == 0) {
 			std::string credentials; // "user:password"
 			if (base64_decode(auth + 6, &credentials)) {

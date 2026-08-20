@@ -282,8 +282,9 @@ function AccessCard() {
           : null}
       </div>
       ${error ? html`<p class="upd-warn">${error}</p>` : null}
-      <p class="muted" style="margin:12px 0 0">Your browser will ask for the name and password
-        again on the next request.</p>
+      <p class="muted" style="margin:12px 0 0">This browser stays signed in - the change hands
+        it a new session. Every other browser, and anything signed in elsewhere, is signed
+        out at once.</p>
       <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px">
         <button class="btn primary" disabled=${saving || current === ''}
           onClick=${save}>Save</button>

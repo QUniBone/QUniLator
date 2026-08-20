@@ -210,6 +210,65 @@ static void persistence(void) {
 	check(webauth_user() == "archivist", "and so does an empty one");
 }
 
+/*** the session cookie ***/
+
+// What a browser would send back: the value out of a Set-Cookie header line.
+static std::string cookie_header_of(const std::string &set_cookie) {
+	size_t eq = set_cookie.find('=');
+	size_t semi = set_cookie.find(';', eq);
+	if (eq == std::string::npos || semi == std::string::npos)
+		return std::string();
+	size_t name = set_cookie.find(':');
+	std::string pair = set_cookie.substr(name + 2, semi - name - 2);
+	return pair; // "qunilator_session=1.user.expiry.mac"
+}
+
+static void sessions(void) {
+	std::string why;
+	check(webauth_set_credentials("archivist", "anotherlongone", &why),
+			"an operator is set for the session tests");
+	std::string set_cookie = webauth_session_cookie();
+	check(!set_cookie.empty(), "an authenticated answer carries a Set-Cookie");
+	check(set_cookie.find("HttpOnly") != std::string::npos
+			&& set_cookie.find("SameSite=Lax") != std::string::npos
+			&& set_cookie.find("Max-Age=432000") != std::string::npos,
+			"good for five days, HttpOnly and same-site");
+
+	std::string cookie = cookie_header_of(set_cookie);
+	check(webauth_verify_session(cookie.c_str()), "the cookie signs the holder in");
+	check(webauth_verify_session(("other=1; " + cookie + "; more=2").c_str()),
+			"and is found among other cookies");
+	check(!webauth_verify_session(nullptr), "a request with no cookies is refused");
+	check(!webauth_verify_session("other=1; more=2"),
+			"and so is one carrying somebody else's");
+
+	// Every field is under the mac, so no part of it can be edited.
+	std::string tampered = cookie;
+	tampered[tampered.size() - 1] = tampered[tampered.size() - 1] == 'a' ? 'b' : 'a';
+	check(!webauth_verify_session(tampered.c_str()), "a changed mac is refused");
+	std::string forged = "qunilator_session=1.archivist.99999999999."
+			+ std::string(64, '0');
+	check(!webauth_verify_session(forged.c_str()),
+			"a token signed by nobody is refused");
+
+	// What a restart does: the secret comes back out of settings.json with the
+	// digest, so the session a browser is holding still opens the board.
+	picojson::value stored = webauth_json();
+	check(stored.get("session_secret").is<std::string>(),
+			"settings.json carries the signing secret");
+	webauth_load(stored);
+	check(webauth_verify_session(cookie.c_str()),
+			"a session survives the service being restarted");
+
+	// The key follows the digest, so new credentials end what was open.
+	check(webauth_set_credentials("archivist", "yetanotherone", &why),
+			"the password is changed");
+	check(!webauth_verify_session(cookie.c_str()),
+			"which closes the sessions that were open");
+	check(webauth_verify_session(cookie_header_of(webauth_session_cookie()).c_str()),
+			"and the answer that changed it opens a new one");
+}
+
 int main(void) {
 	logger = new logger_c();
 
@@ -223,6 +282,8 @@ int main(void) {
 	with_a_name();
 	printf("--- settings.json\n");
 	persistence();
+	printf("--- the browser's session\n");
+	sessions();
 
 	printf("\n%s\n", failures == 0 ? "auth_test: all checks passed"
 			: "auth_test: FAILURES");

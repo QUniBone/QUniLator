@@ -8,7 +8,8 @@ Once an operator is set up - preparing the SD card does it, or the first-run
 dialog, and `PUT /api/auth` changes it afterwards - every request requires HTTP
 basic auth. **The user name is part of it**: one identity is both the operator's
 account and the web login, and the right password under another name answers
-`401`. Browsers replay the credentials on the WebSocket handshakes. A QUniLator
+`401`. A browser may carry a session cookie instead of the credentials, which is
+what signing in once gets it; both ride the WebSocket handshakes. A QUniLator
 nobody has set up answers everything.
 
 ## State
@@ -69,6 +70,38 @@ name creates the new account and removes the old one.
 ```
 
 `configured` is false until an operator exists, and `user` is empty with it.
+
+The answer also carries the session cookie, below — this request is what a page
+renews it with, and the frontend makes it on every load and every twelve hours
+thereafter.
+
+### The session cookie
+
+A browser holds basic credentials only as long as it cares to, and each time it
+forgets them the sign-in dialog is back in the middle of somebody's work. So an
+answer from `GET /api/auth` — and from `PUT /api/auth`, which invalidates what
+came before it — carries
+
+```
+Set-Cookie: qunilator_session=1.<user>.<expiry>.<mac>; Path=/; Max-Age=432000;
+            HttpOnly; SameSite=Lax
+```
+
+and a request carrying that cookie needs no password. The token is a claim this
+QUniLator signed: the operator's name, the unix second the session ends at, and
+an HMAC-SHA256 over both. Nothing in it is secret and nothing in it can be
+edited.
+
+The session lasts **five days**, and every answer from `GET /api/auth` pushes
+that out again, so an interface in daily use never asks a second time and one
+untouched for five days asks once. The signing key is derived from a secret in
+`settings.json` — so restarting the service, or the board, leaves every session
+open — and from the stored password digest, so changing either half of the
+credentials closes all of them at once.
+
+Scripts want none of this: `curl -u` and `websocat` with an `Authorization`
+header authenticate on every request, exactly as before, and are handed a cookie
+they are free to ignore.
 
 ### `PUT /api/auth`
 
