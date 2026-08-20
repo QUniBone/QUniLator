@@ -1636,8 +1636,24 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
   font-size: var(--fs-1);
 }
 .selftest-seconds { width: 64px; margin-left: 4px; }
+/* The page is a workbench, not a text: the tests scroll in their own region
+   and the output card is docked below them, so a run started from the bottom
+   of the list is watched - and stopped - without scrolling anywhere. */
+.page[data-page="selftest"].active {
+  display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0;
+}
+.content:has(.page[data-page="selftest"].active) { padding-bottom: 22px; }
+/* the lede is a child of the scroll region rather than of the page, so it
+   needs the reading width the page rule would have given it */
+.selftest-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.selftest-scroll > .lede { color: var(--ink-muted); max-width: 65ch; margin: 0 0 18px; }
+.selftest-output-card { flex: 0 0 auto; margin-top: 14px; max-width: 720px; }
+/* nothing to show yet: the card is its header, and the tests have the height */
+.selftest-output-card:not(.has-output) .card-body { display: none; }
+.selftest-output-card:not(.has-output) .card-head { padding-bottom: 14px; }
+.selftest-output-card.running { border-color: var(--accent); }
 /* the raw child output; the pane keeps its own scrollback like the changelog */
-.selftest-output { max-height: 340px; min-height: 120px; }
+.selftest-output { max-height: min(340px, 40vh); min-height: 120px; }
 .selftest-verdict-passed { color: var(--ok); background: var(--ok-soft); }
 .selftest-verdict-failed { color: var(--err); background: var(--err-soft); }
 .selftest-verdict-error { color: var(--warn); background: var(--warn-soft); }

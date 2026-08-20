@@ -61,9 +61,11 @@ function verdictLabel(verdict: string): string {
  * the <pre> is written imperatively: a memory test prints tens of chunks a
  * second, and a re-render per chunk would thrash the page.
  */
-function OutputPane() {
+function OutputPane({ onData }: { onData: () => void }) {
   const preRef = useRef<HTMLPreElement>(null);
   const bufRef = useRef({ text: '', pendingCR: false });
+  const onDataRef = useRef(onData);
+  onDataRef.current = onData;
   useEffect(() => {
     let ws: WebSocket | null = null;
     let closed = false;
@@ -90,6 +92,9 @@ function OutputPane() {
       // bound what one long soak test can pin in the page
       if (b.text.length > 256 * 1024) b.text = b.text.slice(-192 * 1024);
       paint();
+      // the pane is folded away until there is something in it - which is the
+      // channel's replay as much as a live run, so the pane says so, not the page
+      onDataRef.current();
     };
     const connect = () => {
       if (closed) return;
@@ -156,6 +161,9 @@ export function SelftestPage() {
   const s = useStore();
   const loc = useLocation();
   const [tests, setTests] = useState<SelftestInfo[] | null>(null);
+  // whether the pane has anything in it: the card is a header-high strip until
+  // it has, so an idle page spends its height on the tests
+  const [hasOutput, setHasOutput] = useState(false);
   useEffect(() => {
     fetchSelftests().then((r) => setTests(r ? r.tests : []));
   }, []);
@@ -165,7 +173,11 @@ export function SelftestPage() {
   const busy = running !== null;
   const doc = ACCEPTANCE_DOC[s.platform];
 
+  // The output is docked to the bottom of the page and the tests scroll behind
+  // it: a run is watched, not scrolled to, and Stop stays under the hand
+  // wherever in the list the test that is running was started from.
   return html`<section class="page active" data-page="selftest">
+    <div class="selftest-scroll">
     <p class="lede">
       The board's own test routines, from the interactive test menus. Running
       one takes the machine down for the length of the test - the board is
@@ -210,8 +222,10 @@ export function SelftestPage() {
             </div>`
           )
     }
+    </div>
 
-    <div class="card" style="max-width:720px">
+    <div class=${'card selftest-output-card' + (hasOutput ? ' has-output' : '')
+        + (busy ? ' running' : '')}>
       <div class="card-head"><h3>Output</h3>
         ${
           running
@@ -221,11 +235,11 @@ export function SelftestPage() {
             : last
               ? html`<span class=${'pill selftest-verdict-' + last.verdict}>
                   ${last.test}: ${verdictLabel(last.verdict)}</span>`
-              : null
+              : html`<span class="muted">nothing has run yet</span>`
         }
       </div>
       <div class="card-body">
-        <${OutputPane} />
+        <${OutputPane} onData=${() => setHasOutput(true)} />
         ${
           last && !running
             ? html`<p class="muted">The machine is back and switched off; AUX ON on
