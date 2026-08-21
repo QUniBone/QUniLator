@@ -272,6 +272,11 @@ apps=$ROOT/10.03_app_demo/5_applications
 [ -e "$ROOT/10.03_app_demo/5_applications_q" ] && { fail "5_applications_q still there"; rc=1; }
 [ -e "$ROOT/10.03_app_demo/5_applications_u" ] && { fail "5_applications_u still there"; rc=1; }
 [ -f "$apps/cpu20/cpu20_hello.sh" ] && { fail "a UNIBUS example landed on a QBUS board"; rc=1; }
+# and each one names the menu program this board installs on its "#!" line
+expect "the common example's interpreter" "#!/usr/bin/qbone-cli --verbose" \
+    "$(head -1 "$apps/memory/memory.sh")" || rc=1
+expect "the QBUS example's interpreter" "#!/usr/bin/qbone-cli --verbose" \
+    "$(head -1 "$apps/211bsd.mscp/211BSD_du0_73.sh")" || rc=1
 [ $rc = 0 ] && ok
 
 case_begin "every example has a shortcut in the tree root, and each one resolves"
@@ -333,6 +338,12 @@ else
         || { fail "no UNIBUS platform in qunibone-platform.env"; rc=1; }
     [ -f "$appsu/cpu20/cpu20_hello.sh" ] || { fail "no UNIBUS example in 5_applications"; rc=1; }
     [ -f "$appsu/211bsd.mscp/211BSD_du0_73.sh" ] && { fail "a QBUS example landed on a UNIBUS board"; rc=1; }
+    # the common examples are rebranded to this board's menu program, the
+    # UNIBUS ones name it already
+    expect "the common example's interpreter" "#!/usr/bin/unibone-cli --verbose" \
+        "$(head -1 "$appsu/memory/memory.sh")" || rc=1
+    expect "the UNIBUS example's interpreter" "#!/usr/bin/unibone-cli --verbose" \
+        "$(head -1 "$appsu/cpu20/cpu20_hello.sh")" || rc=1
     expect "4_deploy" "$ROOT_U/10.03_app_demo/4_deploy_u" \
         "$(readlink "$ROOT_U/10.03_app_demo/4_deploy")" || rc=1
     [ $rc = 0 ] && ok

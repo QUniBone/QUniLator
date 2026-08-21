@@ -74,17 +74,23 @@ Scripts
 	xxdp22-25.dlx.sh
 
 A script is no longer a shell wrapper around a .cmd file - there is no .cmd file
-any more. The script IS the demo command file and starts with
+any more. The script IS the command file of the menu program and starts with
 
-	#!/root/10.03_app_demo/4_deploy/demo --verbose
+	#!/usr/bin/qbone-cli --verbose
 
-so it runs as "sudo ./rt11v5.5.dlx.sh", with further options if wanted. demo
-ignores the "#!" line as it ignores any line starting with "#". A file the
-script names relatively is looked up next to the script, so no "cd" is needed:
-"../bootloaders/dl.lst", or a plain name for the one file that belongs to this
-example alone. The images are the exception and are named in full, because they
-are not in the tree: "/var/lib/qunilator/images/dl/<image>". Files the run
-creates land in the directory it was started from.
+so it runs as "sudo ./rt11v5.5.dlx.sh", with further options if wanted. That is
+the program the package installs - "demo" as it is built, /usr/bin/<name>-cli as
+it is installed - and the name carries the board's bus: qbone-cli on a QBUS
+board, unibone-cli on a UNIBUS one. A script under 5_applications_u or
+5_applications_q names its own; the ones here serve both buses and are written
+in the QBone spelling, which qunibone-platform.sh rewrites to this board's when
+it merges the trees. The program ignores the "#!" line as it ignores any line
+starting with "#". A file the script names relatively is looked up next to the
+script, so no "cd" is needed: "../bootloaders/dl.lst", or a plain name for the
+one file that belongs to this example alone. The images are the exception and
+are named in full, because they are not in the tree:
+"/var/lib/qunilator/images/dl/<image>". Files the run creates land in the
+directory it was started from.
 
 <OS><version>	rt11v5.5, rsx11m4.8, unixv6, xxdp22-25, mini-unix, 211BSD,
 		vms73. A script that serves two versions names both: xxdp22-25.
@@ -100,7 +106,7 @@ creates land in the directory it was started from.
 			du	MSCP (UDA50, RQDX3, RA.., RD..)	du.lst
 			dx	RX11, RXV11 / RX01		dx.lst
 			dy	RX211, RXV21 / RX02		dy.lst
-		demo names a device the same on both buses (rl, rk, uda, rx,
+		a device has the same name on both buses (rl, rk, uda, rx,
 		ry), so a script that mentions no image can be bus independent
 		even though the controller behind it is not the same board.
 <unit>		The drive number booted from: dl0, dl1, du0, ...
@@ -194,7 +200,8 @@ It fetches the set for the machine's bus - the common tree's images and that
 bus's - so the per-bus disks above arrive without anything having to choose
 between them by hand. A repeated run brings only what is missing.
 
-Only "<image>.dsk.gz" is fetched. When demo cannot open the image a script
+Only "<image>.dsk.gz" is fetched. When the emulator cannot open the image a
+script
 names, it looks for "<image>.gz" beside it and expands it with zcat into the
 directory it found it in (10.02_devices/2_src/storageimage.cpp) - so the
 expanded disk lands in the media tree next to its own ".gz", and every later

@@ -316,8 +316,10 @@ The examples
 10.03_app_demo/5_applications holds the example machines, one command file per
 machine: a serial line, memory, a boot loader, a drive with an image in it, and
 the message saying what to type at the console. Each is executable and names
-the emulator on its "#!" line, so an example runs as a program, and /root holds
-a shortcut to every one of them:
+the menu program on its "#!" line -- "#!/usr/bin/qbone-cli --verbose", the
+board's own name, which qunilator-devkit writes into the examples that serve
+both buses when it merges the trees -- so an example runs as a program, and
+/root holds a shortcut to every one of them:
 
     sudo /root/rt11v5.5_dl_shared.sh
 
@@ -326,9 +328,9 @@ service switches its machine off and hands the hardware over for the length of
 the session, and takes it back when the session ends -- rebuilding its machine
 switched off, because what a menu session leaves behind is not something to
 start a machine on. One such session runs at a time; a second is refused, naming
-the process that holds the board. The example runs as root because it drives the
-PRUs, and the program built in the tree is not the set-user-id one the package
-installs.
+the process that holds the board. The example is run with sudo because it drives
+the PRUs: the set-user-id bit on /usr/bin/qbone-cli does not carry through a "#!"
+line.
 
 An example names its images and boot loaders relative to itself, and they are
 found there however the example was started -- through the shortcut, or from
