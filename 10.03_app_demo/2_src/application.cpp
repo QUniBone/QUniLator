@@ -201,6 +201,16 @@ void application_c::parse_commandline(int argc, char **argv)
                          "", "/usr/share/qunilator/frontend", "installed frontend");
 #endif
 
+    // No default_args ("" not "0"): a default is injected into EVERY parse
+    // (see first()), which would put a bare interactive run into selftest mode.
+    getopt_parser.define("st", "selftest", "testname", "seconds", "",
+                         "Run one hardware self-test without the menu, then exit.\n"
+                         "Output goes to stdout; the exit code is the verdict:\n"
+                         "0 = passed, 1 = errors found, 2 = the test could not run.\n"
+                         "<seconds> bounds a test that otherwise runs until ^C.",
+                         "latch-multi 10",
+                         "exercise all bus latches for 10 seconds", "", "");
+
     getopt_parser.define("", "", "cmdfile", "", "",
                          "File from which commands are read, like --cmdfile, but a file\n"
                          "named in it is also looked for next to <cmdfile> itself, so a\n"
@@ -212,7 +222,10 @@ void application_c::parse_commandline(int argc, char **argv)
 
 	// test options
 
-    getopt_parser.define("t", "test", "iarg1,iarg2", "soptarg", "8 15",
+    // No default_args here either: "8 15" made the parser inject "--test 8 15"
+    // into every run, printing "iarg1=8, iarg2=15" at each start - noise in
+    // the interactive banner and in every self-test's streamed output.
+    getopt_parser.define("t", "test", "iarg1,iarg2", "soptarg", "",
                          "Tests the new c++ getop2.cpp\n"
                          "Multiline info, fix and optional args, short and long examples", "1,2",
                          "simple sets both mandatory int args", "1 2 hello",
@@ -273,6 +286,15 @@ void application_c::parse_commandline(int argc, char **argv)
             if (getopt_parser.arg_s("directory", opt_web_root) != GETOPT_STATUS_OK)
                 commandline_option_error(NULL);
 #endif
+        } else if (getopt_parser.isoption("selftest")) {
+            if (getopt_parser.arg_s("testname", opt_selftest_name) < 0)
+                commandline_option_error(NULL);
+            unsigned n;
+            int argres = getopt_parser.arg_u("seconds", &n);
+            if (argres == GETOPT_STATUS_OK)
+                opt_selftest_seconds = n;
+            else if (argres < 0)
+                commandline_option_error(NULL);
         } else if (getopt_parser.isoption("test")) {
             int i1, i2;
             std::string s;
@@ -451,6 +473,16 @@ int application_c::run(int argc, char *argv[])
     INFO("Leave SYSBOOT mode.");
     GPIO_SETVAL(gpios->reg_enable, 1);
     // input registers can now be read
+
+    // A self-test run bypasses the menus: one test, its output on stdout, its
+    // verdict in the exit code. See selftest.cpp.
+    if (!opt_selftest_name.empty()) {
+        int exitcode = run_selftest(opt_selftest_name, opt_selftest_seconds);
+#if defined(WEBUI)
+        boardclaim_release();
+#endif
+        return exitcode;
+    }
 
 #if defined(WEBUI)
     if (opt_web_port) {

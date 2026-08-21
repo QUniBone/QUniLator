@@ -12,6 +12,7 @@ import { MachinePage } from './Machine';
 import { LogPage } from './Log';
 import { DebugPage } from './Debug';
 import { SystemPage } from './System';
+import { SelftestPage } from './Selftest';
 import { updateAvailable, updateRunning } from '../lib/update';
 import { dismissNotice } from '../api';
 
@@ -221,6 +222,10 @@ export function App() {
   const loc = useLocation();
   const active = activeNav(loc.path);
   const title = (NAV.find(([p]) => p === active) || [, 'Dashboard'])[1] as string;
+  // The self-test page is the one place the held-board lock must not cover: a
+  // running test holds the board by design, and that page's Stop button is how
+  // the hold ends. Every other page (and tab) keeps the modal.
+  const heldHidden = loc.path.startsWith('/system/selftest') && s.selftest.running !== null;
   return html`<div class="app">
     <${Sidebar} active=${active} />
     <div class="main">
@@ -237,10 +242,11 @@ export function App() {
           <${DebugPage} path="/debug" />
           <${LogPage} path="/diagnostics" />
           <${SystemPage} path="/system" />
+          <${SelftestPage} path="/system/selftest" />
           <${Redirect} default to="/dashboard" />
         </${Router}>
       </main>
     </div>
-    <${BoardHeld} reason=${s.heldBy} />
+    <${BoardHeld} reason=${heldHidden ? '' : s.heldBy} />
   </div>`;
 }

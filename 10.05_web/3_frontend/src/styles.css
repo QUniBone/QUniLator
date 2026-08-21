@@ -156,6 +156,13 @@ body {
   line-height: 1.45;
 }
 button { font: inherit; color: inherit; }
+/* A link in body text. The browser's default blue is barely legible on the
+   dark surface and fights the accent on the light one, so a link takes the
+   accent and says it is one with a rule under it. Anything that is a control
+   wearing an <a> - a download, a route rendered as a button - carries .btn and
+   opts out below. */
+a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+a:hover { color: var(--ink); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -265,7 +272,7 @@ button { font: inherit; color: inherit; }
   padding: 6px 12px; border-radius: var(--r-sm);
   border: 1px solid var(--line);
   background: var(--surface); color: var(--ink);
-  cursor: pointer; font-size: var(--fs-1);
+  cursor: pointer; font-size: var(--fs-1); text-decoration: none;
 }
 .btn:hover { border-color: var(--ink-faint); }
 .btn:disabled { opacity: .4; cursor: default; }
@@ -1594,3 +1601,74 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
   color: var(--ink-faint);
   flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
 }
+
+/* ---- hardware self-tests (/system/selftest) ---- */
+/* One test per row: what it is on the left, how to run it on the right. The
+   warning is the operator-facing constraint (empty bus, memory overwritten),
+   styled like the other warnings on the System page. */
+.selftest-row {
+  display: flex; gap: 14px; align-items: flex-start;
+  padding: 11px 0; border-top: 1px solid var(--line-soft);
+}
+.selftest-row:first-child { border-top: none; padding-top: 0; }
+.selftest-row-text { flex: 1 1 auto; min-width: 0; font-size: var(--fs-1); }
+.selftest-row-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 2px; }
+.selftest-warning {
+  margin-top: 4px; font-size: var(--fs-1); color: var(--warn);
+}
+/* what has to be fitted before the run - jumpers, terminator, probe board.
+   Not a warning about what the test costs: a precondition without which it
+   simply fails. */
+.selftest-setup {
+  margin-top: 4px; font-size: var(--fs-1); color: var(--ink-muted);
+  border-left: 2px solid var(--line); padding-left: 8px;
+}
+/* The one thing on this page an operator must read before pressing anything:
+   the bus tests destroy nothing but will confuse or crash a machine they are
+   run in. Loud on purpose. */
+.selftest-danger {
+  margin: 0 0 16px; padding: 12px 14px; border-radius: var(--r-md);
+  border: 1px solid var(--err); background: var(--err-soft); color: var(--ink);
+  font-size: var(--fs-1);
+}
+.selftest-danger-head {
+  color: var(--err); font-weight: 700; text-transform: uppercase;
+  letter-spacing: .04em; margin-bottom: 6px;
+}
+.selftest-danger p { margin: 6px 0 0; line-height: 1.45; }
+.selftest-danger p:first-of-type { margin-top: 0; }
+.selftest-danger a { color: var(--err); }
+.selftest-row-run {
+  flex: 0 0 auto; display: flex; gap: 8px; align-items: center;
+  font-size: var(--fs-1);
+}
+.selftest-seconds { width: 64px; margin-left: 4px; }
+/* The page is a workbench, not a text: the tests scroll in their own region
+   and the output card is docked below them, so a run started from the bottom
+   of the list is watched - and stopped - without scrolling anywhere. */
+.page[data-page="selftest"].active {
+  display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0;
+}
+.content:has(.page[data-page="selftest"].active) { padding-bottom: 22px; }
+.selftest-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.selftest-back { margin: 0 0 12px; font-size: var(--fs-1); }
+.selftest-output-card { flex: 0 0 auto; margin-top: 14px; max-width: 720px; }
+/* nothing to show yet: the card is its header, and the tests have the height */
+.selftest-output-card:not(.has-output) .card-body { display: none; }
+.selftest-output-card:not(.has-output) .card-head { padding-bottom: 14px; }
+.selftest-output-card.running { border-color: var(--accent); }
+/* what the test made of its own failure - read before the scrollback, since
+   it is the answer the scrollback has to be read to reach */
+.selftest-hint {
+  margin: 0 0 10px; padding: 8px 10px; border-radius: var(--r-sm);
+  border: 1px solid var(--warn); background: var(--warn-soft);
+  font-size: var(--fs-1); line-height: 1.45;
+}
+.selftest-hint strong { color: var(--warn); }
+/* the raw child output; the pane keeps its own scrollback like the changelog */
+.selftest-output { max-height: min(340px, 40vh); min-height: 120px; }
+.selftest-verdict-passed { color: var(--ok); background: var(--ok-soft); }
+.selftest-verdict-failed { color: var(--err); background: var(--err-soft); }
+.selftest-verdict-error { color: var(--warn); background: var(--warn-soft); }
+.selftest-verdict-aborted { color: var(--warn); background: var(--warn-soft); }
+.pill.busy { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }

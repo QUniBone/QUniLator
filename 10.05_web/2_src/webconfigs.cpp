@@ -192,6 +192,19 @@ static void capture_parameter_defaults(void) {
 		}
 }
 
+// The map above is keyed by parameter address, so it dies with the device set:
+// after a shutdown/startup cycle (the board coming back from the interactive
+// menu or a self-test) every key dangles, and the reconstructed set reuses
+// heap addresses - so a lookup can hit a stale entry and hand one parameter
+// ANOTHER parameter's captured default. Seen as reset_to_defaults() parsing a
+// register address into a backplane slot and dying on the slot assertion.
+// Called after every devices_startup(); the fresh set is at its construction
+// defaults at that moment, which is exactly what the capture wants.
+void webconfigs_devices_rebuilt(void) {
+	parameter_defaults.clear();
+	capture_parameter_defaults();
+}
+
 static bool is_default(parameter_c *p) {
 	std::map<parameter_c *, param_default_t>::iterator it = parameter_defaults.find(p);
 	return it != parameter_defaults.end() && it->second.value == *p->render();

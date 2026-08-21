@@ -97,6 +97,9 @@ public:
 	// command line args
 	unsigned opt_linewidth = 80;
 	std::string opt_cmdfilename;
+	// --selftest: run this one hardware self-test instead of the menu
+	std::string opt_selftest_name;
+	unsigned opt_selftest_seconds = 0; // 0 = run until SIGINT
 	// the command file was given as a bare argument, not with --cmdfile: the
 	// files it names are then looked for next to it. See scriptpath.hpp.
 	bool opt_script_relative = false;
@@ -156,6 +159,10 @@ public:
 
 	void menu_main(void);
 
+	// one non-interactive hardware self-test; result is the process exit code
+	// (see selftest.hpp)
+	int run_selftest(const std::string &testname, unsigned seconds);
+
 public:
 	application_c();
 
@@ -164,6 +171,12 @@ public:
 };
 
 extern application_c *app;	// Singleton
+
+#if defined(UNIBUS)
+// SACK turnaround test of the M9302 terminator; the "tl" menu's "gst" command
+// and the "m9302-sack" self-test both run it. Defined in menu_buslatches.cpp.
+bool buslatches_m9302_sack_test(void);
+#endif
 
 // construct the singletons every program built on this code needs
 void qunibone_factory(void);

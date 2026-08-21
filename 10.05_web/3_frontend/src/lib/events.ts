@@ -158,6 +158,11 @@ export function initEvents(): void {
       void t;
       store.update = status as UpdateStatus;
       return 'now';
+    } else if (ev.t === 'selftest') {
+      // a hardware self-test run started or ended; broadcast on each change
+      // and sent on every connect
+      store.selftest = { running: ev.running || null, last: ev.last || null };
+      return 'now';
     } else if (ev.t === 'settings') {
       // A machine setting moved, wherever it was moved from. Reread them; that
       // re-points the console when the setting names a different port for it,

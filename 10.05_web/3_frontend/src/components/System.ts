@@ -10,6 +10,7 @@
 // undone by apt at all, and leaves the machine running, so it says that instead.
 import { html } from '../html';
 import { useEffect, useState } from 'preact/hooks';
+import { useLocation } from 'preact-iso';
 import { useStore } from '../store';
 import { apiJSON, liveControl, listRecordings, deleteRecording, type Recording } from '../api';
 import {
@@ -550,6 +551,27 @@ function RecordingsCard() {
   </div>`;
 }
 
+// The door to the board's hardware self-tests. A card here rather than a
+// sidebar entry: checking a board out is bench work, not day-to-day operation,
+// and the tests take the machine down while they run.
+function SelftestCard() {
+  const loc = useLocation();
+  const s = useStore();
+  const running = s.selftest.running;
+  return html`<div class="card" style="max-width:720px">
+    <div class="card-head"><h3>Hardware self-tests</h3>
+      ${running ? html`<span class="pill busy">running ${running.test}</span>` : null}
+    </div>
+    <div class="card-body">
+      <p class="muted">The board's own test routines: bus latches and signals,
+        panel and LEDs, the machine's memory. A run takes the machine down and
+        hands the board to the test program; it comes back switched off.</p>
+      <button class="btn small" onClick=${() => loc.route('/system/selftest')}>
+        Open the self-tests</button>
+    </div>
+  </div>`;
+}
+
 export function SystemPage() {
   const s = useStore();
   const [tick, setTick] = useState(0);
@@ -564,6 +586,7 @@ export function SystemPage() {
       <${AccessCard} />
       <${BoardCard} />
       <${SerialPortsCard} />
+      <${SelftestCard} />
       <p class="muted">Reading the update status…</p></section>`;
 
   const busy = updateRunning(u);
@@ -576,6 +599,8 @@ export function SystemPage() {
     <${BoardCard} />
 
     <${SerialPortsCard} />
+
+    <${SelftestCard} />
 
     <${RecordingsCard} />
 

@@ -108,6 +108,9 @@ public:
 
 	void reset(void);
 
+	// did an MC23017 answer at the last reset()?
+	bool present(void) const { return panel_present; }
+
 	// low level I2C register access
 	bool i2c_read_byte(uint8_t slave_addr, uint8_t reg_addr, uint8_t *result);
 

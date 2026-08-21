@@ -14,6 +14,7 @@ import type {
   LogLevelName,
   UpdateStatus,
   MetricsState,
+  SelftestState,
 } from './types';
 
 export interface Store {
@@ -34,6 +35,8 @@ export interface Store {
   // the self-update status, from GET /api/update and the "update" event frame;
   // null until the first one arrives
   update: UpdateStatus | null;
+  // the hardware self-test state, from the "selftest" event frame
+  selftest: SelftestState;
   connected: boolean;
   // What holds the board, from the state frame's `held_by`: the checks a
   // power-up runs, or the interactive menu having the hardware. Empty when
@@ -79,6 +82,7 @@ export const store: Store = {
   serverVersion: '',
   serverBuilt: '',
   update: null,
+  selftest: { running: null, last: null },
   connected: false,
   heldBy: '',
   notice: '',

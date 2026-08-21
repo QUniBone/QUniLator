@@ -57,6 +57,7 @@
 #include "webpower.hpp"
 #include "webstorage.hpp"
 #include "webupdate.hpp"
+#include "webselftest.hpp"
 
 // clients, guarded by clients_mutex; writes only from the broadcast thread
 static std::mutex clients_mutex;
@@ -906,6 +907,9 @@ static void broadcast_loop(void) {
 				if (!msg.empty())
 					enqueue_str(msg); // goes out with the next batch, like the others
 			}
+			// a self-test run started or ended since the last cycle
+			if (webselftest_poll())
+				enqueue_str(webselftest_event_json());
 		}
 		if (batch.empty())
 			continue;
@@ -947,6 +951,8 @@ static void ws_ready_handler(struct mg_connection *conn, void *) {
 	// or one reconnecting after the service was replaced by it - knows at once
 	// what is going on and how it went.
 	std::string update = webupdate_event_json();
+	// the self-test state too, so a page opened mid-run knows one is running
+	std::string selftest = webselftest_event_json();
 	std::lock_guard<std::mutex> lock(clients_mutex);
 	mg_websocket_write(conn, MG_WEBSOCKET_OPCODE_TEXT, snapshot.c_str(),
 			snapshot.size());
@@ -956,6 +962,9 @@ static void ws_ready_handler(struct mg_connection *conn, void *) {
 	if (!update.empty())
 		mg_websocket_write(conn, MG_WEBSOCKET_OPCODE_TEXT, update.c_str(),
 				update.size());
+	if (!selftest.empty())
+		mg_websocket_write(conn, MG_WEBSOCKET_OPCODE_TEXT, selftest.c_str(),
+				selftest.size());
 	clients.insert(conn);
 }
 
