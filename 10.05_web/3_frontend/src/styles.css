@@ -206,6 +206,21 @@ a:hover { color: var(--ink); }
 .nav button.active {
   background: var(--accent-soft); color: var(--accent); font-weight: 600;
 }
+/* The sub-menu one nav entry opens, for a page split into functions of its own.
+   Indented under its parent and rendered a size down, so the two levels read as
+   one list rather than as two navigations. */
+.subnav { display: flex; flex-direction: column; gap: 2px; margin: 2px 0 4px 10px;
+  padding-left: 8px; border-left: 1px solid var(--line-soft); }
+.subnav button {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; text-align: left;
+  padding: 6px 10px; border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--ink-muted);
+  font-size: var(--fs-0); cursor: pointer;
+}
+.subnav button:hover { background: var(--surface-2); color: var(--ink); }
+.subnav button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
 .sidebar .foot {
   margin-top: auto; padding: 12px 16px;
   border-top: 1px solid var(--line-soft);
@@ -595,7 +610,7 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
    modem-signal lamps per line, with a legend of the signal names beneath in the
    control-panel legend font. The port digit sits at the left of each row inside
    the window; the legend row aligns to the same column grid, which the widget
-   sets from the number of signals the board carries. The window is the terminal
+   sets from the number of signals the card carries. The window is the terminal
    black, so a lamp panel and the console read as the same surface. */
 .dzbody { display: flex; flex-direction: column; align-items: center; gap: 9px; padding: 10px 12px 14px; }
 .dz-panel {
@@ -616,7 +631,7 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
 }
 
 /* ---- memory card ---- READ/WRITE lamps over one fact box, a line per range:
-   what the machine's hardware carries and what the board answers out of its
+   what the machine's hardware carries and what QUniLator answers out of its
    own memory. Addresses no line names are the ones nothing answers at. A card
    clamped narrower than a line (a narrow window caps the grid's columns) wraps
    the line rather than clipping the address range. */
@@ -1356,7 +1371,7 @@ button.tree-name:hover .mono { color: var(--accent); }
 
 /* The console record control and the recordings list. A running recording is
    marked with the pulsing dot the rest of the world uses for one, so it is
-   visible at a glance that a session is being written to the board. */
+   visible at a glance that a session is being written to disk. */
 .btn.recording { color: #b4231d; border-color: #b4231d; }
 .rec-dot { display: inline-block; width: .5em; height: .5em; margin-right: .4em;
   border-radius: 50%; background: #b4231d; vertical-align: baseline;
@@ -1388,7 +1403,7 @@ button.tree-name:hover .mono { color: var(--accent); }
 .export-item .muted { font-size: .75rem; }
 label.btn.disabled { opacity: .6; pointer-events: none; }
 
-/* The board's standing notice: something it did on its own, at boot, with
+/* QUniLator's standing notice: something it did on its own, at boot, with
    nobody watching. It sits between the topbar and the content rather than over
    them, because it reports what is already done - there is nothing to decide,
    and no reason to stop the operator reaching the machine it is about. */
@@ -1400,7 +1415,7 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
 }
 .notice-text { flex: 1; line-height: 1.4; }
 
-/* The board held for work no page may act during. It sits above every other
+/* The hardware held for work no page may act during. It sits above every other
    overlay: a modal open when the hold arrives is still a modal onto a machine
    that is being rebuilt underneath it. */
 .held-overlay { z-index: 90; }
@@ -1651,7 +1666,6 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
 }
 .content:has(.page[data-page="selftest"].active) { padding-bottom: 22px; }
 .selftest-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-.selftest-back { margin: 0 0 12px; font-size: var(--fs-1); }
 .selftest-output-card { flex: 0 0 auto; margin-top: 14px; max-width: 720px; }
 /* nothing to show yet: the card is its header, and the tests have the height */
 .selftest-output-card:not(.has-output) .card-body { display: none; }

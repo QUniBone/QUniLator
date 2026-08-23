@@ -369,14 +369,14 @@ static void serialports_put(struct mg_connection *conn) {
 			if (p == port)
 				known = true;
 		if (!known) {
-			send_error(conn, 422, "\"" + port + "\" is not a serial port of this board");
+			send_error(conn, 422, "\"" + port + "\" is not a serial port of this BeagleBone");
 			return;
 		}
 		wanted.push_back(port);
 	}
 	if (wanted.empty()) {
 		send_error(conn, 422, "one port keeps its login: it is the way back onto "
-				"a board whose network has gone");
+				"a card whose network has gone");
 		return;
 	}
 	// A port the emulator holds cannot take a login: the getty and the device

@@ -430,11 +430,11 @@ function TitleField({ name, title }: { name: string; title: string }) {
     }} />`;
 }
 
-// Binds the configuration to a DIP-switch setting: the board loads it at
+// Binds the configuration to a DIP-switch setting: QUniLator loads it at
 // power-on when the four switches read that value. A value another
 // configuration already claims is shown disabled, since at most one may hold it.
 // The live switch reading is shown so the operator can see which configuration
-// the board would bring up now.
+// QUniLator would bring up now.
 function DipField({ name, dip }: { name: string; dip: number }) {
   const s = useStore();
   const liveDip = s.hw.dip.reduce((v, b, i) => v | (b ? 1 << i : 0), 0);
@@ -467,14 +467,14 @@ function DipField({ name, dip }: { name: string; dip: number }) {
   </label>`;
 }
 
-// Whether the board switches this machine on by itself when it loads it at
+// Whether QUniLator switches this machine on by itself when it loads it at
 // power-on, rather than holding it dark for the panel switch. It is a standing
-// instruction about a backplane, and the board is fitted to a machine before it
+// instruction about a backplane, and the card is fitted to a machine before it
 // is configured, so the wording says plainly what is being promised and the
-// board announces it loudly when it acts on it.
+// QUniLator announces it loudly when it acts on it.
 function AutostartField({ name, on, cardList }: { name: string; on: boolean; cardList: string }) {
   // Switching it on is the moment to say what is being promised, because it is
-  // the only moment anybody is present: from here the board acts on this at
+  // the only moment anybody is present: from here QUniLator acts on this at
   // every power-on, including the one after it has been moved into a machine
   // nobody has told it about. Switching it off needs no confirmation - that
   // direction touches no bus.
@@ -485,14 +485,14 @@ function AutostartField({ name, on, cardList }: { name: string; on: boolean; car
       wanted &&
       !(await confirmModal(
         'Start ' + esc(name) + ' by itself at power-on?',
-        'At every power-on the board will put this machine on the bus without waiting for anybody: ' +
+        'At every power-on QUniLator will put this machine on the bus without waiting for anybody: ' +
           '<b>' +
           esc(cardList || 'the cards this configuration names') +
           '</b>.<br><br>' +
-          'It cannot check first. The board is fitted to a machine and configured afterwards, so if ' +
+          'It cannot check first. The card is fitted to a machine and configured afterwards, so if ' +
           'this card is ever moved to another backplane, this configuration will describe a machine ' +
           'that no longer exists — and two cards answering one address, or a second processor on a ' +
-          'bus that already has one, is what follows. The board will say what it did, in the journal ' +
+          'bus that already has one, is what follows. QUniLator will say what it did, in the journal ' +
           'and in a notice on this page, but only after the fact.',
         'Start it by itself'
       ))
@@ -507,8 +507,8 @@ function AutostartField({ name, on, cardList }: { name: string; on: boolean; car
     <span class="muted">Start this machine at power-on</span>
     <span class="cfg-dip-live muted">${
       on
-        ? 'the board puts these cards on the bus by itself, and says so afterwards'
-        : 'the board loads it and leaves it switched off'
+        ? 'QUniLator puts these cards on the bus by itself, and says so afterwards'
+        : 'QUniLator loads it and leaves it switched off'
     }</span>
   </label>`;
 }
@@ -821,11 +821,11 @@ function MasterRow({ c }: { c: ConfigSummary }) {
 }
 
 
-// Carrying a configuration off the board. Three forms, because they answer
-// different questions: the document is the machine as this board records it
+// Carrying a configuration off the card. Three forms, because they answer
+// different questions: the document is the machine as this QUniLator records it
 // and is what an import reads; the command script recreates the setup on a
-// board driven from the interactive menu; the archive carries the media too,
-// which is what a configuration needs to start on a board that has never seen
+// card driven from the interactive menu; the archive carries the media too,
+// which is what a configuration needs to start on a QUniLator that has never seen
 // them.
 function ExportMenu({ name }: { name: string }) {
   const [open, setOpen] = useState(false);
@@ -878,7 +878,7 @@ function ExportMenu({ name }: { name: string }) {
 }
 
 // A new configuration is an empty machine: no device in it, named by the
-// operator. The name is the file's identity, so it is held to what the board
+// operator. The name is the file's identity, so it is held to what QUniLator
 // accepts as one — and to a name no configuration here already carries, since
 // writing the empty document over an existing one would empty that machine.
 const NAME_CHARS = /^[A-Za-z0-9._ -]+$/;
@@ -897,7 +897,7 @@ function NewButton() {
   const doNew = async () => {
     const taken = (s.configs || []).map((c) => c.name);
     let suggested = '';
-    // re-ask on a name the board would refuse, with what was typed still there
+    // re-ask on a name QUniLator would refuse, with what was typed still there
     for (;;) {
       const name = await promptModal('New configuration', 'Name', suggested, 'Create');
       if (!name) return;
@@ -916,7 +916,7 @@ function NewButton() {
 }
 
 // Bringing one in. The name is the operator's: an import is a machine this
-// board did not have, and the board refuses a name already taken rather than
+// QUniLator did not have, and it refuses a name already taken rather than
 // writing over what is there.
 function ImportButton() {
   const [busy, setBusy] = useState('');
@@ -937,7 +937,7 @@ function ImportButton() {
     const r = await importConfigFile(name, file, setBusy);
     setBusy('');
     if (!r.ok) {
-      await alertModal('Import refused', r.error || 'the board refused it');
+      await alertModal('Import refused', r.error || 'QUniLator refused it');
       return;
     }
     // alertModal renders its body as text, so this is written as text.
@@ -948,7 +948,7 @@ function ImportButton() {
       );
     if (r.imagesKept?.length)
       lines.push(
-        `The board already had ${r.imagesKept.join(', ')}, and keeps its own copy.`
+        `This QUniLator already had ${r.imagesKept.join(', ')}, and keeps its own copy.`
       );
     if (r.note) lines.push(r.note + '.');
     await alertModal('Imported', lines.join(' '));

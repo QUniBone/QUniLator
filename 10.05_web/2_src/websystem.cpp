@@ -123,7 +123,7 @@ std::string websystem_hostname(void) {
 // the dialog can show beside the field.
 static bool acceptable_hostname(const std::string &name, std::string *error) {
 	if (name.empty() || name.size() > 63) {
-		*error = "a board name is 1 to 63 characters";
+		*error = "a host name is 1 to 63 characters";
 		return false;
 	}
 	for (size_t i = 0; i < name.size(); i++) {
@@ -131,7 +131,7 @@ static bool acceptable_hostname(const std::string &name, std::string *error) {
 		bool alnum = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z')
 				|| (c >= 'A' && c <= 'Z');
 		if (!alnum && !(c == '-' && i > 0 && i + 1 < name.size())) {
-			*error = "a board name is letters, digits and inner hyphens";
+			*error = "a host name is letters, digits and inner hyphens";
 			return false;
 		}
 	}
@@ -152,10 +152,10 @@ bool websystem_set_hostname(const std::string &name, std::string *error) {
 	if (run_capturing(argv, &said) != 0) {
 		*error = tidy(said);
 		if (error->empty())
-			*error = "the board could not be renamed";
+			*error = "the host name could not be changed";
 		return false;
 	}
-	WEB_INFO("the board is now named %s", name.c_str());
+	WEB_INFO("this QUniLator is now named %s", name.c_str());
 	return true;
 }
 
@@ -310,7 +310,7 @@ static void sshkey_put(struct mg_connection *conn) {
 	}
 	std::string user = webauth_user();
 	if (user.empty()) {
-		send_error(conn, 409, "set a user name before giving the board a key");
+		send_error(conn, 409, "set a user name before installing a key");
 		return;
 	}
 	std::string error;

@@ -234,9 +234,9 @@ static bool take_lock(std::string *error) {
 		char msg[160];
 		if (other > 0)
 			snprintf(msg, sizeof msg,
-					"another interactive session holds the board (pid %ld)", other);
+					"another interactive session holds the hardware (pid %ld)", other);
 		else
-			snprintf(msg, sizeof msg, "another interactive session holds the board");
+			snprintf(msg, sizeof msg, "another interactive session holds the hardware");
 		*error = msg;
 	}
 	close(lock_fd);
@@ -269,7 +269,7 @@ bool boardclaim_take(std::string *error) {
 		return true;
 	}
 
-	printf("The service holds the board; waiting for it to put the machine down.\n");
+	printf("The service holds the hardware; waiting for it to put the machine down.\n");
 	fflush(stdout);
 	if (write(claim_fd, msg_claim, strlen(msg_claim)) < 0) {
 		if (error != nullptr)
@@ -280,17 +280,17 @@ bool boardclaim_take(std::string *error) {
 	std::string line;
 	if (!read_line(claim_fd, yield_timeout_ms, &line)) {
 		if (error != nullptr)
-			*error = "the service did not give the board up";
+			*error = "the service did not give the hardware up";
 		boardclaim_release();
 		return false;
 	}
 	if (line + "\n" != msg_granted) {
 		if (error != nullptr)
-			*error = line.empty() ? "the service refused the board" : line;
+			*error = line.empty() ? "the service refused the hardware" : line;
 		boardclaim_release();
 		return false;
 	}
-	printf("The board is this session's; the web interface is locked until it ends.\n");
+	printf("The hardware is this session's; the web interface is locked until it ends.\n");
 	fflush(stdout);
 	return true;
 }

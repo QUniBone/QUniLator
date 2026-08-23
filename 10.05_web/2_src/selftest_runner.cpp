@@ -96,10 +96,10 @@ const std::vector<selftest_info_t> &selftest_catalog(void) {
 			"Every panel switch drives its lamp until the test is stopped. "
 			"Refuses when no panel is fitted.",
 			"", "", true, true, 0, false },
-		{ "gpio-loopback", "Board switches and LEDs", "panel",
-			"The board's 4 switches drive its 4 LEDs and the button drives "
+		{ "gpio-loopback", "Card switches and LEDs", "panel",
+			"The card's 4 switches drive its 4 LEDs and the button drives "
 			"bus_enable, until the test is stopped.",
-			"The button switches the board's bus drivers on: run it on an "
+			"The button switches the card's bus drivers on: run it on an "
 			"empty bus.",
 			"", false, true, 0, false },
 		{ "mem-sizer", "Size the memory", "memory",

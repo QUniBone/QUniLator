@@ -124,7 +124,7 @@ const CP_INFO = {
     'AUX ON/OFF — switches QUniLator’s emulation on and off; it moves no real power ' +
     'and puts no edge on the bus’s power lines. OFF stops the processor and takes ' +
     'every emulated card out of the machine, so nothing of it answers an address and ' +
-    'each drive gives up its medium — the board goes on carrying the configuration. ' +
+    'each drive gives up its medium — QUniLator goes on carrying the configuration. ' +
     'ON puts the cards back, with the media they held, and starts the machine.',
 };
 
@@ -207,7 +207,7 @@ const fpLedInfo = (i: number) =>
   'Each drive carries an activity-LED number, which defaults to its unit number, so ' +
   'several drives can share one lamp. Dark while the emulation is off the bus.';
 const fpDipInfo = (i: number) =>
-  'DIP switch ' + i + ' — one of the board’s four physical switches, shown as it stands. ' +
+  'DIP switch ' + i + ' — one of the card’s four physical switches, shown as it stands. ' +
   'They are read only when the backend starts, to choose which saved configuration to ' +
   'load; moving one now loads nothing. To use them, set them and restart the backend.';
 
@@ -292,7 +292,7 @@ function RecordButton() {
   return html`<button
     class=${'btn small' + (on ? ' recording' : '')}
     disabled=${busy}
-    title=${on ? 'Stop recording this session' : 'Record this session to a file on the board'}
+    title=${on ? 'Stop recording this session' : 'Record this session to a file on the BeagleBone'}
     onClick=${toggle}
   >${on ? html`<span class="rec-dot"></span>Recording` : 'Record'}</button>`;
 }

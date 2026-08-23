@@ -1,10 +1,10 @@
-// /system/selftest: the board's hardware self-tests.
+// /system/selftest: the card's hardware self-tests.
 //
 // The tests are the demo program's test menus, run one at a time in the cli as
-// a child of the service. The child takes the board like the interactive menu
+// a child of the service. The child takes the hardware like the interactive menu
 // does, so the machine goes down for the length of a run and comes back
 // switched off. This page is reached from the System page, not the sidebar: it
-// is a workbench for checking a board out, not a place the day-to-day operator
+// is a workbench for checking a card out, not a place the day-to-day operator
 // passes through.
 //
 // The output pane taps /ws/selftest, its own socket: the channel replays the
@@ -13,7 +13,6 @@
 // Run state (running / verdict) comes from the store's "selftest" event.
 import { html } from '../html';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { useLocation } from 'preact-iso';
 import { useStore } from '../store';
 import { fetchSelftests, runSelftest, stopSelftest } from '../api';
 import { wsURL } from '../lib/util';
@@ -21,11 +20,11 @@ import type { SelftestInfo } from '../types';
 
 const CATEGORIES: [string, string][] = [
   ['bus', 'Bus interface'],
-  ['panel', 'Panel and board'],
+  ['panel', 'Panel and card'],
   ['memory', 'Machine memory'],
 ];
 
-// The acceptance-test procedure for this board: which backplane, which
+// The acceptance-test procedure for this card: which backplane, which
 // terminator, which jumpers. It is the same set of tests this page runs, so it
 // is the setup instruction for them - one page per bus.
 const ACCEPTANCE_DOC: Record<string, [string, string]> = {
@@ -129,7 +128,7 @@ function TestRow({ t, busy }: { t: SelftestInfo; busy: boolean }) {
         <span class="muted mono">${t.id}</span>
         ${
           t.machine_safe
-            ? html`<span class="chip ok" title="this one may be run with the board in a machine"
+            ? html`<span class="chip ok" title="this one may be run with the card in a machine"
                 >machine safe</span>`
             : null
         }</div>
@@ -159,7 +158,6 @@ function TestRow({ t, busy }: { t: SelftestInfo; busy: boolean }) {
 
 export function SelftestPage() {
   const s = useStore();
-  const loc = useLocation();
   const [tests, setTests] = useState<SelftestInfo[] | null>(null);
   // whether the pane has anything in it: the card is a header-high strip until
   // it has, so an idle page spends its height on the tests
@@ -179,24 +177,19 @@ export function SelftestPage() {
   // wherever in the list the test that is running was started from.
   return html`<section class="page active" data-page="selftest">
     <div class="selftest-scroll">
-    <p class="selftest-back"><a href="#" onClick=${(e: Event) => {
-        e.preventDefault();
-        loc.route('/system');
-      }}>Back to System</a></p>
-
     <div class="selftest-danger" role="alert" style="max-width:720px">
       <div class="selftest-danger-head">Never run these tests in a real machine</div>
       <p>
         Except the ones marked${' '}<span class="chip ok">machine safe</span>, these
-        tests are for a board on the bench, in an${' '}<strong>empty, terminated
-        backplane</strong>. They switch the board's bus drivers on and put arbitrary
+        tests are for a card on the bench, in an${' '}<strong>empty, terminated
+        backplane</strong>. They switch the card's bus drivers on and put arbitrary
         patterns on the address, data, control and grant lines: with cards or a live
         CPU in the backplane that is traffic nothing can make sense of, and the
         latch tests short the grant chain with loopback jumpers on top of it.
       </p>
       ${
         doc
-          ? html`<p>What the board needs to be sitting in - backplane, terminator
+          ? html`<p>What the card needs to be sitting in - backplane, terminator
               and jumpers - is${' '}<a href=${doc[0]} target="_blank" rel="noreferrer"
                 >${doc[1]}</a>.</p>`
           : null

@@ -35,7 +35,7 @@ export async function apiJSON<T = Record<string, unknown>>(
   return { ok: r.ok, data };
 }
 
-// What the processor holds, for the debug panel. `probe` asks the board to try
+// What the processor holds, for the debug panel. `probe` asks QUniLator to try
 // the bus again on a machine where nothing answered last time — the negative is
 // remembered so a polling page does not put a dozen cycles that are expected to
 // time out on a running machine's bus every second.
@@ -63,13 +63,13 @@ export async function fetchMemory(
   const r = await apiJSON<{ words?: (number | null)[]; error?: string }>(
     '/api/memory?address=' + address.toString(8) + '&count=' + count.toString(8)
   );
-  if (!r.ok) return { ok: false, words: [], error: r.data?.error || 'the board refused the read' };
+  if (!r.ok) return { ok: false, words: [], error: r.data?.error || 'QUniLator refused the read' };
   return { ok: true, words: r.data?.words || [], error: '' };
 }
 
 // A code listing read out of the machine's memory. The count is decimal, unlike
 // the octal address: it counts instructions rather than naming a place in the
-// machine. The board picks the CPU model from the processor the machine carries
+// machine. QUniLator picks the CPU model from the processor the machine carries
 // unless one is named.
 export async function fetchDisassembly(
   address: number,
@@ -84,7 +84,7 @@ export async function fetchDisassembly(
     (model ? '&model=' + encodeURIComponent(model) : '');
   const r = await apiJSON<DebugListing & { error?: string }>(q);
   if (!r.ok)
-    return { ok: false, listing: null, error: r.data?.error || 'the board refused the listing' };
+    return { ok: false, listing: null, error: r.data?.error || 'QUniLator refused the listing' };
   return { ok: true, listing: r.data, error: '' };
 }
 
@@ -552,7 +552,7 @@ export async function setConfigTitle(name: string, title: string): Promise<boole
   return res.ok;
 }
 
-// Bind a configuration to a DIP-switch value (0..15), so the board loads it at
+// Bind a configuration to a DIP-switch value (0..15), so QUniLator loads it at
 // power-on when the switches read that value; null clears the binding. At most
 // one configuration may hold a value (the backend refuses a taken one with 409).
 // Store the dashboard layout for a configuration (per-config metadata; the
@@ -587,8 +587,8 @@ export async function setConfigDip(name: string, dip: number | null): Promise<bo
   return res.ok;
 }
 
-// Whether the board switches this machine on by itself when it loads it at
-// power-on. A standing instruction, so the board announces loudly when it acts
+// Whether QUniLator switches this machine on by itself when it loads it at
+// power-on. A standing instruction, so QUniLator announces loudly when it acts
 // on one; see the notice banner.
 export async function setConfigAutostart(name: string, on: boolean): Promise<boolean> {
   const res = await apiJSON<{ error?: string }>(
@@ -611,8 +611,8 @@ export async function setConfigAutostart(name: string, on: boolean): Promise<boo
   return res.ok;
 }
 
-// Clear the board's standing notice. The dismissal is the acknowledgement that
-// somebody read it, which is why it is a request to the board and not a local
+// Clear QUniLator's standing notice. The dismissal is the acknowledgement that
+// somebody read it, which is why it is a request to QUniLator and not a local
 // flag in one browser.
 export async function dismissNotice(): Promise<void> {
   const res = await apiJSON<{ error?: string }>('/api/notice/dismiss', { method: 'POST' });
@@ -643,7 +643,7 @@ export async function setStoredImage(name: string, drive: string, image: string)
 
 // ---- console recordings ---------------------------------------------------
 //
-// A session driven by hand is recorded on the board, because that is the only
+// A session driven by hand is recorded on the BeagleBone, because that is the only
 // place both directions pass: output reaches every client, but each client's
 // input goes straight to the line, so no client can see what another typed.
 
@@ -677,7 +677,7 @@ async function postRecording(
       body: JSON.stringify(body),
     },
   );
-  if (!r.ok) throw new Error(r.data?.error || 'the board refused the request');
+  if (!r.ok) throw new Error(r.data?.error || 'QUniLator refused the request');
   return r.data;
 }
 
@@ -689,7 +689,7 @@ export async function startRecording(
     channel,
     name ? { action: 'start', name } : { action: 'start' },
   );
-  toast('record', 'Recording to ' + (s.name ?? 'a file on the board'));
+  toast('record', 'Recording to ' + (s.name ?? 'a file on the BeagleBone'));
   return s;
 }
 
@@ -712,7 +712,7 @@ export async function deleteRecording(name: string): Promise<boolean> {
   return r.ok;
 }
 
-// ---- carrying a configuration off the board ------------------------------
+// ---- carrying a configuration off the card ------------------------------
 
 import { makeZip, readZip, saveAs, type ZipEntry } from './lib/cfgfile';
 
@@ -767,7 +767,7 @@ export async function exportConfigScript(name: string): Promise<void> {
 
 /**
  * The configuration and every image its drives name, as one archive. A
- * snapshot alone restores onto a board that has none of the media, which is
+ * snapshot alone restores onto a QUniLator that has none of the media, which is
  * a machine that cannot start.
  */
 export async function exportConfigBundle(
@@ -793,7 +793,7 @@ export async function exportConfigBundle(
       toast('export', 'could not read image ' + images[i]);
       return false;
     }
-    // the board's own timestamp for the file, so the archive carries when the
+    // QUniLator's own timestamp for the file, so the archive carries when the
     // image was last written rather than when it was fetched
     const modified = Date.parse(r.headers.get('Last-Modified') || '');
     entries.push({
@@ -819,7 +819,7 @@ export interface ImportResult {
  * Bring a configuration in under `name`. The file is either the document or
  * an archive carrying it and its media.
  *
- * An image already at that path is kept and named in the result: the board's
+ * An image already at that path is kept and named in the result: QUniLator's
  * copy may be the one a running machine holds, and overwriting it silently is
  * not something an import should do.
  */
@@ -858,10 +858,10 @@ export async function importConfigFile(
   }
 
   // The images go in first: a configuration whose media arrive after it would
-  // name files the board does not have yet.
+  // name files QUniLator does not have yet.
   const kept: string[] = [];
   let written = 0;
-  // What the board already holds, read once: an image at the same path may be
+  // What QUniLator already holds, read once: an image at the same path may be
   // the one a running machine has open, so the archive's copy gives way to it.
   const listing = await apiJSON<{ images?: { path: string }[] }>('/api/images');
   const present = new Set((listing.data.images ?? []).map((i) => i.path));
@@ -892,7 +892,7 @@ export async function importConfigFile(
       body: JSON.stringify(doc),
     }
   );
-  if (!r.ok) return { ok: false, error: r.data?.error || 'the board refused it' };
+  if (!r.ok) return { ok: false, error: r.data?.error || 'QUniLator refused it' };
   await loadConfigs();
   return { ok: true, note: r.data?.note, imagesWritten: written, imagesKept: kept };
 }

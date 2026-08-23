@@ -57,7 +57,7 @@
 
    Files live in $QUNILATOR_DIR/configs/<name>.json. Besides the devices, a file
    may carry an operator "title", a "dip_value" (the DIP setting that selects it
-   at power-on) and "autostart" (whether the board switches this machine on by
+   at power-on) and "autostart" (whether QUniLator switches this machine on by
    itself when it loads it); all optional metadata, preserved across a live-save:
 
      {"title":"RT-11 bench","dip_value":3,"autostart":false,
@@ -1665,7 +1665,7 @@ static bool apply_document(const picojson::value &content, const std::string &na
 		if (cpu != nullptr)
 			warnings->push_back(picojson::value("\"" + name + "\" carries the emulated "
 					"processor " + cpu->name.value + " (" + cpu->type_name.value + "), which "
-					"makes this board the machine: it arbitrates the bus, and a machine that "
+					"makes this QUniLator the machine: it arbitrates the bus, and a machine that "
 					"has a processor of its own must not be given a second"));
 	}
 
@@ -2049,7 +2049,7 @@ static void config_import(struct mg_connection *conn, const std::string &name) {
 	if (o.find("autostart") != o.end()) {
 		o.erase("autostart");
 		autostart_note = "the imported configuration does not start itself; "
-				"set autostart on this board if it should";
+				"set autostart on this QUniLator if it should";
 	}
 	std::string error;
 	int status = 422;

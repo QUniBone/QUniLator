@@ -354,8 +354,8 @@ static picojson::value bus_json(bool force) {
 		o["source"] = picojson::value(std::string("none"));
 		o["available"] = picojson::value(false);
 		o["reason"] = picojson::value(std::string(
-				"the board asked for the bus and was not granted it: nothing on this "
-				"backplane is arbitrating. A machine that is running grants the board "
+				"QUniLator asked for the bus and was not granted it: nothing on this "
+				"backplane is arbitrating. A machine that is running grants QUniLator "
 				"its cycles; one whose processor is halted or absent does not."));
 		return picojson::value(o);
 	}

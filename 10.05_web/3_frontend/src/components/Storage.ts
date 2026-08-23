@@ -468,7 +468,7 @@ export function StoragePage() {
     });
     const pick = await pickDevice('Copy a ROM into ' + dir, options, {
       noun: 'ROM',
-      empty: 'This board carries no packaged ROMs.',
+      empty: 'This QUniLator carries no packaged ROMs.',
     });
     if (!pick) return;
     await copyPackageRom(pick, dir);
@@ -476,7 +476,7 @@ export function StoragePage() {
 
   // A blank medium to write on. What is on offer comes from the drives the
   // machine can carry: each publishes the capacity of the medium it takes, so
-  // the list is what this board knows about rather than a table kept in step by
+  // the list is what this QUniLator knows about rather than a table kept in step by
   // hand. A tape carries no size — a blank reel is a file mark and nothing else.
   // A controller that reads the size off the image instead of fixing it (MSCP
   // with useimagesize) will take any disk, which is what the custom entry is for.

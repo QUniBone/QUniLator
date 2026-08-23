@@ -1076,7 +1076,7 @@ static void memory_probe(struct mg_connection *conn) {
 		// a machine that is switched off would otherwise be filed as one with no
 		// memory, over the last probe that did reach the bus.
 		if (no_grant) {
-			send_error(conn, 504, "the board asked for the bus and was not granted it: "
+			send_error(conn, 504, "QUniLator asked for the bus and was not granted it: "
 					"nothing on this backplane is arbitrating. A machine that is "
 					"switched off grants nothing.");
 			return;
@@ -1148,7 +1148,7 @@ static void memory_fill(struct mg_connection *conn, const picojson::value &req) 
 	uint64_t bytes = count * 2;
 	if (address + bytes > 2 * (uint64_t) QUNIBUS_MAX_WORDCOUNT
 			|| !ddrmem->contains(address, (unsigned) bytes)) {
-		send_error(conn, 409, "the range is not served out of the board's memory");
+		send_error(conn, 409, "the range is not served out of QUniLator's memory");
 		return;
 	}
 	{
@@ -1330,7 +1330,7 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 			// refusing over - and walking a hundred words that each wait out
 			// the bus would take a minute of them.
 			if (waited.elapsed_ms() >= web_bus_timeout_ms) {
-				send_error(conn, 504, "the board asked for the bus and was not granted it: "
+				send_error(conn, 504, "QUniLator asked for the bus and was not granted it: "
 						"nothing on this backplane is arbitrating. A machine that is "
 						"switched off grants nothing.");
 				return 504;
@@ -1341,7 +1341,7 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 				answered[i] = qunibus->probe_word(address + 2 * i, &words[i],
 						/*share_bus*/true, web_bus_probe_timeout_ms);
 				if (!answered[i] && cycle.elapsed_ms() >= web_bus_probe_timeout_ms) {
-					send_error(conn, 504, "the board asked for the bus and was not granted "
+					send_error(conn, 504, "QUniLator asked for the bus and was not granted "
 							"it: nothing on this backplane is arbitrating. A machine that "
 							"is switched off grants nothing.");
 					return 504;
@@ -1418,7 +1418,7 @@ static int api_memory_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	if (timeout) {
 		// as on the read: a wait run out to the end is a bus never granted
 		if (waited.elapsed_ms() >= web_bus_timeout_ms) {
-			send_error(conn, 504, "the board asked for the bus and was not granted it: "
+			send_error(conn, 504, "QUniLator asked for the bus and was not granted it: "
 					"nothing on this backplane is arbitrating. A machine that is "
 					"switched off grants nothing.");
 			return 504;

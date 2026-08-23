@@ -5,7 +5,9 @@ sidebar:
   order: 7
 ---
 
-Who reaches this QUniLator, what it runs, and updating it.
+Who reaches this QUniLator, what it runs, and updating it. Each of those is a
+page of its own, listed under **System** in the sidebar: Access, Network and
+shell, Serial ports, Recordings, Updates.
 
 ![The system page](../assets/screenshots/system.jpg)
 
@@ -91,7 +93,10 @@ configuration applied by hand needs re-applying afterwards.
 **Dismiss** stops a version being announced in the sidebar badge; **Announce it
 again** undoes that.
 
-**Operating system** is everything else on the board, the emulator excluded.
+The **Updates** page carries two sections: the emulator package this QUniLator
+is — `qbone` or `unibone` — and the Debian underneath it.
+
+**Operating system** is everything else on the BeagleBone, the emulator excluded.
 Packages **held back** are listed rather than forced — the kernel and the cape
 support are pinned deliberately. Some upgrades want a reboot, and the page says
 which.

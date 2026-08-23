@@ -130,6 +130,6 @@ export class Vcb01Widget extends DeviceWidget {
       ${this.head()}
       <div class="card-body diskface">
         <div class="vcb01-screen"><canvas id="vcb01-canvas" ref=${cv} tabindex="0"></canvas></div>
-        <div class="vcb01-hint">click to focus — keyboard & mouse drive the board</div></div></div>`;
+        <div class="vcb01-hint">click to focus — keyboard & mouse drive the machine</div></div></div>`;
   }
 }

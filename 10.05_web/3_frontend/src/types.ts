@@ -279,7 +279,7 @@ export interface SelftestInfo {
   description: string;
   warning: string; // '' = none
   setup: string; // hardware to fit before the run (jumpers, terminator); '' = none
-  machine_safe: boolean; // may be run with the board fitted in a real machine
+  machine_safe: boolean; // may be run with the card fitted in a real machine
   unbounded: boolean; // loops until stopped; takes a seconds bound
   default_seconds: number; // suggested bound, 0 = self-bounded
 }

@@ -161,7 +161,7 @@ function installOverlay(from: string, to: string): {
     '<div class="card-body">' +
     '<p class="upd-phase">Starting the install…</p>' +
     '<div class="upd-bar"><div class="upd-bar-fill"></div></div>' +
-    '<p class="muted upd-detail">The board stops the emulated machine, unpacks the package ' +
+    '<p class="muted upd-detail">QUniLator stops the emulated machine, unpacks the package ' +
     'and restarts; that takes a few minutes. The interface reconnects on its own. ' +
     'Leave this page open.</p>' +
     '<p class="muted upd-elapsed"></p>' +
@@ -179,11 +179,11 @@ function installOverlay(from: string, to: string): {
       if (detail) q('.upd-detail').textContent = detail;
     },
     // How long this has been going, so a long install reads as progress rather
-    // than as a stall, and whether the board is answering at all — the two look
+    // than as a stall, and whether QUniLator is answering at all — the two look
     // the same from the phase line, and only one of them is a reason to worry.
     waiting(elapsedMs: number, answering: boolean) {
       q('.upd-elapsed').textContent =
-        mmss(elapsedMs) + ' elapsed — ' + (answering ? 'the board is answering' : 'the board is down');
+        mmss(elapsedMs) + ' elapsed — ' + (answering ? 'QUniLator is answering' : 'QUniLator is down');
     },
     fail(title: string, detail: string, journal: string[]) {
       q('.upd-phase').textContent = title;
@@ -201,11 +201,11 @@ function installOverlay(from: string, to: string): {
   };
 }
 
-// How long the board may answer nothing at all before it is called gone. Only
-// silence runs against it: a board that answers on the old version is an install
-// still working, however long it takes. An install stops the emulated machine,
-// unpacks the package and restarts the service, which on a busy board runs to
-// several minutes, so this sits well past that.
+// How long QUniLator may answer nothing at all before it is called gone. Only
+// silence runs against it: an answer on the old version is an install still
+// working, however long it takes. An install stops the emulated machine, unpacks
+// the package and restarts the service, which on a busy card runs to several
+// minutes, so this sits well past that.
 const SILENT_LIMIT_MS = 600000;
 
 // mm:ss for the elapsed counter
@@ -214,14 +214,14 @@ function mmss(ms: number): string {
   return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
 }
 
-// Wait for the board to come back on `to`, then reload. A connection refusal is
+// Wait for QUniLator to come back on `to`, then reload. A connection refusal is
 // "not back yet", not a fault: the server is being replaced.
 async function awaitNewVersion(
   to: string,
   ui: ReturnType<typeof installOverlay>,
   startedAt: number = Date.now()
 ): Promise<void> {
-  // the last moment the board answered anything; the deadline runs from here,
+  // the last moment QUniLator answered anything; the deadline runs from here,
   // so it measures silence rather than the length of the install
   let lastAnswer = Date.now();
   for (;;) {
@@ -248,7 +248,7 @@ async function awaitNewVersion(
         ui.fail(
           u.state === 'rolled-back' ? 'The update was rolled back' : 'The update failed',
           why +
-            'The board is running ' +
+            'QUniLator is running ' +
             v.version +
             (u.state === 'rolled-back' ? ' again.' : '.'),
           u.journal || []
@@ -260,10 +260,10 @@ async function awaitNewVersion(
     if (Date.now() - lastAnswer > SILENT_LIMIT_MS) {
       writeFlag(null);
       ui.fail(
-        'The board has not come back',
+        'QUniLator has not come back',
         'It has answered nothing for ' +
           mmss(Date.now() - lastAnswer) +
-          '. On the board, "systemctl status ' +
+          '. On the BeagleBone, "systemctl status ' +
           (store.update?.package || 'qbone') +
           '" says whether the service is running, and ' +
           '"journalctl -u qunilator-update" says what the install did.',

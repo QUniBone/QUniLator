@@ -1,16 +1,15 @@
-// The System page: who reaches this QUniLator, what it runs, and updating it.
+// The System pages: who reaches this QUniLator, what it is called, which of the
+// BeagleBone's ports carry a login, what it has recorded, and updating it. One
+// function per page, reached from the sub-menu the sidebar opens under System.
 //
-// Access comes first: the one account that reaches it, over the web, the file
-// shares and ssh alike.
-//
-// The two update rows are kept apart because they promise different things. The
-// emulator update is reversible - the board watches the new version come up and
-// puts the old one back if it does not - and it stops the emulated machine, so it
-// says so and asks for a confirmation. The operating-system upgrade cannot be
-// undone by apt at all, and leaves the machine running, so it says that instead.
+// The two update sections are kept apart because they promise different things.
+// The emulator update is reversible - QUniLator watches the new version come up
+// and puts the old one back if it does not - and it stops the emulated machine,
+// so it says so and asks for a confirmation. The operating-system upgrade cannot
+// be undone by apt at all, and leaves the machine running, so it says that
+// instead.
 import { html } from '../html';
 import { useEffect, useState } from 'preact/hooks';
-import { useLocation } from 'preact-iso';
 import { useStore } from '../store';
 import { apiJSON, liveControl, listRecordings, deleteRecording, type Recording } from '../api';
 import {
@@ -50,14 +49,14 @@ function StateChip({ u }: { u: UpdateStatus }) {
   if (u.state === 'failed') return html`<span class="chip err">failed</span>`;
   if (u.state === 'rolled-back') return html`<span class="chip err">rolled back</span>`;
   if (u.state === 'ahead')
-    return html`<span class="chip out" title="the repository offers an older version than this board runs">ahead of the repository</span>`;
+    return html`<span class="chip out" title="the repository offers an older version than this QUniLator runs">ahead of the repository</span>`;
   if (updateAvailable(u)) return html`<span class="chip warn">update available</span>`;
   if (!u.source_configured) return html`<span class="chip off">no update source</span>`;
   return html`<span class="chip ok">up to date</span>`;
 }
 
 // The changelog since the installed version, fetched when the operator asks for
-// it: reading it makes the board download the candidate, which is also the
+// it: reading it makes QUniLator download the candidate, which is also the
 // staging step an install wants, so it is not fetched on every page view.
 function Changelog({ open }: { open: boolean }) {
   const [text, setText] = useState<string | null>(null);
@@ -94,7 +93,7 @@ function InstallDialog({ u, onDone }: { u: UpdateStatus; onDone: () => void }) {
               <button class="btn small" onClick=${() => liveControl('halt', 'machine halted')}>Halt the machine</button>`
             : html`The machine is halted.`
         }</li>
-      <li>The board comes back up in its <strong>startup configuration</strong>${
+      <li>QUniLator comes back up in its <strong>startup configuration</strong>${
         s.configCurrent ? html` — currently <span class="mono">${s.configCurrent}</span>` : null
       }, which is not necessarily the one it is running.${
         modified
@@ -142,7 +141,7 @@ function OsRow({ u }: { u: UpdateStatus }) {
                     .join('\n')}</pre>`
                 : null
             }`
-          : html`<p class="muted" style="margin:0 0 10px">Nothing else on the board has an update.</p>`
+          : html`<p class="muted" style="margin:0 0 10px">Nothing else on the BeagleBone has an update.</p>`
       }
       ${
         os.held_back && os.held_back.length
@@ -153,13 +152,14 @@ function OsRow({ u }: { u: UpdateStatus }) {
       ${
         os.reboot_required
           ? html`<p class="upd-warn">A reboot is required to finish an earlier upgrade.
-            Nothing here reboots the board; a reboot stops the emulated machine, so it is your call when.</p>`
+            Nothing here reboots the BeagleBone; a reboot stops the emulated machine, so it is
+            your call when.</p>`
           : null
       }
       ${
         os.count
           ? html`<p class="upd-warn"><strong>This cannot be undone.</strong> apt cannot reverse an
-              upgrade, so an operating-system upgrade that breaks the board is an ssh session or a
+              upgrade, so an operating-system upgrade that breaks it is an ssh session or a
               reflash — unlike the emulator update, which puts the old version back by itself. The
               emulator package is held back, so the emulated machine keeps running throughout.</p>
             <button class="btn" disabled=${busy} onClick=${async () => {
@@ -167,9 +167,9 @@ function OsRow({ u }: { u: UpdateStatus }) {
                 'Upgrade the operating system',
                 'This upgrades ' +
                   os.count +
-                  " of the board's packages. It cannot be undone: apt has no way to " +
-                  'reverse an upgrade. The emulated machine keeps running, and the board is not ' +
-                  'rebooted.',
+                  " of the BeagleBone's packages. It cannot be undone: apt has no way to " +
+                  'reverse an upgrade. The emulated machine keeps running, and the BeagleBone is ' +
+                  'not rebooted.',
                 'Upgrade'
               );
               if (ok) await upgradeOs();
@@ -294,9 +294,9 @@ function AccessCard() {
 }
 
 // The host name and the ssh key that reaches a shell — the two the first-run
-// first-run dialog asks for beside the credentials, offered again here for a
-// installation that is already set up. The key goes on the operator's account.
-function BoardCard() {
+// dialog asks for beside the credentials, offered again here for an installation
+// that is already set up. The key goes on the operator's account.
+function NetworkCard() {
   const [hostname, setHostname] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [key, setKey] = useState('');
@@ -417,8 +417,8 @@ interface SerialPorts {
   error?: string;
 }
 
-// The board's three UARTs, each either a Linux login or the emulator's. One
-// login is kept at all times, so a board whose network has gone is still
+// The BeagleBone's three UARTs, each either a Linux login or the emulator's. One
+// login is kept at all times, so a card whose network has gone is still
 // reachable with a terminal. The kernel console follows the first port that
 // carries a login, which is a boot setting and says so.
 function SerialPortsCard() {
@@ -449,7 +449,7 @@ function SerialPortsCard() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ logins }),
-    }).catch(() => ({ ok: false, data: { error: 'The board did not answer.' } as SerialPorts }));
+    }).catch(() => ({ ok: false, data: { error: 'QUniLator did not answer.' } as SerialPorts }));
     setBusy(false);
     if (!res.ok) {
       load();
@@ -483,7 +483,7 @@ function SerialPortsCard() {
           </div>
           <div class="set-info">${p.where}. ${
             p.login
-              ? 'A terminal here reaches a shell on the board.'
+              ? 'A terminal here reaches a shell on the BeagleBone.'
               : p.used_by
                 ? html`Held by <span class="mono">${p.used_by}</span>.`
                 : 'Free — an emulated DL11 or the console bridge can take it.'
@@ -491,19 +491,19 @@ function SerialPortsCard() {
         )}
       </div>
       <p class="muted" style="margin-top:12px">One port keeps its login: it is the way back onto a
-        board whose network has gone. The USB port carries a login of its own as well. A port the
+        card whose network has gone. The USB port carries a login of its own as well. A port the
         emulator holds cannot take one — disable the device first.</p>
       ${
         state.reboot_required
-          ? html`<p class="upd-warn">The kernel console moves with the login. Reboot the board to
-              stop it printing on the port it was on.</p>`
+          ? html`<p class="upd-warn">The kernel console moves with the login. Reboot the
+              BeagleBone to stop it printing on the port it was on.</p>`
           : null
       }
       ${error ? html`<p class="upd-warn">${error}</p>` : null}
     </div></div>`;
 }
 
-// What the board has recorded. A recording is downloaded and read with
+// What this QUniLator has recorded. A recording is downloaded and read with
 // `qcon render`, which turns it into a page with the typing marked off from
 // what the machine printed; the file itself is standard asciicast, so an
 // asciinema player takes it too.
@@ -551,28 +551,43 @@ function RecordingsCard() {
   </div>`;
 }
 
-// The door to the board's hardware self-tests. A card here rather than a
-// sidebar entry: checking a board out is bench work, not day-to-day operation,
-// and the tests take the machine down while they run.
-function SelftestCard() {
-  const loc = useLocation();
-  const s = useStore();
-  const running = s.selftest.running;
-  return html`<div class="card" style="max-width:720px">
-    <div class="card-head"><h3>Hardware self-tests</h3>
-      ${running ? html`<span class="pill busy">running ${running.test}</span>` : null}
-    </div>
-    <div class="card-body">
-      <p class="muted">The board's own test routines: bus latches and signals,
-        panel and LEDs, the machine's memory. A run takes the machine down and
-        hands the board to the test program; it comes back switched off.</p>
-      <button class="btn small" onClick=${() => loc.route('/system/selftest')}>
-        Open the self-tests</button>
-    </div>
-  </div>`;
+// One page per function, all under /system. The sidebar opens the sub-menu when
+// System is the active entry, so a page here carries no navigation of its own.
+
+export function SystemAccessPage() {
+  return html`<section class="page active" data-page="system-access">
+    <p class="lede">The one account that reaches this QUniLator — the web interface, the file
+      shares and ssh alike.</p>
+    <${AccessCard} />
+  </section>`;
 }
 
-export function SystemPage() {
+export function SystemNetworkPage() {
+  return html`<section class="page active" data-page="system-network">
+    <p class="lede">What this QUniLator is called on the network, and the key that reaches a
+      shell on it.</p>
+    <${NetworkCard} />
+  </section>`;
+}
+
+export function SystemSerialPage() {
+  return html`<section class="page active" data-page="system-serial">
+    <p class="lede">Which of the BeagleBone's UARTs carry a Linux login, and which are free for
+      the emulator.</p>
+    <${SerialPortsCard} />
+  </section>`;
+}
+
+export function SystemRecordingsPage() {
+  return html`<section class="page active" data-page="system-recordings">
+    <p class="lede">Console sessions captured with Record on the dashboard.</p>
+    <${RecordingsCard} />
+  </section>`;
+}
+
+// The update page carries the two things a card can update, in the order they
+// matter: the emulator package this QUniLator is, and the Debian underneath it.
+export function SystemUpdatePage() {
   const s = useStore();
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -581,28 +596,14 @@ export function SystemPage() {
   }, [tick]);
   const u = s.update;
   if (!u)
-    return html`<section class="page active" data-page="system">
-      <p class="lede">Who reaches this QUniLator, what it runs, and updating it.</p>
-      <${AccessCard} />
-      <${BoardCard} />
-      <${SerialPortsCard} />
-      <${SelftestCard} />
+    return html`<section class="page active" data-page="system-update">
+      <p class="lede">What this QUniLator runs, and what the repository offers.</p>
       <p class="muted">Reading the update status…</p></section>`;
 
   const busy = updateRunning(u);
   const last = u.last || {};
-  return html`<section class="page active" data-page="system">
-    <p class="lede">Who reaches this QUniLator, what it runs, and updating it.</p>
-
-    <${AccessCard} />
-
-    <${BoardCard} />
-
-    <${SerialPortsCard} />
-
-    <${SelftestCard} />
-
-    <${RecordingsCard} />
+  return html`<section class="page active" data-page="system-update">
+    <p class="lede">What this QUniLator runs, and what the repository offers.</p>
 
     <div class="card" style="max-width:720px">
       <div class="card-head"><h3>${u.package || 'emulator'}</h3><${StateChip} u=${u} /></div>
@@ -611,7 +612,7 @@ export function SystemPage() {
           <div class="set-name">Installed</div>
           <div class="set-val"><span class="pill mono">${u.installed || s.serverVersion || '—'}</span>
             ${s.serverBuilt ? html`<span class="muted">built ${when(s.serverBuilt)}</span>` : null}</div>
-          <div class="set-info">The version of the ${u.package} package this board runs. This page was
+          <div class="set-info">The version of the ${u.package} package this QUniLator runs. This page was
             served by ${bundleVersion === s.serverVersion ? 'it' : html`version <span class="mono">${bundleVersion}</span>`}.</div>
 
           <div class="set-name">Available</div>
@@ -627,9 +628,9 @@ export function SystemPage() {
 
         ${
           !u.source_configured
-            ? html`<p class="upd-warn">This board has no update source: the package was installed by
-                hand, so there is no apt repository to check. Installing it once from the repository
-                makes the board updateable.</p>`
+            ? html`<p class="upd-warn">This QUniLator has no update source: the package was
+                installed by hand, so there is no apt repository to check. Installing it once from
+                the repository makes it updateable.</p>`
             : null
         }
         ${
@@ -642,7 +643,7 @@ export function SystemPage() {
         ${
           u.state === 'ahead'
             ? html`<p class="muted">The repository offers <span class="mono">${u.candidate}</span>,
-                older than the <span class="mono">${u.installed}</span> this board runs — a
+                older than the <span class="mono">${u.installed}</span> this QUniLator runs — a
                 hand-built package. Nothing is offered.</p>`
             : null
         }
@@ -681,7 +682,7 @@ export function SystemPage() {
                 }
                 ${
                   u.rollback
-                    ? html`<p class="muted">A cached package is kept, so ${' '}<span class="mono">qunilator-update --rollback</span> over ssh steps this board back a version.</p>`
+                    ? html`<p class="muted">A cached package is kept, so ${' '}<span class="mono">qunilator-update --rollback</span> over ssh steps this QUniLator back a version.</p>`
                     : null
                 }
               </div>`

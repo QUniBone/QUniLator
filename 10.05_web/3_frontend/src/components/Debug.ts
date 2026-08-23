@@ -531,7 +531,7 @@ function MemoryView({
     <div class="card-body">
       ${error && html`<p class="dbg-error">${error}</p>`}
       ${dark &&
-      html`<p class="muted dbg-reason">The machine is switched off: it grants the board no bus
+      html`<p class="muted dbg-reason">The machine is switched off: it grants QUniLator no bus
         cycles, so there is nothing to read.</p>`}
       ${words.length > 0 &&
       html`<div class="dbg-dump-wrap"><table class="dbg-dump mono">
@@ -649,7 +649,7 @@ function DisassemblyView({
     <div class="card-body">
       ${error && html`<p class="dbg-error">${error}</p>`}
       ${dark &&
-      html`<p class="muted dbg-reason">The machine is switched off: it grants the board no bus
+      html`<p class="muted dbg-reason">The machine is switched off: it grants QUniLator no bus
         cycles, so there is nothing to disassemble.</p>`}
       ${lines.length > 0 &&
       html`<div class="dbg-listing mono" ref=${box}>
