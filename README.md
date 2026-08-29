@@ -186,5 +186,5 @@ implementation plans, and the findings from bringing the cards up.
 
 ## License
 
-BSD 2-Clause. © 2019 Jörg Hoppe; © 2026 Hans Hübner and the QUniBone
-contributors. See [`LICENSE`](LICENSE).
+BSD 2-Clause. © 2019 Jörg Hoppe; © 2026 Hans Hübner. Frits Jalvingh and
+the QUniBone contributors. See [`LICENSE`](LICENSE).
