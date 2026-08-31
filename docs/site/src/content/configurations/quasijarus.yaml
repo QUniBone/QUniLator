@@ -1,8 +1,8 @@
 title: 4.3BSD Quasijarus on the RA82
 summary: >-
   Berkeley's VAX Unix as the Quasijarus project preserved it — 4.3BSD with
-  the fixes of 1999, on one MSCP disk, booting straight from DUA0 on a
-  MicroVAX II.
+  the fixes of 1999 on an MSCP disk, with TK50 tape, DZV11 serial lines and
+  DELQA Ethernet, booting straight from DUA0 on a MicroVAX II.
 bus: qbus
 cpu: >-
   A MicroVAX II (KA630) — this machine is a VAX, and no PDP-11 will boot it.
@@ -11,6 +11,10 @@ guest: 4.3BSD Quasijarus
 devices:
   - UDA50
   - RA82
+  - TQK50
+  - TK50
+  - DZV11
+  - DELQA
 
 doc:
   motivation: >-
@@ -26,10 +30,13 @@ doc:
     - Switch the machine on; the KA630 boots DUA0 by itself, or type B DUA0
       at the >>> prompt.
     - The system comes up multi-user; log in as root, which has no password.
+    - The DELQA is qe0, configured by /etc/netstart as 192.168.42.254 on an
+      imaginary 192.168.42.0/24; name lookups come from /etc/hosts, so the
+      boot never waits on a nameserver.
+    - The DZV11 carries tty00-tty07; the TK50 holds a tape with a tar
+      archive of /usr.
     - Halt with sync followed by halt, then switch off at the >>> prompt.
   bugs:
-    - getty complains about missing tty00-tty07 at boot; harmless without a
-      DZV11 in the machine, and a DZV11 supplies them.
     - The clock believes it is the year 2000; date sets it, within the era.
   links:
     - label: The Quasijarus project
@@ -43,9 +50,11 @@ doc:
 
 download:
   url: https://github.com/QUniBone/QUniLator/releases/download/catalog/quasijarus.qcfg.zip
-  bytes: 26020877
-  sha256: "d751375ed4f1252d427af188593ebc3e09f4f99be79b2b8f7d69e45381f5c9c5"
+  bytes: 49140752
+  sha256: "b2ffe02c2876d7fc0abe59020b85e9b952c7fb601393df7e0c3669a04c79f9f2"
 
 images:
   - path: du/quasijarus.ra82.dsk
     bytes: 622932480
+  - path: mu/tk50.tap
+    bytes: 80559536
