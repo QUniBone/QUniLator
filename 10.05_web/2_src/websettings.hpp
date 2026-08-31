@@ -53,6 +53,10 @@ struct external_console_c {
 	std::string source; // "webserial" | "ttys2" | "off"
 	std::string port;   // Linux tty, e.g. "/dev/ttyS2"
 	unsigned baud;
+	// Character format, "8bit" or "7bit". A guest of the 7-bit era - 4.3BSD's
+	// cooked console output always carries even parity - gets a clean console
+	// by stripping bit 7 on input, the way its terminals showed clean text.
+	std::string format;
 };
 external_console_c websettings_external_console(void);
 

@@ -1,0 +1,51 @@
+title: 4.3BSD Quasijarus on the RA82
+summary: >-
+  Berkeley's VAX Unix as the Quasijarus project preserved it — 4.3BSD with
+  the fixes of 1999, on one MSCP disk, booting straight from DUA0 on a
+  MicroVAX II.
+bus: qbus
+cpu: >-
+  A MicroVAX II (KA630) — this machine is a VAX, and no PDP-11 will boot it.
+guest: 4.3BSD Quasijarus
+
+devices:
+  - UDA50
+  - RA82
+
+doc:
+  motivation: >-
+    The canonical VAX Unix, alive: vi, the C compiler, troff and the Berkeley
+    userland on the machine class 4.3BSD called home. The Quasijarus releases
+    kept stock 4.3BSD building and running rather than modernizing it away.
+  # Plain text: these fields carry lists and links, not markdown, because the
+  # board renders them without sanitising a document somebody else wrote.
+  usage:
+    - "Set the console characters to 7-bit first (Machine, External console):
+      4.3BSD drives its console with even parity, as its terminals expected,
+      and with the top bit kept the text arrives mangled."
+    - Switch the machine on; the KA630 boots DUA0 by itself, or type B DUA0
+      at the >>> prompt.
+    - The system comes up multi-user; log in as root, which has no password.
+    - Halt with sync followed by halt, then switch off at the >>> prompt.
+  bugs:
+    - getty complains about missing tty00-tty07 at boot; harmless without a
+      DZV11 in the machine, and a DZV11 supplies them.
+    - The clock believes it is the year 2000; date sets it, within the era.
+  links:
+    - label: The Quasijarus project
+      url: http://www.ifctfvax.harhan.org/Quasijarus/
+    - label: The Caldera license covering 32V, which frees the BSD VAX line
+      url: https://www.tuhs.org/Archive/Caldera-license.pdf
+  maintainer:
+    name: QUniLator project
+    contact: https://github.com/QUniBone/QUniLator/issues
+  added: 2026-08-31
+
+download:
+  url: https://github.com/QUniBone/QUniLator/releases/download/catalog/quasijarus.qcfg.zip
+  bytes: 26020877
+  sha256: "d751375ed4f1252d427af188593ebc3e09f4f99be79b2b8f7d69e45381f5c9c5"
+
+images:
+  - path: du/quasijarus.ra82.dsk
+    bytes: 622932480

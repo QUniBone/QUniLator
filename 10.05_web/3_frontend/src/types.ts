@@ -101,6 +101,9 @@ export interface ExternalConsole {
   source: 'ttys2' | 'webserial' | 'off';
   port?: string;
   baud?: number;
+  // "8bit" (default) or "7bit" — a 7-bit-era guest whose cooked output
+  // carries even parity gets clean text by stripping bit 7 on input
+  format?: string;
 }
 export interface Settings {
   platform: string;

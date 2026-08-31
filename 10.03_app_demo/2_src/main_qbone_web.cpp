@@ -491,7 +491,7 @@ int main(int argc, char *argv[])
 			// opened by the setting, the same way bringing the API up does it.
 			// Without this the board comes back with a dead console.
 			external_console_c ec = websettings_external_console();
-			webconsole_ext_configure(ec.source, ec.port, ec.baud);
+			webconsole_ext_configure(ec.source, ec.port, ec.baud, ec.format);
 
 			// The board comes back with the machine switched off. Whoever took
 			// the hardware was driving bus latches and exercisers with it, and

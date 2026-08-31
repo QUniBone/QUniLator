@@ -23,7 +23,7 @@ void webconsole_ext_clear(void);
 // human-readable reason on failure (port in use by an enabled DL11,
 // open failed) — surfaced to the client as a warning.
 std::string webconsole_ext_configure(const std::string &source,
-		const std::string &port, unsigned baud);
+		const std::string &port, unsigned baud, const std::string &format);
 
 
 class console_recorder_c;

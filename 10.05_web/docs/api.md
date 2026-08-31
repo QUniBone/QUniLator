@@ -238,7 +238,8 @@ comes from the launch flag.
 
 ```json
 {"platform": "QBUS", "address_width": 22, "internal_bus": false,
- "external_console": {"source": "ttys2", "port": "ttyS2", "baud": 38400}}
+ "external_console": {"source": "ttys2", "port": "ttyS2", "baud": 38400,
+                      "format": "8bit"}}
 ```
 
 `platform` is `QBUS`, `UNIBUS` or `HOST`, fixed at build time and read-only.
@@ -257,7 +258,8 @@ line is jumpered for.
 
 ```json
 {"address_width": 22, "internal_bus": false,
- "external_console": {"source": "ttys2", "port": "ttyS2", "baud": 38400}}
+ "external_console": {"source": "ttys2", "port": "ttyS2", "baud": 38400,
+                      "format": "8bit"}}
 ```
 
 Every member is optional; only those present are applied. Answers
@@ -268,7 +270,12 @@ Changing it re-bases the I/O page, so it is applied **only while the bus is
 halted**. Asked for on a running machine, the request still answers `200` and the
 width is left alone, with the reason in `warnings`.
 
-**`external_console`** takes `source` (validated against the three values above;
+**`external_console`** takes `format` — `8bit` (default) or `7bit`, for
+guests of the 7-bit era whose cooked console output always carries even
+parity (4.3BSD's does). The wire stays 8N1 either way — a boot ROM speaks
+plain 8-bit characters on the same line — but `7bit` strips bit 7 of what
+the machine sends, so the web console shows clean text in both eras — and
+`source` (validated against the three values above;
 anything else is `422`), `port` and `baud`. Applying it opens or closes the
 `ttyS2` bridge, and a refusal — most often the port being held by something else
 — comes back in `warnings` rather than as an error.

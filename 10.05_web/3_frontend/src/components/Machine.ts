@@ -58,6 +58,15 @@ export function MachinePage() {
               (b) => html`<option value=${b}>${b}</option>`
             )}</select></div>
           <div class="set-info">Line speed of the console line.</div>
+          <div class="set-name">Characters</div>
+          <div class="set-val"><select class="mono" value=${ec.format || '8bit'}
+            onChange=${(e: Event) =>
+              putSettings(
+                { external_console: { format: (e.target as HTMLSelectElement).value } },
+                'character format set'
+              )}>
+            <option value="8bit">8-bit</option><option value="7bit">7-bit</option></select></div>
+          <div class="set-info">7-bit strips the top bit of what the machine sends — for guests of the 7-bit era, whose console output carries even parity that would otherwise arrive as mangled text.</div>
           ${
             ec.source === 'webserial'
               ? html`<div class="set-name">Connection</div>

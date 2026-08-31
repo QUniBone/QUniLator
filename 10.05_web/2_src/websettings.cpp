@@ -54,7 +54,7 @@ static const char *platform_name = "HOST";
 
 static std::mutex settings_mutex; // guards ext_console
 // port is a bare tty name (rs232_c prepends /dev/), matching the SLU convention
-static external_console_c ext_console = { "ttys2", "ttyS2", 38400 };
+static external_console_c ext_console = { "ttys2", "ttyS2", 38400, "8bit" };
 static std::string settings_path;
 static std::string state_dir;
 // The update version the operator dismissed. On the board rather than in one
@@ -104,6 +104,7 @@ static picojson::value external_console_json(void) {
 	ec["source"] = picojson::value(ext_console.source);
 	ec["port"] = picojson::value(ext_console.port);
 	ec["baud"] = picojson::value((double) ext_console.baud);
+	ec["format"] = picojson::value(ext_console.format);
 	return picojson::value(ec);
 }
 
@@ -143,6 +144,8 @@ static void load_settings(void) {
 		ext_console.port = ec.get("port").get<std::string>();
 	if (ec.get("baud").is<double>())
 		ext_console.baud = (unsigned) ec.get("baud").get<double>();
+	if (ec.get("format").is<std::string>())
+		ext_console.format = ec.get("format").get<std::string>();
 }
 
 static void save_settings(void) {
@@ -288,6 +291,13 @@ static void settings_put(struct mg_connection *conn) {
 				return;
 			}
 		}
+		if (ec.get("format").is<std::string>()) {
+			std::string f = ec.get("format").get<std::string>();
+			if (f != "8bit" && f != "7bit") {
+				send_error(conn, 422, "external_console.format must be 8bit or 7bit");
+				return;
+			}
+		}
 		{
 			std::lock_guard<std::mutex> lock(settings_mutex);
 			if (ec.get("source").is<std::string>())
@@ -296,11 +306,13 @@ static void settings_put(struct mg_connection *conn) {
 				ext_console.port = ec.get("port").get<std::string>();
 			if (ec.get("baud").is<double>())
 				ext_console.baud = (unsigned) ec.get("baud").get<double>();
+			if (ec.get("format").is<std::string>())
+				ext_console.format = ec.get("format").get<std::string>();
 		}
 		save_settings();
 		// (re)open or close the ttyS2 bridge; report any refusal as a warning
 		external_console_c now = websettings_external_console();
-		std::string reason = webconsole_ext_configure(now.source, now.port, now.baud);
+		std::string reason = webconsole_ext_configure(now.source, now.port, now.baud, now.format);
 		if (!reason.empty())
 			warnings.push_back(picojson::value(reason));
 		changed = true;

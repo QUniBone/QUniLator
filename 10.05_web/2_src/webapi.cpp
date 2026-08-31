@@ -1539,7 +1539,7 @@ void webapi_register(struct mg_context *ctx) {
 	// apply the persisted external-console setting (loaded by
 	// websettings_register) now that the bridge is up
 	external_console_c ec = websettings_external_console();
-	webconsole_ext_configure(ec.source, ec.port, ec.baud);
+	webconsole_ext_configure(ec.source, ec.port, ec.baud, ec.format);
 }
 
 // called by webserver_c::stop() before the connections close

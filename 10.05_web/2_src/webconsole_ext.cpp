@@ -49,6 +49,7 @@ static bool port_open = false;
 static std::string cur_source = "ttys2";
 static std::string cur_port = "ttyS2";
 static unsigned cur_baud = 38400;
+static std::string cur_format = "8bit";
 
 // retained history + live clients for /ws/console/ext. The text callback carries
 // the channel's control frames (end of replay, answerer designation); this
@@ -218,7 +219,7 @@ static void reader_loop(void) {
 }
 
 std::string webconsole_ext_configure(const std::string &source,
-		const std::string &port, unsigned baud) {
+		const std::string &port, unsigned baud, const std::string &format) {
 	std::lock_guard<std::mutex> lock(port_mutex);
 	if (port_open) {
 		port_io.CloseComport();
@@ -227,6 +228,7 @@ std::string webconsole_ext_configure(const std::string &source,
 	cur_source = source;
 	cur_port = strip_dev(port);
 	cur_baud = baud;
+	cur_format = format.empty() ? "8bit" : format;
 	if (source != "ttys2")
 		return "";
 	std::string conflict = console_conflict(cur_port);
@@ -239,7 +241,21 @@ std::string webconsole_ext_configure(const std::string &source,
 		WEB_INFO("external console: %s", reason.c_str());
 		return reason;
 	}
-	WEB_INFO("external console on /dev/%s at %u baud", cur_port.c_str(), cur_baud);
+	if (!cur_format.empty() && cur_format[0] == '7') {
+		// The 7-bit console: the wire stays 8N1 — the boot ROM takes and
+		// gives plain 8-bit characters — but the guest's tty era writes even
+		// parity into bit 7 of everything, so input strips that bit before
+		// anyone sees it. Output goes untouched: what this side sends is
+		// space parity, which every 7-bit-era receiver accepts.
+		struct termios tio;
+		if (tcgetattr(port_io.Fd(), &tio) == 0) {
+			tio.c_iflag |= ISTRIP;
+			tcsetattr(port_io.Fd(), TCSANOW, &tio);
+		}
+	}
+	WEB_INFO("external console on /dev/%s at %u baud, %s characters",
+			cur_port.c_str(), cur_baud,
+			(!cur_format.empty() && cur_format[0] == '7') ? "7-bit" : "8-bit");
 	port_open = true;
 	return "";
 }
