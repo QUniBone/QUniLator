@@ -87,6 +87,9 @@ function Sidebar({ active }: { active: string }) {
           : null
       }`
     )}</nav>
+    <div class="foot">
+      <a href="https://qunilator.com/" target="_blank" rel="noopener">Manual ↗</a>
+    </div>
   </aside>`;
 }
 

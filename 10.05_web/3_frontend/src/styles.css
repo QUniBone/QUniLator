@@ -227,6 +227,8 @@ a:hover { color: var(--ink); }
   font-size: var(--fs-0); color: var(--ink-faint);
   font-family: var(--font-mono); line-height: 1.7;
 }
+.sidebar .foot a { color: var(--ink-muted); text-decoration: none; }
+.sidebar .foot a:hover { color: var(--ink); }
 
 /* the frame is the viewport and the content area scrolls inside it, so a page
    can hand its own height to a child that scrolls on its own (the log) */
