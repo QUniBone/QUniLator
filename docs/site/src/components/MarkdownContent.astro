@@ -1,0 +1,50 @@
+---
+/**
+ * The page body, with every image opening at full size.
+ *
+ * Astro renders a Markdown image as an `<img>` whose `src` is the rendition it
+ * built at the source's own resolution, shown scaled into the text column. A
+ * screenshot of the web interface is not readable at that width, so each image
+ * becomes a link to that rendition, and a click shows it in a lightbox that
+ * fills the viewport; a modified click, a middle click or a reader without
+ * JavaScript gets the plain file. The wrapping happens here because the URL of
+ * the rendition exists only once the page is built.
+ */
+import Default from '@astrojs/starlight/components/MarkdownContent.astro';
+---
+
+<Default><slot /></Default>
+
+<script>
+	const content = document.querySelector('.sl-markdown-content');
+	let lightbox: HTMLDialogElement | undefined;
+
+	function show(img: HTMLImageElement) {
+		if (!lightbox) {
+			lightbox = document.createElement('dialog');
+			lightbox.className = 'figure-lightbox';
+			lightbox.append(document.createElement('img'));
+			lightbox.addEventListener('click', () => lightbox?.close());
+			document.body.append(lightbox);
+		}
+		const full = lightbox.querySelector('img')!;
+		full.src = img.currentSrc || img.src;
+		full.alt = img.alt;
+		lightbox.showModal();
+	}
+
+	for (const img of content?.querySelectorAll<HTMLImageElement>('img') ?? []) {
+		if (img.closest('a')) continue;
+		const link = document.createElement('a');
+		link.href = img.currentSrc || img.src;
+		link.className = 'figure-link';
+		link.title = 'Open at full size';
+		img.replaceWith(link);
+		link.append(img);
+		link.addEventListener('click', (event) => {
+			if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+			event.preventDefault();
+			show(img);
+		});
+	}
+</script>

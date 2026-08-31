@@ -54,10 +54,11 @@ export default defineConfig({
 			// Starlight's own transforms — asides and heading anchor links — run only
 			// on `src/content/docs/`, and the manual is a directory of its own.
 			markdown: { processedDirs: [DOCS_ROOT] },
-			customCss: ['./src/styles/bus.css'],
+			customCss: ['./src/styles/bus.css', './src/styles/figures.css'],
 			components: {
 				EditLink: './src/components/EditLink.astro',
 				Head: './src/components/Head.astro',
+				MarkdownContent: './src/components/MarkdownContent.astro',
 				Sidebar: './src/components/Sidebar.astro',
 			},
 			sidebar: [

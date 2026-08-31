@@ -65,7 +65,10 @@ subdirectory deployment stays linked to itself.
 
 Images are written as ordinary Markdown, relative to the page. Astro resolves and
 optimises them from there, so `![…](../assets/photos/board-fit.jpg)` is both a
-working link in git and a responsive `<picture>` on the site.
+working link in git and a responsive `<picture>` on the site. On the site every
+image opens at full size when clicked: `src/components/MarkdownContent.astro`
+wraps each one in a link to the rendition Astro built and shows it in a
+lightbox, so a screenshot that is scaled into the text column is still readable.
 
 `tools/check-links.mjs` fails the build on a link that resolves to nothing, and
 on a `.md` link that reached the built HTML unconverted.

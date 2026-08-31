@@ -1,0 +1,29 @@
+/* Images open at full size: `MarkdownContent.astro` wraps each one in a link and
+ * shows it in this lightbox on click. */
+
+.sl-markdown-content .figure-link {
+	display: inline-block;
+	cursor: zoom-in;
+}
+
+.figure-lightbox {
+	width: 100vw;
+	height: 100vh;
+	max-width: 100vw;
+	max-height: 100vh;
+	margin: 0;
+	padding: 1rem;
+	border: 0;
+	background: #1b1b1f;
+	cursor: zoom-out;
+}
+
+.figure-lightbox::backdrop {
+	background: transparent;
+}
+
+.figure-lightbox img {
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+}
