@@ -1,0 +1,104 @@
+	.title	v6boot
+;+
+; RL02 chain-loading boot block for a pack whose own bootstrap does not carry
+; the DEC bootable-volume header (Unix V6's, for one). The KDJ11 ROM refuses
+; such a pack ("No bootable devices found"), so the pack gets this block as
+; block 0 instead, its original boot block stashed at STASH, and the chain
+; runs: ROM (or an M9312, entering at 0 through the header's NOP/BR pairs)
+; -> this loader at offset 44 -> copy itself clear of low memory -> read the
+; stashed block into address 0 -> jump 0, where the original bootstrap runs
+; exactly as if the ROM had loaded it.
+;
+; The stash sits outside the guest filesystem (the pack's superblock says
+; where that ends), so the guest never sees any of this.
+;-
+	rlcsr	= 174400
+	rlba	= 2			; register offsets from the CSR base
+	rlda	= 4
+	rlmp	= 6
+
+	cmstat	= 4			; get status  (2 << 1)
+	cmseek	= 6			; seek        (3 << 1)
+	cmrdhd	= 10			; read header (4 << 1)
+	cmrdda	= 14			; read data   (6 << 1)
+
+	reloc	= 2000			; where this loader runs after the copy
+	target	= 175000		; stash cylinder 500 << 7, head 0, sector 0
+					; (512-byte block 20000 of the pack)
+
+	.asect
+	.	= 0
+; DEC bootable-volume header the KDJ11 ROM recognizes, taken from a stock
+; bootable RL pack: two NOP/branch pairs bracket the boot descriptor and lead
+; to the loader at offset 44 - whether entry came at 0 or at 44.
+	.word	000240,000407,000006,000000,000012,000000,000240,000240
+	.word	174400,000240,000407,000000,000400,000000,000000,000000
+	.word	000000,000000
+	.	= 44
+; The stashed block is read to address 0, over this block's own low copy, so
+; the loader first moves itself (the whole block) up to RELOC and continues
+; there. Offsets are preserved, so assembled addresses map 1:1 plus RELOC.
+boot:
+	mov	#reloc,r1
+	clr	r0
+1$:	mov	(r0)+,(r1)+
+	cmp	r0,#1000
+	blo	1$
+	jmp	@#reloc+cont
+
+cont:
+	mov	#10000,sp		; a stack clear of the copy at RELOC
+					; and of the block read to 0
+	mov	#rlcsr,r1
+
+	mov	#013,rlda(r1)		; reset + get status
+	mov	#cmstat,(r1)
+2$:	tstb	(r1)			; wait for controller ready
+	bpl	2$
+
+	mov	#target,r4		; walk out to the stash cylinder
+	jsr	pc,walk
+
+	mov	#target,rlda(r1)	; the stashed block, 256 words, to 0
+	clr	rlba(r1)
+	mov	#-400,rlmp(r1)
+	mov	#cmrdda,(r1)
+8$:	tstb	(r1)
+	bpl	8$
+	tst	(r1)			; composite error in bit 15?
+	bmi	9$
+
+	clr	r4			; back to cylinder 0: the bootstrap this
+	jsr	pc,walk			; hands off to assumes the heads there
+	jmp	@#0			; run the pack's own bootstrap
+
+9$:	halt				; the read failed - stop for the operator
+
+; Walk the heads to the cylinder r4 names (as cylinder << 7): read header says
+; where they are, a seek moves by the difference, and the loop re-reads until
+; they arrived - which also waits out the move time of a drive that seeks at
+; disk speed.
+walk:
+3$:	mov	#cmrdhd,(r1)
+4$:	tstb	(r1)
+	bpl	4$
+	mov	rlmp(r1),r2		; sector/head/cylinder under the heads
+	bic	#177,r2			; keep the cylinder bits
+	cmp	r2,r4
+	beq	7$			; on cylinder
+	bhi	5$
+	mov	r4,r3			; seek inward by the difference
+	sub	r2,r3
+	bis	#5,r3
+	br	6$
+5$:	mov	r2,r3			; seek outward by the difference
+	sub	r4,r3
+	bis	#1,r3
+6$:	mov	r3,rlda(r1)
+	mov	#cmseek,(r1)
+61$:	tstb	(r1)
+	bpl	61$
+	br	3$
+7$:	rts	pc
+
+	.end	boot

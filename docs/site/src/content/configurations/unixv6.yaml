@@ -1,0 +1,48 @@
+title: Unix V6 on the RL02
+summary: >-
+  Sixth Edition Unix (1975), Tim Shoppa's rescued RL02 pack, booting straight
+  from DL0. The smallest real Unix — kernel, C compiler and the classic
+  userland on one ten-megabyte cartridge.
+bus: qbus
+guest: Unix V6
+
+devices:
+  - RLV12
+  - RL02
+
+doc:
+  motivation: >-
+    The Unix that Lions annotated: a complete timesharing system small enough
+    to read. This pack carries the source tree, so the system on the screen
+    and the code in /usr/src are the same thing.
+  # Plain text: these fields carry lists and links, not markdown, because the
+  # board renders them without sanitising a document somebody else wrote.
+  usage:
+    - Switch the machine on and boot DL0 from the bootstrap prompt.
+    - "At the '!' prompt type: unix"
+    - The system comes up as a root shell. The console is upper-case until
+      you say so - the first command is 'STTY -LCASE'.
+    - Type 'sync' twice before switching off; V6 has no shutdown command.
+  bugs:
+    - The clock needs the line-time interrupt; without BEVNT on the bus,
+      'date' stands still.
+    - This build was modified to run without an FPP; '!unix-fpp' boots
+      Shoppa's original floating-point kernel instead.
+  links:
+    - label: Tim Shoppa's V6 rescue at TUHS, the source of this pack
+      url: https://minnie.tuhs.org/Archive/Distributions/Research/Tim_Shoppa_v6/
+    - label: The Caldera license covering V1-V7 and 32V
+      url: https://www.tuhs.org/Archive/Caldera-license.pdf
+  maintainer:
+    name: QUniLator project
+    contact: https://github.com/QUniBone/QUniLator/issues
+  added: 2026-08-31
+
+download:
+  url: https://github.com/QUniBone/QUniLator/releases/download/catalog/unixv6.qcfg.zip
+  bytes: 3024819
+  sha256: "690cb84e5cd629aacf09624206304fa6773feaccc457117b668d17bb2ad0513d"
+
+images:
+  - path: dl/unix_v6_boot.rl02.dsk
+    bytes: 10485760
