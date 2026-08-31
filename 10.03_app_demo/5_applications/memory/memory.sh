@@ -1,5 +1,5 @@
-#!/root/10.03_app_demo/4_deploy/demo --verbose
-# inputfile for demo to just emulate max memory
+#!/usr/bin/qbone-cli --verbose
+# inputfile for the menu program to just emulate max memory
 d			# device menu
 
 

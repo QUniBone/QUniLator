@@ -1,5 +1,5 @@
-#!/root/10.03_app_demo/4_deploy/demo --verbose
-# inputfile for demo to select a rl1 device in the "device test" menu.
+#!/usr/bin/unibone-cli --verbose
+# inputfile for the menu program to select a rl1 device in the "device test" menu.
 d			# device menu
 
 # first, make a serial port. Default ist

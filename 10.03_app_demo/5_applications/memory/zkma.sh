@@ -1,4 +1,4 @@
-#!/root/10.03_app_demo/4_deploy/demo --verbose
+#!/usr/bin/qbone-cli --verbose
 # full memory emulation
 m
 pwr

@@ -1,5 +1,5 @@
-#!/root/10.03_app_demo/4_deploy/demo
-# inputfile for demo to select a rl1 device in the "device test" menu.
+#!/usr/bin/unibone-cli
+# inputfile for the menu program to select a rl1 device in the "device test" menu.
 d			# device test menu
 pwr
 .wait 3000		# wait for PDP-11 to reset
