@@ -1080,8 +1080,8 @@ The whole tree — folders and files:
 
 `path` is the subpath; `dir` its parent folder (`""` = root). `attached` lists
 drives whose `image` points at the file; `used` the configuration/device pairs
-that reference it. `writable` is false while the file is held read-only (an
-image attached to a running machine).
+that reference it. `writable` reports the file's owner write bit — cleared, the
+image is a write-protected medium.
 
 ### `POST /api/images?dir=<folder>`
 

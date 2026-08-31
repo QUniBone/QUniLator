@@ -70,5 +70,4 @@ a drive holds: nothing to discard, nothing to consolidate, nothing unsaved.
 > **The same tree is a file share**
 >
 > It is reachable over **SMB, FTP and SFTP** under the identity you created, so
-> a 200 MB volume moves by network rather than through the browser. A drive
-> holding an image keeps it read-only over the share while it is attached.
+> a 200 MB volume moves by network rather than through the browser.

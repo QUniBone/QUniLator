@@ -262,63 +262,6 @@ static storageimage_cow_c *find_attached_cow(const std::string &sub, std::string
 }
 
 // -------------------------------------------------------------------------
-// read-only-while-attached
-
-static std::mutex ro_mutex;
-static std::set<std::string> ro_marked; // subpaths this module forced read-only
-
-void webstorage_refresh_readonly(bool machine_running) {
-	std::set<std::string> want; // images that should be read-only now
-	if (machine_running) {
-		std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
-		for (device_c *dev : device_c::mydevices) {
-			storagedrive_c *drive = dynamic_cast<storagedrive_c *>(dev);
-			if (drive == nullptr || !dev->enabled.value)
-				continue;
-			// a base served through a copy-on-write overlay is never written by
-			// the emulator, so it needs no read-only marking — and the user's
-			// permissions on it must be left untouched
-			storageimage_cow_c *cow = dynamic_cast<storageimage_cow_c *>(drive->get_image());
-			if (cow != nullptr && cow->has_overlay())
-				continue;
-			std::string sub = webstorage_image_subpath(drive->image_filepath.value);
-			if (!sub.empty() && sub[0] != '/')
-				want.insert(sub);
-		}
-	}
-	std::lock_guard<std::mutex> lock(ro_mutex);
-	// clear the write bits on newly-attached images
-	for (const std::string &sub : want) {
-		if (ro_marked.count(sub))
-			continue;
-		struct stat st;
-		std::string abs = images_dir + "/" + sub;
-		if (stat(abs.c_str(), &st) != 0)
-			continue;
-		// An image the operator has write-protected is left exactly as it is:
-		// its mode is what the drive reads the medium's write ring from, and
-		// restoring the write bit on release would quietly pull the protection
-		// off a medium the operator set it on.
-		if ((st.st_mode & S_IWUSR) == 0)
-			continue;
-		chmod(abs.c_str(), st.st_mode & ~(mode_t) 0222);
-		ro_marked.insert(sub);
-	}
-	// restore owner-write on images no longer held (detached, or machine halted)
-	for (std::set<std::string>::iterator it = ro_marked.begin(); it != ro_marked.end();) {
-		if (want.count(*it)) {
-			++it;
-			continue;
-		}
-		struct stat st;
-		std::string abs = images_dir + "/" + *it;
-		if (stat(abs.c_str(), &st) == 0)
-			chmod(abs.c_str(), (st.st_mode | S_IWUSR) & 07777);
-		it = ro_marked.erase(it);
-	}
-}
-
-// -------------------------------------------------------------------------
 // listing
 
 // recurse the images tree, collecting folder subpaths and file entries
@@ -839,8 +782,7 @@ static void image_contents(struct mg_connection *conn, const std::string &sub) {
 // Guarded on machine state: mutating an overlay (or reading a consistent
 // flattened export) while the guest is doing I/O would race live block writes,
 // so these are only allowed with the machine not running (powered off or the
-// CPU halted) — the same "safe to touch storage" condition the read-only-while-
-// attached logic uses.
+// CPU halted).
 static void image_overlay_op(struct mg_connection *conn, const std::string &base,
 		const std::string &action) {
 	if (webevents_is_powered() && !webevents_is_halted()) {

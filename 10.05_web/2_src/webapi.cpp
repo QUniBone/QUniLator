@@ -476,13 +476,12 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 				// switched off — those go with their controller, since a drive
 				// on a removed controller cannot function.
 				storagecontroller_c *ctrl = dynamic_cast<storagecontroller_c *>(dev);
-				bool released = false;
 				if (!on) {
-					released = release_medium(dynamic_cast<storagedrive_c *>(dev));
+					release_medium(dynamic_cast<storagedrive_c *>(dev));
 					if (ctrl != nullptr)
 						for (storagedrive_c *drv : ctrl->storagedrives)
 							if (drv != nullptr)
-								released |= release_medium(drv);
+								release_medium(drv);
 				}
 				// A device that cannot take the switch leaves it where it was:
 				// a card whose range the machine already answers is not
@@ -505,11 +504,6 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 							WEB_INFO("%s disabled with controller %s",
 									drv->name.value.c_str(), dev->name.value.c_str());
 						}
-				// the shares hold an attached image read-only while the machine
-				// runs, and what was released is attached no longer
-				if (released)
-					webstorage_refresh_readonly(webevents_is_powered()
-							&& !webevents_is_halted());
 			} else if (is_bus_placement_param(param->name)
 					&& dynamic_cast<qunibusdevice_c *>(dev) != nullptr
 					&& dev->enabled.value) {
@@ -587,8 +581,6 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 						param->parse(value);
 						dev->enabled.set(true);
 						WEB_INFO("%s enabled with its medium", dev->name.value.c_str());
-						webstorage_refresh_readonly(webevents_is_powered()
-								&& !webevents_is_halted());
 						web_send_json(conn, 200, param_to_json(dev, param));
 						return;
 					}
@@ -618,11 +610,6 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 			// keep the terminal user informed, like an echoed command
 			WEB_INFO("%s.%s = %s", dev->name.value.c_str(),
 					param->name.c_str(), value.c_str());
-			// attaching/detaching an image changes which files the shares must
-			// hold read-only while the machine runs
-			if (param->content == parameter_c::CONTENT_IMAGE)
-				webstorage_refresh_readonly(webevents_is_powered()
-						&& !webevents_is_halted());
 		} catch (bad_parameter &e) {
 			WEB_INFO("%s.%s = %s rejected: %s", dev->name.value.c_str(),
 					param->name.c_str(), value.c_str(), e.what());
@@ -946,11 +933,6 @@ static int api_control_handler(struct mg_connection *conn, void * /*cbdata*/) {
 			webevents_note_powered(dec.set_powered != 0);
 		control_note_timing(action);
 	}
-	// The shares hold an attached image read-only while the machine runs, and a
-	// power cycle changes what is attached: a machine switched off holds no
-	// medium, so the files it had open are the operator's again.
-	if (dec.devices_off || dec.devices_on)
-		webstorage_refresh_readonly(webevents_is_powered() && !webevents_is_halted());
 	if (!powered_up) {
 		send_error(conn, 409, power_up_error);
 		return 409;

@@ -34,11 +34,4 @@ std::string webstorage_image_subpath(const std::string &value);
 // refused rather than left to corrupt the file.
 std::string webstorage_image_held_by(const std::string &path, const std::string &except);
 
-// Make images attached to a running machine read-only over the SMB/FTP/SFTP
-// shares (the file's write bits are cleared) and restore write when they detach
-// or the machine halts, so a share write cannot corrupt an image the emulator
-// is using. Only files this toggles are touched. Call on attach/detach and on a
-// run-state change; `machine_running` is powered and not halted.
-void webstorage_refresh_readonly(bool machine_running);
-
 #endif // _WEBSTORAGE_HPP_

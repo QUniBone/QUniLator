@@ -406,18 +406,12 @@ static void on_log_message(unsigned msglevel, const char *label, const char *tex
 }
 
 void webevents_note_halt(bool halted) {
-	bool machine_running;
-	{
-		std::lock_guard<std::mutex> lock(state_mutex);
-		last_halt = halted;
-		machine_running = cur_powered && !last_halt;
-		picojson::object event;
-		event["t"] = picojson::value("state");
-		event["halt"] = picojson::value(halted);
-		enqueue(event);
-	}
-	// an image attached to a running machine is read-only over the shares
-	webstorage_refresh_readonly(machine_running);
+	std::lock_guard<std::mutex> lock(state_mutex);
+	last_halt = halted;
+	picojson::object event;
+	event["t"] = picojson::value("state");
+	event["halt"] = picojson::value(halted);
+	enqueue(event);
 }
 
 bool webevents_is_halted(void) {
@@ -426,17 +420,12 @@ bool webevents_is_halted(void) {
 }
 
 void webevents_note_powered(bool powered) {
-	bool machine_running;
-	{
-		std::lock_guard<std::mutex> lock(state_mutex);
-		cur_powered = powered;
-		machine_running = cur_powered && !last_halt;
-		picojson::object event;
-		event["t"] = picojson::value("state");
-		event["powered"] = picojson::value(powered);
-		enqueue(event);
-	}
-	webstorage_refresh_readonly(machine_running);
+	std::lock_guard<std::mutex> lock(state_mutex);
+	cur_powered = powered;
+	picojson::object event;
+	event["t"] = picojson::value("state");
+	event["powered"] = picojson::value(powered);
+	enqueue(event);
 }
 
 bool webevents_is_powered(void) {
@@ -812,7 +801,6 @@ static void poll_hardware(void) {
 		line_init = qunibusadapter->line_INIT;
 	bus_power_reading_c power = poll_bus_power();
 
-	bool halt_changed = false, machine_running = false;
 	{
 		std::lock_guard<std::mutex> lock(state_mutex);
 		bool halt = have_cpu ? cpu_halt : last_halt;
@@ -821,9 +809,7 @@ static void poll_hardware(void) {
 				&& power.pok == cur_power.pok && halt == last_halt)
 			return;
 		first = false;
-		halt_changed = (halt != last_halt);
 		last_halt = halt;
-		machine_running = cur_powered && !last_halt;
 		cur_leds = leds;
 		cur_switches = switches;
 		cur_init = line_init;
@@ -837,10 +823,6 @@ static void poll_hardware(void) {
 		}
 	}
 	queue_cv.notify_one();
-	// an image attached to a running machine is read-only over the shares, so a
-	// CPU that halted or resumed on its own moves the shares with it
-	if (halt_changed)
-		webstorage_refresh_readonly(machine_running);
 }
 
 // The poll cadence, in ms. It bounds the event rate of everything the machine
