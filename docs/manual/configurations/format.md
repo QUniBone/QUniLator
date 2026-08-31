@@ -10,15 +10,10 @@ thing to do, not a fork of this site.
 A catalogue is a **static JSON file on any web server**. There is no software to
 run.
 
-> [!WARNING]
-> **Not settled yet**
->
-> Catalogue subscription in QUniLator is
-> [in progress](../project/roadmap.md). What follows is the shape this site
-> publishes today at
-> [`/catalog/v1/index.json`](https://qunilator.com/catalog/v1/index.json); it is
-> the proposal QUniLator will be built against, and it may still move before it
-> is final.
+This is the shape this site publishes at
+[`/catalog/v1/index.json`](https://qunilator.com/catalog/v1/index.json) and the
+shape QUniLator's Catalogue screen reads. The `schema` field is what lets it
+grow: a reader refuses an index whose schema it does not know.
 
 ## The index
 
@@ -29,18 +24,19 @@ run.
   "updated": "2026-08-05",
   "configurations": [
     {
-      "id": "xxdp-rl02",
-      "title": "XXDP 2.5 on an RL02",
-      "summary": "DEC's diagnostic monitor on an emulated RL11 with four RL02 drives.",
+      "id": "211bsd",
+      "title": "2.11BSD on the RA81",
+      "summary": "Multi-user Unix on an emulated UDA50 MSCP disk, with DELQA Ethernet.",
       "bus": "qbus",
-      "devices": ["MEM", "MRV11-D", "DL11", "RL11", "RL02"],
-      "guest": "XXDP 2.5",
-      "page": "https://qunilator.com/configurations/xxdp-rl02/",
+      "devices": ["UDA50", "RA81", "DELQA"],
+      "guest": "2.11BSD",
+      "page": "https://qunilator.com/configurations/211bsd/",
       "download": {
-        "url": "https://…/xxdp-rl02.qcfg.zip",
-        "bytes": 11534336,
+        "url": "https://…/211bsd.qcfg.zip",
+        "bytes": 37139129,
         "sha256": "…"
       },
+      "images": [{ "path": "du/2.11BSD_qbone.dsk", "bytes": 1000090112 }],
       "doc": { }
     }
   ]
@@ -54,6 +50,7 @@ run.
 | `bytes` | Media runs to hundreds of megabytes. QUniLator reports progress against this rather than downloading blind. |
 | `sha256` | Verified before import. A truncated bundle must fail loudly, not half-import. |
 | `page` | Where a human reads the full documentation. |
+| `images` | The bundle's disk images as images-root subpaths with sizes — so QUniLator can say which are already on the board and how much space an import still needs, before downloading anything. May be omitted. |
 | `doc` | The structured documentation below. |
 
 ## The documentation block
@@ -84,10 +81,10 @@ what is missing, and a catalogue may too.
 
 Two requirements beyond putting the file somewhere:
 
-**CORS.** A QUniLator on an isolated LAN has no route to your web server, but the
-operator's browser usually does — in that case the browser fetches the index and
-the bundle and posts what it got to QUniLator. That only works if the catalogue
-is served with `Access-Control-Allow-Origin: *`. This site does; so should yours.
+**A route from the board.** QUniLator fetches the index and the bundle itself,
+so the board — not just the operator's browser — needs to reach your server.
+Plain https on any host works; a bundle `url` may also be relative to the index
+(`..` is not resolved — write such a URL absolute).
 
 **Stable URLs for bundles.** QUniLator records what it has imported by `id` and
 checksum. Re-publishing a bundle at the same URL with different contents makes

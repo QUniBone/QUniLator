@@ -6,9 +6,9 @@
 # (roles/caddy, inventory/group_vars/all/main.yml). Keep the two in step; this
 # file is what a move to a static host would carry.
 #
-# A board on an isolated LAN has no route to this site, but the operator's
-# browser usually does — in that case the browser fetches the catalogue and posts
-# what it got to the board. That only works cross-origin.
+# The board fetches the catalogue itself; the permissive CORS costs nothing
+# and keeps the index readable from a page too — a debugging fetch from the
+# browser console, or a future client that has only a browser to work with.
 /catalog/*
   Access-Control-Allow-Origin: *
   Cache-Control: public, max-age=300

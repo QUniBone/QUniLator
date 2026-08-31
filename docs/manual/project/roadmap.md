@@ -59,20 +59,14 @@ anything not yet migrated here.
 
 ## The configuration catalogue
 
-The catalogue on this site is ahead of QUniLator. Two pieces are in
-progress in the QUniLator repository:
+QUniLator subscribes to catalogues and imports from them — the Catalogue screen
+in the web interface, reading the [format](../configurations/format.md) this
+site publishes at `/catalog/v1/index.json`. Still open:
 
-- **[#81](https://github.com/QUniBone/QUniLator/issues/81)** — a configuration
-  carries its own documentation, in named fields, travelling inside the
-  `.qcfg.zip` as `readme.md`. This site already stores and renders exactly those
-  fields.
-- **[#64](https://github.com/QUniBone/QUniLator/issues/64)** — QUniLator
-  subscribes to catalogues and imports from them, instead of an operator finding
-  a URL and downloading a bundle by hand.
-
-Until #64 lands, the catalogue entries here are downloaded by hand and fed to the
-import dialog. The [format](../configurations/format.md) is published now so that
-anyone wanting to run their own catalogue can build against it rather than wait.
+- **[#81](https://github.com/QUniBone/QUniLator/issues/81)** — the structured
+  documentation travelling *inside* the `.qcfg.zip` as `readme.md`, so a bundle
+  handed around outside any catalogue still documents itself. This site and the
+  catalogue index already carry exactly those fields.
 
 ## Helping
 

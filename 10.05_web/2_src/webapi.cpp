@@ -68,6 +68,7 @@
 #include "weblogging.hpp"
 #include "webversion.hpp"
 #include "webupdate.hpp"
+#include "webcatalog.hpp"
 #include "webselftest.hpp"
 #include "webserialports.hpp"
 #include "websystem.hpp"
@@ -1519,6 +1520,9 @@ void webapi_register(struct mg_context *ctx) {
 	// the state directory that call resolves, and the dismissed version is read
 	// from the same settings file
 	webupdate_register(ctx);
+	// after webstorage_register and websettings_register: the catalogue's
+	// state directory and the images tree are both resolved by then
+	webcatalog_register(ctx);
 	// the board's own name and the operator's ssh key
 	websystem_register(ctx);
 	// which UART carries the Linux login, and which is left for the emulator

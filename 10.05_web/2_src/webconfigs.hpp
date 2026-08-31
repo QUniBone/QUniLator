@@ -60,6 +60,21 @@ bool webconfigs_save(const std::string &name, std::string *error);
 bool webconfigs_write(const std::string &name, const picojson::value &document,
 		bool from_live, std::string *error, int *status);
 
+// whether a name is one an operator may give a configuration
+bool webconfigs_valid_name(const std::string &name);
+
+// whether a saved configuration of this name exists
+bool webconfigs_exists(const std::string &name);
+
+// Import a configuration document under a free name (POST import and the
+// catalogue fetch both land here). The name must be free (*status 409); a
+// dip_value another configuration claims and any autostart are stripped, each
+// leaving a note; the document is validated like webconfigs_write. The
+// document may be modified (stripped keys).
+bool webconfigs_import(const std::string &name, picojson::value &doc,
+		std::string *dip_note, std::string *autostart_note,
+		std::string *error, int *status);
+
 // Rename a configuration file; the current/default pointers follow it. The
 // live device set — and so the modified state — is left untouched.
 bool webconfigs_rename(const std::string &from, const std::string &to,

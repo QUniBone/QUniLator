@@ -1616,6 +1616,99 @@ another, and what that holds back is reported; and it never reboots the board.
 Stops announcing that version. An empty string clears the dismissal, and a later
 version announces itself again.
 
+## Catalogues
+
+A catalogue is a static JSON index at a URL, naming `.qcfg.zip` bundles — the
+same bundles [`GET /api/configs/<name>?export=json`](#get-apiconfigsnameexportform)
+and the web interface's export build: one configuration document plus
+`images/<subpath>` entries for every image it names. The board subscribes to
+catalogue URLs, fetches both index and bundle itself, verifies the bundle
+against the index's sha256, streams the images into place — an image already
+present is kept, never overwritten — and imports the document exactly the way
+[`POST /api/configs/<name>/import`](#post-apiconfigsnameimport) does.
+
+The index is the **`qunilator-catalog/1`** schema, specified in the manual's
+[Catalogue format](../../docs/manual/configurations/format.md) page and
+published by the project's own site at
+`https://qunilator.com/catalog/v1/index.json`. The fields this reader acts
+on: `schema` must be exactly `qunilator-catalog/1` (an index it does not
+understand is refused, which is what lets the schema grow); each entry's `id`
+obeys the configuration-name rule and prefills the import dialog; `bus` —
+`qbus`, `unibus` or `any` — is checked against the board's platform;
+`download.url` (absolute or relative to the index URL; `..` is not resolved),
+`download.bytes` (the progress bar and the disk-space check) and
+`download.sha256` (verified before anything is unpacked) describe the bundle;
+the optional `images` list — images-root subpaths with sizes — is what says
+which of a machine's images are already here and how much space an import
+still needs. Everything else is display only.
+
+One catalogue job runs at a time — a refresh of every subscribed index, or
+the fetch-and-import of one entry. Its status is the `catalog` frame on
+[`/ws/events`](#wsevents), broadcast on every change and sent to each new
+connection; a service restart aborts a running job, and a retried fetch skips
+the images the aborted one had already placed.
+
+### `GET /api/catalog`
+
+The subscribed catalogues in their configured order, each with what it
+offered when it was last reachable, plus the current job:
+
+```json
+{"refreshed_at": "2026-08-31T08:43:21Z", "bus": "qbus",
+ "sources": [
+  {"url": "https://qunilator.com/catalog/v1/index.json",
+   "ok": true, "error": "", "fetched_at": "2026-08-31T08:43:21Z",
+   "index": {"schema": "qunilator-catalog/1", "name": "…", "configurations": [
+     {"id": "211bsd", "…": "…",
+      "imported": false, "bus_ok": true,
+      "images_present": 0, "images_total": 1}]}},
+  {"url": "http://…", "ok": false, "error": "the server answered 404"}],
+ "job": {"state": "idle", "…": "…"}}
+```
+
+Each entry carries what only this board knows beside what the index said:
+`imported` (a configuration of that name exists here), `bus_ok` (the entry's
+bus matches this board), and `images_present` of `images_total` already in
+the image tree. A source that stopped answering keeps its last good `index`
+with `ok: false` and the error, so its listing goes stale rather than blank.
+
+### `POST /api/catalog/refresh`
+
+Fetches every subscribed index again. Answers `202` — the result arrives as
+`catalog` frames (`refreshing`, then `idle`) — or `409` while a job runs.
+
+### `POST /api/catalog/fetch`
+
+```json
+{"source": "https://…/v1/index.json", "entry": "211bsd", "config": "211bsd"}
+```
+
+Downloads and imports one entry under the name `config`. Refused before
+anything is fetched: `409` while a job runs or when `config` is already a
+configuration here, `422` for an unknown entry, a bus this board does not
+drive, or a name an operator may not choose, `507` when the disk cannot hold
+the bundle plus the images it still needs. Answers `202`; the job then walks
+`downloading` → `verifying` → `extracting` → `importing` → `done` (or
+`failed` with `error`) in the `catalog` frames, carrying byte progress for
+the download and per-file progress for the extraction.
+
+### `POST /api/catalog/cancel`
+
+Asks the running job to stop; it ends in state `cancelled`. Images already
+extracted whole are kept — they are valid media, and a retried fetch skips
+them. `409` when no job runs.
+
+### `GET /api/catalog/sources` · `PUT /api/catalog/sources`
+
+```json
+{"sources": ["https://qunilator.com/catalog/v1/index.json"]}
+```
+
+The subscription list, in the order the interface shows it — at most 32
+http(s) URLs of at most 512 characters. It persists in `settings.json`; a
+fresh board carries the project's own catalogue, and an emptied list stays
+empty. A `PUT` also starts a refresh, unless a job is already running.
+
 ## WebSockets
 
 ### `/ws/events`
@@ -1632,6 +1725,7 @@ Text frames, one JSON event each, pushed to every connected client:
 | `{"t":"settings"}` | a machine setting changed. **No payload** — a client rereads [`GET /api/settings`](#get-apisettings), which is the one description of what the settings now are. This is how a page follows a change it did not make itself, and in particular how a console whose port has moved re-points itself instead of going quietly dead |
 | `{"t":"metrics","devs":[…]}` | what each enabled device is doing, once a second: the same set [`GET /api/metrics`](#get-apimetrics) answers, described under [Performance](#performance). The frame is the whole set, so a client replaces rather than merges; an empty set is sent once when the last device stops reporting and then not again |
 | `{"t":"update", …}` | the update status, the same object [`GET /api/update`](#get-apiupdate) answers. Published whenever the updater's status file changes (the service stats it once a second), and as a snapshot on every new connection — so a second tab, and a tab opened during an install, both know what is going on |
+| `{"t":"catalog", …}` | the catalogue job's status — the same object [`GET /api/catalog`](#get-apicatalog) carries as `job`. Published on every change (byte progress included) and as a snapshot on every new connection, so a tab opened mid-download shows the bar at once |
 | `{"t":"selftest","running":…,"last":…}` | the hardware self-test state, the same `running`/`last` members [`GET /api/selftest`](#get-apiselftest) answers. Published when a run starts or ends, and as a snapshot on every new connection. The run's output is not here — it streams on [`/ws/selftest`](#wsselftest) |
 
 #### The bus power signals

@@ -2,7 +2,7 @@
 title: Machine
 description: The settings that belong to the whole machine — the bus address width, and where the real console line is read from.
 sidebar:
-  order: 5
+  order: 6
 ---
 
 The handful of settings that belong to the whole machine rather than to any one

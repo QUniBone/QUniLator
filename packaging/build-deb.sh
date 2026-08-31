@@ -313,7 +313,7 @@ INSTALLED_KB=$(du -sk $STAGE | cut -f1)
     # curl is what qunilator-update's health check speaks HTTP to the loopback
     # with, after an install; the appliance image uses curl in the build
     # container, not in the chroot, so it has to be declared rather than assumed.
-    echo "Depends: libc6, libstdc++6, libgcc-s1, libx11-6, iproute2, device-tree-compiler, cpp, make, python3, curl"
+    echo "Depends: libc6, libstdc++6, libgcc-s1, libx11-6, libcurl4t64 | libcurl4, iproute2, device-tree-compiler, cpp, make, python3, curl"
     # the two boards ship the same cape overlay and firmware files, and a BBB
     # carries one cape, so they are mutually exclusive on a machine
     echo "Conflicts: $OTHER"

@@ -2,7 +2,7 @@
 title: System
 description: Who reaches this QUniLator, what it is called on the network, which serial ports carry a login, and installing updates.
 sidebar:
-  order: 7
+  order: 8
 ---
 
 Who reaches this QUniLator, what it runs, and updating it. Each of those is a

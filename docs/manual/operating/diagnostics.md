@@ -2,7 +2,7 @@
 title: Diagnostics
 description: The live log — what it shows, what the severity chips do, and why raising a source's level is not done here.
 sidebar:
-  order: 6
+  order: 7
 ---
 
 The live log, newest first. Every line carries the time, its severity, the source

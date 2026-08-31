@@ -15,6 +15,8 @@ import type {
   UpdateStatus,
   MetricsState,
   SelftestState,
+  CatalogListing,
+  CatalogJob,
 } from './types';
 
 export interface Store {
@@ -35,6 +37,11 @@ export interface Store {
   // the self-update status, from GET /api/update and the "update" event frame;
   // null until the first one arrives
   update: UpdateStatus | null;
+  // what the subscribed catalogues offer, from GET /api/catalog; null until
+  // the page asks
+  catalog: CatalogListing | null;
+  // the catalogue job, from the "catalog" event frame; null until one arrives
+  catalogJob: CatalogJob | null;
   // the hardware self-test state, from the "selftest" event frame
   selftest: SelftestState;
   connected: boolean;
@@ -82,6 +89,8 @@ export const store: Store = {
   serverVersion: '',
   serverBuilt: '',
   update: null,
+  catalog: null,
+  catalogJob: null,
   selftest: { running: null, last: null },
   connected: false,
   heldBy: '',

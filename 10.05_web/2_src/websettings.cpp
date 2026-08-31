@@ -64,6 +64,12 @@ static std::string dismissed_version;
 // Independent of the emulated CPU: a board can be the CPU of a real machine
 // full of real cards, or a machine entirely by itself.
 static bool internal_bus = false;
+// The catalogue index URLs the board subscribes to. A board that has never
+// stored the key carries the project's own catalogue; a stored list — the
+// empty one included — replaces the default.
+static std::vector<std::string> catalog_sources = {
+	"https://qunilator.com/catalog/v1/index.json"
+};
 
 static void send_json(struct mg_connection *conn, int status, const picojson::value &val) {
 	std::string body = val.serialize();
@@ -119,6 +125,14 @@ static void load_settings(void) {
 		std::lock_guard<std::mutex> lock(settings_mutex);
 		dismissed_version = upd.get("dismissed_version").get<std::string>();
 	}
+	const picojson::value &cats = v.get("catalogs");
+	if (cats.is<picojson::array>()) {
+		std::lock_guard<std::mutex> lock(settings_mutex);
+		catalog_sources.clear();
+		for (const picojson::value &c : cats.get<picojson::array>())
+			if (c.is<std::string>())
+				catalog_sources.push_back(c.get<std::string>());
+	}
 	const picojson::value &ec = v.get("external_console");
 	if (!ec.is<picojson::object>())
 		return;
@@ -140,6 +154,10 @@ static void save_settings(void) {
 		picojson::object upd;
 		upd["dismissed_version"] = picojson::value(dismissed_version);
 		root["update"] = picojson::value(upd);
+		picojson::array cats;
+		for (const std::string &c : catalog_sources)
+			cats.push_back(picojson::value(c));
+		root["catalogs"] = picojson::value(cats);
 	}
 	picojson::value admin = webauth_json();
 	if (!admin.is<picojson::null>())
@@ -199,6 +217,19 @@ void websettings_set_dismissed_version(const std::string &version) {
 
 std::string websettings_state_dir(void) {
 	return state_dir;
+}
+
+std::vector<std::string> websettings_catalog_sources(void) {
+	std::lock_guard<std::mutex> lock(settings_mutex);
+	return catalog_sources;
+}
+
+void websettings_set_catalog_sources(const std::vector<std::string> &sources) {
+	{
+		std::lock_guard<std::mutex> lock(settings_mutex);
+		catalog_sources = sources;
+	}
+	save_settings();
 }
 
 static void settings_get(struct mg_connection *conn) {

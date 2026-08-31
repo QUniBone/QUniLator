@@ -1,0 +1,48 @@
+title: 2.11BSD on the RA81
+summary: >-
+  Multi-user 2.11BSD Unix on an emulated UDA50 MSCP disk, with DELQA Ethernet
+  that attaches as qe0. The kernel is the QBONETS build, carrying the QBus
+  DELQA driver and the TS11 tape driver.
+bus: qbus
+guest: 2.11BSD
+
+devices:
+  - UDA50
+  - RA81
+  - DELQA
+
+doc:
+  motivation: >-
+    A complete timesharing Unix that boots in under a minute and exercises the
+    disk, the Ethernet and the serial console at once — the machine to hand
+    somebody who wants to see a QUniLator do real work.
+  # Plain text: these fields carry lists and links, not markdown, because the
+  # board renders them without sanitising a document somebody else wrote.
+  usage:
+    - Switch the machine on and boot DU0 from the bootstrap prompt.
+    - "At the bare ':' prompt, press return: the system comes up single-user
+      at a '#' shell."
+    - Press Ctrl-D at the single-user shell to go multi-user; log in as root,
+      which has no password.
+    - /etc/netstart brings up qe0; edit it and /etc/hosts for your LAN.
+    - Halt with /sbin/halt from single-user before switching off, so the
+      filesystems stay clean.
+  bugs:
+    - A dirty shutdown costs a long fsck on the next boot; the console sits
+      quiet while it runs.
+  links:
+    - label: Walkthrough in the manual, including the network setup
+      url: https://qunilator.com/walkthroughs/211bsd-network/
+  maintainer:
+    name: QUniLator project
+    contact: https://github.com/QUniBone/QUniLator/issues
+  added: 2026-08-31
+
+download:
+  url: https://github.com/QUniBone/QUniLator/releases/download/catalog/211bsd.qcfg.zip
+  bytes: 37139129
+  sha256: "54114369570ac9ee69c58cf55cfa8e15ba0bda13f1afb672f8e36c1eca977131"
+
+images:
+  - path: du/2.11BSD_qbone.dsk
+    bytes: 1000090112

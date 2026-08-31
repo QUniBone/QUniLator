@@ -103,6 +103,10 @@ const std::string &webstorage_images_dir() {
 	return images_dir;
 }
 
+bool webstorage_valid_subpath(const std::string &sub) {
+	return valid_subpath(sub);
+}
+
 // The value stored in a drive's "image" parameter and a saved config: relative
 // to $QUNILATOR_DIR so it is portable and the drive opens it via the working
 // directory. Empty stays empty; an unmanaged absolute path is left untouched.
@@ -164,6 +168,14 @@ static void own_by_qunilator(const std::string &path) {
 	struct passwd *pw = getpwnam("qunilator");
 	if (pw != nullptr)
 		(void) !chown(path.c_str(), pw->pw_uid, pw->pw_gid);
+}
+
+bool webstorage_make_dirs(const std::string &dir_sub) {
+	return dir_sub.empty() || make_dirs(dir_sub);
+}
+
+void webstorage_own_by_qunilator(const std::string &abs_path) {
+	own_by_qunilator(abs_path);
 }
 
 // -------------------------------------------------------------------------

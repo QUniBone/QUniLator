@@ -19,6 +19,7 @@ import type {
   DebugListing,
   SelftestInfo,
   SelftestState,
+  CatalogListing,
 } from './types';
 
 export interface ApiResult<T = Record<string, unknown>> {
@@ -895,4 +896,47 @@ export async function importConfigFile(
   if (!r.ok) return { ok: false, error: r.data?.error || 'QUniLator refused it' };
   await loadConfigs();
   return { ok: true, note: r.data?.note, imagesWritten: written, imagesKept: kept };
+}
+
+// ---- catalogues: what the subscribed indexes offer, and the board's fetch ----
+
+export async function loadCatalog(): Promise<void> {
+  const r = await apiJSON<CatalogListing>('/api/catalog');
+  if (r.ok) setStore({ catalog: r.data, catalogJob: r.data.job });
+}
+
+export async function putCatalogSources(sources: string[]): Promise<boolean> {
+  const r = await apiJSON<{ error?: string }>('/api/catalog/sources', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sources }),
+  });
+  toast('PUT /api/catalog/sources', r.ok ? 'catalogues saved' : r.data.error || 'rejected');
+  await loadCatalog();
+  return r.ok;
+}
+
+export async function catalogRefresh(): Promise<void> {
+  const r = await apiJSON<{ error?: string }>('/api/catalog/refresh', { method: 'POST' });
+  if (!r.ok) toast('POST /api/catalog/refresh', r.data.error || 'rejected');
+}
+
+// Ask the board to download and import one catalogue entry. The 202 only
+// starts the job; its progress and outcome arrive as "catalog" event frames.
+export async function catalogFetch(
+  source: string,
+  entry: string,
+  config: string
+): Promise<{ ok: boolean; error?: string }> {
+  const r = await apiJSON<{ error?: string }>('/api/catalog/fetch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source, entry, config }),
+  });
+  return r.ok ? { ok: true } : { ok: false, error: r.data.error || 'QUniLator refused it' };
+}
+
+export async function catalogCancel(): Promise<void> {
+  const r = await apiJSON<{ error?: string }>('/api/catalog/cancel', { method: 'POST' });
+  if (!r.ok) toast('POST /api/catalog/cancel', r.data.error || 'rejected');
 }

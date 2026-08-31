@@ -268,6 +268,88 @@ export interface UpdateStatus {
   journal: string[];
 }
 
+// ---- catalogues: GET /api/catalog and the "catalog" event frame ----
+// A catalogue is a static index the board subscribes to; the board fetches
+// the chosen .qcfg.zip itself and imports it, publishing its progress as the
+// job below.
+
+export type CatalogJobState =
+  | 'idle'
+  | 'starting'
+  | 'refreshing'
+  | 'downloading'
+  | 'verifying'
+  | 'extracting'
+  | 'importing'
+  | 'done'
+  | 'failed'
+  | 'cancelled';
+
+export interface CatalogJob {
+  state: CatalogJobState;
+  mode: '' | 'refresh' | 'fetch';
+  source: string;
+  entry: string;
+  config: string; // the name the machine is being imported under
+  title: string;
+  bytes_done: number;
+  bytes_total: number; // the download's, then the current image's while extracting
+  file: string; // the image being extracted
+  files_done: number;
+  files_total: number;
+  images_written: number;
+  images_kept: string[];
+  error: string;
+  note: string;
+  autostart_note: string;
+}
+
+export interface CatalogImage {
+  path: string;
+  bytes?: number;
+}
+
+// an index entry (qunilator-catalog/1), decorated by the board with what
+// only it knows
+export interface CatalogEntry {
+  id: string;
+  title?: string;
+  summary?: string;
+  bus?: string; // 'qbus' | 'unibus' | 'any'
+  devices?: string[];
+  guest?: string;
+  page?: string; // the entry's documentation page
+  download?: { url: string; bytes: number; sha256: string };
+  images?: CatalogImage[];
+  doc?: { added?: string };
+  imported: boolean; // a configuration of this id's name exists here
+  bus_ok: boolean; // the entry's bus matches this board
+  images_present: number;
+  images_total: number;
+}
+
+export interface CatalogIndex {
+  schema?: string;
+  name?: string;
+  updated?: string;
+  configurations: CatalogEntry[];
+}
+
+export interface CatalogSource {
+  url: string;
+  ok: boolean;
+  error: string;
+  fetched_at?: string;
+  index?: CatalogIndex; // last good content; stale when ok is false
+}
+
+export interface CatalogListing {
+  refreshed_at: string;
+  bus: string;
+  sources: CatalogSource[];
+  job: CatalogJob;
+}
+
 // ---- hardware self-tests ----
 // GET /api/selftest and the "selftest" event frame. The tests run in the cli
 // as a child of the service; their output streams on /ws/selftest.

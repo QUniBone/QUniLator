@@ -196,6 +196,7 @@ RUN dpkg --add-architecture armhf && apt-get update \
         gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf g++ make file \
         curl ca-certificates bzip2 \
         libx11-dev:armhf libxcb1-dev:armhf libxau-dev:armhf libxdmcp-dev:armhf \
+        libcurl4-openssl-dev:armhf libssl-dev:armhf \
     && rm -rf /var/lib/apt/lists/*
 # Sun RPC for the blinkenlight API client: modern glibc no longer bundles it;
 # libtirpc replaces it, built without GSSAPI so it links statically

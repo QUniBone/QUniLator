@@ -19,6 +19,7 @@ import {
   SystemUpdatePage,
 } from './System';
 import { SelftestPage } from './Selftest';
+import { CatalogPage } from './Catalog';
 import { updateAvailable, updateRunning } from '../lib/update';
 import { dismissNotice } from '../api';
 
@@ -28,6 +29,7 @@ const NAV: [string, string][] = [
   ['/dashboard', 'Dashboard'],
   ['/storage', 'Storage'],
   ['/config', 'Configurations'],
+  ['/catalog', 'Catalogue'],
   ['/machine', 'Machine'],
   ['/debug', 'Debug'],
   ['/diagnostics', 'Diagnostics'],
@@ -274,6 +276,7 @@ export function App() {
           <${Dashboard} path="/dashboard" />
           <${StoragePage} path="/storage/:path*" />
           <${ConfigsPage} path="/config/:name?/:device?" />
+          <${CatalogPage} path="/catalog" />
           <${MachinePage} path="/machine" />
           <${DebugPage} path="/debug" />
           <${LogPage} path="/diagnostics" />

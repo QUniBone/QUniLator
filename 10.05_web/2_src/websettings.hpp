@@ -8,6 +8,7 @@
 #define _WEBSETTINGS_HPP_
 
 #include <string>
+#include <vector>
 
 struct mg_context;
 
@@ -39,6 +40,13 @@ void websettings_set_dismissed_version(const std::string &version);
 
 // $QUNILATOR_DIR, the state directory the service was given.
 std::string websettings_state_dir(void);
+
+// The catalogue index URLs this board subscribes to, in the order the
+// interface shows them. Board-level so every operator sees the same list; a
+// fresh board carries the project's own catalogue. An operator may empty the
+// list, and the empty list persists.
+std::vector<std::string> websettings_catalog_sources(void);
+void websettings_set_catalog_sources(const std::vector<std::string> &sources);
 
 // external console selection, consumed by the ttyS2 bridge (/ws/console/ext)
 struct external_console_c {

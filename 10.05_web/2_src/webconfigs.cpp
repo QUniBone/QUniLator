@@ -443,6 +443,17 @@ static bool read_config(const std::string &name, picojson::value *out,
 	return true;
 }
 
+bool webconfigs_valid_name(const std::string &name) {
+	return valid_config_name(name);
+}
+
+bool webconfigs_exists(const std::string &name) {
+	if (!valid_config_name(name))
+		return false;
+	struct stat st;
+	return stat(config_path(name).c_str(), &st) == 0;
+}
+
 // the saved device set of a configuration; false when the file is missing or
 // unreadable, or names no devices
 static bool read_config_devices(const std::string &name, picojson::value *out) {
@@ -2011,33 +2022,37 @@ static void send_attachment(struct mg_connection *conn, const std::string &body,
 	mg_write(conn, body.data(), body.size());
 }
 
-// POST /api/configs/<name>/import  — the body is a configuration document.
+// Import a configuration document under a free name. The catalogue fetch
+// finishes its job through this same function, which is why it is separate
+// from the HTTP handler below.
 //
 // The name is the operator's choice and must be free: an import brings in a
 // machine that was not here, and writing over one that was is what PUT is for.
-static void config_import(struct mg_connection *conn, const std::string &name) {
-	picojson::value doc;
-	if (!read_json_body_full(conn, &doc) || !doc.is<picojson::object>()) {
-		send_error(conn, 400, "body must be a configuration document");
-		return;
+bool webconfigs_import(const std::string &name, picojson::value &doc,
+		std::string *dip_note, std::string *autostart_note,
+		std::string *error, int *status) {
+	if (!doc.is<picojson::object>()) {
+		*error = "body must be a configuration document";
+		*status = 400;
+		return false;
 	}
 	picojson::value existing;
 	std::string err;
 	if (read_config(name, &existing, &err)) {
-		send_error(conn, 409, "a configuration named \"" + name
-				+ "\" is already here; import under another name");
-		return;
+		*error = "a configuration named \"" + name
+				+ "\" is already here; import under another name";
+		*status = 409;
+		return false;
 	}
 	picojson::object &o = doc.get<picojson::object>();
 	// The DIP binding belongs to the board, not to the machine: keep it only
 	// when this board has the switch value free, and say so when it does not.
-	std::string dip_note;
 	int dip = config_dip_value(doc);
 	if (dip >= 0) {
 		std::string holder = config_for_dip(dip);
 		if (!holder.empty() && holder != name) {
 			o.erase("dip_value");
-			dip_note = "the DIP value " + std::to_string(dip)
+			*dip_note = "the DIP value " + std::to_string(dip)
 					+ " is claimed by \"" + holder + "\", so the import is unbound";
 		}
 	}
@@ -2045,15 +2060,25 @@ static void config_import(struct mg_connection *conn, const std::string &name) {
 	// backplane; it does not travel with the machine any more than the DIP
 	// binding does. An import comes in dark, and whoever wants it to start
 	// itself here says so here.
-	std::string autostart_note;
 	if (o.find("autostart") != o.end()) {
 		o.erase("autostart");
-		autostart_note = "the imported configuration does not start itself; "
+		*autostart_note = "the imported configuration does not start itself; "
 				"set autostart on this QUniLator if it should";
 	}
-	std::string error;
+	*status = 422;
+	return webconfigs_write(name, doc, /*from_live*/false, error, status);
+}
+
+// POST /api/configs/<name>/import  — the body is a configuration document.
+static void config_import(struct mg_connection *conn, const std::string &name) {
+	picojson::value doc;
+	if (!read_json_body_full(conn, &doc) || !doc.is<picojson::object>()) {
+		send_error(conn, 400, "body must be a configuration document");
+		return;
+	}
+	std::string dip_note, autostart_note, error;
 	int status = 422;
-	if (!webconfigs_write(name, doc, /*from_live*/false, &error, &status)) {
+	if (!webconfigs_import(name, doc, &dip_note, &autostart_note, &error, &status)) {
 		send_error(conn, status, error);
 		return;
 	}

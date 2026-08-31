@@ -1688,3 +1688,27 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
 .selftest-verdict-error { color: var(--warn); background: var(--warn-soft); }
 .selftest-verdict-aborted { color: var(--warn); background: var(--warn-soft); }
 .pill.busy { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+
+/* ---- catalogue ---- */
+[data-page='catalog'] .card { max-width: 720px; margin-bottom: 14px; }
+.cat-source-sub { font-size: var(--fs-1); margin-bottom: 8px; word-break: break-all; }
+.cat-source-desc { margin-bottom: 10px; }
+.cat-entry { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line-soft); }
+.cat-entry:first-of-type { border-top: 0; }
+.cat-entry-main { flex: 1; min-width: 0; }
+.cat-entry-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cat-entry-name { font-weight: 600; }
+.cat-entry-desc { margin: 2px 0; }
+.cat-entry-sub { font-size: var(--fs-1); }
+.cat-phase { margin-bottom: 8px; }
+.cat-phase.err { color: var(--err); }
+/* the self-update bar, but determinate: the fill's width is the fraction */
+.cat-bar .upd-bar-fill { animation: none; width: 0; transition: width 0.3s linear; }
+.cat-note { font-size: var(--fs-1); color: var(--ink-muted); }
+.cat-note.err { color: var(--err); }
+.cat-actions { display: flex; align-items: center; gap: 10px; margin: 4px 0 14px; }
+.cat-url-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+.cat-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-url-input { flex: 1; min-width: 0; }
+a.cat-entry-name { color: var(--ink); text-decoration: underline dotted var(--ink-faint); }
+a.cat-entry-name:hover { color: var(--accent); }

@@ -60,7 +60,7 @@ PRU_CGT_URL=https://software-dl.ti.com/codegen/esd/cgt_public_sw/PRU/${PRU_CGT_V
 # What a build of the emulator needs beyond the appliance's own dependencies:
 # the C++ compiler and make, the Sun RPC library the blinkenlight API client
 # speaks (glibc dropped it), X11 for the VCB01 window, and git to fetch this.
-BUILD_PACKAGES="git build-essential libtirpc-dev libx11-dev"
+BUILD_PACKAGES="git build-essential libtirpc-dev libx11-dev libcurl4-openssl-dev libssl-dev"
 
 say() { echo "qunilator-devkit: $*"; }
 die() { echo "qunilator-devkit: $*" >&2; exit 1; }

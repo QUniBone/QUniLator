@@ -17,6 +17,16 @@ void webstorage_register(struct mg_context *ctx);
 // the one directory tree the web interface keeps images in
 const std::string &webstorage_images_dir();
 
+// The single path-traversal guard for an images-root-relative subpath: no
+// absolute paths, no "."/"..", no hidden (dot-leading) segments.
+bool webstorage_valid_subpath(const std::string &sub);
+
+// make every directory along a directory subpath under the images root
+bool webstorage_make_dirs(const std::string &dir_sub);
+
+// give a freshly written file to the qunilator user (best effort)
+void webstorage_own_by_qunilator(const std::string &abs_path);
+
 // The value stored in a drive's "image" parameter and in a saved config:
 // relative to $QUNILATOR_DIR ("images/du/foo.dsk") so it is portable and the
 // drive opens it through the working directory. Accepts a bare subpath, the

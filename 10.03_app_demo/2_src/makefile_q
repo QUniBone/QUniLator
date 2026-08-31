@@ -46,7 +46,7 @@ PRUSS_DRV_LIB = $(PRU_PACKAGE_ROOT)/bin-bbb/libprussdrv.a
 #
 # EXTRA_LIBS: additional libraries some toolchains need
 # (e.g. -ltirpc where Sun RPC is no longer part of glibc)
-LDFLAGS+= -no-pie -lstdc++ -lpthread -lX11 $(PRUSS_DRV_LIB) $(EXTRA_LIBS)
+LDFLAGS+= -no-pie -lstdc++ -lpthread -lX11 -lcurl $(PRUSS_DRV_LIB) $(EXTRA_LIBS)
 
 # Conditional compiles shared by the ARM code and the PRU code, so both sides of
 # the emulator are built for the same bus.
@@ -234,7 +234,9 @@ ifeq ($(WEBUI),1)
 WEB_SRC_DIR= $(QUNILATOR_ROOT)/10.05_web/2_src
 CIVETWEB_DIR= $(QUNILATOR_ROOT)/91_3rd_party/civetweb
 PICOJSON_DIR= $(QUNILATOR_ROOT)/91_3rd_party/picojson
-CCFLAGS+= -DWEBUI -I$(WEB_SRC_DIR) -I$(CIVETWEB_DIR) -I$(PICOJSON_DIR)
+MINIZ_DIR= $(QUNILATOR_ROOT)/91_3rd_party/miniz
+PICOSHA2_DIR= $(QUNILATOR_ROOT)/91_3rd_party/picosha2
+CCFLAGS+= -DWEBUI -I$(WEB_SRC_DIR) -I$(CIVETWEB_DIR) -I$(PICOJSON_DIR) -I$(MINIZ_DIR) -I$(PICOSHA2_DIR)
 OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/weblog.o	\
 	$(OBJDIR)/webapi.o	\
@@ -266,7 +268,9 @@ OBJECTS+= $(OBJDIR)/webserver.o	\
 	$(OBJDIR)/webserialports.o	\
 	$(OBJDIR)/webversion.o	\
 	$(OBJDIR)/webupdate.o	\
-	$(OBJDIR)/civetweb.o
+	$(OBJDIR)/webcatalog.o	\
+	$(OBJDIR)/civetweb.o	\
+	$(OBJDIR)/miniz.o
 endif
 
 
@@ -727,6 +731,16 @@ $(OBJDIR)/webversion.o :  $(WEB_SRC_DIR)/webversion.cpp $(WEB_SRC_DIR)/webversio
 
 $(OBJDIR)/webupdate.o :  $(WEB_SRC_DIR)/webupdate.cpp $(WEB_SRC_DIR)/webupdate.hpp $(WEB_SRC_DIR)/websettings.hpp $(WEB_SRC_DIR)/webversion.hpp
 	$(CC) $(CCFLAGS) $< -o $@
+
+# _FILE_OFFSET_BITS=64: a catalogue bundle can pass 2 GB, and the 32-bit ARM
+# file API stops there without it - for the zip this module writes and reads,
+# and for miniz walking it.
+$(OBJDIR)/webcatalog.o :  $(WEB_SRC_DIR)/webcatalog.cpp $(WEB_SRC_DIR)/webcatalog.hpp $(WEB_SRC_DIR)/websettings.hpp $(WEB_SRC_DIR)/webconfigs.hpp $(WEB_SRC_DIR)/webstorage.hpp $(WEB_SRC_DIR)/webevents.hpp
+	$(CC) $(CCFLAGS) -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE $< -o $@
+
+# miniz is C, compiled with its own flags like civetweb
+$(OBJDIR)/miniz.o :  $(MINIZ_DIR)/miniz.c $(MINIZ_DIR)/miniz.h
+	$(CC) -c -O2 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE -I$(MINIZ_DIR) $< -o $@
 
 # civetweb is C, compiled with its own flags
 $(OBJDIR)/civetweb.o :  $(CIVETWEB_DIR)/civetweb.c $(CIVETWEB_DIR)/civetweb.h

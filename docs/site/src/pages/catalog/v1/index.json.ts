@@ -35,6 +35,7 @@ export const GET: APIRoute = async ({ site }) => {
 				// Where a reader goes for the full documentation of this entry.
 				page: new URL(`${base}/configurations/${entry.id}/`, site).href,
 				download: entry.data.download,
+				images: entry.data.images,
 				doc: {
 					...entry.data.doc,
 					added: entry.data.doc.added.toISOString().slice(0, 10),

@@ -5,7 +5,7 @@ import { patchParam, patchStatus } from './devmodel';
 import { clearConsole, updateConsoleSource } from './terminals';
 import { wsURL } from './util';
 import { syncVersion } from './version';
-import type { DevMetrics, LogLevelName, LogLine, UpdateStatus } from '../types';
+import type { CatalogJob, DevMetrics, LogLevelName, LogLine, UpdateStatus } from '../types';
 
 const LOG_LEVELS: Record<number, LogLevelName> = {
   1: 'FATAL',
@@ -157,6 +157,13 @@ export function initEvents(): void {
       const { t, ...status } = ev;
       void t;
       store.update = status as UpdateStatus;
+      return 'now';
+    } else if (ev.t === 'catalog') {
+      // the catalogue job's whole status; broadcast on every change and sent
+      // on connect, so a page opened mid-download shows the bar at once
+      const { t, ...job } = ev;
+      void t;
+      store.catalogJob = job as CatalogJob;
       return 'now';
     } else if (ev.t === 'selftest') {
       // a hardware self-test run started or ended; broadcast on each change

@@ -68,6 +68,14 @@ export const collections = {
 				bytes: z.number().int().positive(),
 				sha256: z.string().regex(/^[0-9a-f]{64}$/),
 			}),
+			/**
+			 * The images inside the bundle, as images-root subpaths with their
+			 * sizes — what lets a board say which are already there and how much
+			 * space an import still needs before it downloads anything.
+			 */
+			images: z
+				.array(z.object({ path: z.string(), bytes: z.number().int().positive() }))
+				.default([]),
 		}),
 	}),
 };
