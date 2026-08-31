@@ -178,26 +178,14 @@ mscp_server_base::AbortPollingThread(void)
 //  too long only costs a descriptor read every few milliseconds in an idle
 //  controller.
 //
-//  The checks pace themselves in two windows. A host in the middle of a
-//  burst hands the next command over within a millisecond or two of reading
-//  the response, and every tick of waiting here is added verbatim to that
-//  command's service time - so the first window checks every half
-//  millisecond, which is what holds a queue-depth-one transfer stream at the
-//  pace the data DMA sets. A host that takes longer is off doing real work
-//  between commands, and for it the pace drops to the coarse interval, which
-//  carries the rest of the window at a descriptor read every few
-//  milliseconds. Each check is one descriptor DMA read, so the fine window
-//  is bounded at forty of them before the pace drops.
-//
-#define POLL_LINGER_FINE_INTERVAL_US    500
-#define POLL_LINGER_FINE_TOTAL_US       20000
-#define POLL_LINGER_COARSE_INTERVAL_US  5000
-#define POLL_LINGER_TOTAL_US            3000000
+#define POLL_LINGER_INTERVAL_US 5000
+#define POLL_LINGER_TOTAL_US    3000000
 
 bool
 mscp_server_base::LingerForNextCommand(void)
 {
-    for (unsigned waited = 0; waited < POLL_LINGER_TOTAL_US; )
+    for (unsigned waited = 0; waited < POLL_LINGER_TOTAL_US;
+         waited += POLL_LINGER_INTERVAL_US)
     {
         if (_abort_polling || _pollState != PollingState::Run)
         {
@@ -207,10 +195,7 @@ mscp_server_base::LingerForNextCommand(void)
         {
             return true;
         }
-        unsigned interval = waited < POLL_LINGER_FINE_TOTAL_US ?
-            POLL_LINGER_FINE_INTERVAL_US : POLL_LINGER_COARSE_INTERVAL_US;
-        WaitForPollStateChange(interval);
-        waited += interval;
+        WaitForPollStateChange(POLL_LINGER_INTERVAL_US);
     }
     return false;
 }
