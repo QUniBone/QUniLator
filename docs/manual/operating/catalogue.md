@@ -14,6 +14,8 @@ against the catalogue's checksum, unpacks the images into the image library,
 and imports the configuration. When it is done, the machine is on the
 Configurations screen like any other.
 
+![The catalogue screen](../assets/screenshots/catalogue.jpg)
+
 Each entry says which bus it needs, how large the download is, and what of it
 is already here: a machine whose configuration name is already on this
 QUniLator is marked **imported**, one needing the other bus is marked and
