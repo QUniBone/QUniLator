@@ -1,0 +1,35 @@
+# Boot Unix V6 (the chain-loaded RL02 pack) on qbone's KDJ11 and prove the
+# root shell answers.
+console: auto
+host: 192.168.2.226
+title: Unix V6 boot from DL0
+timeout: 60s
+machine:
+  start: restart
+deviations:
+  - event: halt
+    fail: the CPU halted during the boot
+steps:
+  - name: boot-prompt
+    expect: "!"
+    timeout: 90s
+    send: unix
+  - name: kernel
+    expect: /unix v6/
+  - name: shell
+    expect: "# "
+    send: STTY -LCASE
+  - name: shell2
+    expect: "# "
+    send: date
+  - name: proof
+    expect: "# "
+    send: ls /
+  - name: sync1
+    expect: "# "
+    send: sync
+  - name: sync2
+    expect: "# "
+    send: sync
+  - expect: "# "
+    done: true
