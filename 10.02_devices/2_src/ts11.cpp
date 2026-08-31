@@ -1043,6 +1043,9 @@ void ts11_c::execute_command(void)
             terminate(TC_FUNCTION_REJECT);
             return;
         }
+        // The command runs the tape: light the ACCESS lamp so the dashboard
+        // shows the activity. The lamp poll ages it back out.
+        drive()->set_activity_led(true);
     }
 
     // Every command but write characteristics answers with the number of the
@@ -1741,6 +1744,7 @@ unsigned ts11_c::command_control(unsigned mode)
         return TC_NORMAL;
 
     case 1:     // rewind and unload
+        d->set_activity_led(true);
         d->rewind();
         _bot_strip = false;
         _bot_blank = false;
@@ -1761,6 +1765,7 @@ unsigned ts11_c::command_control(unsigned mode)
         }
         // The answer goes out with the reel still turning, so the message it
         // deposits reports the motion and the operation in progress.
+        d->set_activity_led(true);
         start_rewind();
         terminate(TC_NORMAL);
         return TC_NORMAL;
