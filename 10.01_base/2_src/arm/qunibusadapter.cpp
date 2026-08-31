@@ -53,6 +53,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <assert.h>
+#include <sched.h>
 #include <queue>
 
 // TEST
@@ -991,17 +992,42 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
             clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu0);
         }
 // ARM_DEBUG_PIN1(1); // CPU20 performace
+        // How long the wait below stays a pure spin before it starts yielding
+        // its quantum. A cycle the PRU is running ends in microseconds, and a
+        // spin is the cheapest way to see it end; one that has lasted
+        // thousands of iterations is waiting on a scheduling gap or a stalled
+        // bus, and then the core is better given to whoever ends the wait.
+        // The device workers are realtime and preempt this thread anyway; the
+        // yield is for everything that is not - the web server above all.
+        unsigned spins = 0;
+        static const unsigned SPINS_BEFORE_YIELD = 4096;
         do {
             // CPU thread is now spinning
             // wait until CPU access scheduled and processed on PRU
             // in parallel, other device threads call DMA()
+
+            // Gate: take requests_mutex only when something to act on is
+            // visible. Every state this loop must react to announces itself
+            // outside the lock - the PRU's completion in the dma event
+            // counters (uncached bytes, the single-writer event pattern), a
+            // cancellation in this request's own atomic `complete` flag
+            // (requests_cancel_scheduled() force-completes everything it
+            // clears), and the orphan holdoff in dma_orphan_on_pru, whose
+            // deadline logic below must keep running even though no signal is
+            // coming. Without the gate every iteration takes the same mutex
+            // that every device DMA/INTR and the adapter worker need, at
+            // instruction rate. The reads are hints only: whatever the gate
+            // lets through is re-established under the mutex.
+            if (EVENT_IS_ACKED(*mailbox, dma) && !dma_request.complete
+                    && !dma_orphan_on_pru) {
+                if (++spins > SPINS_BEFORE_YIELD)
+                    sched_yield();
+                else
+                    __asm__ volatile("yield");
+                continue;
+            }
             pthread_mutex_lock(&requests_mutex);
-            dma_request_c *activereq = dynamic_cast<dma_request_c *>(prl->active);
-//if (activereq == &dma_request)
-//	printf("a\n") ;
-//if (DMA_STATE_IS_COMPLETE(mailbox->dma.cur_status))
-//	printf("b\n") ;
-            bool mine_active = (activereq == &dma_request);
+            bool mine_active = (prl->active == &dma_request);
             // Whether this access is still the adapter's to run at all. Its own
             // slot answers that: requests_cancel_scheduled() empties the slot of
             // everything it force-completes, so a request that is neither active
@@ -1012,7 +1038,6 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
             bool mine_scheduled =
                 (prl->slot_request[dma_request.priority_slot] == &dma_request);
             if (mine_active && !EVENT_IS_ACKED(*mailbox, dma)) {
-                assert(activereq->is_cpu_access);
                 // transfer DATI data to buffer, set success flag, schedule next request
                 // The signal may belong to a transfer cancelled while the PRU
                 // was running it, taken here because this thread dispatches the
