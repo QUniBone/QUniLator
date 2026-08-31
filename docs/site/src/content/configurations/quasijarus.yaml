@@ -35,7 +35,9 @@ doc:
       boot never waits on a nameserver.
     - The DZV11 carries tty00-tty07; the TK50 holds a tape with a tar
       archive of /usr.
-    - Halt with sync followed by halt, then switch off at the >>> prompt.
+    - Halt with fasthalt, then switch off at the >>> prompt; the next boot
+      skips the disk checks. Plain halt leaves the checks in, and fastboot
+      reboots directly.
   bugs:
     - The clock believes it is the year 2000; date sets it, within the era.
   links:
