@@ -53,6 +53,13 @@ export const collections = {
 			title: z.string(),
 			summary: z.string(),
 			bus: busEnum,
+			/**
+			 * What the backplane must carry beyond the bus: the processor class,
+			 * and any memory or console demand worth a warning. Free text — the
+			 * board cannot sense what CPU sits in a backplane, so this is for the
+			 * operator's judgement, where `bus` is checked by the machine.
+			 */
+			cpu: z.string().optional(),
 			/** Emulated cards the configuration installs, in layout order. */
 			devices: z.array(z.string()),
 			/** Guest operating system on the pack, when the configuration boots one. */

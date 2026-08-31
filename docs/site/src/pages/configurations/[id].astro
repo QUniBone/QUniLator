@@ -21,6 +21,7 @@ const busLabel = { unibus: 'UNIBUS · UniBone', qbus: 'QBUS · QBone' } as const
 	<table>
 		<tbody>
 			<tr><th align="left">Bus</th><td>{busLabel[c.bus]}</td></tr>
+			{c.cpu && <tr><th align="left">Needs</th><td>{c.cpu}</td></tr>}
 			{c.guest && <tr><th align="left">Guest</th><td>{c.guest}</td></tr>}
 			<tr><th align="left">Cards</th><td>{c.devices.join(' · ')}</td></tr>
 			<tr><th align="left">Download</th><td>{mb(c.download.bytes)}</td></tr>

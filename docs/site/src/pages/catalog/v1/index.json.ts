@@ -30,6 +30,7 @@ export const GET: APIRoute = async ({ site }) => {
 				title: entry.data.title,
 				summary: entry.data.summary,
 				bus: entry.data.bus,
+				cpu: entry.data.cpu,
 				devices: entry.data.devices,
 				guest: entry.data.guest,
 				// Where a reader goes for the full documentation of this entry.

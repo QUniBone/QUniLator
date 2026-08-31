@@ -1640,7 +1640,7 @@ obeys the configuration-name rule and prefills the import dialog; `bus` —
 `download.sha256` (verified before anything is unpacked) describe the bundle;
 the optional `images` list — images-root subpaths with sizes — is what says
 which of a machine's images are already here and how much space an import
-still needs. Everything else is display only.
+still needs. Everything else — `cpu` (what the backplane must carry, which no board can check for itself) included — is display only.
 
 One catalogue job runs at a time — a refresh of every subscribed index, or
 the fetch-and-import of one entry. Its status is the `catalog` frame on

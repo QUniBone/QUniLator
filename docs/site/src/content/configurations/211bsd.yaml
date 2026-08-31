@@ -4,6 +4,9 @@ summary: >-
   that attaches as qe0. The kernel is the QBONETS build, carrying the QBus
   DELQA driver and the TS11 tape driver.
 bus: qbus
+cpu: >-
+  A J-11 PDP-11 — 11/53, 11/73, 11/83, 11/93 — for the split I/D space the
+  kernel needs, with at least 1 MB of memory.
 guest: 2.11BSD
 
 devices:

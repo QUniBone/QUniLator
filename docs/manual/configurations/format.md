@@ -46,6 +46,7 @@ grow: a reader refuses an index whose schema it does not know.
 | Field | Why QUniLator needs it |
 |---|---|
 | `bus` | A UNIBUS configuration names devices a QBone does not have. QUniLator offers only what it can run. |
+| `cpu` | What the backplane must carry beyond the bus — the processor class, memory, a clock. Free text, and optional: the board cannot sense what CPU sits in a backplane, so where `bus` is checked by the machine, this is shown for the operator to judge. |
 | `devices` | Shown before download, so an operator sees what the machine carries. |
 | `bytes` | Media runs to hundreds of megabytes. QUniLator reports progress against this rather than downloading blind. |
 | `sha256` | Verified before import. A truncated bundle must fail loudly, not half-import. |

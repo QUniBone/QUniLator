@@ -116,6 +116,7 @@ function EntryRow({
         html`<${Chip} cls="warn">${BUS_WORD[entry.bus || ''] || entry.bus} only</${Chip}>`}
       </div>
       ${entry.summary && html`<div class="cat-entry-desc">${entry.summary}</div>`}
+      ${entry.cpu && html`<div class="cat-entry-sub muted">Needs: ${entry.cpu}</div>`}
       <div class="cat-entry-sub muted">
         ${entry.download?.bytes ? humanSize(entry.download.bytes) + ' download' : ''}
         ${entry.images_total > 0

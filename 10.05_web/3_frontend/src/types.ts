@@ -316,6 +316,7 @@ export interface CatalogEntry {
   title?: string;
   summary?: string;
   bus?: string; // 'qbus' | 'unibus' | 'any'
+  cpu?: string; // what the backplane must carry, for the operator to judge
   devices?: string[];
   guest?: string;
   page?: string; // the entry's documentation page

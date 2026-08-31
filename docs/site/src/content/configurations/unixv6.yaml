@@ -4,6 +4,9 @@ summary: >-
   from DL0. The smallest real Unix — kernel, C compiler and the classic
   userland on one ten-megabyte cartridge.
 bus: qbus
+cpu: >-
+  Any Q-bus PDP-11 with memory management — 11/23 upward — and 256 KB of
+  memory. The line clock (BEVNT) must tick, or time stands still.
 guest: Unix V6
 
 devices:

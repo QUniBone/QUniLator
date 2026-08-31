@@ -16,8 +16,10 @@ Configurations screen like any other.
 
 ![The catalogue screen](../assets/screenshots/catalogue.jpg)
 
-Each entry says which bus it needs, how large the download is, and what of it
-is already here: a machine whose configuration name is already on this
+Each entry says which bus it needs, what the backplane must carry — the bus is
+checked against this board, the processor is stated for you to judge, since no
+board can sense what CPU sits in a backplane — how large the download is, and
+what of it is already here: a machine whose configuration name is already on this
 QUniLator is marked **imported**, one needing the other bus is marked and
 cannot be fetched, and an entry whose images are already in the library says
 so — those images are kept as they are, never overwritten, so re-importing a
