@@ -1,5 +1,5 @@
-#!/root/10.03_app_demo/4_deploy/demo --verbose
-# inputfile for demo to select a rk05 device in the "device test" menu.
+#!/usr/bin/unibone-cli --verbose
+# inputfile for the menu program to select a rk05 device in the "device test" menu.
 # mounts 3 "Unixv6" RK05 images
 d			# device test menu
 

@@ -1,5 +1,5 @@
-#!/root/10.03_app_demo/4_deploy/demo --verbose
-# inputfile for demo to select a rl0 device in the "device test" menu.
+#!/usr/bin/qbone-cli --verbose
+# inputfile for the menu program to select a rl0 device in the "device test" menu.
 d			# device menu
 pwr			# reboot PDP-11
 .wait 3000		# wait for PDP-11 to reset

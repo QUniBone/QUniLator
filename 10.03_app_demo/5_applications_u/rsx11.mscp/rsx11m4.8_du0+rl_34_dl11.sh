@@ -1,4 +1,4 @@
-#!/root/10.03_app_demo/4_deploy/demo
+#!/usr/bin/unibone-cli
 # RSX11M 4.8 from MSCP drive 0, the same setup as
 # rsx11m4.8_du0+rl_34.sh with a second, emulated DL11 at 760010/300.
 d			# device test menu

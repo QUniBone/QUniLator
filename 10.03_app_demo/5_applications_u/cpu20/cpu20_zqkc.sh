@@ -1,6 +1,6 @@
-#!/root/10.03_app_demo/4_deploy/demo --verbose
+#!/usr/bin/unibone-cli --verbose
 # Main PDP-11/20 must be HALTed
-# Inputfile for demo to execute "Hello world"
+# Inputfile for the menu program to execute "Hello world"
 # Uses emulated CPU and (physical or emulated) DL11
 #
 # Listing corresponding to ZQKC rev E:

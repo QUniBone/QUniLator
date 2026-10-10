@@ -1,5 +1,5 @@
-#!/root/10.03_app_demo/4_deploy/demo
-# inputfile for demo to select a RD54 device in the "device" menu.
+#!/usr/bin/qbone-cli
+# inputfile for the menu program to select a RD54 device in the "device" menu.
 d			# device test menu
 
 pwr

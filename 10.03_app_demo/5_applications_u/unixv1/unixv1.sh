@@ -1,5 +1,5 @@
-#!/root/10.03_app_demo/4_deploy/demo --verbose
-# Inputfile for UniBone "demo" to run UNIX V1 on physical PDP-11/20.
+#!/usr/bin/unibone-cli --verbose
+# Inputfile for UniBone's menu program to run UNIX V1 on physical PDP-11/20.
 # RF11/RS11 DECdisk, RK05 disc, memory and KE11 EAE are emulated.
 # (C) Josh Dersch <derschjo@gmail.com>
 

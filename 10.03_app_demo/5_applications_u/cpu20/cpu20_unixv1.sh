@@ -1,5 +1,5 @@
-#!/root/10.03_app_demo/4_deploy/demo --verbose
-# inputfile for demo to run Joshs UNIX V1 on emualted
+#!/usr/bin/unibone-cli --verbose
+# inputfile for the menu program to run Joshs UNIX V1 on emualted
 # CPU, serial+clock, memory, RF11/RS11 and EA
 #
 
