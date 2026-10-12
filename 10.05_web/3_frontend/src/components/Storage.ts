@@ -159,18 +159,23 @@ function ContentsPanel({ data }: { data?: ImageContents }) {
     return html`<div class="img-contents"><span class="muted">reading…</span></div>`;
 
   const fs = data.filesystem;
-  const recognized = fs === 'RT-11' || fs === 'ODS-2';
+  const recognized = fs === 'RT-11' || fs === 'ODS-1' || fs === 'ODS-2';
+  const dirty = data.overlay_dirty_blocks ?? 0;
   const files = data.files || [];
   const vol = data.home && typeof data.home.volume_name === 'string' ? data.home.volume_name : '';
 
   const head = html`<div class="img-contents-head">
     <span class="fs mono">${fs}</span>
     ${vol ? html`<span class="vol mono">${vol}</span>` : null}
+    ${dirty
+      ? html`<span class="muted" title="the listing reads these blocks from the copy-on-write overlay"
+          >with ${dirty.toLocaleString()} overlay block${dirty === 1 ? '' : 's'}</span>`
+      : null}
   </div>`;
 
   if (!recognized)
     return html`<div class="img-contents">${head}
-      <div class="muted note">not a recognized filesystem (RT-11 / ODS-2)</div></div>`;
+      <div class="muted note">not a recognized filesystem (RT-11 / ODS-1 / ODS-2)</div></div>`;
 
   if (!files.length)
     return html`<div class="img-contents">${head}
@@ -188,7 +193,7 @@ function ContentsPanel({ data }: { data?: ImageContents }) {
             <td class="muted mono">${f.date || '—'}</td></tr>`
         )}</tbody></table></div></div>`;
 
-  // ODS-2: show the directory column only when the files span more than one.
+  // Files-11: show the directory column only when the files span more than one.
   const dirs = new Set(files.map((f) => f.directory).filter(Boolean));
   const showDir = dirs.size > 1;
   return html`<div class="img-contents">${head}

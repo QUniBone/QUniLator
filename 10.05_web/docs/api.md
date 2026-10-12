@@ -1090,6 +1090,26 @@ drives whose `image` points at the file; `used` the configuration/device pairs
 that reference it. `writable` reports the file's owner write bit — cleared, the
 image is a write-protected medium.
 
+`overlay` is true when the image has a copy-on-write overlay, and then
+`overlay_dirty_blocks` counts the blocks written to it and `overlay_bytes` its
+footprint on disk. A drive holding the image open reports its live state; an
+image no drive holds open reports what its overlay files hold, so the writes a
+switched-off drive left behind stay visible.
+
+### `POST /api/images/<subpath>/overlay/<action>`
+
+Works on an image's copy-on-write overlay. `discard` throws the writes away and
+returns to the base; `commit` folds them into the base, permanently (`409` when
+the base is write-protected); `export` writes base plus overlay to a new image
+named by the body `{"dest": <subpath>}`, leaving both alone, and answers
+`{"ok": true, "dest": <subpath>}`.
+
+An image a drive holds open is worked on through that drive, and only while the
+machine is not running — powered off or halted — so no guest I/O races the
+operation (`409` otherwise). An image no drive holds open is worked on through
+its files at any time. `404` when the image has no overlay; `409` when a drive
+holds it open writing in place.
+
 ### `POST /api/images?dir=<folder>`
 
 Multipart upload (`multipart/form-data`) of one or more `file` fields. The
@@ -1163,7 +1183,9 @@ edited is never overwritten; delete or rename it to take a fresh one.
 ### `GET /api/images/<subpath>/contents`
 
 Read-only listing of the files inside a disk/tape image, decoded by the Python
-decoders under `/usr/share/qunilator/decoders`. Returns the detected filesystem,
+decoders under `/usr/share/qunilator/decoders`. It reads the volume as the guest
+sees it: blocks a copy-on-write overlay holds are read from the overlay, and
+`overlay_dirty_blocks` says how many there are. Returns the detected filesystem,
 the volume/home-block metadata, and the file list:
 
 ```json
@@ -1171,9 +1193,11 @@ the volume/home-block metadata, and the file list:
  "files": [{"name": "SWAP.SYS", "bytes": 12800, "blocks": 25, "date": "…"}, …]}
 ```
 
-Recognized filesystems are **RT-11** and **Files-11 ODS-2**; anything else
-(Files-11 ODS-1, XXDP, a Unix filesystem, …) reports `"filesystem": "foreign"`
-or `"unknown"` with no file list rather than an error. A 256,256-byte RX01
+Recognized filesystems are **RT-11**, **Files-11 ODS-1** (RSX-11, IAS) and
+**Files-11 ODS-2** (VMS). The Files-11 entries carry `directory` — `[g,m]` or a
+named directory — and `size_bytes`, `blocks_on_volume` and `created`. Anything
+else (XXDP, a Unix filesystem, …) reports `"filesystem": "foreign"` or
+`"unknown"` with no file list rather than an error. A 256,256-byte RX01
 floppy image is de-interleaved first; other images are read as linear blocks.
 
 ## Configurations

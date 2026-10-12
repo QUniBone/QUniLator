@@ -160,7 +160,7 @@ export interface ImageContentFile {
   bytes?: number;
   blocks?: number;
   date?: string;
-  // ODS-2
+  // ODS-1 and ODS-2
   directory?: string;
   size_bytes?: number | null;
   blocks_on_volume?: number;
@@ -168,8 +168,9 @@ export interface ImageContentFile {
 }
 export interface ImageContents {
   file?: string;
-  filesystem: string; // "RT-11" | "ODS-2" | "foreign" | "unknown"
+  filesystem: string; // "RT-11" | "ODS-1" | "ODS-2" | "foreign" | "unknown"
   image_size?: number;
+  overlay_dirty_blocks?: number; // blocks read from the copy-on-write overlay
   home?: { volume_name?: string; [k: string]: unknown };
   files?: ImageContentFile[];
   error?: string; // set by the frontend when the fetch itself fails

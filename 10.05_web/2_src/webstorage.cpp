@@ -36,6 +36,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <string>
@@ -223,54 +224,47 @@ static picojson::array attached_drives(const std::string &sub) {
 	return result;
 }
 
-// Overlay status for an image, filled from the COW object of a drive it is
-// attached to. Present is false when no attached drive runs a copy-on-write
-// overlay for this image (detached, overlay disabled, or a shared dir).
+// Overlay status for an image. A drive holding the image open answers from its
+// COW object; an image no drive holds open answers from its overlay files, so
+// writes a drive left behind stay visible - and consolidatable - after the
+// drive is switched off.
 struct overlay_status_t {
 	bool present = false;
 	uint64_t dirty_blocks = 0;
 	uint64_t overlay_bytes = 0;
 };
 
+// The drive holding an image open, or nullptr. *cow is its COW image when it
+// runs one, else nullptr. The caller must hold device_c::mydevices_mutex.
+static storagedrive_c *find_open_drive(const std::string &sub, storageimage_cow_c **cow) {
+	*cow = nullptr;
+	for (device_c *dev : device_c::mydevices) {
+		storagedrive_c *drive = dynamic_cast<storagedrive_c *>(dev);
+		if (drive == nullptr || drive->get_image() == nullptr || !drive->get_image()->is_open())
+			continue;
+		if (webstorage_image_subpath(drive->image_filepath.value) != sub)
+			continue;
+		*cow = dynamic_cast<storageimage_cow_c *>(drive->get_image());
+		return drive;
+	}
+	return nullptr;
+}
+
 static overlay_status_t overlay_status(const std::string &sub) {
 	overlay_status_t out;
 	std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
-	for (device_c *dev : device_c::mydevices) {
-		storagedrive_c *drive = dynamic_cast<storagedrive_c *>(dev);
-		if (drive == nullptr)
-			continue;
-		if (webstorage_image_subpath(drive->image_filepath.value) != sub)
-			continue;
-		storageimage_cow_c *cow = dynamic_cast<storageimage_cow_c *>(drive->get_image());
-		if (cow == nullptr || !cow->has_overlay())
-			continue;
-		out.present = true;
-		out.dirty_blocks = cow->dirty_block_count();
-		out.overlay_bytes = cow->overlay_allocated_bytes();
-		break;
-	}
-	return out;
-}
-
-// Locate the COW image of a drive an image is attached to, so an overlay
-// operation acts on the object the running system holds (same fds), not a
-// second view of the files. Returns nullptr when there is no such drive.
-// The caller must hold device_c::mydevices_mutex.
-static storageimage_cow_c *find_attached_cow(const std::string &sub, std::string *drive_name) {
-	for (device_c *dev : device_c::mydevices) {
-		storagedrive_c *drive = dynamic_cast<storagedrive_c *>(dev);
-		if (drive == nullptr)
-			continue;
-		if (webstorage_image_subpath(drive->image_filepath.value) != sub)
-			continue;
-		storageimage_cow_c *cow = dynamic_cast<storageimage_cow_c *>(drive->get_image());
+	storageimage_cow_c *cow;
+	if (find_open_drive(sub, &cow) != nullptr) {
 		if (cow != nullptr && cow->has_overlay()) {
-			if (drive_name != nullptr)
-				*drive_name = dev->name.value;
-			return cow;
+			out.present = true;
+			out.dirty_blocks = cow->dirty_block_count();
+			out.overlay_bytes = cow->overlay_allocated_bytes();
 		}
+		return out;
 	}
-	return nullptr;
+	out.present = storageimage_cow_c::probe(image_abs(sub), &out.dirty_blocks,
+			&out.overlay_bytes);
+	return out;
 }
 
 // -------------------------------------------------------------------------
@@ -791,17 +785,14 @@ static void image_contents(struct mg_connection *conn, const std::string &sub) {
 // commit:  fold the overlay into the base, then discard it
 // export:  write a flattened plain image to {"dest": <subpath>}, base untouched
 //
-// Guarded on machine state: mutating an overlay (or reading a consistent
-// flattened export) while the guest is doing I/O would race live block writes,
-// so these are only allowed with the machine not running (powered off or the
-// CPU halted).
+// An image a drive holds open is worked on through that drive's COW object.
+// Mutating its overlay (or reading a consistent flattened export) while the
+// guest is doing I/O would race live block writes, so that needs the machine
+// not running (powered off or the CPU halted). An image no drive holds open -
+// its drive switched off, say - is worked on through its files at any time.
 static void image_overlay_op(struct mg_connection *conn, const std::string &base,
 		const std::string &action) {
-	if (webevents_is_powered() && !webevents_is_halted()) {
-		send_error(conn, 409,
-				"halt the machine before changing an image overlay");
-		return;
-	}
+	bool running = webevents_is_powered() && !webevents_is_halted();
 
 	// export needs its destination from the body before we take the device lock
 	std::string dest_sub, dest_abs;
@@ -824,16 +815,35 @@ static void image_overlay_op(struct mg_connection *conn, const std::string &base
 		dest_abs = images_dir + "/" + dest_sub;
 	}
 
-	std::string drive_name;
+	std::string drive_name = "none";
 	bool ok = false;
 	int fail_status = 500;
 	std::string errmsg;
 	{
 		std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
-		storageimage_cow_c *cow = find_attached_cow(base, &drive_name);
-		if (cow == nullptr) {
-			send_error(conn, 404,
-					"no attached drive has a copy-on-write overlay for \"" + base + "\"");
+		storageimage_cow_c *cow;
+		storagedrive_c *drive = find_open_drive(base, &cow);
+		// An image no drive holds open is worked on through its own files,
+		// with the device list locked so no drive opens it meanwhile.
+		std::unique_ptr<storageimage_cow_c> closed;
+		if (drive == nullptr) {
+			uint64_t dirty, bytes;
+			if (storageimage_cow_c::probe(image_abs(base), &dirty, &bytes)) {
+				closed.reset(new storageimage_cow_c(image_abs(base)));
+				if (closed->open(nullptr, false))
+					cow = closed.get();
+			}
+		} else if (running) {
+			send_error(conn, 409,
+					"halt the machine before changing an image overlay");
+			return;
+		} else
+			drive_name = drive->name.value;
+		if (cow == nullptr || !cow->has_overlay()) {
+			send_error(conn, drive != nullptr ? 409 : 404,
+					drive != nullptr
+					? "drive " + drive->name.value + " writes \"" + base + "\" in place"
+					: "\"" + base + "\" has no copy-on-write overlay");
 			return;
 		}
 		if (action == "discard") {

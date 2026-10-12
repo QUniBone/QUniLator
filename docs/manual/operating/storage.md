@@ -29,9 +29,10 @@ pack survives a diagnostic that would otherwise scribble on it.
 ## Looking inside an image
 
 **Contents** reads the volume and lists its files — name, blocks and date —
-without booting anything. It understands RT-11 and ODS-2; anything else is
-reported honestly as *not a recognized filesystem*, and a formatted but unused
-volume as *empty volume — no files*.
+without booting anything. It understands RT-11, Files-11 ODS-1 (RSX-11) and
+Files-11 ODS-2 (VMS); anything else is reported honestly as *not a recognized
+filesystem*, and a formatted but unused volume as *empty volume — no files*.
+It reads the volume as the guest sees it, with any writes held in an overlay.
 
 This is the quick way to tell two similar packs apart, or to confirm a download
 is the thing you wanted before you build a machine around it.
@@ -40,7 +41,9 @@ is the thing you wanted before you build a machine around it.
 
 A drive can write to a **copy-on-write overlay** instead of to the image itself.
 The base file stays exactly as it was; every changed block goes to a companion
-file beside it. A row whose image has one shows **Overlay active** and how many
+file beside it. Disk drives do this unless their `use_overlay` parameter is
+switched off, so what a guest writes is in the image only once it has been
+consolidated. A row whose image has one shows **Overlay active** and how many
 blocks have been written.
 
 That is what makes a shared or read-only master pack usable: boot it, let the
@@ -52,11 +55,16 @@ guest write all it likes, and decide afterwards what to keep.
 | **Consolidate → base** | fold the writes into the base image, permanently |
 | **Consolidate → new file…** | write base-plus-overlay out as a new image, leaving both alone |
 
+The writes stay in the overlay when the drive is switched off, and so do the
+operations: the row keeps its **Overlay active** readout, and consolidating or
+discarding works on the files with no drive involved.
+
 > [!IMPORTANT]
 > **The disk must be idle**
 >
-> Overlay operations need the machine halted — the interface says so rather than
-> acting on a volume a guest is in the middle of using.
+> While a drive holds the image, overlay operations need the machine halted —
+> the interface says so rather than acting on a volume a guest is in the middle
+> of using.
 
 An overlay that has taken no writes is the resting state of every read-only pack
 a drive holds: nothing to discard, nothing to consolidate, nothing unsaved.
