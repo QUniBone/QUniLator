@@ -45,7 +45,7 @@ docs/site/migration/raw/
 docs/site/migration/images/
 
 # python bytecode cache
-tools/__pycache__/
+__pycache__/
 
 # large scanned manual PDFs (searchable .txt is committed alongside)
 diagnostics/reference/*.pdf
