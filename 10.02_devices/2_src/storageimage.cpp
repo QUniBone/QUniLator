@@ -433,8 +433,10 @@ bool storageimage_cow_c::load_bitmap_sidecar()
 }
 
 // crash recovery: a written block is allocated data in the sparse overlay (even
-// all-zero data, since it arrived via pwrite), so walk the overlay's data
-// regions with SEEK_DATA/SEEK_HOLE and mark every allocated block occupied.
+// all-zero data, since it arrived via pwrite), and the filesystem page around
+// it was filled with the disk's content when it was first written, so walk the
+// overlay's data regions with SEEK_DATA/SEEK_HOLE and mark every allocated
+// block occupied.
 void storageimage_cow_c::rebuild_bitmap_from_overlay()
 {
     for (uint64_t i = 0 ; i < (block_count + 7) / 8 ; i++)
@@ -475,6 +477,87 @@ void storageimage_cow_c::write_bitmap_sidecar()
     ::close(fd) ;
 }
 
+// Open the overlay beside the already open base and load its bitmap: from the
+// sidecar when it is valid, else from the overlay's allocated regions. A
+// writable open creates the overlay and keeps it at least base-sized.
+bool storageimage_cow_c::open_files(bool writable)
+{
+    struct stat st ;
+    if (fstat(base_fd, &st) != 0)
+        return false ;
+    base_size_bytes = (uint64_t) st.st_size ;
+
+    overlay_fd = ::open(overlay_fname.c_str(), writable ? (O_RDWR | O_CREAT) : O_RDONLY, 0666) ;
+    if (overlay_fd < 0) {
+        if (writable)
+            ERROR("storageimage_cow_c: cannot open overlay %s", overlay_fname.c_str()) ;
+        return false ;
+    }
+
+    // the overlay's own size may exceed the base if an earlier run's writes
+    // extended the disk; the logical size is the larger of the two
+    uint64_t overlay_size = 0 ;
+    page_blocks = 1 ;
+    if (fstat(overlay_fd, &st) == 0) {
+        overlay_size = (uint64_t) st.st_size ;
+        if (st.st_blksize >= (blksize_t) BLOCK_SIZE)
+            page_blocks = std::min<uint64_t>((uint64_t) st.st_blksize / BLOCK_SIZE, 128) ;
+    }
+    image_size_bytes = std::max(base_size_bytes, overlay_size) ;
+    if (writable && overlay_size < base_size_bytes) {
+        // keep the overlay at least base-sized and sparse
+        if (ftruncate(overlay_fd, (off_t) base_size_bytes) != 0)
+            ERROR("storageimage_cow_c: cannot size overlay %s", overlay_fname.c_str()) ;
+    }
+    block_count = (image_size_bytes + BLOCK_SIZE - 1) / BLOCK_SIZE ;
+    occupancy.assign((size_t)((block_count + 7) / 8), 0) ;
+
+    // prefer the persisted bitmap; if it is absent or stale, reconstruct it
+    // from the overlay's allocated (written) regions
+    if (!load_bitmap_sidecar())
+        rebuild_bitmap_from_overlay() ;
+    return true ;
+}
+
+// Give the overlay every block of the filesystem page holding `block` that it
+// does not hold yet, with the content the disk has there now. The page is then
+// allocated with nothing in it but the disk's content.
+void storageimage_cow_c::fill_page(uint64_t block)
+{
+    uint8_t buf[BLOCK_SIZE] ;
+    uint64_t first = block - block % page_blocks ;
+    uint64_t end = std::min(first + page_blocks, block_count) ;
+    for (uint64_t b = first ; b < end ; b++) {
+        if (bit_get(b))
+            continue ;
+        cow_read_block(b, buf) ;
+        if (pwrite(overlay_fd, buf, BLOCK_SIZE, (off_t)(b * BLOCK_SIZE)) != (ssize_t) BLOCK_SIZE) {
+            ERROR("storageimage_cow_c: overlay write failed at block %" PRIu64, b) ;
+            return ;
+        }
+        bit_set(b) ;
+    }
+}
+
+bool storageimage_cow_c::probe(const std::string &base_fname, uint64_t *dirty_blocks,
+                               uint64_t *overlay_bytes)
+{
+    storageimage_cow_c cow(base_fname) ;
+    cow.base_fd = ::open(cow.base_fname.c_str(), O_RDONLY) ;
+    if (cow.base_fd < 0)
+        return false ;
+    bool ok = cow.open_files(false) ;
+    if (ok) {
+        *dirty_blocks = cow.dirty_block_count() ;
+        *overlay_bytes = cow.overlay_allocated_bytes() ;
+        ::close(cow.overlay_fd) ;
+        cow.overlay_fd = -1 ;
+    }
+    ::close(cow.base_fd) ;
+    cow.base_fd = -1 ;
+    return ok ;
+}
+
 bool storageimage_cow_c::open(storagedrive_c *_drive, bool create)
 {
     drive = _drive ;
@@ -509,40 +592,28 @@ bool storageimage_cow_c::open(storagedrive_c *_drive, bool create)
         return false ;
     }
 
-    struct stat st ;
-    if (fstat(base_fd, &st) != 0) {
-        ::close(base_fd) ;
-        base_fd = -1 ;
-        return false ;
-    }
-    base_size_bytes = (uint64_t) st.st_size ;
-
-    overlay_fd = ::open(overlay_fname.c_str(), O_RDWR | O_CREAT, 0666) ;
-    if (overlay_fd < 0) {
-        ERROR("storageimage_cow_c: cannot open overlay %s", overlay_fname.c_str()) ;
+    if (!open_files(true)) {
         ::close(base_fd) ;
         base_fd = -1 ;
         return false ;
     }
 
-    // the overlay's own size may exceed the base if an earlier run's writes
-    // extended the disk; the logical size is the larger of the two
-    uint64_t overlay_size = 0 ;
-    if (fstat(overlay_fd, &st) == 0)
-        overlay_size = (uint64_t) st.st_size ;
-    image_size_bytes = std::max(base_size_bytes, overlay_size) ;
-    if (overlay_size < base_size_bytes) {
-        // keep the overlay at least base-sized and sparse
-        if (ftruncate(overlay_fd, (off_t) base_size_bytes) != 0)
-            ERROR("storageimage_cow_c: cannot size overlay %s", overlay_fname.c_str()) ;
+    // Complete every page the overlay holds only part of, so its allocated
+    // regions match the bitmap whatever wrote the overlay.
+    for (uint64_t page = 0 ; page < block_count ; page += page_blocks) {
+        uint64_t end = std::min(page + page_blocks, block_count) ;
+        uint64_t written = 0 ;
+        for (uint64_t b = page ; b < end ; b++)
+            written += bit_get(b) ;
+        if (written != 0 && written != end - page)
+            fill_page(page) ;
     }
-    block_count = (image_size_bytes + BLOCK_SIZE - 1) / BLOCK_SIZE ;
-    occupancy.assign((size_t)((block_count + 7) / 8), 0) ;
 
-    // prefer the persisted bitmap; if it is absent or stale, reconstruct it
-    // from the overlay's allocated (written) regions
-    if (!load_bitmap_sidecar())
-        rebuild_bitmap_from_overlay() ;
+    // The sidecar describes the overlay as it was when the image was closed.
+    // Writes from now on are not in it, so it is removed while the image is
+    // open and written again on close: after a crash there is no sidecar to
+    // trust, and the bitmap is rebuilt from the overlay itself.
+    unlink(map_fname.c_str()) ;
 
     opened = true ;
     return true ;
@@ -599,6 +670,8 @@ void storageimage_cow_c::write(uint8_t *buffer, uint64_t position, unsigned len)
         unsigned off = (unsigned)(pos % BLOCK_SIZE) ;
         unsigned n = std::min((unsigned)(BLOCK_SIZE - off), remaining) ;
         ensure_blocks(block_idx + 1) ;
+        if (!bit_get(block_idx))
+            fill_page(block_idx) ;
         if (off == 0 && n == BLOCK_SIZE) {
             // whole block: write it straight to the overlay
             if (pwrite(overlay_fd, src, BLOCK_SIZE, (off_t)(block_idx * BLOCK_SIZE))

@@ -150,6 +150,11 @@ private:
     std::vector<uint8_t> occupancy ; // 1 bit per block; set => block is in overlay
     bool opened ;               // between open() and close()
 
+    // Blocks per page of the filesystem the overlay lives on. A page the
+    // overlay holds is written whole, so its allocated regions are exactly the
+    // blocks with content and a missing bitmap is rebuilt from them faithfully.
+    uint64_t page_blocks ;
+
     // bitmap helpers
     bool bit_get(uint64_t block) const ;
     void bit_set(uint64_t block) ;
@@ -162,6 +167,8 @@ private:
     bool load_bitmap_sidecar() ;      // true if a valid sidecar was loaded
     void rebuild_bitmap_from_overlay() ; // crash recovery from overlay sparseness
     void write_bitmap_sidecar() ;
+    void fill_page(uint64_t block) ;  // copy a page's unwritten blocks into the overlay
+    bool open_files(bool writable) ;  // open base + overlay, load the bitmap
 
     // The overlay and its bitmap are siblings of the base, so all three move
     // together when the base does - which happens when only "<base>.gz" was
@@ -184,6 +191,7 @@ public:
         image_size_bytes = 0 ;
         block_count = 0 ;
         opened = false ;
+        page_blocks = 1 ;
     }
 
     virtual ~storageimage_cow_c() override {
@@ -213,6 +221,11 @@ public:
     bool has_overlay(void) const { return opened ; }
     uint64_t dirty_block_count(void) const ; // occupied (written) blocks
     uint64_t overlay_allocated_bytes(void) const ; // overlay's on-disk footprint
+
+    // The overlay state of an image no drive holds open, read from its files
+    // without changing them. False when the image has no overlay.
+    static bool probe(const std::string &base_fname, uint64_t *dirty_blocks,
+                      uint64_t *overlay_bytes) ;
 } ;
 
 // in-memory version of disk image file

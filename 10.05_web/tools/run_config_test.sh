@@ -119,6 +119,19 @@ $CXX -std=c++11 -Wall -Wextra -I "$DEV" \
 	"$DEV/simh_tape.cpp" \
 	-o "$OUT/simh_tape_test"
 
+# The copy-on-write disk image is file I/O on a base, its sparse overlay and a
+# bitmap sidecar; it links with the logger and the path helpers it reports and
+# resolves through, and works in a temp directory.
+$CXX -std=c++11 -Wall -Wextra -I "$DEV" -I "$BASE" -I "$COMMON" \
+	"$TOOLS/cow_image_test.cpp" \
+	"$DEV/storageimage.cpp" \
+	"$BASE/utils.cpp" \
+	"$BASE/bytebuffer.cpp" \
+	"$COMMON/logger.cpp" \
+	"$COMMON/logsource.cpp" \
+	"$COMMON/scriptpath.cpp" \
+	-lpthread -o "$OUT/cow_image_test"
+
 "$OUT/config_test"
 "$OUT/auth_test"
 "$OUT/seed_test"
@@ -129,3 +142,4 @@ $CXX -std=c++11 -Wall -Wextra -I "$DEV" \
 "$OUT/metrics_test"
 "$OUT/serial_tcp_line_test"
 "$OUT/simh_tape_test"
+"$OUT/cow_image_test"
