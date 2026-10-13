@@ -1,3 +1,55 @@
+qbone (1.21.0-1) trixie; urgency=low
+
+  1.21.0 makes the copy-on-write overlay safe to rely on: what a guest wrote
+  survives a crash, stays reachable after its drive is switched off, and can
+  be consolidated from the Storage page at any time. Machines can now be
+  imported from a catalogue in one step, the hardware self-tests run from the
+  web interface, and a browser stays signed in for five days. Nothing moves
+  on upgrade.
+
+  * Overlay outlives its drive. An image no drive holds open reports its
+    overlay from the files beside it, and discard, commit and "Consolidate ->
+    new file" work on them directly. An image a drive holds open is worked on
+    through that drive while the machine is halted or off.
+  * Contents reads RSX. Files-11 ODS-1 volumes - RSX-11 and IAS packs - list
+    their files by UFD, and every listing reads the blocks the overlay holds,
+    so it shows the volume as the guest sees it and says how many blocks came
+    from the overlay. `tools/flatten-overlay.py` merges an image and its
+    overlay into a new file anywhere Python 3 runs.
+  * Catalogue. The Catalogue screen lists the machines the subscribed
+    catalogues offer and imports one with its disk images, checking the
+    download's sha256 and the free space first. 2.11BSD, Unix V6 on an RL02
+    pack the KDJ11 ROMs boot, and 4.3BSD Quasijarus on the MicroVAX II are the
+    first entries; each says what processor the backplane must carry.
+  * Self-tests from the browser. The bus latch, panel, GPIO and memory tests
+    run from System, one at a time, with their output streamed and their
+    verdict shown. Each test says whether it may run with the card fitted in
+    a machine, and a latch test failing only on the grant bits names the
+    loopback jumpers it needs.
+  * Performance card. An optional dashboard card shows instructions per
+    second and the fraction of the original machine that is, each drive's
+    throughput and access rate, and each Ethernet board's traffic.
+  * Sign-in once. A browser that has authenticated holds a session cookie for
+    five days, renewed while the interface is in use, and survives a service
+    restart; changing the credentials signs every other browser out. Basic
+    auth works unchanged for scripts.
+  * Interface layout. System is split into Access, Network and shell, Serial
+    ports, Recordings and Updates; the sidebar links to the manual; the
+    control panel lines up with the console; the card's own LED panel is
+    named after the card; the TS05 widget shows its tape moving. The external
+    console gains a 7-bit character format for guests that send parity in
+    bit 7, as 4.3BSD does.
+  * Image file modes stay put. An image's write bits are the operator's write
+    ring, and QUniLator leaves them as they stand on disk; a service restart
+    under a running machine left images write-protected.
+  * Overlay crash safety. A crash with an overlay open could lose every write
+    since the image was last closed, and could read zeros over blocks next to
+    a written one. The overlay now fills whole filesystem pages and keeps its
+    block map only while the image is closed, so a crashed overlay rebuilds
+    exactly.
+
+ -- Hans Huebner <hans@huebner.org>  Tue, 13 Oct 2026 08:46:00 +0200
+
 qbone (1.20.0-1) trixie; urgency=low
 
   1.20.0 makes a flashed card self-sufficient: it installs its own build
