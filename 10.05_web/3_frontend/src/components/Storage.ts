@@ -146,8 +146,13 @@ function ImageUsage({ im }: { im: ImageInfo }) {
       html`<span class="chip out mono" title="named by a saved configuration">${u.config}:${u.device}</span>`
     )
   );
-  (im.attached || []).forEach((d) =>
+  (im.mounted || []).forEach((d) =>
     parts.push(html`<span class="chip ok mono" title="mounted on this drive now">${d} mounted</span>`)
+  );
+  (im.unopened || []).forEach((d) =>
+    parts.push(
+      html`<span class="chip err mono" title="this drive names the image but could not open it, so the machine sees no disk there; attach it again, and the journal says why it failed">${d} not open</span>`
+    )
   );
   return parts.length ? html`${parts}` : html`<span class="muted">—</span>`;
 }

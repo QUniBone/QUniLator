@@ -124,6 +124,10 @@ export interface ImageInfo {
   writable?: boolean;
   mtime?: string;
   attached?: string[];
+  // Switched-on drives naming this image: those holding the file open, and
+  // those whose open failed and so offer the machine no medium.
+  mounted?: string[];
+  unopened?: string[];
   used?: ImageUse[];
   // A copy-on-write overlay captures every write since the base image; the base
   // file itself is never touched. When active, the block/byte fields report how

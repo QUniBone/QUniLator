@@ -1082,12 +1082,15 @@ The whole tree — folders and files:
  "images": [
    {"name": "2.11BSD.dsk", "path": "du/2.11BSD.dsk", "dir": "du",
     "size": 1000090112, "writable": true, "mtime": "2026-07-16 20:51",
-    "attached": ["uda0"], "used": [{"config": "211bsd", "device": "uda0"}]}]}
+    "attached": ["uda0"], "mounted": ["uda0"], "unopened": [],
+    "used": [{"config": "211bsd", "device": "uda0"}]}]}
 ```
 
 `path` is the subpath; `dir` its parent folder (`""` = root). `attached` lists
-drives whose `image` points at the file; `used` the configuration/device pairs
-that reference it. `writable` reports the file's owner write bit — cleared, the
+drives whose `image` points at the file; of those switched on, `mounted` names
+the ones holding the file open and `unopened` the ones whose open failed, which
+offer the machine no disk. `used` lists the configuration/device pairs that
+reference it. `writable` reports the file's owner write bit — cleared, the
 image is a write-protected medium.
 
 `overlay` is true when the image has a copy-on-write overlay, and then
@@ -1140,15 +1143,17 @@ straight away.
 
 ### `GET /api/images/<subpath>` · `DELETE /api/images/<subpath>`
 
-Download, or remove the file. Delete is refused with `409` while the image is
-attached to a drive or referenced by a saved configuration. The subpath may
+Download, or remove the file together with its copy-on-write overlay. Delete is
+refused with `409` while the image is attached to a drive or referenced by a
+saved configuration. The subpath may
 contain slashes (`/api/images/du/2.11BSD.dsk`).
 
 ### `POST /api/move`
 
 Body `{"from": <subpath>, "to": <subpath>}` — rename or move a file or folder
-within the tree. Refused `409` if the source is attached/referenced or the
-target already exists.
+within the tree. A file's copy-on-write overlay moves with it. Refused `409` if
+the source is attached/referenced, or the target or an overlay at the target
+already exists.
 
 ### `POST /api/folders` · `DELETE /api/folders/<subpath>`
 

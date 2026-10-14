@@ -224,6 +224,23 @@ static picojson::array attached_drives(const std::string &sub) {
 	return result;
 }
 
+// The switched-on drives naming an image, split by whether each holds the file
+// open: an open drive offers it to the machine, and a drive whose open failed
+// offers the machine no medium at all.
+static void drive_states(const std::string &sub, picojson::array *mounted,
+		picojson::array *unopened) {
+	std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
+	for (device_c *dev : device_c::mydevices) {
+		storagedrive_c *drive = dynamic_cast<storagedrive_c *>(dev);
+		if (drive == nullptr || !dev->enabled.value)
+			continue;
+		if (webstorage_image_subpath(drive->image_filepath.value) != sub)
+			continue;
+		bool open = drive->get_image() != nullptr && drive->get_image()->is_open();
+		(open ? mounted : unopened)->push_back(picojson::value(dev->name.value));
+	}
+}
+
 // Overlay status for an image. A drive holding the image open answers from its
 // COW object; an image no drive holds open answers from its overlay files, so
 // writes a drive left behind stay visible - and consolidatable - after the
@@ -233,6 +250,9 @@ struct overlay_status_t {
 	uint64_t dirty_blocks = 0;
 	uint64_t overlay_bytes = 0;
 };
+
+// The files a copy-on-write overlay keeps beside its base image.
+static const char *const overlay_suffixes[] = {".ovl", ".ovl.map"};
 
 static bool same_file(const std::string &a, const std::string &b) {
 	struct stat sa, sb;
@@ -325,6 +345,10 @@ static void walk_images(const std::string &reldir, picojson::array &dirs,
 			strftime(mtime, sizeof mtime, "%Y-%m-%d %H:%M", localtime(&st.st_mtime));
 			o["mtime"] = picojson::value(mtime);
 			o["attached"] = picojson::value(attached_drives(sub));
+			picojson::array mounted, unopened;
+			drive_states(sub, &mounted, &unopened);
+			o["mounted"] = picojson::value(mounted);
+			o["unopened"] = picojson::value(unopened);
 			picojson::array uses;
 			for (const config_image_use_t &u : webconfigs_image_uses(sub)) {
 				picojson::object e;
@@ -700,6 +724,10 @@ static void image_delete(struct mg_connection *conn, const std::string &sub) {
 		send_error(conn, 500, "cannot delete image \"" + sub + "\"");
 		return;
 	}
+	// the overlay holds writes to this image only; left behind, it would lay
+	// them over the next image given the same name
+	for (const char *suffix : overlay_suffixes)
+		(void) unlink((image_abs(sub) + suffix).c_str());
 	WEB_INFO("image %s deleted", sub.c_str());
 	picojson::object res;
 	res["ok"] = picojson::value(true);
@@ -721,8 +749,8 @@ static void image_move(struct mg_connection *conn) {
 		return;
 	}
 	std::string from_abs = images_dir + "/" + from, to_abs = images_dir + "/" + to;
-	struct stat st;
-	if (lstat(from_abs.c_str(), &st) != 0) {
+	struct stat st, st_from;
+	if (lstat(from_abs.c_str(), &st_from) != 0) {
 		send_error(conn, 404, "\"" + from + "\" does not exist");
 		return;
 	}
@@ -745,10 +773,25 @@ static void image_move(struct mg_connection *conn) {
 		send_error(conn, 500, "cannot create the target folder");
 		return;
 	}
+	// an image's overlay moves with it, and an overlay already lying at the
+	// destination would be laid over the moved image
+	bool is_file = S_ISREG(st_from.st_mode);
+	if (is_file)
+		for (const char *suffix : overlay_suffixes)
+			if (lstat((to_abs + suffix).c_str(), &st) == 0) {
+				send_error(conn, 409, "\"" + to + suffix
+						+ "\" is already there, an overlay left behind by an earlier image of that name");
+				return;
+			}
 	if (rename(from_abs.c_str(), to_abs.c_str()) != 0) {
 		send_error(conn, 500, "cannot move \"" + from + "\"");
 		return;
 	}
+	if (is_file)
+		for (const char *suffix : overlay_suffixes)
+			if (lstat((from_abs + suffix).c_str(), &st) == 0
+					&& rename((from_abs + suffix).c_str(), (to_abs + suffix).c_str()) != 0)
+				WEB_ERROR("image %s moved, but its %s stayed behind", from.c_str(), suffix);
 	WEB_INFO("image %s moved to %s", from.c_str(), to.c_str());
 	picojson::object res;
 	res["ok"] = picojson::value(true);
