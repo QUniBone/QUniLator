@@ -222,6 +222,10 @@ public:
     uint64_t dirty_block_count(void) const ; // occupied (written) blocks
     uint64_t overlay_allocated_bytes(void) const ; // overlay's on-disk footprint
 
+    // True when this image is open on the file `path` names, however the two
+    // paths are spelled.
+    bool holds_base(const std::string &path) const ;
+
     // The overlay state of an image no drive holds open, read from its files
     // without changing them. False when the image has no overlay.
     static bool probe(const std::string &base_fname, uint64_t *dirty_blocks,

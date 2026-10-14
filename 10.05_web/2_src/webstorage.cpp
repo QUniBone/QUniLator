@@ -234,17 +234,33 @@ struct overlay_status_t {
 	uint64_t overlay_bytes = 0;
 };
 
+static bool same_file(const std::string &a, const std::string &b) {
+	struct stat sa, sb;
+	return stat(a.c_str(), &sa) == 0 && stat(b.c_str(), &sb) == 0
+			&& sa.st_dev == sb.st_dev && sa.st_ino == sb.st_ino;
+}
+
 // The drive holding an image open, or nullptr. *cow is its COW image when it
 // runs one, else nullptr. The caller must hold device_c::mydevices_mutex.
+//
+// A drive is matched on the file it has open, so a drive whose "image" names
+// the file by another path - absolute, through a symlink, expanded from a
+// ".gz" - is still found, and its overlay is never worked on behind its back.
 static storagedrive_c *find_open_drive(const std::string &sub, storageimage_cow_c **cow) {
 	*cow = nullptr;
+	std::string abs = image_abs(sub);
 	for (device_c *dev : device_c::mydevices) {
 		storagedrive_c *drive = dynamic_cast<storagedrive_c *>(dev);
 		if (drive == nullptr || drive->get_image() == nullptr || !drive->get_image()->is_open())
 			continue;
-		if (webstorage_image_subpath(drive->image_filepath.value) != sub)
+		storageimage_cow_c *drive_cow = dynamic_cast<storageimage_cow_c *>(drive->get_image());
+		bool holds = drive_cow != nullptr
+				? drive_cow->holds_base(abs)
+				: (webstorage_image_subpath(drive->image_filepath.value) == sub
+					|| same_file(drive->image_filepath.value, abs));
+		if (!holds)
 			continue;
-		*cow = dynamic_cast<storageimage_cow_c *>(drive->get_image());
+		*cow = drive_cow;
 		return drive;
 	}
 	return nullptr;

@@ -843,6 +843,14 @@ uint64_t storageimage_cow_c::overlay_allocated_bytes(void) const
     return 0 ;
 }
 
+bool storageimage_cow_c::holds_base(const std::string &path) const
+{
+    struct stat open_st, path_st ;
+    return base_fd >= 0 && fstat(base_fd, &open_st) == 0
+           && stat(path.c_str(), &path_st) == 0
+           && open_st.st_dev == path_st.st_dev && open_st.st_ino == path_st.st_ino ;
+}
+
 
 // result: OK= true, else false
 bool storageimage_memory_c::open(storagedrive_c *_drive, bool create)

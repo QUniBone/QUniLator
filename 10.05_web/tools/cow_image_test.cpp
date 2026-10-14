@@ -195,6 +195,17 @@ int main()
 		check(reads_as(cow, committed), "a discard returns to the base");
 		cow.close();
 	}
+	{
+		storageimage_cow_c cow(base);
+		check(!cow.holds_base(base), "a closed image holds no file");
+		cow.open(nullptr, false);
+		std::string link = dir + "/link.dsk";
+		check(symlink(base.c_str(), link.c_str()) == 0, "links the base");
+		check(cow.holds_base(base), "an open image holds its base");
+		check(cow.holds_base(link), "an open image holds its base by another path");
+		check(!cow.holds_base(dir + "/flat.dsk"), "an open image holds no other file");
+		cow.close();
+	}
 
 	std::string cleanup = "rm -rf '" + dir + "'";
 	(void) !system(cleanup.c_str());
