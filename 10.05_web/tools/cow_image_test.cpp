@@ -207,6 +207,23 @@ int main()
 		cow.close();
 	}
 
+	// A plain image file reads on after a read that ran past its end, and an
+	// image file that is not open has no size.
+	{
+		std::string plain = dir + "/plain.dsk";
+		write_file(plain, base_content());
+		storageimage_binfile_c image(plain);
+		check(image.size() == 0, "an image file not open has no size");
+		image.open(nullptr, false);
+		std::vector<uint8_t> past(2 * BLOCK);
+		image.read(past.data(), (BLOCKS - 1) * BLOCK, (unsigned) past.size());
+		check(image.size() == BLOCKS * BLOCK, "a read past the end leaves the size");
+		std::vector<uint8_t> first(BLOCK);
+		image.read(first.data(), 0, BLOCK);
+		check(first == std::vector<uint8_t>(BLOCK, 1), "a read past the end leaves the file readable");
+		image.close();
+	}
+
 	std::string cleanup = "rm -rf '" + dir + "'";
 	(void) !system(cleanup.c_str());
 

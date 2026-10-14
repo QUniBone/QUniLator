@@ -233,7 +233,9 @@ void storageimage_binfile_c::read(uint8_t *buffer, uint64_t position, unsigned l
     // 1. fill the buffer with 00s
     memset(buffer, 0, len);
 
-    // 2. move read pointer
+    // 2. move read pointer; a short read before this one left the stream
+    // failed, and a failed stream neither seeks nor reads
+    f.clear();
     f.seekg(position);
     // may be at eof now, doesn't matter
 
@@ -296,10 +298,17 @@ void storageimage_binfile_c::write(uint8_t *buffer, uint64_t position, unsigned 
     f.flush();
 }
 
+// A read that ran past the end of the file leaves the stream failed, and a
+// failed or unopened stream reports position -1; the size is then 0, so the
+// drive offers no medium.
 uint64_t storageimage_binfile_c::size(void) 
 {
+    if (!f.is_open())
+        return 0;
+    f.clear();
     f.seekp(0, std::ios::end);
-    return f.tellp();
+    std::streamoff end = f.tellp();
+    return end < 0 ? 0 : (uint64_t) end;
 }
 
 void storageimage_binfile_c::close(void) 
