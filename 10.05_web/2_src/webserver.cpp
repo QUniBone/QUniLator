@@ -35,6 +35,7 @@
 #include "logger.hpp"
 #include "webauth.hpp"
 #include "webevents.hpp"
+#include "weblog.hpp"
 #include "webserver.hpp"
 #include "webstorage.hpp"
 #include "qunibusadapter.hpp"
@@ -389,6 +390,7 @@ bool webserver_c::start(void) {
 	memset(&callbacks, 0, sizeof(callbacks));
 	callbacks.begin_request = begin_request_handler;
 	callbacks.init_thread = webserver_init_thread;
+	callbacks.log_message = weblog_civetweb_message;
 
 	mg_init_library(0);
 	ctx = mg_start(&callbacks, nullptr, options);

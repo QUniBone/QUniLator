@@ -13,6 +13,9 @@
    webstorage.cpp names devices, drives and the configuration model only for the
    endpoints this test does not call, so those are stubbed below.
 
+   civetweb's own complaints go through the same callback the service installs,
+   and the test reads them back from the logger's file sink.
+
    Build & run: 10.05_web/tools/run_config_test.sh
 */
 
@@ -36,6 +39,7 @@
 #include "storagedrive.hpp"
 #include "webconfigs.hpp"
 #include "webevents.hpp"
+#include "weblog.hpp"
 #include "webstorage.hpp"
 
 /*** what webstorage.cpp links against outside the upload path ***/
@@ -76,6 +80,32 @@ static bool file_holds(const std::string &path, const std::string &expect)
 		got.append(buf, n);
 	fclose(f);
 	return got == expect;
+}
+
+static std::string read_file(const std::string &path)
+{
+	std::string got;
+	FILE *f = fopen(path.c_str(), "rb");
+	if (f == nullptr)
+		return got;
+	char buf[4096];
+	size_t n;
+	while ((n = fread(buf, 1, sizeof buf, f)) > 0)
+		got.append(buf, n);
+	fclose(f);
+	return got;
+}
+
+// The logger writes on its own thread, so a line arrives a moment after it is
+// logged.
+static bool log_shows(const std::string &logfile, const std::string &text)
+{
+	for (int i = 0; i < 200; i++) {
+		if (read_file(logfile).find(text) != std::string::npos)
+			return true;
+		usleep(10000);
+	}
+	return false;
 }
 
 static bool exists(const std::string &path)
@@ -142,6 +172,8 @@ int main()
 	char tmpl[] = "/tmp/upload_test.XXXXXX";
 	std::string root = mkdtemp(tmpl);
 	setenv("QUNILATOR_DIR", root.c_str(), 1);
+	std::string logfile = root + "/log";
+	logger->set_file_sink(logfile.c_str());
 
 	std::string port = std::to_string(PORT);
 	const char *options[] = {
@@ -149,8 +181,11 @@ int main()
 		"num_threads", "4",
 		"request_timeout_ms", "2000",
 		nullptr };
+	struct mg_callbacks callbacks;
+	memset(&callbacks, 0, sizeof callbacks);
+	callbacks.log_message = weblog_civetweb_message;
 	mg_init_library(0);
-	struct mg_context *ctx = mg_start(nullptr, nullptr, options);
+	struct mg_context *ctx = mg_start(&callbacks, nullptr, options);
 	check(ctx != nullptr, "the server starts");
 	if (ctx == nullptr)
 		return 1;
@@ -179,6 +214,18 @@ int main()
 				"an upload whose body ends early does not answer ok");
 		check(!exists(root + "/images/cut/disk.dsk"),
 				"an upload whose body ends early leaves no file");
+	}
+
+	{
+		// A file that cannot be created is civetweb's to report; it reaches
+		// the log, and the upload is refused.
+		mkdir((root + "/images/blocked").c_str(), 0755);
+		mkdir((root + "/images/blocked/disk.dsk").c_str(), 0755);
+		std::string reply;
+		int status = upload("blocked", "disk.dsk", content, (size_t) -1, &reply);
+		check(status != 200, "an upload that cannot be written is refused");
+		check(log_shows(logfile, "Cannot create file"),
+				"civetweb's own error reaches the log");
 	}
 
 	mg_stop(ctx);

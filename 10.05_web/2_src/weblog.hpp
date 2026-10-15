@@ -24,6 +24,12 @@
 // the log source shared by the web API endpoints
 logsource_c *weblog(void);
 
+// civetweb's log_message callback: what the server itself reports - a file an
+// upload could not create or write, a request it could not read - is logged
+// here under "web" with the request it belongs to.
+struct mg_connection;
+int weblog_civetweb_message(const struct mg_connection *conn, const char *message);
+
 #define WEB_INFO(...)	\
 	logger->log(weblog(), LL_INFO, false, __FILE__, __LINE__, __VA_ARGS__)
 #define WEB_WARNING(...)	\

@@ -5,6 +5,8 @@
    MIT license, see webserver.hpp for the full text.
 */
 
+#include "civetweb.h"
+
 #include "weblog.hpp"
 
 logsource_c *weblog(void) {
@@ -17,4 +19,14 @@ logsource_c *weblog(void) {
 		instance->log_label = "web";
 	}
 	return instance;
+}
+
+int weblog_civetweb_message(const struct mg_connection *conn, const char *message) {
+	const struct mg_request_info *ri = conn ? mg_get_request_info(conn) : nullptr;
+	if (ri != nullptr && ri->request_method != nullptr)
+		WEB_WARNING("%s %s: %s", ri->request_method,
+				ri->local_uri ? ri->local_uri : "", message);
+	else
+		WEB_WARNING("%s", message);
+	return 1; // logged; civetweb writes nothing of its own
 }
