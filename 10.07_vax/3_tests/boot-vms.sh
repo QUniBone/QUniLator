@@ -43,6 +43,7 @@ fi
 rm -rf "$rundir"
 mkdir -p "$rundir"
 cp "$image" "$rundir/system.dsk"
+chmod u+w "$rundir/system.dsk"                  # VMS writes its system disk
 
 # The date answers the startup prompt. VMS 4.7 predates 2000 and takes a
 # 21st-century date without complaint, so today's date keeps the log readable.

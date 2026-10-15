@@ -46,6 +46,7 @@ fi
 rm -rf "$rundir"
 mkdir -p "$rundir"
 cp "$image" "$rundir/system.dsk"
+chmod u+w "$rundir/system.dsk"                  # VMS writes its system disk
 
 console=$rundir/console.log
 input=$rundir/console.in
@@ -81,9 +82,13 @@ exec 3>"$input"                                 # hold the write end open
 started=$(date +%s)
 status=0
 
+# The core keeps a time-of-year clock, so VMS asks for the date only when that
+# clock holds nothing it accepts; it is answered when asked.
 if await "the VMS banner" "VAX/VMS Version" 300 &&
-   await "the startup dialog" "PLEASE ENTER DATE AND TIME" 120; then
-    printf '%s\r' "$(date '+%d-%b-%Y %H:%M' | tr '[:lower:]' '[:upper:]')" >&3
+   await "the startup" "PLEASE ENTER DATE AND TIME\|OPCOM" 120; then
+    if grep -a -q "PLEASE ENTER DATE AND TIME" "$console"; then
+        printf '%s\r' "$(date '+%d-%b-%Y %H:%M' | tr '[:lower:]' '[:upper:]')" >&3
+    fi
     if await "OPCOM running" "OPCOM" 300 &&
        await "startup complete" "login interactive limit" 300; then
         sleep 5
