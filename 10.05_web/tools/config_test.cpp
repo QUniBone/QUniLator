@@ -167,6 +167,10 @@ int webevents_dip_value(void) { return g_dip_value; }
 
 std::string webstorage_image_path(const std::string &name) { return name; }
 std::string webstorage_image_subpath(const std::string &name) { return name; }
+// every image the test names is there, except the one it names to be missing
+bool webstorage_image_exists(const std::string &path) {
+	return path.find("missing") == std::string::npos;
+}
 
 /*** a synthetic device: the standard built-ins plus a disk image and an
      address, the writable parameters a configuration snapshot captures ***/
@@ -563,6 +567,33 @@ int main(void) {
 		check(webconfigs_apply("cfgA", &rej, &err), "restore cfgA current after legacy test");
 		check(webconfigs_current() == "cfgA", "cfgA current after legacy test");
 		check(!modified_now(), "clean cfgA after the legacy test");
+	}
+
+	/* 3a'. a configuration naming an image that does not exist is reported, and
+	        the drive comes up empty rather than with a blank disk of that name */
+	{
+		picojson::value base;
+		check(read_json_file(cfg_path("cfgA"), &base), "read cfgA to seed a missing image");
+		picojson::array &devs = base.get<picojson::object>()["devices"].get<picojson::array>();
+		for (picojson::value &d : devs)
+			if (d.get("name").is<std::string>() && d.get("name").get<std::string>() == "rl0")
+				d.get<picojson::object>()["params"].get<picojson::object>()["image"] =
+						picojson::value(std::string("missing.rl02"));
+		{
+			std::ofstream out(cfg_path("missingimg").c_str());
+			out << base.serialize();
+		}
+		std::vector<std::string> rej;
+		std::string err;
+		webconfigs_apply("missingimg", &rej, &err);
+		bool named = false;
+		for (const std::string &r : rej)
+			if (r.find("rl0") != std::string::npos && r.find("missing.rl02") != std::string::npos)
+				named = true;
+		check(named, "an apply naming a missing image reports it");
+		check(rl0->image.value == "", "a drive whose image is missing comes up empty");
+		unlink(cfg_path("missingimg").c_str());
+		check(webconfigs_apply("cfgA", &rej, &err), "restore cfgA after the missing image");
 	}
 
 	/* 3b. stored-config editing via webconfigs_write: a bulk write of the whole
@@ -1101,6 +1132,12 @@ int main(void) {
 				"the drive holds the pack it was given");
 		check(rl1->image.value == "", "and no image file is opened for it");
 		check(modified_now(), "an edit to a dark machine reads as modified");
+		err.clear();
+		check(!webpower_set_image(rl1, "missing.rl02", &err),
+				"a dark drive takes no image that does not exist");
+		check(err.find("missing.rl02") != std::string::npos, "and says which one");
+		check(webpower_param_value(rl1, &rl1->image) == "diags.rl02",
+				"the drive keeps the pack it held");
 
 		check(webpower_set_in_machine(uda, false, &err), "take a controller out");
 		check(!webpower_is_in_machine(uda) && !webpower_is_in_machine(uda0),

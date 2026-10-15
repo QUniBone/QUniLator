@@ -217,6 +217,20 @@ int main()
 	}
 
 	{
+		// What a drive may be given: a stored image, its compressed master, or
+		// nothing at all - and not a name with no file behind it.
+		check(webstorage_image_exists("images/whole/disk.dsk"), "an uploaded image exists");
+		check(!webstorage_image_exists("images/cut/disk.dsk"),
+				"an image whose upload was cut off does not exist");
+		FILE *gz = fopen((root + "/images/whole/packed.dsk.gz").c_str(), "wb");
+		if (gz != nullptr)
+			fclose(gz);
+		check(webstorage_image_exists("images/whole/packed.dsk"),
+				"an image with only its compressed master exists");
+		check(webstorage_image_exists(""), "an empty drive needs no file");
+	}
+
+	{
 		// A file that cannot be created is civetweb's to report; it reaches
 		// the log, and the upload is refused.
 		mkdir((root + "/images/blocked").c_str(), 0755);

@@ -426,7 +426,10 @@ The value is parsed exactly as the CLI's `p <param> <value>` command
 parses it; `enabled` is switched like the CLI's `en`/`dis`. Responds with
 the parameter (as in the snapshot) after the write. Validation failures
 respond `422` with the device's message. Attaching a disk image is a
-write to the drive's `image` parameter; an empty value detaches.
+write to the drive's `image` parameter; an empty value detaches. The image has
+to exist - the file, or its `.gz` master - and a name with nothing behind it
+answers `404`; a blank medium is made with
+[`POST /api/images`](#post-apiimages-json-body) first.
 
 **Media follow the drive into the machine and out of it.** Attaching an image to
 a disabled drive switches the drive on; a drive whose controller is off is
@@ -1370,7 +1373,8 @@ dropping any device enabled since the last save.
 ```
 
 `errors` is the configuration failing to take: a parameter a device refused, a
-device that does not exist. `warnings` is the opposite — the configuration
+device that does not exist, an image the board does not have - that drive comes
+up empty. `warnings` is the opposite — the configuration
 taking, and doing something the operator is owed a word about, such as putting
 an emulated processor on a bus the board does not know it owns. `ok` reflects
 `errors` alone, so a call can succeed and still carry warnings.

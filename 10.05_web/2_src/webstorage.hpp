@@ -42,6 +42,7 @@ std::string webstorage_image_subpath(const std::string &value);
 // An enabled drive other than "except" already holding this image file, or
 // empty. Two drives on one image both write it, so the second attachment is
 // refused rather than left to corrupt the file.
+bool webstorage_image_exists(const std::string &path);
 std::string webstorage_image_held_by(const std::string &path, const std::string &except);
 
 #endif // _WEBSTORAGE_HPP_

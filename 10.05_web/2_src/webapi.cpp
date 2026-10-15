@@ -437,6 +437,10 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 					// the web interface keeps images in one directory, so a bare
 					// name names the file it manages by that name
 					value = webstorage_image_path(value);
+					if (!webstorage_image_exists(value)) {
+						send_error(conn, 404, "there is no image " + value);
+						return;
+					}
 					std::string other = webpower_image_held_by(value, dev->name.value);
 					if (other.empty())
 						other = webstorage_image_held_by(value, dev->name.value);
@@ -557,6 +561,10 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 					// the web interface keeps images in one directory, so a
 					// bare name attaches the file it manages by that name
 					value = webstorage_image_path(value);
+					if (!webstorage_image_exists(value)) {
+						send_error(conn, 404, "there is no image " + value);
+						return;
+					}
 					// both drives would write it
 					std::string other = webstorage_image_held_by(value, dev->name.value);
 					if (!other.empty()) {

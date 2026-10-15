@@ -1591,6 +1591,12 @@ static bool apply_document(const picojson::value &content, const std::string &na
 					std::string text = kv.second.get<std::string>();
 					if (param->content != parameter_c::CONTENT_PLAIN && !text.empty())
 						text = webstorage_image_path(text);
+					if (param->content == parameter_c::CONTENT_IMAGE
+							&& !webstorage_image_exists(text)) {
+						errors->push_back(picojson::value(devname + "." + kv.first
+								+ ": there is no image " + text));
+						text = ""; // the drive comes up empty
+					}
 					if (*param->render() == text)
 						continue; // unchanged — don't disturb the device
 					try {
@@ -1627,8 +1633,10 @@ static bool apply_document(const picojson::value &content, const std::string &na
 					config_param_text(d.get("params").get<picojson::object>(),
 							"image", &image);
 				std::string why;
-				if (!webpower_set_image(dev, image, &why))
+				if (!webpower_set_image(dev, image, &why)) {
 					errors->push_back(picojson::value(devname + ": " + why));
+					webpower_set_image(dev, "", nullptr); // the drive comes up empty
+				}
 			}
 
 			if (d.get("enabled").is<bool>()) {

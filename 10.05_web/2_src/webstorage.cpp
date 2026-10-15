@@ -130,6 +130,20 @@ static std::string image_abs(const std::string &value) {
 	return images_dir + "/" + sub;
 }
 
+// A drive opens a file it is given as its medium and makes an empty one when
+// there is none, so a name with nothing behind it would come up as a blank
+// disk. The web interface makes a new medium on purpose (POST /api/images
+// with a JSON body), and puts in a drive only what is there: the file itself,
+// or the compressed master a drive expands on first use. An empty value is an
+// empty drive.
+bool webstorage_image_exists(const std::string &path) {
+	std::string abs = image_abs(path);
+	if (abs.empty())
+		return true;
+	struct stat st;
+	return stat(abs.c_str(), &st) == 0 || stat((abs + ".gz").c_str(), &st) == 0;
+}
+
 std::string webstorage_image_held_by(const std::string &path, const std::string &except) {
 	std::string key = webstorage_image_subpath(path);
 	if (key.empty())

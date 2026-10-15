@@ -20,6 +20,7 @@
 
 #include "weblog.hpp"
 #include "webpower.hpp"
+#include "webstorage.hpp"
 
 // infrastructure: part of the bridge or of a controller's implementation, not
 // of the emulated configuration. The bus adapter and the panel driver are the
@@ -355,6 +356,11 @@ bool webpower_set_image(device_c *dev, const std::string &path, std::string *err
 	if (img == nullptr) {
 		if (error != nullptr)
 			*error = "the device holds no medium";
+		return false;
+	}
+	if (!webstorage_image_exists(path)) {
+		if (error != nullptr)
+			*error = "there is no image " + path;
 		return false;
 	}
 	std::lock_guard<std::mutex> lock(carried_mutex);
