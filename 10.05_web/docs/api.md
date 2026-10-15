@@ -250,6 +250,10 @@ comes from the launch flag.
 | `webserial` | a serial port on the machine running the browser backs it instead |
 | `off` | nothing does, and the port is free for an emulated `DL11` to take |
 
+A board whose `settings.json` holds no `external_console` starts with `source`
+`ttys2` on QBUS, where the real CPU brings its own console line, and `off` on
+UNIBUS, where the sample machine's console is the emulated `DL11` on `ttyS2`.
+
 `port` is a bare tty name — `rs232_c` prepends `/dev/`, matching the SLU
 convention. `baud` is the line speed, and must match what the CPU's own console
 line is jumpered for.

@@ -53,8 +53,16 @@ static const char *platform_name = "HOST";
 #endif
 
 static std::mutex settings_mutex; // guards ext_console
-// port is a bare tty name (rs232_c prepends /dev/), matching the SLU convention
+// port is a bare tty name (rs232_c prepends /dev/), matching the SLU convention.
+// A QBone is fitted to a real machine whose CPU brings its own console SLU, so
+// the bridge carries it from the start. A UniBone's sample machine is an
+// emulated PDP-11 whose console is the emulated DL11 on ttyS2, so the bridge
+// starts off and leaves the port to it.
+#if defined(UNIBUS)
+static external_console_c ext_console = { "off", "ttyS2", 38400, "8bit" };
+#else
 static external_console_c ext_console = { "ttys2", "ttyS2", 38400, "8bit" };
+#endif
 static std::string settings_path;
 static std::string state_dir;
 // The update version the operator dismissed. On the board rather than in one
