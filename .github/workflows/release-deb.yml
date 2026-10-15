@@ -7,6 +7,9 @@ name: release-deb
 # skips itself when the deploy key/host are not configured, so the GitHub
 # Release still happens on a fork. The release-image workflow attaches the two
 # appliance images to the same release.
+#
+# Nothing is published until the UNIBUS package has passed the hardware test
+# (hil.yml) on the UniBone: a release that cannot boot VMS there stops here.
 
 on:
   push:
@@ -20,7 +23,7 @@ env:
   BASE_VERSION: 'Debian 13.6, base-v6.12 armhf (2026-07-15)'
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -66,6 +69,27 @@ jobs:
               *) echo "tag $GITHUB_REF_NAME does not match $deb ($debver)" >&2; exit 1 ;;
             esac
           done
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-packages
+          path: '*_armhf.deb'
+
+  hil:
+    needs: build
+    uses: ./.github/workflows/hil.yml
+    with:
+      package-artifact: release-packages
+
+  publish:
+    needs: [build, hil]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: release-packages
 
       - name: Publish the GitHub Release
         env:

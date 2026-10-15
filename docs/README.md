@@ -24,6 +24,7 @@ board turned up, and how a release is made.
 |---|---|
 | [`distribution.md`](distribution.md) | The downloadable card image: what it carries, how it is built, and how a card updates through apt afterwards. |
 | [`release-notes.md`](release-notes.md) | How a release note is written: where its text comes from, the shape it takes, and the voice it is written in. |
+| [`hardware-tests.md`](hardware-tests.md) | The nightly and pre-release test on the UniBone: where it runs, what it proves, and how to read a failure. |
 | [`debian-installation.md`](debian-installation.md) | Setting a BeagleBone up from scratch — the Debian base, its settings, and the cape overlay. |
 
 ## Findings

@@ -1,0 +1,112 @@
+name: hil
+
+# Hardware in the loop: what the boards do with a build, which no host test
+# can say. Runs on the self-hosted runner on netmbx (roles/github-runner in
+# netzhansa-infra), which sits on the same LAN as the UniBone and holds the
+# VMS system disk, so neither leaves the site.
+#
+# Nightly, by hand, and from release-deb.yml before a release is published.
+# Never on a pull request: the runner is inside the site's network, and code
+# from a fork does not run there.
+
+on:
+  schedule:
+    - cron: '30 1 * * *'   # 03:30 in Germany in summer, 02:30 in winter
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      package-artifact:
+        description: Artifact of the calling run holding unibone_*.deb; empty builds one
+        type: string
+        default: ''
+
+# One run at a time owns the board.
+concurrency:
+  group: hil-unibone
+  cancel-in-progress: false
+
+jobs:
+  package:
+    # The UNIBUS package, built the way build.yml builds it. A release brings
+    # its own and skips this.
+    if: inputs.package-artifact == ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            dpkg-dev device-tree-compiler gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
+
+      - name: Write build.env
+        # crossbuild.sh refuses to build without one; nothing deploys from here.
+        run: |
+          cat > build.env <<'EOF'
+          QUNILATOR_HOST=ci@ci
+          QUNILATOR_BUS=unibus
+          QUNILATOR_DEPLOY_MODE=appliance
+          QUNILATOR_REMOTE_DIR=QUniLator
+          EOF
+
+      - name: Build the UNIBUS package
+        run: |
+          ./crossbuild.sh -u -t
+          ./packaging/build-deb.sh -u
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hil-package
+          path: 'unibone_*_armhf.deb'
+
+  vax-core:
+    # VMS V4.7 on the VAX core in the form the board embeds it, with simh's own
+    # disk inside: says whether the processor and the shim are sound, apart
+    # from the bus.
+    runs-on: [self-hosted, netmbx]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the shimmed VAX core
+        # The shim boots from simh's own disk and needs none of its ethernet.
+        run: make -C 10.07_vax/2_src -j3 SIMH_USE_NETWORK=no vax780-shim-disk
+
+      - name: Boot VMS on it
+        run: |
+          if [ ! -r "$QUNILATOR_CI_VMS_IMAGE" ]; then
+            echo "::error title=No VMS system disk::QUNILATOR_CI_VMS_IMAGE (${QUNILATOR_CI_VMS_IMAGE:-unset}) is not readable on $(hostname). roles/github-runner in netzhansa-infra puts it there."
+            exit 1
+          fi
+          10.07_vax/3_tests/shim-boot-vms.sh "$QUNILATOR_CI_VMS_IMAGE"
+
+  unibone:
+    # The build on the board: installed as a package, VMS uploaded, imported,
+    # applied and booted through the web API, as an operator would.
+    needs: package
+    if: ${{ !cancelled() && (needs.package.result == 'success' || needs.package.result == 'skipped') }}
+    runs-on: [self-hosted, netmbx, unibone]
+    # The board's own unattended upgrade can hold dpkg for up to half an hour
+    # before the deploy gets its turn.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.package-artifact || 'hil-package' }}
+          path: pkg
+
+      - name: Build the console harness
+        working-directory: console-harness
+        run: npm ci && npm run build
+
+      - name: Boot VMS on the UniBone
+        run: tools/ci/hil-unibone.sh pkg/unibone_*_armhf.deb hil-out
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: hil-unibone
+          path: hil-out

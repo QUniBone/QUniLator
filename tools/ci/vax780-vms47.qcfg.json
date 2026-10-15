@@ -1,0 +1,6 @@
+{"title": "CI: VAX-11/780 with VAX/VMS V4.7",
+ "devices": [
+  {"name": "uda", "enabled": true, "params": {}},
+  {"name": "uda0", "enabled": true, "params": {"image": "images/ci/vms47.dsk"}},
+  {"name": "cpuvax", "enabled": true, "params": {"memory": "4", "bootdevice": "RQ0"}}
+ ]}

@@ -1,0 +1,48 @@
+# CI: boot VMS on the emulated VAX-11/780 and log in.
+#
+# tools/ci/hil-unibone.sh has imported, applied and switched on the machine;
+# this restarts it and drives the boot to a DCL prompt. A boot that cannot
+# find its system disk prints %BOOT-F and fails the run on the spot.
+#
+#   node dist/src/cli.js run scripts/unibone-ci-vms.yaml \
+#        --var VMS_DATE="15-OCT-2026 22:00"
+console: vax
+host: unibone
+title: CI - VMS on the emulated VAX
+timeout: 120s
+machine:
+  start: restart
+  settle: 3s
+deviations:
+  - match: "%BOOT-F"
+    fail: VMB could not boot the system disk
+  - match: "?I/O device not ready"
+    fail: the boot device did not answer
+steps:
+  - name: banner
+    expect: /VAX\/VMS Version/
+    timeout: 240s
+  - name: date
+    expect: /ENTER DATE AND TIME/i
+    send: ${VMS_DATE}
+    timeout: 120s
+  # Startup ends with its batch job; the login prompt comes only for a Return.
+  - name: startup
+    expect: /SYSTEM\s+job terminated/
+    timeout: 420s
+  - name: settle
+    wait: 3s
+  - name: return
+    send: ""
+  - name: username
+    expect: /Username:/
+    send: SYSTEM
+    timeout: 60s
+  - name: password
+    expect: /Password:/
+    send: MANAGER
+    mode: no-echo
+  - name: dcl
+    expect: "$ "
+    timeout: 180s
+    done: true
