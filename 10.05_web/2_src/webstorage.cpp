@@ -543,7 +543,8 @@ static void package_rom_copy(struct mg_connection *conn) {
 
 struct upload_state {
 	std::string dir;            // target folder subpath ("" = root), from ?dir=
-	std::vector<std::string> names; // stored file subpaths
+	std::vector<std::string> names; // file subpaths the request carries
+	std::set<std::string> stored;   // absolute paths civetweb finished writing
 	bool bad_name;
 };
 
@@ -568,9 +569,12 @@ static int upload_field_get(const char *, const char *, size_t, void *) {
 	return MG_FORM_FIELD_HANDLE_NEXT;
 }
 
+// civetweb calls this only for a file it wrote to the end of its part and
+// closed; a part cut short is deleted without it.
 static int upload_field_stored(const char *path, long long file_size, void *user_data) {
 	(void) file_size;
-	(void) user_data;
+	upload_state *state = (upload_state *) user_data;
+	state->stored.insert(path);
 	own_by_qunilator(path);
 	return MG_FORM_FIELD_HANDLE_NEXT;
 }
@@ -604,7 +608,7 @@ static void images_upload(struct mg_connection *conn) {
 	handler.field_get = upload_field_get;
 	handler.field_store = upload_field_stored;
 	handler.user_data = &state;
-	mg_handle_form_request(conn, &handler);
+	int fields = mg_handle_form_request(conn, &handler);
 	if (state.bad_name) {
 		send_error(conn, 400, "a file name is not a valid path segment");
 		return;
@@ -612,6 +616,16 @@ static void images_upload(struct mg_connection *conn) {
 	if (state.names.empty()) {
 		send_error(conn, 400, "no file in upload");
 		return;
+	}
+	// A body that ends before its last part does - the client went away, or the
+	// connection stalled past the request timeout - leaves that file unwritten,
+	// and the upload is refused by name so nothing mistakes it for stored.
+	for (const std::string &n : state.names) {
+		if (fields < 0 || state.stored.count(images_dir + "/" + n) == 0) {
+			WEB_WARNING("upload of image %s did not complete", n.c_str());
+			send_error(conn, 400, "the upload of " + n + " did not complete");
+			return;
+		}
 	}
 	picojson::array stored;
 	for (const std::string &n : state.names) {

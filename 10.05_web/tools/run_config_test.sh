@@ -132,6 +132,26 @@ $CXX -std=c++11 -Wall -Wextra -I "$DEV" -I "$BASE" -I "$COMMON" \
 	"$COMMON/scriptpath.cpp" \
 	-lpthread -o "$OUT/cow_image_test"
 
+# The image upload runs the real webstorage.cpp under civetweb on a loopback
+# port, with the images root in a temp directory. It links the copy-on-write
+# image, the parameter system and the logger webstorage.cpp names; devices, drives and the
+# configuration model are stubbed in the test.
+$CXX -std=c++11 -Wall -Wextra -I "$STUBS" -I "$WEB" -I "$BASE" -I "$COMMON" \
+	-I "$PICO" -I "$CIVET" -I "$DEV" \
+	"$TOOLS/upload_test.cpp" \
+	"$WEB/webstorage.cpp" \
+	"$WEB/weblog.cpp" \
+	"$DEV/storageimage.cpp" \
+	"$BASE/parameter.cpp" \
+	"$COMMON/bitcalc.cpp" \
+	"$BASE/utils.cpp" \
+	"$BASE/bytebuffer.cpp" \
+	"$COMMON/logger.cpp" \
+	"$COMMON/logsource.cpp" \
+	"$COMMON/scriptpath.cpp" \
+	"$OUT/civetweb.o" \
+	-lpthread -o "$OUT/upload_test"
+
 "$OUT/config_test"
 "$OUT/auth_test"
 "$OUT/seed_test"
@@ -143,3 +163,4 @@ $CXX -std=c++11 -Wall -Wextra -I "$DEV" -I "$BASE" -I "$COMMON" \
 "$OUT/serial_tcp_line_test"
 "$OUT/simh_tape_test"
 "$OUT/cow_image_test"
+"$OUT/upload_test"
