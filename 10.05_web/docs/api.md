@@ -1126,7 +1126,10 @@ Multipart upload (`multipart/form-data`) of one or more `file` fields. The
 target folder is the `dir` query parameter (a subpath; absent/empty = root),
 known before the body is parsed so it is independent of field order. Each file's
 name is validated as a single path segment and written under `dir`, which is
-created if missing. Answers `{"ok": true, "names": ["du/foo.dsk", …]}`.
+created if missing. Answers `{"ok": true, "names": ["du/foo.dsk", …]}` once
+every file is written to its end. A body that ends early - the client went
+away, or the connection stalled past the server's request timeout - leaves the
+file it was carrying unwritten, and the upload answers `400` naming it.
 
 ### `POST /api/images` (JSON body)
 
