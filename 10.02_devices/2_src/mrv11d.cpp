@@ -269,9 +269,14 @@ bool mrv11d_c::claim_direct(void)
 		ERROR("start address %s is not on a 4 KB boundary", qunibus->addr2text(start));
 		return false;
 	}
-	if (end >= qunibus->iopage_start_addr) {
-		ERROR("the array at %s..%s reaches the I/O page at %s", qunibus->addr2text(start),
-				qunibus->addr2text(end), qunibus->addr2text(qunibus->iopage_start_addr));
+	// The top of a 22-bit space below the I/O page is the CPU module's own on
+	// some processors, answered without a bus cycle, so the probe below cannot
+	// see it: the array stays below it as the memory card does.
+	if (end >= qunibus->memory_limit_addr()) {
+		ERROR("the array at %s..%s reaches %s, %s", qunibus->addr2text(start),
+				qunibus->addr2text(end), qunibus->addr2text(qunibus->memory_limit_addr()),
+				qunibus->cpu_reserved_start ? "which the CPU module answers on-module"
+						: "the I/O page");
 		return false;
 	}
 
