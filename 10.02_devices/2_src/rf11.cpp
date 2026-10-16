@@ -227,7 +227,7 @@ void rf11_c::worker(unsigned instance)
                             // As above
                             _dae.Flags.NEM = 1;
                          }
-                         else if (memcmp(compareBuffer, buffer, wordCount))
+                         else if (memcmp(compareBuffer, buffer, wordCount * sizeof buffer[0]))
                          {
                             _dcs.Flags.WCE = 1;
                          }
