@@ -276,7 +276,9 @@ void rf11_c::worker(unsigned instance)
              break;
 
           case Worker_Finish:
-             // Transfer complete, set flags as appropriate:
+             // Transfer complete, set flags as appropriate. The register
+             // thread changes the same state, so this is done under its lock.
+             pthread_mutex_lock(&on_after_register_access_mutex);
              _dcs.Flags.RDY = 1;
              update_DAE();
              update_DCS();
