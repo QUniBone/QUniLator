@@ -46,6 +46,11 @@
 static std::mutex port_mutex; // guards port_io + cur_* + port_open
 static rs232_c port_io;
 static bool port_open = false;
+// The descriptor reader_loop() is waiting on outside the lock, -1 when it is
+// not waiting. A close has to wait for that poll() to return: the kernel holds
+// the file, and with it the port's flock, until it does, so a reopen made
+// straight after the close finds the port still locked.
+static std::atomic<int> polling_fd{-1};
 static std::string cur_source = "ttys2";
 static std::string cur_port = "ttyS2";
 static unsigned cur_baud = 38400;
@@ -167,15 +172,16 @@ static void reader_loop(void) {
 	while (running) {
 		// The descriptor is taken under the lock and waited on outside it:
 		// holding port_mutex across the wait would stall tx_writer_loop, which
-		// takes it for every byte it paces out. A port closed in that window
-		// makes poll() answer POLLNVAL, or wake on whatever unrelated file
-		// inherited the number; neither loses or misplaces a byte, because the
-		// read below happens under the lock and only while the port is open.
+		// takes it for every byte it paces out. It is published in polling_fd
+		// for the wait, and a close waits for the wait to end (see
+		// close_port()), so the descriptor stays this port's throughout.
 		int fd = -1;
 		{
 			std::lock_guard<std::mutex> lock(port_mutex);
-			if (port_open)
+			if (port_open) {
 				fd = port_io.Fd();
+				polling_fd = fd;
+			}
 		}
 		if (fd < 0) {
 			// No external console configured: nothing to wait on.
@@ -188,6 +194,7 @@ static void reader_loop(void) {
 		pfd.events = POLLIN;
 		pfd.revents = 0;
 		int r = poll(&pfd, 1, (int) RX_WAIT_MS);
+		polling_fd = -1;
 		if (r < 0) {
 			if (errno == EINTR)
 				continue;
@@ -218,13 +225,25 @@ static void reader_loop(void) {
 	}
 }
 
+// Close the port once reader_loop() has stopped waiting on it, so the close
+// releases the port's flock at once. port_open goes false first, which keeps
+// the reader from taking the descriptor again; its current poll() ends within
+// RX_WAIT_MS. Called with port_mutex held, which the reader does not need to
+// end its wait.
+static void close_port(void) {
+	if (!port_open)
+		return;
+	port_open = false;
+	int fd = port_io.Fd();
+	for (unsigned waited = 0; polling_fd == fd && waited < 10 * RX_WAIT_MS; waited++)
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	port_io.CloseComport();
+}
+
 std::string webconsole_ext_configure(const std::string &source,
 		const std::string &port, unsigned baud, const std::string &format) {
 	std::lock_guard<std::mutex> lock(port_mutex);
-	if (port_open) {
-		port_io.CloseComport();
-		port_open = false;
-	}
+	close_port();
 	cur_source = source;
 	cur_port = strip_dev(port);
 	cur_baud = baud;
@@ -324,9 +343,6 @@ void webconsole_ext_shutdown(void) {
 	reader.join();
 	tx_writer.join();
 	std::lock_guard<std::mutex> lock(port_mutex);
-	if (port_open) {
-		port_io.CloseComport();
-		port_open = false;
-	}
+	close_port();
 	channel.clear_clients();
 }
