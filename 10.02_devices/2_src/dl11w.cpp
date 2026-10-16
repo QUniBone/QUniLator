@@ -671,7 +671,12 @@ bool ltc_c::on_param_changed(parameter_c *param)
 {
 	// no own parameter or "enable" logic here
 	if (param == &frequency) {
-		// allow all values, but complain
+		// The worker divides by it for the tick period, so 0 is refused; any
+		// other value is accepted, with a complaint when it is not mains.
+		if (frequency.new_value == 0) {
+			ERROR("KW11 clock frequency 0 refused");
+			return false;
+		}
 		if (frequency.new_value != 50 && frequency.new_value != 60)
 			WARNING("KW11 non-standard clock value %d, regular 50 or 60", frequency.new_value);
 		// return (frequency.new_value == 50 || frequency.new_value == 60);

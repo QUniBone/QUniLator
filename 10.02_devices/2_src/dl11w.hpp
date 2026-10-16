@@ -276,7 +276,7 @@ public:
 	~ltc_c();
 
 	/// The mains frequency the clock ticks at, 50 or 60 Hz; another value is
-	/// accepted with a warning. Each tick sets LKS bit 7 and, with LKS bit 6 set,
+	/// accepted with a warning, and 0 is refused. Each tick sets LKS bit 7 and, with LKS bit 6 set,
 	/// interrupts. Ticks the board delivers late are made up by the ones after
 	/// them, which come at up to twice the rate until the count has caught up with
 	/// real time. A change takes effect at the next tick.
