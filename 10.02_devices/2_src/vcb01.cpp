@@ -504,6 +504,9 @@ void vcb01_c::on_after_register_access(qunibusdevice_register_t *device_reg,
         set_register_dati_value(CRTCP_reg,
                 (uint16_t) (crtc_pointer | (CRTCP_reg->active_dati_flipflops & CRTCP_VB)),
                 __func__);
+        // the data register reads the register the pointer now selects
+        set_register_dati_value(CRTCD_reg,
+                crtc_pointer < CRTC_SIZE ? crtc[crtc_pointer] : 0, __func__);
     } else if (device_reg == CRTCD_reg) {
         if (crtc_pointer < CRTC_SIZE)
             crtc[crtc_pointer] = (uint8_t) (value & 0xFF);

@@ -80,11 +80,6 @@ pattern fills the window exactly. The renderer's untimed default is 864.
 
 ## Open items
 
-- **CRTC readback.** The CRTC data register's DATI latch is refreshed only on a
-  write, not when the address pointer changes, so reading the 18 registers back
-  over the bus returns a stale value. A driver that reads CRTC registers would
-  see it; the fix is to reload the latch from `crtc[pointer]` when the pointer
-  is written.
 - **Interrupt vector timing.** Real hardware selects the vector during the IAK
   cycle; QBone commits it when `INTR()` is scheduled. Two sources becoming ready
   between the schedule and the acknowledge would deliver the earlier vector.
