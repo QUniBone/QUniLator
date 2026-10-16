@@ -89,6 +89,13 @@ cpuvax_c::cpuvax_c() :
     start_switch.value = false;
     continue_switch.value = false;
 
+    // An examine or deposit is performed on every write, so the same address
+    // can be read again or written twice running.
+    bus_examine.action = true;
+    bus_deposit.action = true;
+    mem_examine.action = true;
+    mem_deposit.action = true;
+
     // Running state, not configuration, so a saved machine does not carry a
     // stale program counter or a HALT nobody can see on screen.
     runmode.kind = parameter_c::PARAM_STATUS;
@@ -875,6 +882,13 @@ bool cpuvax_c::on_param_changed(parameter_c *param)
 {
     if (param == &enabled)
         return qunibusdevice_c::on_param_changed(param);
+
+    // A configuration apply puts every parameter back to its default, and a
+    // console access is an action, not a setting: during an apply the value is
+    // taken and no bus cycle is made.
+    if (config_apply_immediate && (param == &bus_examine || param == &bus_deposit
+            || param == &mem_examine || param == &mem_deposit))
+        return true;
 
     // A console examine or deposit is performed by the processor's own thread,
     // which is the bus master; this one only asks and waits for the answer.

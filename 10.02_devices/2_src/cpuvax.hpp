@@ -135,8 +135,10 @@ public:
     /// driver for it. Writing an address (octal, as a UNIBUS address) to
     /// `bus_examine` reads that register and leaves the word in `bus_data`. To
     /// write one, set `bus_data` first, then write the address to
-    /// `bus_deposit`. The access is made by the processor, so it needs the
-    /// processor enabled.
+    /// `bus_deposit`. Every write makes the access, the same address again
+    /// included, so a register can be read repeatedly. The access is made by
+    /// the processor, so it needs the processor enabled; applying a
+    /// configuration makes none.
     parameter_unsigned_c bus_examine = parameter_unsigned_c(this, "bus_examine", "bex",/*readonly*/
                                        false, "", "%06o", "Read this UNIBUS register into bus_data.", 18, 8);
     parameter_unsigned_c bus_deposit = parameter_unsigned_c(this, "bus_deposit", "bdep",/*readonly*/
@@ -147,7 +149,8 @@ public:
     /// The other half of what a 780's console reaches: the processor's own
     /// memory, by physical address, in hex. Writing an address to
     /// `mem_examine` leaves the longword there in `mem_data`; to change it, set
-    /// `mem_data` and write the address to `mem_deposit`.
+    /// `mem_data` and write the address to `mem_deposit`. As on the bus, every
+    /// write makes the access.
     parameter_unsigned_c mem_examine = parameter_unsigned_c(this, "mem_examine", "mex",/*readonly*/
                                        false, "", "%08x", "Read this physical longword into mem_data.", 32, 16);
     parameter_unsigned_c mem_deposit = parameter_unsigned_c(this, "mem_deposit", "mdep",/*readonly*/

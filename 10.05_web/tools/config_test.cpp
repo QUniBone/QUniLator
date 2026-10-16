@@ -1396,6 +1396,29 @@ int main(void) {
 		reset_devices();
 	}
 
+	// An action parameter - a console examine or deposit - is performed on
+	// every write, the same value again included; any other parameter notifies
+	// its device only on a change.
+	{
+		struct counting_c : public parameterized_c {
+			unsigned calls = 0;
+			bool on_param_changed(parameter_c *) override {
+				calls++;
+				return true;
+			}
+		} owner;
+		parameter_unsigned_c setting(&owner, "setting", "s", false, "", "%o", "", 16, 8);
+		parameter_unsigned_c deposit(&owner, "deposit", "d", false, "", "%o", "", 16, 8);
+		deposit.action = true;
+		setting.set(0777412);
+		setting.set(0777412);
+		check(owner.calls == 1, "a setting written twice with one value notifies once");
+		owner.calls = 0;
+		deposit.set(0777412);
+		deposit.set(0777412);
+		check(owner.calls == 2, "an action written twice with one value is done twice");
+	}
+
 	// tidy the temp tree
 	for (const char *n : {"cfgA", "cfgB", "cfgC", "default", "legacy", "logcfg",
 			"powercfg", "runcfg", "stored1", "live1", "live2"})

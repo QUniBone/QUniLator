@@ -83,7 +83,7 @@ parameter_string_c::~parameter_string_c()
 void parameter_string_c::set(std::string _new_value) 
 {
 
-	if (value == _new_value)
+	if (value == _new_value && !action)
 		return; // call "on_change" only on change
 	new_value = _new_value;
 	// reject parsed value, if device parameter check complains
@@ -118,7 +118,7 @@ parameter_bool_c::parameter_bool_c(parameterized_c *_parameterized, std::string 
 
 void parameter_bool_c::set(bool _new_value) 
 {
-	if (value == _new_value)
+	if (value == _new_value && !action)
 		return; // call "on_change" only on change
 
 	// reject parsed value, if device parameter check complains
@@ -171,7 +171,7 @@ parameter_unsigned_c::parameter_unsigned_c(parameterized_c *_parameterized, std:
 
 void parameter_unsigned_c::set(unsigned _new_value) 
 {
-	if (value == _new_value)
+	if (value == _new_value && !action)
 		return; // call "on_change" only on change
 
 	new_value = _new_value;
@@ -218,7 +218,7 @@ parameter_unsigned64_c::parameter_unsigned64_c(parameterized_c *_parameterized, 
 
 void parameter_unsigned64_c::set(uint64_t _new_value) 
 {
-	if (value == _new_value)
+	if (value == _new_value && !action)
 		return; // call "on_change" only on change
 
 	new_value = _new_value;
@@ -279,7 +279,7 @@ void parameter_double_c::parse(std::string text)
 
 void parameter_double_c::set(double _new_value) 
 {
-	if (value == _new_value)
+	if (value == _new_value && !action)
 		return; // call "on_change" only on change
 
 	new_value = _new_value;

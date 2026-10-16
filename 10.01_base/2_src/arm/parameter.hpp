@@ -103,6 +103,10 @@ public:
 	bool readonly;
 	parameter_kind_e kind = PARAM_CONFIG;
 	parameter_content_e content = CONTENT_PLAIN;
+	// A parameter that names something to do rather than a state - a console
+	// examine or deposit at an address - is done on every write, the same value
+	// again included. Other parameters notify the device only on a change.
+	bool action = false;
 	std::string info; // help text
 	std::string unit; // "MB",
 	std::string format; // printf, scanf
