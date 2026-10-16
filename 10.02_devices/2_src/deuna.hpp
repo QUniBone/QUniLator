@@ -67,30 +67,63 @@ public:
     /*
      * User-configurable parameters (set via menu system before install)
      */
+    /// The board's network interface the controller is attached to. Set it to
+    /// `veth-pdp`, the interface the QUniLator package creates for an emulated
+    /// controller: its other end is joined to the bridge `br0` together with
+    /// the board's own `eth0`, so the machine reaches both the LAN and the board
+    /// itself. The starting value `eth0` attaches to the uplink directly, which
+    /// reaches the LAN but not the board. Enabling the controller opens the
+    /// interface and is refused when it is empty or cannot be opened; it can
+    /// be changed only while the controller is disabled.
     parameter_string_c interface = parameter_string_c(this, "interface", "if", false,
             "host Ethernet interface shared with the emulated controller");
+
+    /// The station address the controller answers to: six hex bytes separated
+    /// by `:`. Each board derives its own the first time - DEC's prefix
+    /// `08:00:2b` and the low three bytes of the board's own Ethernet address -
+    /// and keeps it in `deuna.mac` in the board's state directory
+    /// (`/var/lib/qunilator`), so it stays the same across boots and differs
+    /// from board to board. A value set here overrides it and is stored with the
+    /// configuration; setting it empty puts the derived address back. It can be
+    /// changed only while the controller is disabled.
+    /// @default derived from the board's Ethernet address
     parameter_string_c mac = parameter_string_c(this, "mac", "mac", false,
             "station address, 6 hex bytes separated by \":\", empty = device default");
 
-    // Index into the shared activity LED bank, as for the other controllers.
+    /// Which of the board's four activity LEDs, 0 to 3, traffic lights; 4 or
+    /// more lights none.
     parameter_unsigned_c activity_led = parameter_unsigned_c(this, "activityled", "al", false,
             "", "%d", "Number of LED to used for activity display.", 8, 10);
 
-    // Lit by traffic in either direction, held on past the frame so a
-    // periodic sampler sees it.
+    /// On while frames move in either direction, held a moment past each frame
+    /// so the web interface sees it.
     parameter_bool_c activity_lamp = parameter_bool_c(this, "activitylamp", "actl", true,
             "State of activity lamp");
 
+    /// The most descriptors of the driver's receive and transmit rings the
+    /// controller works through each time it scans them. 0 takes the ring
+    /// length the driver gave, which is what a working machine wants; a smaller
+    /// number is a debugging aid. Both can be changed only while the controller
+    /// is disabled.
     parameter_unsigned_c rx_slots = parameter_unsigned_c(this, "rx_slots", "rx", false, "",
             "%d", "RX ring scan limit (0 = no limit)", 0, 10);
     parameter_unsigned_c tx_slots = parameter_unsigned_c(this, "tx_slots", "tx", false, "",
             "%d", "TX ring scan limit (0 = no limit)", 0, 10);
+
+    /// Writes the controller's port commands, interrupts and ring events to the
+    /// log at WARNING level, so they appear without raising the log level. For
+    /// following a driver's conversation with the controller; it is verbose,
+    /// and takes effect at once.
     parameter_bool_c trace = parameter_bool_c(this, "trace", "tr", false,
             "Trace CSR/ring events to log");
 
     /*
      * Read-only statistics (updated during operation, visible in menu)
      */
+    /// The controller's own counters, the ones a driver reads with the port's
+    /// read-counters function: frames received, frames sent, frames received
+    /// with errors or lost for want of a buffer, and transmissions that failed.
+    /// They follow the counters as frames move.
     parameter_unsigned64_c stat_rx_frames = parameter_unsigned64_c(this, "rx_frames", "rxf", true, "",
             "%llu", "Received frames count", 64, 10);
     parameter_unsigned64_c stat_tx_frames = parameter_unsigned64_c(this, "tx_frames", "txf", true, "",

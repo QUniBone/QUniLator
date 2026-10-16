@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Check that every internal link in the built site resolves to a file.
+ * Check that every internal link in the built site resolves to a file, and that
+ * a link to a heading names an anchor the target page has.
  *
  * The base path is baked into absolute links at build time by three different
  * mechanisms — a remark plugin for Markdown, Starlight for sidebar entries, and
@@ -34,6 +35,26 @@ const served = new Set(
 	})
 );
 
+/** The anchors a built page carries, read once per page. */
+const anchorCache = new Map();
+function anchorsOf(file) {
+	if (!anchorCache.has(file))
+		anchorCache.set(file, new Set([...readFileSync(file, 'utf8').matchAll(/\sid="([^"]+)"/g)].map((m) => m[1])));
+	return anchorCache.get(file);
+}
+
+/**
+ * A heading anchor that is not there still loads the page, at its top. Device
+ * pages link into the parameter reference the generator writes, whose anchors
+ * follow the parameter names, so a renamed parameter shows up here.
+ */
+function checkFragment(page, file, raw) {
+	const frag = raw.split('#')[1];
+	if (!frag || frag === '_top') return;
+	if (!anchorsOf(file).has(decodeURIComponent(frag)))
+		problems.push({ from: relative(dist, page), link: raw, why: 'no such anchor on the page' });
+}
+
 const problems = [];
 
 for (const page of pages) {
@@ -60,7 +81,12 @@ for (const page of pages) {
 			}
 		}
 
-		// External, protocol-relative, anchors and non-http schemes are not ours.
+		if (raw.startsWith('#')) {
+			checkFragment(page, page, raw);
+			continue;
+		}
+
+		// External, protocol-relative and non-http schemes are not ours.
 		if (!raw.startsWith('/') || raw.startsWith('//')) continue;
 
 		const path = raw.split('#')[0].split('?')[0];
@@ -71,7 +97,11 @@ for (const page of pages) {
 			? [path + 'index.html', path.slice(0, -1)]
 			: [path, path + '/index.html'];
 
-		if (candidates.some((c) => served.has(c))) continue;
+		const hit = candidates.find((c) => served.has(c));
+		if (hit) {
+			if (hit.endsWith('.html')) checkFragment(page, join(dist, hit.slice(base.length)), raw);
+			continue;
+		}
 
 		// A doubled base is the characteristic failure and worth naming.
 		const doubled = base && path.startsWith(base + base + '/');

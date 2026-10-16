@@ -168,11 +168,17 @@ public:
     RX211_c(void) ;
     ~RX211_c(void);
 
-    // Emulate a 22-bit controller (DSD MXV-22) instead of an 18-bit DEC RXV21.
-    // When on, RX2CS reads advertise RX_Q22 and the controller accepts the full
-    // 22-bit bus address as a 2nd RX2BA write. 2.11BSD needs this: with a plain
-    // RXV21 it drives an 18-bit software-map address that truncates a DMA buffer
-    // above 256 KB. Off by default so XXDP and other guests see a stock RXV21.
+    /// Makes the controller a 22-bit DSD MXV-22. RX2CS then reads with bit 10
+    /// (RX_Q22) set, and a command that sets that bit takes its bus address as
+    /// two RX2BA writes: the low 16 bits, then bits 21:16. At 0 it is a stock
+    /// 18-bit RX211/RXV21, which is what XXDP and other guests expect.
+    ///
+    /// 2.11BSD needs it on a QBUS machine with more than 256 KB: its driver
+    /// checks the bit when it attaches the controller at boot, and takes the
+    /// 22-bit path when it is set. Without it the driver addresses a buffer
+    /// above 256 KB through an 18-bit address, and the transfer lands in the
+    /// wrong memory. The change shows in RX2CS at once, but the guest only
+    /// looks at boot, so keep it in the configuration that boots 2.11BSD.
     parameter_bool_c mxv22 = parameter_bool_c(this, "mxv22", "mxv22", false,
         "22-bit DMA (DSD MXV-22): enables Q22 addressing; needed by 2.11BSD") ;
 

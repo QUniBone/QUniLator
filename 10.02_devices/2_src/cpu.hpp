@@ -209,6 +209,16 @@ public:
 
     bool on_param_changed(parameter_c *param) override;  // must implement
 
+    /// The processor's front panel, which the dashboard's RUN, HALT, START and
+    /// CONT controls drive. `start_switch` and `continue_switch` act once and
+    /// fall back to 0.
+    ///
+    /// START resets the machine — INIT on the bus, the processor cleared — and
+    /// runs from the address in `PC`; with HALT set it only resets. CONT resumes
+    /// a halted processor where it stopped; with HALT set it executes one
+    /// instruction and stops again. Setting HALT stops a running processor
+    /// after the instruction it is executing. Enabling the processor leaves it
+    /// halted.
     parameter_bool_c runmode = parameter_bool_c(this, "run_led", "r",/*readonly*/
                                true, "RUN LED: 1 = CPU running, 0 = halted.");
     parameter_bool_c halt_switch = parameter_bool_c(this, "halt_switch", "h",/*readonly*/
@@ -218,15 +228,34 @@ public:
     parameter_bool_c start_switch = parameter_bool_c(this, "start_switch", "s",/*readonly*/
                                     false, "START action switch: 1 = reset & start CPU from PC. START+HALT: reset.");
 
+    /// The processor reads and writes everything below the I/O page straight
+    /// out of the board's memory, without a bus cycle; only the I/O page goes
+    /// out on the bus. The machine runs about five times as fast:
+    /// `emulation_speed` reads 0.5 with it set and 0.1 without, against the
+    /// original's 1. Memory on a real card in the backplane is out of
+    /// the processor's reach while this is set, so it is for a machine whose
+    /// memory the board supplies.
     parameter_bool_c direct_memory = parameter_bool_c(this, "pmi", "pmi",/*readonly*/
                                      false, "Private Memory Interconnect: CPU accesses memory internally, not over UNIBUS.");
 
+    /// Where the processor is. It follows the program while the processor
+    /// runs; while it is halted it can be set, and START runs from there.
     parameter_unsigned_c pc = parameter_unsigned_c(this, "PC", "pc",/*readonly*/
                               false, "", "%06o", "program counter helper register.", 16, 8);
 
+    /// The console switch register, which a program reads at 777570. Diagnostics
+    /// take their options from it. It is read on every instruction, so a change
+    /// reaches a running program at once.
     parameter_unsigned_c swreg = parameter_unsigned_c(this, "switch_reg", "swr",/*readonly*/
                                  false, "", "%06o", "Console switch register.", 16, 8);
 
+    /// What the processor is doing, as it runs: the processor status word,
+    /// and the address and data of the bus transfer in progress. The address is
+    /// the virtual one the program issued, before memory management relocates
+    /// it. The status word is the model's own width: the KA11 keeps priority, T
+    /// and the condition codes in the low byte, the KD11-EA adds the current
+    /// and previous mode in the high byte.
+    //
     // What the core is doing, published by core_publish_status() on every
     // worker pass. The processor status word is the model's own width: the
     // KA11 keeps priority, T and the condition codes in a byte, the KD11-EA
@@ -240,6 +269,8 @@ public:
     parameter_unsigned_c bus_data = parameter_unsigned_c(this, "bus_data", "bd",/*readonly*/
                                     true, "", "%06o", "Bus data register of the current data transfer.", 16, 8);
 
+    /// Instructions executed since the processor was last started. The
+    /// dashboard's instruction rate is taken from it.
     parameter_unsigned64_c cycle_count = parameter_unsigned64_c(this, "cycle_count", "cc",/*readonly*/
                                          true, "", "%u", "CPU opcodes executed since last HALT", 63, 10);
 
@@ -258,9 +289,16 @@ public:
                                      "Instructions",
                                      [this]() { return cycle_count.value; }};
 
+    /// Halts the processor when it is about to execute the instruction at this
+    /// address, which is octal and virtual. 0 turns the breakpoint off.
     parameter_unsigned_c breakpoint = parameter_unsigned_c(this, "breakpoint", "bp",/*readonly*/
                                       false, "", "%06o", "Stop when CPU fetches opcode from octal address. 0 = disable", 16, 8);
 
+    /// A file on the board. While a path is set the processor keeps its most
+    /// recent bus transfers, up to 16384 — address, cycle, data and whether the bus
+    /// timed out — and writes them to that file, as comma-separated lines, when
+    /// it halts on a HALT instruction, the HALT switch or the breakpoint.
+    /// Empty: no trace is kept.
     parameter_string_c cycle_tracefilepath = parameter_string_c(this, "cycle_tracefilepath", "ctf",/*readonly*/false,
             "If set, CPU cycle trace is active and dumped to file on HALT.") ;
 

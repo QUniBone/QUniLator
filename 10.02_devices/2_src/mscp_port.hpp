@@ -100,7 +100,14 @@ public:
     dma_request_c dma_request{this}; // operated by qunibusadapter
     intr_request_c intr_request{this};
 
-    // Configuration parameter for 22-bit DMA
+    /// Whether the controller tells the host, at the first step of its
+    /// initialisation, that it transfers to all 22 address bits of a QBUS:
+    /// bit 9 of SA, the flag a Q22 MSCP controller sets there. A host that sees
+    /// it hands the controller buffer addresses anywhere in the 4 MB space. On a
+    /// UNIBUS board it stays 0, since UNIBUS addresses are 18 bits wide. The
+    /// value is read each time the host initialises the controller, so a change
+    /// takes effect at its next initialisation.
+    /// @default 1 on a QBUS board, 0 on a UNIBUS board
     parameter_bool_c twenty_two_bit_DMA = parameter_bool_c(this, "22_bit_dma", "dma22",
         false, "Enable 22-bit DMA");
 

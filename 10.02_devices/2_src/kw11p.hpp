@@ -73,7 +73,10 @@ public:
 	kw11p_c();
 	~kw11p_c();
 
-	// line-frequency count rate (Hz) for KW11P_RATE_LINE
+	/// The rate the counter counts at when the program selects the line-frequency
+	/// rate (CSR bits 2:1 = 10): 50 or 60 Hz; another value is accepted with a
+	/// warning, and 0 counts at 60. The 100 kHz and 10 kHz rates do not use it.
+	/// A change takes effect at once, also on a clock that is running.
 	parameter_unsigned_c line_frequency = parameter_unsigned_c(this, "Line frequency", "freq",
 			/*readonly*/false, "", "%d", "line-frequency rate: 50/60 Hz", 32, 10);
 

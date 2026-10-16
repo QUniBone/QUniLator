@@ -67,35 +67,49 @@ public:
     bool error_illegal_track  ;
     bool error_illegal_sector ;
 
+    /// The recording density of the floppy: `SD` is single density, 128-byte
+    /// sectors and 256,256 bytes to the disk; `DD` is the RX02's double
+    /// density, 256-byte sectors and 512,512 bytes. An RX01 is always `SD`. On
+    /// an RX02, attaching an image sets it from the file's size: anything
+    /// larger than a single-density disk is `DD`.
+    /// @default `SD` on an RX01, `DD` on an RX02
     parameter_string_c density_name = parameter_string_c(this, "density", "d",/*readonly*/
                                       false, "SD for RX01 & RX02 FM; DD for RX02 MFM");
 
+    /// Whether the image file starts with track 0. At 1, the usual form, the
+    /// file holds tracks 0 to 76. At 0 it starts with track 1, as some images
+    /// do; track 0 then reads back as zeros and takes no data. A `logical`
+    /// image always starts at track 1, whatever this says.
     parameter_bool_c imagetrack0 = parameter_bool_c(this, "imagetrack0", "it0",/*readonly*/
                                    false, "true: File image contains track 0-76 (std), else only 1..76");
 
-    // The order the image file holds the medium's sectors in. "physical" is the
-    // surface as it was written, track by track with sector 1..26 in place.
-    // "logical" is the volume's blocks in order from block 0, the form an
-    // archived RT-11 distribution comes in; the drive maps every access through
-    // the 2:1 interleave with six sectors of skew per track that a handler
-    // addresses a volume through. "auto" reads the image when it is attached and
-    // takes the layout the RT-11 home block turns up in.
+    /// The order the image file holds the floppy's sectors in. `physical` is
+    /// the surface as it was written, track by track with sectors 1 to 26 in
+    /// place. `logical` is the volume's blocks in order from block 0, the form
+    /// an archived RT-11 distribution comes in: the file starts at track 1, and
+    /// the drive maps every access through the 2:1 interleave with six sectors
+    /// of skew per track that an RT-11 handler uses. `auto` looks at the image
+    /// as it is attached and takes the order the RT-11 home block turns up in;
+    /// an image without one is taken as physical.
     parameter_string_c layout = parameter_string_c(this, "layout", "lay", /*readonly*/
                                 false, "Sector order in the image file: physical, logical or auto");
 
-    // The layout in force, which is what "auto" settled on. Named apart from
-    // "layout" so a configuration keeps the operator's choice and the dashboard
-    // still shows what the drive is doing with the medium it holds.
+    /// The order the drive serves the image in, which is what `auto` settled
+    /// on.
+    // Named apart from "layout" so a configuration keeps the operator's choice
+    // and the dashboard still shows what the drive is doing with the medium it
+    // holds.
     parameter_string_c layout_in_use = parameter_string_c(this, "layoutinuse", "lyu", /*readonly*/
                                        true, "Sector order the drive serves the mounted image in");
 
-    // current head position , info only
+    /// The track the head is on, 0 to 76. It moves at 5 ms a track, and the
+    /// head takes 25 ms to settle after a seek.
     parameter_unsigned_c current_track = parameter_unsigned_c(this, "track", "tr", /*readonly*/
                                          true, "", "%d", "Track # of current head position", 77, 10);
 
-    // WRITE PROTECT lamp for the dashboard, lit when the mounted image is
-    // read-only — the write-protect state the drive enforces, ignoring writes to
-    // a read-only floppy. Named "...lamp" so the webevents lamp poll picks it up.
+    /// Lit while the image in the drive is read-only. The drive then drops
+    /// every write without reporting an error to the guest.
+    // Named "...lamp" so the webevents lamp poll picks it up.
     parameter_bool_c write_protect_lamp = parameter_bool_c(this, "writeprotectlamp", "wpl",
                                           /*readonly*/true, "State of WRITE PROTECT lamp");
 

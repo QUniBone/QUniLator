@@ -76,20 +76,37 @@ public:
     void on_after_install(void) override;
     void on_after_uninstall(void) override;
 
-    // Where the X server is, as a display name. Resolved to a literal address
-    // before Xlib sees it, so a host name works from a headless board.
+    /// An X server to show the screen on as well, as an X display name such as
+    /// `host:0`; a host name is resolved on the board before connecting. Empty,
+    /// the screen is drawn to the web interface only, where the VCB01 card on
+    /// the dashboard shows it and takes keyboard and pointer. Named, the screen
+    /// opens in an X window when the card is enabled, and keyboard and pointer
+    /// work there too; a display that cannot be reached refuses the enable.
+    /// Can be changed only while the card is disabled.
     parameter_string_c display = parameter_string_c(this, "display", "disp", false,
             "X display carrying the screen, e.g. \"host:0\"");
 
-    // The board's memory bank switch, CSR bits 11..14: video memory answers
-    // at bank * 256 KB. 016 puts it at 16000000.
+    /// The card's memory bank switch: the 256 KB of video memory answer at
+    /// `bank` x 256 KB, 0 to 016, and a driver reads the setting back from CSR
+    /// bits 11 to 14. 016 puts the bitmap at 16000000..16777776, the highest
+    /// bank below the I/O page. The bank needs a free stretch of bus address
+    /// space: the machine's own memory has to end below it, and the `MEM`
+    /// device's range may not overlap it - enabling the card refuses a bank
+    /// that collides with `MEM`. Enabling clears the video memory. Can be
+    /// changed only while the card is disabled.
     parameter_unsigned_c bank = parameter_unsigned_c(this, "bank", "bk", false, "",
             "%o", "video memory bank, 256 KB each: address = bank * 1000000", 4, 8);
 
+    /// How often the screen is redrawn, 1 to 60 times a second. Each pass sends
+    /// only the lines that changed, and keyboard and pointer input are taken in
+    /// at the same pace. The vertical sync interrupt a driver sees runs at 60 Hz
+    /// whatever this is set to.
     parameter_unsigned_c refresh_rate = parameter_unsigned_c(this, "refreshrate", "rr", false,
             "Hz", "%d", "screen updates per second", 8, 10);
 
-    // A monitor big enough to show all 864 lines, reported in CSR bit 0.
+    /// The monitor size the card reports in CSR bit 0: on, a 19-inch monitor
+    /// that shows all 864 lines; off, a 15-inch one. Set it while the card is
+    /// disabled.
     parameter_bool_c large_monitor = parameter_bool_c(this, "largemonitor", "lm", false,
             "report a 19-inch monitor rather than a 15-inch one");
 

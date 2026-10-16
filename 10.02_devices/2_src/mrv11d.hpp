@@ -67,36 +67,67 @@ public:
 	mrv11d_c();
 	~mrv11d_c();
 
-	// Sixteen sockets in eight chip sets. All devices are the same size with
-	// the array decoder DEC supplies, and a chip set holds one word per byte
-	// of device.
+	/// The sockets: how large each device is, in bytes, and how many of the
+	/// eight chip sets are populated. A chip set is a low-byte and a high-byte
+	/// device, so it holds as many words as one device holds bytes, and the
+	/// array is `chipsize` × `chipsets` words. The device size is 2048, 4096,
+	/// 8192, 16384 or 32768. The default, one set of 8192-byte devices, is the
+	/// MXV11-B2 set: 16 KB in 32 pages of 512 bytes.
+	//
+	// All devices are the same size with the array decoder DEC supplies.
 	parameter_unsigned_c chipsize = parameter_unsigned_c(this, "chipsize", "cs",
 			/*readonly*/false, "bytes", "%u", "size of each device: 2048 to 32768", 32, 10);
 	parameter_unsigned_c chipsets = parameter_unsigned_c(this, "chipsets", "cn",
 			/*readonly*/false, "", "%u", "populated chip sets, 1 to 8", 8, 10);
 
-	// What the sockets are programmed with: a file of the board's media tree,
-	// named by its subpath as a drive's image is ("roms/rt11.bin"). A ".lst" is
-	// read as a MACRO-11 listing and anything else as a dump of the array, low
-	// and high byte interleaved as the two devices of a chip set supply them.
-	// Empty leaves the MXV11-B2 set in the sockets.
+	/// What the sockets are programmed with: a file in the board's image tree,
+	/// usually in `roms/`. A `.lst` file is read as a MACRO-11 listing, and its
+	/// lowest address becomes the first word of the array, so a bootstrap
+	/// assembled at 173000 is page 0. Any other file is a dump of the array,
+	/// low and high byte of each word in order, as the two devices of a chip
+	/// set supply them; a short file leaves the rest unprogrammed, reading
+	/// 177777. A file larger than the array is refused. Empty: the MXV11-B2
+	/// bootstrap set DEC supplied for this module, which boots MSCP disks, the
+	/// RL01/RL02, the RX01/RX02 and the TU58.
+	//
+	// Named by its subpath as a drive's image is ("roms/rt11.bin").
 	parameter_string_c romfile = parameter_string_c(this, "romfile", "rf", /*readonly*/false,
 			"ROM image or MACRO-11 listing from roms/; empty = MXV11-B2 set");
 
-	// The bootstrap windows and the page control register at 777520.
-	// Lit while the machine is reading the module: the ROM running, live.
+	/// Lit while the machine reads the module, through either window or in
+	/// memory space: the bootstrap running.
 	parameter_bool_c access_lamp = parameter_bool_c(this, "accesslamp", "acl",
 			/*readonly*/true, "machine is reading the module");
 
+	/// The bootstrap: two 512-byte windows in the I/O page, window 0 at 773000
+	/// and window 1 at 765000, and the page control register at 777520 whose
+	/// low byte selects the page of the array window 0 shows and whose high
+	/// byte selects window 1's. Power-up and INIT clear the register, so the
+	/// machine comes up looking at page 0 through both, and starting it at
+	/// 173000 runs the bootstrap. A page beyond the array answers nothing.
+	/// Turn it off for a processor that answers 773000 and 777520 itself, and
+	/// reach the array through `directmode`. The card refuses to be enabled
+	/// with both off, since it would answer nothing.
 	parameter_bool_c bootstrap = parameter_bool_c(this, "bootstrap", "bs", /*readonly*/false,
 			"answer the bootstrap windows at 773000 and 765000");
 
-	// The array in memory space, at a 4 KB boundary.
+	/// Direct addressing: the whole array in memory space, from `startaddr`,
+	/// which has to be on a 4 KB boundary, with the array ending below the I/O
+	/// page. Enabling the card probes the range first and refuses when
+	/// anything on the bus answers there. The array is served out of the
+	/// board's memory through the range a VCB01 framebuffer also takes, so a
+	/// machine carries one of the two. The range answers writes too.
 	parameter_bool_c directmode = parameter_bool_c(this, "directmode", "dm", /*readonly*/false,
 			"answer the whole array in memory space at startaddr");
 	parameter_unsigned_c startaddr = parameter_unsigned_c(this, "startaddr", "sa",
 			/*readonly*/false, "", "%08o", "first address of the array in memory space", 22, 8);
 
+	/// What the module carries: `contents` names what the sockets hold, the
+	/// MXV11-B2 set or the file they were programmed from; `arraysize` the
+	/// size of the array and how many bootstrap pages it makes; `windows` the
+	/// pages the two bootstrap windows show, or `off`; `range` the addresses
+	/// the array answers in memory space, or `off`.
+	//
 	// what the sockets hold, by the name it came from
 	parameter_string_c contents = parameter_string_c(this, "contents", "co", /*readonly*/true,
 			"what the sockets hold");

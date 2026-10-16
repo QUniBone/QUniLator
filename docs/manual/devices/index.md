@@ -15,7 +15,32 @@ The short name beside each one is what the board's command-line menu accepts.
 
 | | |
 |---|---|
-| [KA780](ka780.md) | The VAX-11/780 processor. UNIBUS only. |
+| **Processors** | |
+| [KA780](ka780.md) | The VAX-11/780 processor and its UNIBUS adapter. UNIBUS only. |
+| [KA11, KD11-EA](pdp11-processors.md) | The PDP-11/20 and PDP-11/34 processors. UNIBUS only. |
+| [KE11-A](ke11.md) | The extended arithmetic element of the PDP-11/20. UNIBUS only. |
+| **Memory and bootstrap** | |
+| [MS11, MSV11](memory.md) | Memory the board supplies out of its own. |
+| [M9312](m9312.md) | The UNIBUS bootstrap card with five ROM sockets. |
+| [MRV11-D](mrv11d.md) | The QBUS PROM card carrying the MXV11-B2 bootstrap. |
+| **Disks** | |
+| [UDA50](uda50.md) | The MSCP disk controller, with RA, RD and RX drives. |
+| [RL11, RLV12](rl.md) | The RL01/RL02 cartridge disk controller. |
+| [RK11, RKV11](rk.md) | The RK05 cartridge disk controller. |
+| [RF11](rf11.md) | The fixed-head disk controller with its RS11 platters. |
+| **Floppies and tapes** | |
+| [RX11, RX211](rx.md) | The RX01/RX02 floppy subsystem. |
+| [TS11, TSV05](ts11.md) | The TS05 magnetic tape subsystem. |
+| [TQK50](tqk50.md) | The TMSCP cartridge tape controller. |
+| **Serial lines and clocks** | |
+| [DL11, KW11](dl11.md) | A single serial line, and the line clock. |
+| [DZ11, DZV11](dz11.md) | The DZ eight- or four-line multiplexer. |
+| [DHV11](dhv11.md) | The eight-line multiplexer with DMA output. |
+| [KW11-P](kw11p.md) | The programmable real-time clock. |
+| **Network and display** | |
+| [DELQA](delqa.md) | The QBUS Ethernet controller. |
+| [DEUNA](deuna.md) | The UNIBUS Ethernet controller. |
+| [VCB01](vcb01.md) | The QVSS bitmap display with keyboard and pointer. QBUS only. |
 
 ## Parameters every device has
 

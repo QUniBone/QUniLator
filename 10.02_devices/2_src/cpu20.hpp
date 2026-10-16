@@ -42,7 +42,10 @@ public:
 
     struct KA11 *ka11; // Angelos CPU state
 
-    // 11/20 specific option
+    /// What SWAB does to the V bit. A real 11/20 leaves it as it was, which is
+    /// 0. Set to 1, SWAB clears it as every later PDP-11 does, which is what a
+    /// program or diagnostic written for those models expects, among them
+    /// ZQKC.
     parameter_bool_c swab_vbit = parameter_bool_c(this, "swab_vbit", "swab",/*readonly*/
                                  false, "SWAB instruction does not(=0) or does(=1) modify psw v-bit (=0 is standard 11/20 behavior)");
 

@@ -60,14 +60,72 @@ function walk(dir, out = []) {
 	return out;
 }
 
+/** The two builds. A device's parameters are read once for each. */
+const BUSES = ['unibus', 'qbus'];
+const BUS_NAME = { unibus: 'UNIBUS', qbus: 'QBUS' };
+
+/**
+ * A source as one bus's build compiles it: the lines of a conditional branch the
+ * build leaves out are blanked, line numbers kept. Conditions on the bus macros
+ * and on what the file itself #defines from numbers are decided; a condition on
+ * anything else keeps every branch, which is the safe reading for a document.
+ */
+function preprocess(text, bus) {
+	const defs = new Map([[BUS_NAME[bus], 1]]);
+	const value = (expr) => {
+		let e = expr
+			.replace(/\/\/.*$|\/\*.*?\*\//g, '')
+			.replace(/\bdefined\s*\(\s*(\w+)\s*\)|\bdefined\s+(\w+)/g, (_, a, b) => (defs.has(a || b) ? '1' : '0'))
+			.replace(/\b[A-Za-z_]\w*\b/g, (id) => (defs.has(id) ? String(defs.get(id)) : '?'));
+		if (e.includes('?') || !/^[\d\s()!<>=&|+\-*/%]*$/.test(e)) return undefined;
+		try {
+			return Number(Function(`return (${e});`)());
+		} catch {
+			return undefined;
+		}
+	};
+	// each open conditional: whether the enclosing text is live, whether a branch
+	// was taken, whether the condition could be decided at all
+	const stack = [];
+	const live = () => stack.every((f) => f.on);
+	const out = text.split('\n').map((line) => {
+		const d = line.match(/^\s*#\s*(\w+)\s*(.*)$/);
+		if (d) {
+			const [, dir, rest] = d;
+			if (dir === 'if' || dir === 'ifdef' || dir === 'ifndef') {
+				const v =
+					dir === 'if' ? value(rest) : dir === 'ifdef' ? (defs.has(rest.trim().split(/\s/)[0]) ? 1 : 0)
+					: defs.has(rest.trim().split(/\s/)[0]) ? 0 : 1;
+				stack.push(v === undefined ? { on: true, taken: false, unknown: true } : { on: !!v, taken: !!v });
+			} else if (dir === 'elif' && stack.length) {
+				const f = stack[stack.length - 1];
+				const v = f.unknown ? undefined : value(rest);
+				if (f.unknown || v === undefined) Object.assign(f, { on: true, unknown: true });
+				else Object.assign(f, { on: !f.taken && !!v, taken: f.taken || !!v });
+			} else if (dir === 'else' && stack.length) {
+				const f = stack[stack.length - 1];
+				f.on = f.unknown || !f.taken;
+			} else if (dir === 'endif') stack.pop();
+			else if (dir === 'define' && live()) {
+				const m = rest.match(/^(\w+)\s+(.+?)\s*(\/\/.*)?$/);
+				if (m && value(m[2]) !== undefined) defs.set(m[1], value(m[2]));
+				else if (/^\w+\s*$/.test(rest)) defs.set(rest.trim(), 1);
+			}
+			return line;
+		}
+		return live() ? line : '';
+	});
+	return out.join('\n');
+}
+
 /**
  * A source file, with a copy in which comments and the insides of string and
  * character literals are blanked to spaces. Structure — braces, parentheses,
  * semicolons — is found in the masked copy, so a brace in a comment or a string
  * cannot unbalance it; text is taken from the original at the same offsets.
  */
-function load(path) {
-	const text = readFileSync(path, 'utf8');
+function load(path, bus) {
+	const text = preprocess(readFileSync(path, 'utf8'), bus);
 	const m = text.split('');
 	for (let i = 0; i < m.length; ) {
 		if (text.startsWith('//', i)) {
@@ -88,7 +146,10 @@ function load(path) {
 	return { path, text, masked: m.join('') };
 }
 
-const sources = SOURCE_ROOTS.flatMap((root) => walk(join(REPO, root))).map(load);
+const files = SOURCE_ROOTS.flatMap((root) => walk(join(REPO, root)));
+const SOURCES = Object.fromEntries(BUSES.map((bus) => [bus, files.map((f) => load(f, bus))]));
+/** The build being read; collectBoth() sets it for each bus in turn. */
+let sources = SOURCES.unibus;
 
 /** Offset just past the bracket that closes the one at `open`. */
 function closing(masked, open) {
@@ -159,21 +220,55 @@ const ARGS = {
 	double: ['parent', 'name', 'short', 'readonly', 'unit', 'format', 'info'],
 };
 
+/** The arguments of one parameter constructor call, by name. */
+function callArgs(type, text, masked, open) {
+	if (!ARGS[type]) throw new Error(`parameter type ${type} unknown to ${GENERATOR}`);
+	const close = closing(masked, open);
+	const raw = splitArgs(text.slice(open + 1, close - 1), masked.slice(open + 1, close - 1));
+	return { close, a: Object.fromEntries(ARGS[type].map((k, i) => [k, raw[i]])) };
+}
+
+/** The longest common prefix and suffix of some strings, and what varies between. */
+function varying(strings) {
+	let pre = strings[0];
+	let suf = strings[0];
+	for (const s of strings) {
+		while (!s.startsWith(pre)) pre = pre.slice(0, -1);
+		while (!s.endsWith(suf)) suf = suf.slice(1);
+	}
+	if (pre.length + suf.length > Math.min(...strings.map((s) => s.length))) suf = '';
+	return { pre, suf, parts: strings.map((s) => s.slice(pre.length, s.length - suf.length)) };
+}
+
+/**
+ * An array of parameters, one per line or unit, as one entry: the names it
+ * spans, and the description with the varying index written *n*.
+ */
+function arrayEntry(elems) {
+	const first = elems[0];
+	const names = elems.map((e) => e.name);
+	const info = varying(elems.map((e) => e.info));
+	const index = varying(names).parts;
+	return {
+		...first,
+		name: names.length > 1 ? `${names[0]} … ${names[names.length - 1]}` : names[0],
+		short: elems.length > 1 && first.short ? `${first.short} … ${elems[elems.length - 1].short}` : first.short,
+		info: info.parts.every((p, i) => p === index[i]) && info.parts.some(Boolean) ? `${info.pre}*n*${info.suf}` : first.info,
+		count: elems.length,
+		lastName: names[names.length - 1],
+	};
+}
+
 function parameters({ text, masked }, body) {
 	const lines = text.split('\n');
-	const re = /\bparameter_(\w+)_c\s+(\w+)\s*=\s*parameter_\w+_c\s*\(/g;
+	const re = /\bparameter_(\w+)_c\s+(\w+)\s*(\[[^\]]*\])?\s*=\s*(\{|parameter_\w+_c\s*\()/g;
 	re.lastIndex = body.start;
 	const found = [];
 	let m;
 	while ((m = re.exec(masked)) && m.index < body.end) {
 		const type = m[1];
-		if (!ARGS[type]) throw new Error(`parameter type ${type} unknown to ${GENERATOR}`);
-		const open = m.index + m[0].length - 1;
-		const close = closing(masked, open);
-		const raw = splitArgs(text.slice(open + 1, close - 1), masked.slice(open + 1, close - 1));
-		const a = Object.fromEntries(ARGS[type].map((k, i) => [k, raw[i]]));
 		const first = lineOf(text, m.index);
-		found.push({
+		const describe = (a) => ({
 			member: m[2],
 			type,
 			name: cString(a.name),
@@ -182,6 +277,30 @@ function parameters({ text, masked }, body) {
 			unit: a.unit ? cString(a.unit) : '',
 			info: cString(a.info),
 			base: a.base ? Number(a.base) : 10,
+		});
+		let entry;
+		let close;
+		if (m[3]) {
+			// an array: { parameter_x_c(...), parameter_x_c(...), ... }
+			const open = m.index + m[0].length - 1;
+			close = closing(masked, open);
+			const call = /parameter_\w+_c\s*\(/g;
+			call.lastIndex = open;
+			const elems = [];
+			let c;
+			while ((c = call.exec(masked)) && c.index < close) {
+				const r = callArgs(type, text, masked, c.index + c[0].length - 1);
+				elems.push(describe(r.a));
+				call.lastIndex = r.close;
+			}
+			entry = arrayEntry(elems);
+		} else {
+			const r = callArgs(type, text, masked, m.index + m[0].length - 1);
+			close = r.close;
+			entry = describe(r.a);
+		}
+		found.push({
+			...entry,
 			...docComment(lines, first),
 			first,
 			last: lineOf(text, close),
@@ -237,7 +356,7 @@ function constructorSettings(name) {
 		const open = masked.indexOf('{', afterArgs);
 		const body = text.slice(open, closing(masked, open));
 		const sets = [];
-		for (const s of body.matchAll(/\b(\w+)\.(value|kind|readonly|content)\s*=\s*([^;]+);/g))
+		for (const s of body.matchAll(/\b(\w+)(?:\[[^\]]*\])?\.(value|kind|readonly|content)\s*=\s*([^;]+);/g))
 			sets.push({ member: s[1], field: s[2], expr: s[3].trim() });
 		return sets;
 	}
@@ -324,7 +443,69 @@ function overrides(chain, stops) {
 			out.set(p.name, o);
 		}
 	}
-	return [...out.values()].filter((o) => o.readonly !== undefined || o.default !== undefined);
+	return [...out.values()]
+		.filter((o) => o.readonly !== undefined || o.default !== undefined)
+		.map((o) => {
+			const bits = [];
+			if (o.readonly !== undefined) bits.push(o.readonly ? 'is read-only' : 'can be set');
+			if (o.default !== undefined) bits.push(`starts at ${renderDefault({ ...o.param, default: o.default })}`);
+			return { ...o, text: `\`${o.param.name}\` ${bits.join(' and ')}` };
+		});
+}
+
+/**
+ * A class as both builds see it, merged. A parameter both carry the same way is
+ * one row; where the builds differ the row says how, and a parameter only one
+ * build carries says which.
+ */
+function collectBoth(name, documented) {
+	const seen = {};
+	for (const bus of BUSES) {
+		sources = SOURCES[bus];
+		try {
+			seen[bus] = collect(name, documented);
+		} catch (e) {
+			if (!/is not declared/.test(e.message)) throw e;
+		}
+	}
+	sources = SOURCES.unibus;
+	const [a, b] = BUSES.map((bus) => seen[bus]);
+	if (!a || !b) {
+		const only = a ? 'unibus' : 'qbus';
+		if (!seen[only]) throw new Error(`class ${name} is not declared under ${SOURCE_ROOTS.join(', ')}`);
+		return seen[only];
+	}
+	const other = new Map(b.params.map((p) => [p.member, p]));
+	const params = [];
+	for (const p of a.params) {
+		const q = other.get(p.member);
+		other.delete(p.member);
+		if (!q) {
+			params.push({ ...p, only: 'unibus' });
+			continue;
+		}
+		const merged = { ...p };
+		const da = renderDefault(p);
+		const db = renderDefault(q);
+		if (da !== db) merged.default = { text: `${da} on UNIBUS, ${db} on QBUS` };
+		if (p.readonly !== q.readonly) merged.readonlyOn = p.readonly ? 'unibus' : 'qbus';
+		if (p.count !== q.count && p.count && q.count) merged.qbusLast = q.lastName;
+		params.push(merged);
+	}
+	// what only the QBUS build has, after whatever it follows there
+	for (const q of other.values()) {
+		const at = b.params.indexOf(q);
+		const after = at > 0 ? params.findIndex((p) => p.member === b.params[at - 1].member) : -1;
+		params.splice(after + 1, 0, { ...q, only: 'qbus' });
+	}
+	const said = (o) => o.map((x) => x.text).join('; ');
+	const oa = said(a.overrides);
+	const ob = said(b.overrides);
+	return {
+		params,
+		stops: [...new Set([...a.stops, ...b.stops])],
+		overrides: oa === ob ? a.overrides : [...a.overrides.map((x) => ({ ...x, bus: 'unibus' })), ...b.overrides.map((x) => ({ ...x, bus: 'qbus' }))],
+	};
 }
 
 /** Whether some constructor assigns the parameter's value, literal or not. */
@@ -367,9 +548,12 @@ const heading = (group) => group.map((p) => `\`${p.name}\``).join(', ');
 
 function table(params, { withDefault }) {
 	const rows = params.map((p) => {
-		const leader = p.shares || (p.doc ? p : null);
-		const name = leader ? `[\`${p.name}\`](#${slug(heading(leader.group))})` : `\`${p.name}\``;
-		const kind = valueKind(p) + (p.readonly && p.kind === 'config' ? ', read-only' : '');
+		const name = p.leader ? `[\`${p.name}\`](#${p.leader.anchor})` : `\`${p.name}\``;
+		let kind = valueKind(p);
+		if (p.readonlyOn) kind += `, read-only on ${BUS_NAME[p.readonlyOn]}`;
+		else if (p.readonly && p.kind === 'config') kind += ', read-only';
+		if (p.only) kind += ` (${BUS_NAME[p.only]} only)`;
+		if (p.qbusLast) kind += `; on QBUS up to \`${p.qbusLast}\``;
 		const cols = [name, p.short && p.short !== p.name ? `\`${p.short}\`` : '', kind];
 		if (withDefault) cols.push(renderDefault(p));
 		cols.push(cell(p.info));
@@ -409,9 +593,14 @@ function headingLine(line) {
  * class documented elsewhere into a Markdown link.
  */
 function render(cls, documented, level, anchor, link) {
-	const { params, stops, overrides } = collect(cls, documented);
+	const { params, stops, overrides } = collectBoth(cls, documented);
+	// who shares whose `///` text, by member: the builds' copies were merged
+	const byMember = new Map(params.map((p) => [p.member, p]));
 	for (const p of params) if (p.doc) p.group = [p];
-	for (const p of params) if (p.shares) p.shares.group.push(p);
+	for (const p of params) {
+		p.leader = p.doc ? p : p.shares ? byMember.get(p.shares.member) : null;
+		if (p.leader && p.leader !== p) p.leader.group.push(p);
+	}
 
 	const settings = params.filter((p) => p.kind === 'config');
 	const status = params.filter((p) => p.kind === 'status');
@@ -437,13 +626,12 @@ function render(cls, documented, level, anchor, link) {
 	if (!settings.length && !status.length) out.push('It has no parameters of its own.', '');
 	for (const stop of stops) out.push(`It also carries the parameters under ${link(stop)}.`, '');
 	if (overrides.length) {
-		const said = overrides.map((o) => {
-			const bits = [];
-			if (o.readonly !== undefined) bits.push(o.readonly ? 'is read-only' : 'can be set');
-			if (o.default !== undefined) bits.push(`starts at ${renderDefault({ ...o.param, default: o.default })}`);
-			return `\`${o.param.name}\` ${bits.join(' and ')}`;
-		});
-		out.push(`On this device, ${said.join('; ')}.`, '');
+		const on = (bus) => overrides.filter((o) => o.bus === bus).map((o) => o.text).join('; ');
+		if (overrides.some((o) => o.bus))
+			for (const bus of BUSES) {
+				if (on(bus)) out.push(`On this device on ${BUS_NAME[bus]}, ${on(bus)}.`, '');
+			}
+		else out.push(`On this device, ${overrides.map((o) => o.text).join('; ')}.`, '');
 	}
 	if (notes.length) {
 		out.push(`${h} In detail`, '');

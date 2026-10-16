@@ -168,31 +168,63 @@ public:
 	
 	//parameter_string_c   ip_host = parameter_string_c(  this, "SLU socket IP host", "host", /*readonly*/ false, "ip hostname");
 	//parameter_unsigned_c ip_port = parameter_unsigned_c(this, "SLU socket IP serialport", "serialport", /*readonly*/ false, "", "%d", "ip serialport", 32, 10);
+	/// The board's UART the line drives while `tcp_role` is empty: `ttyS2` is the
+	/// cape's UART2, `ttyS1` its UART1. `baudrate` is a standard rate from 50 to
+	/// 57600, and `mode` is data bits, parity and stop bits in three characters:
+	/// `8N1`, `7E1`, `8O2`. A port, rate or mode the board cannot open refuses the
+	/// enable. All three are read when the device is enabled and are locked while
+	/// it is. On a line carried over the network `serialport` and `mode` are unused,
+	/// and `baudrate` sets the character time both directions are paced at.
 	parameter_string_c serialport = parameter_string_c(this, "serialport", "p", /*readonly*/
 	false, "Linux serial port: \"ttyS1\" or \"ttyS2\"");
-
 	parameter_unsigned_c baudrate = parameter_unsigned_c(this, "baudrate", "b", /*readonly*/
 	false, "", "%d", "Baudrate: 110, 300, ... 38400", 16, 10);
 	// 40kbaud -> 25us bit polling period needed
-
 	parameter_string_c mode = parameter_string_c(this, "mode", "m", /*readonly*/false,
 			"Mode: 8N1, 7E1, ... ");
 
+	/// Switch SW4-7 on the M7856. On, a received character that had a framing or
+	/// parity error, or arrived before the program read the one before it, sets
+	/// the matching error bit in RBUF together with bit 15. Off, RBUF carries the
+	/// character alone.
 	parameter_bool_c error_bits_enable = parameter_bool_c(this, "errorbits", "eb", /*readonly*/
 	false, "Enable error bits (M7856 SW4-7)");
 
+	/// Switch SW4-1 on the M7856. On, the BREAK bit in XCSR holds the serial
+	/// port's transmit line spacing for as long as the program keeps it set, which
+	/// is how a program sends BREAK; a TU58 needs it. A line carried over the
+	/// network has no break condition to send.
 	parameter_bool_c break_enable = parameter_bool_c(this, "break", "b", /*readonly*/false,
 			"Enable BREAK transmission (M7856 SW4-1)");
 
-	// TCP transport: when tcp_role is "listen" or "connect" the line's bytes are
-	// carried over a TCP/RFC2217 connection instead of the Linux serial port,
-	// so an independent DL11 can be reached without a physical UART.
+	/// Carries the line over the network. `listen` accepts one client on
+	/// `tcp_port`, speaking Telnet with RFC 2217; `connect` dials
+	/// `tcp_host`:`tcp_port` and dials again when the connection drops;
+	/// `websocket` carries the line on the board's WebSocket
+	/// `/ws/serial/<device>/0`, for a browser terminal. Empty, the line runs on
+	/// `serialport`. The **Configurations** screen edits the three as one field: a
+	/// bare port listens, `host:port` connects, `ws` is the browser terminal.
+	///
+	/// A line that is already on the network can be retuned while the device is
+	/// enabled; the change takes effect at once and drops a connected client.
+	/// Moving a line between the UART and the network takes disabling the device
+	/// first.
 	parameter_string_c tcp_role = parameter_string_c(this, "tcp_role", "tr", /*readonly*/false,
-			"TCP role: \"\" = use serial port, \"listen\" = accept a client, \"connect\" = dial out");
+			"TCP role: \"\" = use serial port, \"listen\", \"connect\" or \"websocket\"");
 	parameter_string_c tcp_host = parameter_string_c(this, "tcp_host", "th", /*readonly*/false,
 			"TCP connect-out target host (tcp_role=connect)");
+
+	/// The port `listen` accepts on, or `connect` dials. Lines that listen on the
+	/// same port share it: a caller reaches whichever of them is free, and is
+	/// refused while all are busy. A port another program holds refuses the
+	/// enable.
+	/// @default 4200
 	parameter_unsigned_c tcp_port = parameter_unsigned_c(this, "tcp_port", "tp", /*readonly*/false,
 			"", "%d", "TCP listen/connect port", 16, 10);
+
+	/// Drops a client that has sent nothing for this many seconds, so a forgotten
+	/// session does not hold the line. 0 keeps a client for as long as it stays
+	/// connected. Read when the line opens.
 	parameter_unsigned_c tcp_idle_timeout = parameter_unsigned_c(this, "tcp_idle_timeout", "ti",
 			/*readonly*/false, "s", "%d", "drop a silent TCP client after N seconds, 0 = never", 16, 10);
 
@@ -243,8 +275,16 @@ public:
 	ltc_c();
 	~ltc_c();
 
+	/// The mains frequency the clock ticks at, 50 or 60 Hz; another value is
+	/// accepted with a warning. Each tick sets LKS bit 7 and, with LKS bit 6 set,
+	/// interrupts. Ticks the board delivers late are made up by the ones after
+	/// them, which come at up to twice the rate until the count has caught up with
+	/// real time. A change takes effect at the next tick.
 	parameter_unsigned_c frequency = parameter_unsigned_c(this, "Line clock frequency", "freq", /*readonly*/
 	false, "", "%d", "50/60 Hz", 32, 10);
+
+	/// The clock input. Off, the clock stops ticking: LKS bit 7 stays clear and
+	/// no interrupt comes.
 	parameter_bool_c ltc_enable = parameter_bool_c(this, "LTC input enable", "ltc",/*readonly*/
 	false, "1 = enable update of LKS by LTC Input");
 

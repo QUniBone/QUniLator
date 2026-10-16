@@ -93,21 +93,30 @@ public:
 
     bool on_param_changed(parameter_c *param) override;
 
-    // The write-enable ring in the back of the reel. Cleared, the tape is
-    // write protected and a write command is refused with WLE.
+    /// The write-enable ring in the back of the reel. Cleared, the reel is
+    /// write protected: the controller refuses every write, tape mark and
+    /// erase with the write lock error. Clear it before mounting a tape
+    /// that has to stay as it is, such as a distribution kit; a program that
+    /// writes tapes will otherwise overwrite it. A reel whose image cannot be
+    /// written reads as one without a ring, whatever this says.
     parameter_bool_c write_enable_ring = parameter_bool_c(this, "writering", "wr",
                                          /*readonly*/ false,
                                          "Write-enable ring fitted; clear to write protect the reel");
 
-    // The transport's ON-LINE switch. A tape motion command reaches the
-    // transport only while it is on-line; OFL in TSSR is its complement.
+    /// The transport's ON-LINE switch. Tape motion reaches the transport only
+    /// while it is on-line with a reel mounted; otherwise TSSR reports it
+    /// off-line. Turning it off or on, like changing the reel, sets volume
+    /// check, which the host meets with its next command. A rewind and unload
+    /// command from the host turns it off; set it again to bring the tape
+    /// back.
     parameter_bool_c online_switch = parameter_bool_c(this, "online", "onl",
                                      /*readonly*/ false,
                                      "Transport is on-line and accepts tape motion commands");
 
-    // Front-panel WRITE PROTECT lamp, lit while the mounted reel is write
-    // locked. Refreshed each lamp poll so the dashboard tracks it; the ACCESS
-    // lamp (storagedrive_c) covers tape motion.
+    /// The WRITE PROTECT lamp, lit while the reel is write locked: no reel,
+    /// an image that cannot be written, or `writering` cleared.
+    // Refreshed each lamp poll so the dashboard tracks it; the ACCESS lamp
+    // (storagedrive_c) covers tape motion.
     parameter_bool_c write_protect_lamp = parameter_bool_c(this, "writeprotectlamp", "wpl",
                                           /*readonly*/ true, "State of WRITE PROTECT lamp");
     void refresh_activity(void) override;
@@ -165,9 +174,14 @@ public:
     // its high byte loads TSDBX on the TSV05.
     qunibusdevice_register_t *busreg_TSSR;
 
-    // The Extended Features switch on the M7196: 22-bit command pointers and
-    // data pointers, the fifth characteristics word, and XST4. Present only on
-    // the Q-bus board, which is the only one that carries TSDBX.
+    /// The Extended Features switch of the TSV05's M7196 module. On, command
+    /// packets and data buffers are addressed with 22 bits, a write
+    /// characteristics command takes its fifth word, the message packet
+    /// carries XST4, and rewind with immediate interrupt is accepted. Off, the
+    /// controller addresses 18 bits, as a TS11 does. It is read by every
+    /// command, so a change takes effect with the next one. The UNIBUS TS11
+    /// has no such switch, and there it stays at 0.
+    /// @default 1 on a 22-bit QBUS, 0 on the UNIBUS
     parameter_bool_c extended_features = parameter_bool_c(this, "extfeatures", "ef",
                                          /*readonly*/ false,
                                          "Extended Features switch: 22-bit addressing and XST4");

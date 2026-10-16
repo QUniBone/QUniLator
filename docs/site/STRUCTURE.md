@@ -118,6 +118,13 @@ declaration in the source; declarations that follow it without a blank line
 share it. A `/// @default <text>` line fills the Default column where the
 starting value is not a literal.
 
+The source is read once as the UNIBUS build compiles it and once as the QBUS
+build does, deciding `#if` conditions on the bus macros and on numbers the file
+defines. Where the builds differ, the row says how: a default or read-only flag
+per bus, or a parameter one build carries alone. An array of parameters — one
+per serial line — is one row, `tcp_port0 … tcp_port7`, with the varying index
+written *n* in its description.
+
 Base classes are walked up to a class that has a block of its own, which is
 linked by the heading that block sits under. The overview page holds the blocks
 for what every device, every card on the bus and every drive carries, so those

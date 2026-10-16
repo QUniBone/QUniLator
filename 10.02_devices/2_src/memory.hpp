@@ -50,31 +50,60 @@ public:
 	memory_c();
 	~memory_c();
 
-	// Where the card sits and how much it carries. The defaults cover
-	// everything below the I/O page, which is the whole machine on a backplane
-	// that carries no memory of its own.
+	/// The first address the card answers, octal and even. Changing it, or
+	/// `size`, moves the card: a card in the machine gives up its range and
+	/// takes the new one, probed as `probe` says, and the range it takes up
+	/// comes up cleared. A range that is refused leaves the card where it was.
+	//
+	// The defaults cover everything below the I/O page, which is the whole
+	// machine on a backplane that carries no memory of its own.
 	parameter_unsigned_c startaddr = parameter_unsigned_c(this, "startaddr", "sa",
 			/*readonly*/false, "", "%08o", "first address the card answers", 22, 8);
+
+	/// How much memory the card carries, written as a card is described —
+	/// `256 KB`, `2 MB`, or a count of bytes — and read back that way.
+	/// `endaddr`, the last address the card answers, follows from it and
+	/// `startaddr`. The default covers everything the bus leaves to memory,
+	/// which is the whole machine on a backplane that carries no memory of
+	/// its own.
+	///
+	/// The range has to end below the I/O page. On a 22-bit QBUS it also has
+	/// to end below 17360000: the top 128 KB under the I/O page belong to the
+	/// processor module, where a KDJ11 answers its boot ROM without a bus
+	/// cycle, so nothing on the bus can see the collision. A range that breaks
+	/// either rule is refused, and the error says why.
+	/// @default all the bus leaves to memory: 248 KB with 18-bit addresses, 3960 KB on a 22-bit QBUS
+	//
 	// "256 KB", "2 MB", or a plain count of bytes
 	parameter_string_c size = parameter_string_c(this, "size", "sz", /*readonly*/false,
 			"how much memory the card carries");
 	// the last address the placement reaches, as the card reports it
 	parameter_unsigned_c endaddr = parameter_unsigned_c(this, "endaddr", "ea",
 			/*readonly*/true, "", "%08o", "last address the card answers", 22, 8);
-	// A range claimed over memory the machine already carries has two slaves
-	// answering one cycle. Clear this only where the probe cannot work: a bus
-	// with no arbitrator to grant the DMA it needs.
 	// Lit while the machine is reading or writing the card, one lamp per
 	// direction. The PRU answers this card's range out of DDR on its own, so
 	// the only thing the ARM sees of a transfer is the counts the PRU keeps;
 	// a lamp is its count having moved since the last look, held on long
 	// enough for a periodic sampler to catch a burst rather than miss it
 	// between two.
+	/// Lit while the machine reads or writes the card, one lamp per direction.
 	parameter_bool_c read_lamp = parameter_bool_c(this, "readlamp", "rdl",
 			/*readonly*/true, "machine is reading the card");
 	parameter_bool_c write_lamp = parameter_bool_c(this, "writelamp", "wrl",
 			/*readonly*/true, "machine is writing the card");
 
+	/// Before the card claims a range it reads the range over the bus, and
+	/// refuses when anything answers there: a range claimed over memory the
+	/// machine already carries puts two cards on one bus cycle. The probe reads
+	/// both ends and words in between. A range found clear is remembered on the
+	/// board, and enabling the card on the same range again goes in on that
+	/// record; moving the card probes again. Set this to 0 only where the
+	/// probe cannot work: a bus with nothing on it to grant the board the
+	/// cycles it probes with.
+	//
+	// A range claimed over memory the machine already carries has two slaves
+	// answering one cycle. Clear this only where the probe cannot work: a bus
+	// with no arbitrator to grant the DMA it needs.
 	parameter_bool_c probe = parameter_bool_c(this, "probe", "pr", /*readonly*/false,
 			"check the range answers to nothing before claiming it");
 

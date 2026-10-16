@@ -65,32 +65,55 @@ public:
     void on_init_changed(void) override;
     void refresh_activity(void) override;
 
-    // host network interface the packet bridge attaches to
+    /// The board's network interface the controller is attached to. `veth-pdp`
+    /// is the one the QUniLator package creates for an emulated controller: its
+    /// other end is joined to the bridge `br0` together with the board's own
+    /// `eth0`, so the machine reaches both the LAN and the board itself. A raw
+    /// attachment to the uplink reaches the LAN but cannot reach the board it
+    /// runs on, which is why the controller has an interface of its own. Read
+    /// when the controller is enabled; an interface that is not there yet is
+    /// tried again every two seconds until it appears.
     parameter_string_c interface = parameter_string_c(this, "interface", "if", false,
             "host Ethernet interface shared with the emulated controller");
 
-    // station address, stored in the address PROM
+    /// The station address the address PROM gives the driver: six hex bytes
+    /// separated by `:` or `-`. Each board derives its own the first time -
+    /// DEC's prefix `08:00:2b` and the low three bytes of the board's own
+    /// Ethernet address - and keeps it in `delqa.mac` in the board's state
+    /// directory (`/var/lib/qunilator`), so it stays the same across boots and
+    /// differs from board to board. A value set here overrides it and is stored
+    /// with the configuration. A multicast address (low bit of the first byte
+    /// set) is refused. Change it while the controller is disabled.
+    /// @default derived from the board's Ethernet address
     parameter_string_c mac = parameter_string_c(this, "mac", "mac", false,
             "station address, 6 hex bytes separated by \":\" or \"-\"");
 
-    // configuration switch: present the DEQNA register model to the host
-    // Index into the shared activity LED bank. Drives claim indexes by unit
-    // number, so 3 keeps the controller clear of a single-drive system.
+    /// Which of the board's four activity LEDs, 0 to 3, traffic lights; 4 or
+    /// more lights none. Drives take the LEDs by unit number, so 3 keeps the
+    /// controller clear of a machine with one drive.
     parameter_unsigned_c activity_led = parameter_unsigned_c(this, "activityled", "al", /*readonly*/
                                         false, "", "%d", "Number of LED to used for activity display.", 8, 10);
 
-    // Lit by traffic in either direction, held on past the frame so a
-    // periodic sampler sees it.
+    /// On while frames move in either direction, held a moment past each frame
+    /// so the web interface sees it.
     parameter_bool_c activity_lamp = parameter_bool_c(this, "activitylamp", "actl", /*readonly*/
                                      true, "State of activity lamp");
 
+    /// The DEQNA-lock switch on the board. On, the controller powers up as a
+    /// DEQNA and stays one, whatever a driver writes to the vector register,
+    /// which is what RSTS/E and other DEQNA-only drivers need. Off, it powers
+    /// up as a DELQA, and a driver that clears the mode bit in the vector
+    /// register switches it to the DEQNA register model itself. Can be changed
+    /// only while the controller is disabled.
     parameter_bool_c deqna_lock = parameter_bool_c(this, "deqna_lock", "dl", false,
             "DEQNA-lock mode: emulate a DEQNA (for RSTS/E and other DEQNA-only drivers)");
 
-    // A loopback connector plugged into the transceiver port, as DEC's
-    // diagnostics ask for: what the controller transmits comes straight back
-    // to its own receiver, the network is disconnected, and the returning
-    // signal shows as carrier.
+    /// A loopback connector plugged into the transceiver port, as DEC's
+    /// diagnostics ask for. Every frame the controller transmits comes straight
+    /// back to its own receiver and shows as carrier in the CSR while it
+    /// passes; the network is disconnected in both directions. Set it to run
+    /// the external loopback tests of the CZQNA diagnostic, and leave it off
+    /// for a machine on the network. It takes effect at once.
     parameter_bool_c loopback_connector = parameter_bool_c(this, "loopback", "lb", false,
             "loopback connector installed on the transceiver port");
 

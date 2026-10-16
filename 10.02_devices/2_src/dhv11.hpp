@@ -194,15 +194,27 @@ public:
 
 	serial_tcp_line_c tcp_line[DHV_LINE_COUNT];
 
+	/// Each line's network end, line by line: `tcp_roleN`, `tcp_hostN` and
+	/// `tcp_portN` for line N. `listen` accepts one client on the port, speaking
+	/// Telnet with RFC 2217; `connect` dials `host`:`port` and dials again when
+	/// the connection drops; `websocket` carries the line on the board's WebSocket
+	/// `/ws/serial/<device>/<N>`; empty leaves the line unconnected. Every line
+	/// listens by default, line N of the first DHV11 on port 4100 + N, and the
+	/// second DHV11 sixteen ports higher. The **Configurations** screen edits a
+	/// line's three as one field: a bare port listens, `host:port` connects, `ws`
+	/// is the browser terminal. Lines given the same port share it: a caller
+	/// reaches whichever of them is free. A line can be retuned while the device
+	/// is enabled; the change drops that line's client and leaves the others
+	/// alone.
 	parameter_string_c   tcp_role[DHV_LINE_COUNT] = {
-		parameter_string_c(this, "tcp_role0", "r0", false, "line 0 TCP role: \"\"/listen/connect"),
-		parameter_string_c(this, "tcp_role1", "r1", false, "line 1 TCP role: \"\"/listen/connect"),
-		parameter_string_c(this, "tcp_role2", "r2", false, "line 2 TCP role: \"\"/listen/connect"),
-		parameter_string_c(this, "tcp_role3", "r3", false, "line 3 TCP role: \"\"/listen/connect"),
-		parameter_string_c(this, "tcp_role4", "r4", false, "line 4 TCP role: \"\"/listen/connect"),
-		parameter_string_c(this, "tcp_role5", "r5", false, "line 5 TCP role: \"\"/listen/connect"),
-		parameter_string_c(this, "tcp_role6", "r6", false, "line 6 TCP role: \"\"/listen/connect"),
-		parameter_string_c(this, "tcp_role7", "r7", false, "line 7 TCP role: \"\"/listen/connect"),
+		parameter_string_c(this, "tcp_role0", "r0", false, "line 0 TCP role: \"\"/listen/connect/websocket"),
+		parameter_string_c(this, "tcp_role1", "r1", false, "line 1 TCP role: \"\"/listen/connect/websocket"),
+		parameter_string_c(this, "tcp_role2", "r2", false, "line 2 TCP role: \"\"/listen/connect/websocket"),
+		parameter_string_c(this, "tcp_role3", "r3", false, "line 3 TCP role: \"\"/listen/connect/websocket"),
+		parameter_string_c(this, "tcp_role4", "r4", false, "line 4 TCP role: \"\"/listen/connect/websocket"),
+		parameter_string_c(this, "tcp_role5", "r5", false, "line 5 TCP role: \"\"/listen/connect/websocket"),
+		parameter_string_c(this, "tcp_role6", "r6", false, "line 6 TCP role: \"\"/listen/connect/websocket"),
+		parameter_string_c(this, "tcp_role7", "r7", false, "line 7 TCP role: \"\"/listen/connect/websocket"),
 	};
 	parameter_string_c   tcp_host[DHV_LINE_COUNT] = {
 		parameter_string_c(this, "tcp_host0", "h0", false, "line 0 connect-out host"),
@@ -225,23 +237,22 @@ public:
 		parameter_unsigned_c(this, "tcp_port7", "p7", false, "", "%d", "line 7 TCP port", 16, 10),
 	};
 
-	// A line that listens only while the guest holds it open. With this set, a
-	// line's TCP port is bound while the guest asserts Data Terminal Ready on it
-	// (LNCTRL bit 9) and given up when DTR falls, so a caller reaches a line the
-	// guest is actually ready for rather than one that will not answer. This is
-	// how a real line behaves, so it is on; clearing it makes every configured
-	// line listen from the moment the device is enabled, whatever the guest is
-	// doing with it.
+	/// A line takes a caller only while the guest holds it open. With this on, a
+	/// line's TCP port is bound while the guest asserts Data Terminal Ready on it
+	/// (LNCTRL bit 9), and given up when DTR falls, which also ends a session in
+	/// progress; a caller then reaches only a line the guest is ready for. Off,
+	/// every line configured to listen does so from the moment the device is
+	/// enabled, whatever the guest is doing with it. Takes effect at once.
 	parameter_bool_c dtr_listen = parameter_bool_c(this, "dtr_listen", "dtrl", false,
 			"listen on a line's TCP port only while the guest asserts DTR");
 
-	// Per-line signal lamps for the dashboard, one set per line. The DHV11
-	// carries full modem control, so its panel shows more than the DZV11's:
-	// rx/tx pulse with traffic (held briefly by refresh_activity), dtr and rts
-	// follow the LNCTRL bits the guest drives, and cd/dsr/cts follow carrier —
-	// a connected TCP client, which the STAT register reports on all three.
-	// Nothing rings RI, so it has no lamp. Names end in "lamp" so webevents'
-	// lamp poll picks up the direct value assignments the device threads make.
+	/// The dashboard's signal lamps, one set per line: receive and transmit
+	/// activity, Data Terminal Ready and Request To Send as the guest drives them
+	/// in LNCTRL, and carrier, Data Set Ready and Clear To Send, which all three
+	/// stand while a client is connected.
+	// rx/tx pulse with traffic (held briefly by refresh_activity). Nothing rings
+	// RI, so it has no lamp. Names end in "lamp" so webevents' lamp poll picks up
+	// the direct value assignments the device threads make.
 	parameter_bool_c rx_lamp[DHV_LINE_COUNT] = {
 		parameter_bool_c(this, "rx0lamp", "rxl0", true, "line 0 receive activity"),
 		parameter_bool_c(this, "rx1lamp", "rxl1", true, "line 1 receive activity"),

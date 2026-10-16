@@ -168,7 +168,11 @@ public:
 
     bool signal_error_word_count_overflow ;
 
-    // one power switch for the whole box
+    /// The POWER switch of the drive box, one for both drives. Enabling the box
+    /// closes it, and the box runs its power-up initialize: both heads go to
+    /// track 0 and drive 0 reads track 1, sector 1. Opened, the controller
+    /// reads DONE and ERROR together, as with a box that is switched off.
+    /// Disabling the box opens it.
     parameter_bool_c power_switch = parameter_bool_c(this, "powerswitch", "pwr",/*readonly*/
                                     false, "State of POWER switch");
 

@@ -60,26 +60,52 @@ public:
 
 	bool on_param_changed(parameter_c *param) override;  // must implement
 
+	/// The console emulator and diagnostic ROM, the 256-word socket the
+	/// machine reads at 765000..765776. The file is a MACRO-11 listing of the
+	/// ROM, assembled at 165000, as the listings QUniLator ships are
+	/// (23-248F1 for the 11/04 and 11/34 class, 23-616F1 for the 11/60 and
+	/// 11/70). Empty or `-` leaves the socket empty, and an empty socket reads
+	/// 161777 in every word. A file that does not load, or is not assembled
+	/// at 165000, is refused with an error and leaves the socket empty.
+	/// The sockets can be changed only while the card is disabled.
+	//
 	// rom content.
 	// if filename parameter empty: ROM "Unplugged", rom[i] = 0161777 fill pattern
 	parameter_string_c consemurom_filepath = parameter_string_c(this, "consemu_file", "cer", /*readonly*/
 	false, "ak6dn.com *.lst file for console emulator & diag ROM. \"-\" = no ROM in socket.");
 
+	/// The four boot ROM sockets, 64 words each, which the machine reads at
+	/// 773000, 773200, 773400 and 773600. Each takes a MACRO-11 listing of one
+	/// DEC boot PROM, assembled at 173000 as every one of them is, and moves it
+	/// to its socket's addresses, so any PROM goes in any socket. A file that
+	/// does not load, or is not assembled at 173000, is refused with an error
+	/// and leaves the socket empty. Empty or `-` leaves it empty.
 	parameter_string_c bootrom1_filepath = parameter_string_c(this, "bootrom1_file", "br1", /*readonly*/
 	false, "ak6dn.com *.lst file for BOOT ROM1");
-
 	parameter_string_c bootrom2_filepath = parameter_string_c(this, "bootrom2_file", "br2", /*readonly*/
 	false, "ak6dn.com *.lst file for BOOT ROM2");
-
 	parameter_string_c bootrom3_filepath = parameter_string_c(this, "bootrom3_file", "br3", /*readonly*/
 	false, "ak6dn.com *.lst file for BOOT ROM3");
-
 	parameter_string_c bootrom4_filepath = parameter_string_c(this, "bootrom4_file", "br4", /*readonly*/
 	false, "ak6dn.com *.lst file for BOOT ROM4");
 
+	/// Where the machine starts at power-up, named by a code label of a
+	/// plugged ROM: `dl0n` in the RL PROM 23-751A9 boots RL unit 0, `DIAG` in
+	/// 23-248F1 starts the console emulator after its diagnostics. Labels are
+	/// case-sensitive. At power-up the card answers the processor's fetch of
+	/// the power-up vector at 24 and 26 itself, with this address as the PC
+	/// and the PSW the first boot socket holds at 773026, so the
+	/// machine runs the ROM with no console input. It does so for the first
+	/// two reads after power returns, or for 300 ms, whichever ends first.
+	/// Empty: the processor takes its power-up vector from memory.
+	///
+	/// A label no plugged ROM defines is refused, with the labels there are to
+	/// choose from, so the sockets are programmed first; a configuration does
+	/// that in the right order by itself. `bootaddress_info` shows the address
+	/// the label resolved to, `DISABLED` with no label, and `UNRESOLVED` when a
+	/// socket changed since took the label away.
 	parameter_string_c bootaddress_label = parameter_string_c(this, "bootaddress_label", "bl", /*readonly*/
 	false, "MACRO11 label from *.lst file to auto boot. Empty = no autoboot");
-
 	// info: show boot address, or NO AUTO BOOT
 	parameter_string_c bootaddress_info = parameter_string_c(this, "bootaddress_info", "bi",/*readonly*/
 	true, "resolved bootaddress => power-on PC");

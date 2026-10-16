@@ -51,12 +51,17 @@ public:
 
     struct KD11EA *kd11ea; // CPU state
 
+    /// The KT11-D memory management registers, as the running program leaves
+    /// them. MMR0 holds the enable bit and, once an abort has frozen it, what
+    /// caused the abort; MMR1 the register changes of the aborted instruction;
+    /// MMR2 the virtual address that instruction was fetched from.
+    /// `mmu_enabled` is 1 while relocation is on and addresses are 18 bits wide.
+    /// The registers sit inside the processor, as on a real 11/34, so another
+    /// card on the bus cannot read them.
+    //
     // The KT11-D's own registers, published as status because the machine
     // drives them. They are not QUNIBUS registers (see the file header), so
     // this is the only way to read them from outside the CPU.
-    // MMR0 holds the enable bit and, once an abort has frozen it, what caused
-    // it; MMR1 the register changes of the aborted instruction; MMR2 the
-    // virtual address that instruction was fetched from.
     parameter_unsigned_c mmr0 = parameter_unsigned_c(this, "MMR0", "mmr0",/*readonly*/
                                 true, "", "%06o", "KT11-D status register 0.", 16, 8);
     parameter_unsigned_c mmr1 = parameter_unsigned_c(this, "MMR1", "mmr1",/*readonly*/

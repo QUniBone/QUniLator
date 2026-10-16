@@ -150,12 +150,43 @@ public:
 
 	volatile uint16_t status_word; // visible to controller
 
+	/// What the drive is doing. `rotation` is the spindle speed: 2400 rpm with
+	/// a pack spinning, 0 at rest. `state` is the drive state the RL01/RL02
+	/// reports to the controller's Get Status, as DEC's manuals number it:
+	/// 0 load cartridge, 1 spin up, 2 brush cycle, 3 load heads, 4 seek,
+	/// 5 lock on, 6 unload heads, 7 spin down. A drive that is powered off
+	/// shows 255.
+	///
+	/// A seek to another cylinder holds the drive in state 4 for the time a
+	/// real positioner takes, from 5 ms for one track to 100 ms across the
+	/// whole pack; a seek to the cylinder the heads are on stays in state 5.
+	/// Either way the drive drops READY for the 6.5 ms the positioner takes to
+	/// settle before it accepts the next command.
 	parameter_unsigned_c rotation_umin = parameter_unsigned_c(this, "rotation", "rot",/*readonly*/
 	true, "rpm", "%d", "Current speed of disk", 32, 10);
 	// RL0102_STATE_*. no enum, is param
 	parameter_unsigned_c state = parameter_unsigned_c(this, "state", "st", /*readonly*/
 	true, "", "%d", "Internal state", 32, 10);
 
+	/// The drive's front panel. `powerswitch` is the POWER switch: enabling
+	/// the drive closes it and disabling it opens it, so it needs no attention
+	/// in normal use. A drive switched off is not ready and its panel is dark.
+	///
+	/// `runstopbutton` is the LOAD button. Pressed (1), a drive holding a
+	/// cartridge spins up, loads its heads and comes READY; released (0), it
+	/// unloads its heads and spins down to LOAD. Setting `image` on a drive at
+	/// rest presses it, and a new `image` on a spinning drive releases it and
+	/// presses it again once the pack is at rest, so a drive with a medium
+	/// comes READY without it being touched.
+	///
+	/// The four lamps follow the drive's state as DEC's RL01/RL02 manuals give
+	/// them: LOAD with the spindle stopped, READY with the heads on a track
+	/// and settled, FAULT on a drive fault or a write the drive refused, and
+	/// WRITE PROT while the pack is write-protected.
+	///
+	/// `writeprotectbutton` is the WRITE PROT switch. Pressed, the drive
+	/// refuses every write with a write gate error. An image the board can
+	/// only read is write-protected the same way, whatever the switch says.
 	// user controls
 	parameter_bool_c power_switch = parameter_bool_c(this, "powerswitch", "pwr",/*readonly*/
 	false, "State of POWER switch");
@@ -172,11 +203,19 @@ public:
 	parameter_bool_c writeprotect_button = parameter_bool_c(this, "writeprotectbutton", "wpb", /*readonly*/
 	false, "Writeprotect button pressed");
 
+	/// The cartridge cover. It can be opened (1) only while the drive is in
+	/// LOAD, and a drive with its cover open does not spin up. The drive
+	/// reports the cover in its status word, and DEC's drive diagnostic ZRLI
+	/// has it opened during its tests.
 	// cover normally always "closed", need to get opened for ZRLI
 	parameter_bool_c cover_open = parameter_bool_c(this, "coveropen", "co", /*readonly*/
 	false, "1, if RL cover is open");
 	// not readonly only in "load" state
 
+	/// With 1, a drive that is loaded takes the time a real one does to come
+	/// READY: 25 seconds of spin-up, then the heads load. With 0, it comes
+	/// READY as soon as it is loaded, which saves that wait on every boot.
+	/// Seek and settle times are modelled either way.
 	parameter_bool_c spinup_delay = parameter_bool_c(this, "spinupdelay", "sud", /*readonly*/
 	false, "1 = model the drive's spin-up/spin-down delay; 0 = ready at once");
 

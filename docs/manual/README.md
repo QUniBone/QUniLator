@@ -44,7 +44,26 @@ is in [`../site/`](../site/); [STRUCTURE.md](../site/STRUCTURE.md) describes it.
 **Devices** — one page per emulated card, its parameters written from the source.
 
 - [Device reference](devices/index.md) — and the parameters every device has
-- [KA780 — VAX-11/780 processor](devices/ka780.md)
+- [KA780 — VAX-11/780](devices/ka780.md)
+- [KA11, KD11-EA — PDP-11/20, PDP-11/34](devices/pdp11-processors.md)
+- [KE11-A — Arithmetic element](devices/ke11.md)
+- [MS11, MSV11 — Memory](devices/memory.md)
+- [M9312 — Bootstrap ROM](devices/m9312.md)
+- [MRV11-D — Bootstrap ROM](devices/mrv11d.md)
+- [UDA50 — MSCP disks](devices/uda50.md)
+- [RL11, RLV12 — RL01/RL02](devices/rl.md)
+- [RK11, RKV11 — RK05](devices/rk.md)
+- [RF11 — RS11](devices/rf11.md)
+- [RX11, RX211 — RX01/RX02](devices/rx.md)
+- [TS11, TSV05 — TS05 tape](devices/ts11.md)
+- [TQK50 — TK50 tape](devices/tqk50.md)
+- [DL11, KW11 — Serial line, line clock](devices/dl11.md)
+- [DZ11, DZV11 — Serial mux](devices/dz11.md)
+- [DHV11 — Serial mux](devices/dhv11.md)
+- [KW11-P — Programmable clock](devices/kw11p.md)
+- [DELQA — Ethernet](devices/delqa.md)
+- [DEUNA — Ethernet](devices/deuna.md)
+- [VCB01 — QVSS display](devices/vcb01.md)
 
 **The card**
 
