@@ -254,7 +254,7 @@ void rk05_c::worker(unsigned instance)
     UNUSED(instance) ; // only one
     timeout_c timeout;
 
-    while (true) {
+    while (!workers_terminate) {
         if (_seek_count > 0) {
             // A seek is active.  Wait at least 10ms and decrement
             // The seek count by a certain amount.  This is completely fudged.
