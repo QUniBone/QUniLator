@@ -34,8 +34,10 @@ pack is an image file on the board.
 
 A drive is ready once its `image` is open: setting the image is loading the pack,
 and there is no front panel to work. A function given to a drive that is not
-ready ends with Drive Error. The drive reports no write protection, and the
-Write Lock function leaves the pack writable.
+enabled ends with Nonexistent Drive, and one given to a drive that is enabled but
+not ready with Drive Error. Write Lock locks the selected drive: RKDS shows it
+write-protected, and a Write to it ends with Write Lockout Violation before
+anything is written. Drive Reset and bus INIT release the lock.
 
 ## Using it
 
