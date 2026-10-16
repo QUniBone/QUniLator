@@ -30,12 +30,11 @@ one.
 
 ## Using it
 
-1. Add `deuna` on the **Configurations** screen.
-2. With the controller disabled, set `interface` to `veth-pdp`. The board joins
-   that interface to the bridge that carries its own Ethernet, so the machine
-   reaches the LAN and the board itself. The starting value, `eth0`, reaches the
-   LAN only.
-3. Enable it. Enabling opens the interface, and is refused when the interface
+1. Add `deuna` on the **Configurations** screen. Its `interface` starts as
+   `veth-pdp`, which the board joins to the bridge that carries its own
+   Ethernet, so the machine reaches the LAN and the board itself. `eth0` reaches
+   the LAN only.
+2. Enable it. Enabling opens the interface, and is refused when the interface
    cannot be opened; the log says why.
 
 `interface`, `mac`, `rx_slots` and `tx_slots` can only be changed while the
@@ -60,8 +59,9 @@ What a configuration stores and an operator sets.
 
 | Parameter | Short | Value | Default | What it is |
 |---|---|---|---|---|
-| [`interface`](#interface) | `if` | text | `eth0` | host Ethernet interface shared with the emulated controller |
+| [`interface`](#interface) | `if` | text | `veth-pdp` | host Ethernet interface shared with the emulated controller |
 | [`mac`](#mac) |  | text | derived from the board's Ethernet address | station address, 6 hex bytes separated by ":", empty = device default |
+| [`activityled`](#activityled) | `al` | number | 3 | Number of the LED used for activity display. |
 | [`rx_slots`](#rx_slots-tx_slots) | `rx` | number | 0 | RX ring scan limit (0 = no limit) |
 | [`tx_slots`](#rx_slots-tx_slots) | `tx` | number | 0 | TX ring scan limit (0 = no limit) |
 | [`trace`](#trace) | `tr` | 0 or 1 | 0 | Trace CSR/ring events to log |
@@ -72,7 +72,6 @@ What the device reports as it runs. A configuration does not store these.
 
 | Parameter | Short | Value | What it is |
 |---|---|---|---|
-| [`activityled`](#activityled) | `al` | number | Number of the LED used for activity display. |
 | [`activitylamp`](#activitylamp) | `actl` | 0 or 1 | State of activity lamp |
 | [`rx_frames`](#rx_frames-tx_frames-rx_errors-tx_errors) | `rxf` | number | Received frames count |
 | [`tx_frames`](#rx_frames-tx_frames-rx_errors-tx_errors) | `txf` | number | Transmitted frames count |
@@ -85,7 +84,7 @@ It also carries the parameters under [parameters every card on the bus has](inde
 
 #### `interface`
 
-The board's network interface the controller is attached to. Set it to `veth-pdp`, the interface the QUniLator package creates for an emulated controller: its other end is joined to the bridge `br0` together with the board's own `eth0`, so the machine reaches both the LAN and the board itself. The starting value `eth0` attaches to the uplink directly, which reaches the LAN but not the board. Enabling the controller opens the interface and is refused when it is empty or cannot be opened; it can be changed only while the controller is disabled.
+The board's network interface the controller is attached to. It starts as `veth-pdp`, the interface the QUniLator package creates for an emulated controller: its other end is joined to the bridge `br0` together with the board's own `eth0`, so the machine reaches both the LAN and the board itself. `eth0` attaches to the uplink directly, which reaches the LAN but not the board. Enabling the controller opens the interface and is refused when it is empty or cannot be opened; it can be changed only while the controller is disabled.
 
 #### `mac`
 
@@ -93,7 +92,7 @@ The station address the controller answers to: six hex bytes separated by `:`. E
 
 #### `activityled`
 
-Which of the board's four activity LEDs, 0 to 3, traffic lights; 4 or more lights none.
+Which of the board's four activity LEDs, 0 to 3, traffic lights; 4 or more lights none. Drives take the LEDs by unit number, so 3 keeps the controller clear of a machine with one drive.
 
 #### `activitylamp`
 

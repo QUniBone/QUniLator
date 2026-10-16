@@ -67,11 +67,11 @@ public:
     /*
      * User-configurable parameters (set via menu system before install)
      */
-    /// The board's network interface the controller is attached to. Set it to
-    /// `veth-pdp`, the interface the QUniLator package creates for an emulated
-    /// controller: its other end is joined to the bridge `br0` together with
-    /// the board's own `eth0`, so the machine reaches both the LAN and the board
-    /// itself. The starting value `eth0` attaches to the uplink directly, which
+    /// The board's network interface the controller is attached to. It starts
+    /// as `veth-pdp`, the interface the QUniLator package creates for an
+    /// emulated controller: its other end is joined to the bridge `br0`
+    /// together with the board's own `eth0`, so the machine reaches both the
+    /// LAN and the board itself. `eth0` attaches to the uplink directly, which
     /// reaches the LAN but not the board. Enabling the controller opens the
     /// interface and is refused when it is empty or cannot be opened; it can
     /// be changed only while the controller is disabled.
@@ -91,7 +91,8 @@ public:
             "station address, 6 hex bytes separated by \":\", empty = device default");
 
     /// Which of the board's four activity LEDs, 0 to 3, traffic lights; 4 or
-    /// more lights none.
+    /// more lights none. Drives take the LEDs by unit number, so 3 keeps the
+    /// controller clear of a machine with one drive.
     parameter_unsigned_c activity_led = parameter_unsigned_c(this, "activityled", "al", false,
             "", "%d", "Number of the LED used for activity display.", 8, 10);
 

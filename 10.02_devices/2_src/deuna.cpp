@@ -305,8 +305,10 @@ deuna_c::deuna_c() : qunibusdevice_c()
     log_label = "deuna";
 
     // running state the controller drives itself, not configuration: the
-    // activity LED/lamp move with traffic and the frame/error counters accrue.
-    activity_led.kind = parameter_c::PARAM_STATUS;
+    // activity lamp moves with traffic and the frame/error counters accrue.
+    // Which LED shows the traffic is the operator's setting: the card's last
+    // one, clear of the LEDs the drives light by unit number.
+    activity_led.value = 3;
     activity_lamp.kind = parameter_c::PARAM_STATUS;
     stat_rx_frames.kind = parameter_c::PARAM_STATUS;
     stat_tx_frames.kind = parameter_c::PARAM_STATUS;
@@ -357,7 +359,10 @@ deuna_c::deuna_c() : qunibusdevice_c()
     reg_pcsr3->reset_value = 0;
     reg_pcsr3->writable_bits = 0x0003;
 
-    interface.value = "eth0";
+    // the veth the package creates for an emulated Ethernet controller, bridged
+    // to the LAN with the board's own address on the bridge, so the machine
+    // reaches the board as well as the rest of the network
+    interface.value = "veth-pdp";
     rx_slots.value = 0;
     tx_slots.value = 0;
     trace.value = false;

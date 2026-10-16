@@ -69,8 +69,8 @@ delqa_c::delqa_c() :
     deqna_lock.value = false;
     activity_led.value = 3;
 
-    // running state driven by traffic, not configuration
-    activity_led.kind = parameter_c::PARAM_STATUS;
+    // running state driven by traffic, not configuration; which LED shows it
+    // is the operator's setting
     activity_lamp.kind = parameter_c::PARAM_STATUS;
 
     memset(rbdl, 0, sizeof(rbdl));

@@ -72,6 +72,7 @@ What a configuration stores and an operator sets.
 |---|---|---|---|---|
 | [`interface`](#interface) | `if` | text | `veth-pdp` | host Ethernet interface shared with the emulated controller |
 | [`mac`](#mac) |  | text | derived from the board's Ethernet address | station address, 6 hex bytes separated by ":" or "-" |
+| [`activityled`](#activityled) | `al` | number | 3 | Number of the LED used for activity display. |
 | [`deqna_lock`](#deqna_lock) | `dl` | 0 or 1 | 0 | DEQNA-lock mode: emulate a DEQNA (for RSTS/E and other DEQNA-only drivers) |
 | [`loopback`](#loopback) | `lb` | 0 or 1 | 0 | loopback connector installed on the transceiver port |
 
@@ -81,7 +82,6 @@ What the device reports as it runs. A configuration does not store these.
 
 | Parameter | Short | Value | What it is |
 |---|---|---|---|
-| [`activityled`](#activityled) | `al` | number | Number of the LED used for activity display. |
 | [`activitylamp`](#activitylamp) | `actl` | 0 or 1 | State of activity lamp |
 
 It also carries the parameters under [parameters every card on the bus has](index.md#parameters-every-card-on-the-bus-has).
