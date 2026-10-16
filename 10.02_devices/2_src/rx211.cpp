@@ -84,7 +84,7 @@ RX211_c::RX211_c(void) : storagecontroller_c()
 
 
     name.value = "ry"; // only one supported
-    type_name.value = "RY211";
+    type_name.value = "RX211";
     log_label = "ry";
 
     // base addr, intr-vector, intr level
@@ -148,7 +148,7 @@ RXV21_c::RXV21_c(): RX211_c()
 {
     is_RXV21 = true ;
 
-    type_name.value = "RXV12";
+    type_name.value = "RXV21";
     // INTR level 4 instead of RX11s 5
     set_default_bus_params(0777170, 16, 0264, 4);
 }

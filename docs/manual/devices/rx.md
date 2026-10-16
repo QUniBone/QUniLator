@@ -16,8 +16,8 @@ QUniLator emulates both subsystems, each as three parts:
 | Drive box, with its microcontroller | `rxbox` | `rybox` |
 | Drives | `rx0`, `rx1` | `ry0`, `ry1` |
 
-The box's type reads `RX0102uCPU`. The `ry` card's type reads `RY211` on a
-UniBone and `RXV12` on a QBone.
+The box's type reads `RX0102uCPU`. The `ry` card's type reads `RX211` on a
+UniBone and `RXV21` on a QBone.
 
 > **UNIBUS · UniBone**
 >

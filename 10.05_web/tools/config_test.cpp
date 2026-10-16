@@ -832,8 +832,10 @@ int main(void) {
 				"label: UNIBUS RK controller");
 		check(device_label("RX11", "rx", "", 0) == "RX11 floppy controller",
 				"label: UNIBUS RX01 controller");
-		check(device_label("RY211", "ry", "", 0) == "RX211 floppy controller",
+		check(device_label("RX211", "ry", "", 0) == "RX211 floppy controller",
 				"label: UNIBUS RX02 controller");
+		check(device_label("RXV21", "ry", "", 0) == "RXV21 floppy controller",
+				"label: Q-bus RX02 controller");
 		check(device_label("DEUNA", "deuna", "", 0) == "DEUNA Ethernet controller",
 				"label: DEUNA controller");
 		check(device_label("KE11", "ke", "", 0) == "KE11-A arithmetic element",
