@@ -294,6 +294,11 @@ static std::deque<log_entry_t> journal; // ascending id; oldest dropped
 static uint64_t next_log_id = 1;
 static std::string journal_path;
 static std::ofstream journal_file;
+// Lines logged since the broadcast thread last wrote the file, in log order.
+// A thread that logs only appends here: the file write - a real write to flash
+// whenever the stream's buffer fills - happens on the broadcast thread, so a
+// device thread logging under the logger's own lock never waits on storage.
+static std::vector<log_entry_t> journal_unwritten;
 static const size_t JOURNAL_MAX = 20000;
 
 static picojson::value log_entry_json(const log_entry_t &e) {
@@ -343,7 +348,10 @@ void webevents_log_init(const std::string &dir) {
 std::string webevents_log_page_json(uint64_t before, unsigned limit) {
 	if (limit == 0 || limit > 1000)
 		limit = 200;
-	picojson::array entries;
+	// The entries are copied under journal_mutex and rendered outside it: a
+	// thread logging takes that lock, through the logger's, so it is held for
+	// a copy and no longer.
+	std::vector<log_entry_t> page;
 	bool more = false;
 	{
 		std::lock_guard<std::mutex> lock(journal_mutex);
@@ -351,28 +359,37 @@ std::string webevents_log_page_json(uint64_t before, unsigned limit) {
 				it != journal.rend(); ++it) {
 			if (before != 0 && it->id >= before)
 				continue;
-			if (entries.size() >= limit) {
+			if (page.size() >= limit) {
 				more = true;
 				break;
 			}
-			entries.push_back(log_entry_json(*it));
+			page.push_back(*it);
 		}
 	}
+	picojson::array entries;
+	for (const log_entry_t &e : page)
+		entries.push_back(log_entry_json(e));
 	picojson::object o;
 	o["entries"] = picojson::value(entries);
 	o["more"] = picojson::value(more);
 	return picojson::value(o).serialize();
 }
 
-// Push the appended journal lines out to storage. The line itself is written on
-// the thread that logged it, so the file keeps the order the log has; the write
-// to storage is a syscall per line if it is forced there, so it is left to the
-// stream's buffer and pushed from the broadcast thread instead. A log storm from
-// a device thread then costs that thread a memcpy, not a write.
+// Write the lines logged since the last call to the journal file and push them
+// out to storage, on the broadcast thread. The lines are taken in the order
+// they were logged, so the file keeps the log's order; the logging threads
+// only ever appended them.
 static void flush_journal(void) {
-	std::lock_guard<std::mutex> lock(journal_mutex);
-	if (journal_file.is_open())
-		journal_file.flush();
+	std::vector<log_entry_t> lines;
+	{
+		std::lock_guard<std::mutex> lock(journal_mutex);
+		lines.swap(journal_unwritten);
+	}
+	if (lines.empty() || !journal_file.is_open())
+		return;
+	for (const log_entry_t &e : lines)
+		journal_file << log_entry_json(e).serialize() << "\n";
+	journal_file.flush();
 }
 
 static void on_log_message(unsigned msglevel, const char *label, const char *text) {
@@ -393,8 +410,7 @@ static void on_log_message(unsigned msglevel, const char *label, const char *tex
 		journal.push_back(e);
 		if (journal.size() > JOURNAL_MAX)
 			journal.pop_front();
-		if (journal_file.is_open())
-			journal_file << log_entry_json(e).serialize() << "\n";
+		journal_unwritten.push_back(e);
 	}
 	picojson::object event;
 	event["t"] = picojson::value("log");
@@ -991,6 +1007,7 @@ void webevents_shutdown(void) {
 	running = false;
 	queue_cv.notify_one();
 	broadcaster.join();
+	flush_journal(); // what was logged since the broadcast thread's last pass
 	std::lock_guard<std::mutex> lock(clients_mutex);
 	clients.clear();
 }
