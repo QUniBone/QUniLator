@@ -15,6 +15,7 @@ import { CpuWidget } from './cpu';
 import { MemoryWidget } from './memory';
 import { RomWidget } from './rom';
 import { VaxCpuWidget } from './cpuvax';
+import { DispRegWidget } from './dispreg';
 import { DhWidget, DzWidget, NetworkWidget, Vcb01Widget } from './peripherals';
 
 export type { Cells, WidgetOption, WidgetOpts } from './base';
@@ -38,6 +39,7 @@ const WIDGET_MODELS: Record<string, WidgetClass> = {
   RX02: FloppyDriveWidget,
   dzv11_c: DzWidget,
   dhv11_c: DhWidget,
+  dispreg_c: DispRegWidget,
   'MRV11-D': RomWidget,
   'PDP-11/20': CpuWidget,
   'PDP-11/34': CpuWidget,

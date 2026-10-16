@@ -225,6 +225,7 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/serial_tcp_line.o \
 	$(OBJDIR)/dl11w.o \
 	$(OBJDIR)/kw11p.o \
+	$(OBJDIR)/dispreg.o \
 	$(OBJDIR)/memory.o \
 	$(OBJDIR)/dzv11.o \
 	$(OBJDIR)/dhv11.o \
@@ -536,6 +537,9 @@ $(OBJDIR)/serial_tcp_line.o :  $(DEVICE_SRC_DIR)/serial_tcp_line.cpp $(DEVICE_SR
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/kw11p.o :  $(DEVICE_SRC_DIR)/kw11p.cpp $(DEVICE_SRC_DIR)/kw11p.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/dispreg.o :  $(DEVICE_SRC_DIR)/dispreg.cpp $(DEVICE_SRC_DIR)/dispreg.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/memory.o :  $(DEVICE_SRC_DIR)/memory.cpp $(DEVICE_SRC_DIR)/memory.hpp

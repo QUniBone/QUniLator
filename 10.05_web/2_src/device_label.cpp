@@ -71,6 +71,7 @@ const label_entry k_table[] = {
 	{ "slu_c",         "DL11",    "serial line",             INST_INDEX },
 	{ "ltc_c",         "KW11",    "line clock",              INST_NONE },
 	{ "kw11p_c",       "KW11-P",  "programmable clock",      INST_NONE },
+	{ "dispreg_c",     "",        "switch and display register", INST_NONE },
 	{ "RX11",          "RX11",    "floppy controller",       INST_NONE },
 	{ "RXV11",         "RXV11",   "floppy controller",       INST_NONE },
 	{ "RX211",         "RX211",   "floppy controller",       INST_NONE },

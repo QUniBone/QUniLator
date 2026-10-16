@@ -168,6 +168,11 @@ device_configuration_c::device_configuration_c() :
 	VCB01 = new vcb01_c();
 	MRV11D = new mrv11d_c();
 #endif
+
+	// Console switch and display register at 777570 (ships disabled). After
+	// the processors, so a power-up installs it once the bus has a processor
+	// arbitrating: it probes 777570 before it answers there.
+	DISPREG = new dispreg_c();
 }
 
 device_configuration_c::~device_configuration_c() {
@@ -208,6 +213,8 @@ device_configuration_c::~device_configuration_c() {
 
 	MEM->enabled.set(false);
 	delete MEM;
+	DISPREG->enabled.set(false);
+	delete DISPREG;
 	KW11P->enabled.set(false);
 	delete KW11P;
 	LTC->enabled.set(false);

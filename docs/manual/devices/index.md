@@ -37,6 +37,7 @@ The short name beside each one is what the board's command-line menu accepts.
 | [DZ11, DZV11](dz11.md) | The DZ eight- or four-line multiplexer. |
 | [DHV11](dhv11.md) | The eight-line multiplexer with DMA output. |
 | [KW11-P](kw11p.md) | The programmable real-time clock. |
+| [Switch and display register](dispreg.md) | The console switches and display lights at 777570. |
 | **Network and display** | |
 | [DELQA](delqa.md) | The QBUS Ethernet controller. |
 | [DEUNA](deuna.md) | The UNIBUS Ethernet controller. |

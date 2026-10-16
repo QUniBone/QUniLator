@@ -122,6 +122,7 @@ export default defineConfig({
 						{ label: 'DZ11, DZV11 — Serial mux', slug: 'devices/dz11' },
 						{ label: 'DHV11 — Serial mux', slug: 'devices/dhv11' },
 						{ label: 'KW11-P — Programmable clock', slug: 'devices/kw11p' },
+						{ label: 'Switch and display register', slug: 'devices/dispreg' },
 						{ label: 'DELQA — Ethernet', slug: 'devices/delqa' },
 						{ label: 'DEUNA — Ethernet', slug: 'devices/deuna' },
 						{ label: 'VCB01 — QVSS display', slug: 'devices/vcb01' },
