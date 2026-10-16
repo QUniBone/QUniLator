@@ -512,6 +512,8 @@ void ke11_c::update_SCSR()
 
    uint16_t value = ((uint16_t)_sr << 8) | (_sc & 0xff); 
    set_register_dati_value(SCSR_reg, value, "update_SCSR");
+   // NOR reads the step counter, as the low byte of SC/SR does
+   set_register_dati_value(NOR_reg, _sc & 0xff, "update_SCSR");
 }
 
 void ke11_c::reset_controller(void)
