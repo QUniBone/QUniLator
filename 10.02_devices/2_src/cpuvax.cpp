@@ -15,6 +15,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "logger.hpp"
 #include "timeout.hpp"
@@ -353,6 +354,29 @@ bool cpuvax_c::configure_machine(void)
     // command reads its address out of its descriptor and that address is only
     // put there by the auto-configuration a device takes part in.
     bool internal_disk = !bootimage.value.empty();
+
+    // The core's own controller creates a volume it cannot open, and a
+    // bootstrap reading an empty volume reports only that it found no boot
+    // file, so a name that reaches no disk image is refused here.
+    if (internal_disk) {
+        struct stat st;
+
+        if (stat(bootimage.value.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
+            ERROR("bootimage \"%s\" names no disk image file; it is a volume for the"
+                  " controller inside the processor, and empty boots %s on the bus",
+                  bootimage.value.c_str(), bootdevice.value.c_str());
+            return false;
+        }
+        if (st.st_size == 0) {
+            ERROR("bootimage \"%s\" is empty", bootimage.value.c_str());
+            return false;
+        }
+    }
+    if (!bus_iopage.value)
+        WARNING("bus_iopage is 0: the processor reaches none of the devices on the bus");
+    else if (!bus_dma.value)
+        WARNING("bus_dma is 0: a transfer by a device on the bus is answered by this"
+                " program, so a card that is not emulated cannot reach memory");
 
     if (bus_iopage.value) {
         host.bus_read = vax_bus_read;

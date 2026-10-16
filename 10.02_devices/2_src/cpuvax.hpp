@@ -74,7 +74,9 @@ public:
     /// image named in `bootimage`, it is attached to an MSCP controller inside
     /// the processor instead, at the same address; `bus_exclusive` then has to
     /// be 0, so the bus leaves that address to it. This is for bringing a
-    /// machine up before its devices are configured. An empty `bootdevice`
+    /// machine up before its devices are configured. `bootimage` is a file
+    /// path, and enabling the processor fails when it names no disk image
+    /// file or an empty one. An empty `bootdevice`
     /// brings the processor up at
     /// its console prompt without booting anything. Both are read when the
     /// processor is enabled.
@@ -82,9 +84,9 @@ public:
     // The controller inside the core is the stage 1 scaffolding of
     // docs/vax-host.md.
     parameter_string_c bootimage = parameter_string_c(this, "bootimage", "bi",/*readonly*/false,
-            "Disk image booted from the controller inside the processor. Empty: console only.");
+            "Disk image file for the MSCP controller inside the processor. Empty: boot bootdevice on the bus.");
     parameter_string_c bootdevice = parameter_string_c(this, "bootdevice", "bd",/*readonly*/false,
-            "Unit the processor boots from, as the console names it.");
+            "Unit the processor boots, as the console names it (RQ0). Empty: console only.");
 
     /// Debugging aids for the emulation itself. `core_debug` names a device
     /// the processor carries inside it, such as `RQ`, and writes the core's own
@@ -121,7 +123,7 @@ public:
     ///
     /// `bus_iopage` and `bus_exclusive` are read when the processor is enabled.
     parameter_bool_c bus_iopage = parameter_bool_c(this, "bus_iopage", "bio",/*readonly*/
-                                  false, "1 = UNIBUS register accesses go on the bus.");
+                                  false, "1 = UNIBUS register accesses go on the bus. 0 hides every bus device.");
     // With bus_dma clear the adapter hands the transfer over before it reaches
     // the bus and the map translation is done here; set, the PRU answers it
     // from the same memory through the same map registers.
