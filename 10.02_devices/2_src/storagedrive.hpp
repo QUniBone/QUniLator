@@ -108,29 +108,47 @@ public:
     storagedrive_geometry_c geometry ;
 
     // identifying number at controller
+    /// The drive's unit number on its controller, which follows from its place
+    /// under the controller.
     parameter_unsigned_c unitno = parameter_unsigned_c(this, "unit", "unit", /*readonly*/
                                   true, "", "%d", "Unit # of drive", 3, 10); // 3 bits = 0..7 allowed
 
     // capacity of medium (disk/tape) in bytes. Info only!
+    /// The size of the medium the drive holds, in bytes, which follows from
+    /// the drive type or the image.
     parameter_unsigned64_c capacity = parameter_unsigned64_c(this, "capacity", "cap", /*readonly*/
                                       true, "byte", "%d", "Storage capacity", 64, 10);
 
     // if binary image
+    /// The medium in the drive: an image file, named by its path in the
+    /// board's image tree. Empty takes the medium out. When the file is not
+    /// there but the same name with `.gz` is, it is expanded first.
+    ///
+    /// A disk writes through an overlay beside the image unless `use_overlay`
+    /// is 0; a tape writes the image itself.
     parameter_string_c image_filepath = parameter_string_c(this, "image", "img", /*readonly*/
                                         false, "Path to binary image file. Empty to detach. \".gz\" archive also searched.");
     // if shared host dir
 //		image_shareddir - path to directory root of shared host file tree
+    /// A directory on the board presented to the machine as a volume, in
+    /// place of an image: `shared_filesystem` names the layout, `RT11` or
+    /// `XXDP`, and `shared_dir` the directory, which is created when it is not
+    /// there. Both are needed; the volume is built from the files in the
+    /// directory. Only drive types whose volume layout the board can build
+    /// take it.
     parameter_string_c image_shareddir = parameter_string_c(this, "shared_dir", "shd", /*readonly*/
                                          false, "Path to directory with shared files. Created on demand, empty to disable sharing.");
     parameter_string_c image_filesystem = parameter_string_c(this, "shared_filesystem", "shfs", /*readonly*/
                                           false, "Encode shared dir in this file system (empty, RT11, XXDP).");
 
+    /// Which of the card's LEDs the drive lights while it transfers.
     parameter_unsigned_c activity_led = parameter_unsigned_c(this, "activityled", "al", /*readonly*/
                                         false, "", "%d", "Number of LED to used for activity display.", 8, 10);
 
     // Lit while the drive is transferring, held on past the end of the access
     // so a periodic sampler sees it. Named "*lamp" like the RL02 panel lamps,
     // which is what the event stream publishes.
+    /// Lit while the drive transfers, as the ACCESS lamp of a real drive.
     parameter_bool_c access_lamp = parameter_bool_c(this, "accesslamp", "acl", /*readonly*/
                                    true, "State of ACCESS lamp");
 
@@ -152,13 +170,16 @@ public:
                                   "Accesses"};
 
     // host lock, reported to the API as the drive's locked() state
+    /// Keeps the medium in the drive: while it is 1, `image` cannot be
+    /// changed.
     parameter_bool_c lock = parameter_bool_c(this, "lock", "lk", false,
                             "Host lock: medium cannot be changed while set");
 
-    // Copy-on-write overlay: when set (the default for disks), writes to a plain
-    // binary image go to a per-image sparse overlay and the base file stays
-    // read-only, so an unclean shutdown only ever corrupts the throw-away
-    // overlay. Cleared: the image is written in place (the classic behaviour).
+    /// A disk writes through a copy-on-write overlay beside the image while
+    /// this is 1, so the image itself stays as it was and an unclean shutdown
+    /// can only damage the overlay; the Storage screen discards the overlay or
+    /// folds it into the image. At 0 the disk writes the image itself. It is
+    /// read when the image is set.
     parameter_bool_c use_overlay = parameter_bool_c(this, "use_overlay", "ovl", false,
                             "Write through a copy-on-write overlay, keeping the base image pristine");
 

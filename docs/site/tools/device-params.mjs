@@ -5,10 +5,12 @@
  *   node tools/device-params.mjs           rewrite the pages
  *   node tools/device-params.mjs --check   fail if a page is out of date
  *
- * A page under `docs/manual/devices/` names the class it documents in its front
- * matter, `device: cpuvax_c` (or a list of classes), and carries a marked block:
+ * A page under `docs/manual/devices/` carries a marked block for each class it
+ * documents, under a heading of the author's:
  *
- *   <!-- device-parameters -->
+ *   ## Parameters
+ *
+ *   <!-- device-parameters: cpuvax_c -->
  *   <!-- /device-parameters -->
  *
  * Everything between the two markers is replaced by tables of the class's
@@ -21,8 +23,10 @@
  * for a parameter whose starting value is not a literal in a constructor.
  *
  * Base classes are walked and their parameters included, up to a class that has
- * a page of its own, which is linked instead. So `qunibusdevice_c`, documented
- * once on the overview page, is not repeated on every device's.
+ * a block of its own, which is linked instead: the link names the heading that
+ * block sits under. So `qunibusdevice_c`, documented once on the overview page,
+ * is not repeated on every device's. Generated headings sit one level below the
+ * author's heading above the block.
  */
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -43,7 +47,6 @@ const SOURCE_ROOTS = ['10.01_base/2_src/arm', '10.02_devices/2_src'];
  */
 const IDENTITY = new Set(['name', 'type', 'enabled']);
 
-const BEGIN = '<!-- device-parameters -->';
 const END = '<!-- /device-parameters -->';
 
 // ---- sources ------------------------------------------------------------
@@ -378,99 +381,155 @@ function table(params, { withDefault }) {
 	return `${head}\n${rows.join('\n')}`;
 }
 
-function render(classes, documented, pages, pagePath) {
-	const out = [];
-	for (const cls of classes) {
-		const { params, stops, overrides } = collect(cls, documented);
-		for (const p of params) if (p.doc) p.group = [p];
-		for (const p of params) if (p.shares) p.shares.group.push(p);
+/**
+ * Starlight's heading anchors for one page, in document order: github-slugger,
+ * which numbers a repeated heading -1, -2 and so on. A page of several blocks
+ * repeats "Settings" and "Status", so every anchor is taken from here, in the
+ * order the headings are written.
+ */
+function slugger() {
+	const seen = new Map();
+	return (text) => {
+		const base = slug(text);
+		const n = seen.get(base) || 0;
+		seen.set(base, n + 1);
+		return n ? `${base}-${n}` : base;
+	};
+}
 
-		const settings = params.filter((p) => p.kind === 'config');
-		const status = params.filter((p) => p.kind === 'status');
-		// Under the page's own `## Parameters`; a page of several classes heads each.
-		const h = classes.length > 1 ? '####' : '###';
-		if (classes.length > 1) out.push(`### \`${cls}\``, '');
-		if (settings.length) {
-			out.push(`${h} Settings`, '', 'What a configuration stores and an operator sets.', '');
-			out.push(table(settings, { withDefault: true }), '');
-		}
-		if (status.length) {
-			out.push(`${h} Status`, '', 'What the device reports as it runs. A configuration does not store these.', '');
-			out.push(table(status, { withDefault: false }), '');
-		}
-		for (const stop of stops) {
-			const page = relative(join(pagePath, '..'), pages.get(stop)).split('\\').join('/');
-			out.push(`It also carries the parameters every device has — see [${titleOf(pages.get(stop))}](${page}).`, '');
-		}
-		if (overrides.length) {
-			const said = overrides.map((o) => {
-				const bits = [];
-				if (o.readonly !== undefined) bits.push(o.readonly ? 'is read-only' : 'can be set');
-				if (o.default !== undefined) bits.push(`starts at ${renderDefault({ ...o.param, default: o.default })}`);
-				return `\`${o.param.name}\` ${bits.join(' and ')}`;
-			});
-			out.push(`On this device, ${said.join('; ')}.`, '');
-		}
-		const notes = params.filter((p) => p.doc);
-		if (notes.length) {
-			out.push(`${h} In detail`, '');
-			for (const p of notes) out.push(`${h}# ${heading(p.group)}`, '', p.doc, '');
-		}
+/** A heading line's level and text, or null. */
+function headingLine(line) {
+	const m = line.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/);
+	return m ? { level: m[1].length, text: m[2] } : null;
+}
+
+/**
+ * The parameter reference of one class, under a heading of `level`. `anchor`
+ * takes each generated heading in order and returns its anchor; `link` turns a
+ * class documented elsewhere into a Markdown link.
+ */
+function render(cls, documented, level, anchor, link) {
+	const { params, stops, overrides } = collect(cls, documented);
+	for (const p of params) if (p.doc) p.group = [p];
+	for (const p of params) if (p.shares) p.shares.group.push(p);
+
+	const settings = params.filter((p) => p.kind === 'config');
+	const status = params.filter((p) => p.kind === 'status');
+	const notes = params.filter((p) => p.doc);
+	const h = '#'.repeat(Math.min(level + 1, 6));
+	const hh = '#'.repeat(Math.min(level + 2, 6));
+
+	// Anchors in the order the headings appear, before the tables that link to them.
+	if (settings.length) anchor('Settings');
+	if (status.length) anchor('Status');
+	if (notes.length) anchor('In detail');
+	for (const p of notes) p.anchor = anchor(heading(p.group));
+
+	const out = [];
+	if (settings.length) {
+		out.push(`${h} Settings`, '', 'What a configuration stores and an operator sets.', '');
+		out.push(table(settings, { withDefault: true }), '');
+	}
+	if (status.length) {
+		out.push(`${h} Status`, '', 'What the device reports as it runs. A configuration does not store these.', '');
+		out.push(table(status, { withDefault: false }), '');
+	}
+	if (!settings.length && !status.length) out.push('It has no parameters of its own.', '');
+	for (const stop of stops) out.push(`It also carries the parameters under ${link(stop)}.`, '');
+	if (overrides.length) {
+		const said = overrides.map((o) => {
+			const bits = [];
+			if (o.readonly !== undefined) bits.push(o.readonly ? 'is read-only' : 'can be set');
+			if (o.default !== undefined) bits.push(`starts at ${renderDefault({ ...o.param, default: o.default })}`);
+			return `\`${o.param.name}\` ${bits.join(' and ')}`;
+		});
+		out.push(`On this device, ${said.join('; ')}.`, '');
+	}
+	if (notes.length) {
+		out.push(`${h} In detail`, '');
+		for (const p of notes) out.push(`${hh} ${heading(p.group)}`, '', p.doc, '');
 	}
 	return out.join('\n').trimEnd();
 }
 
 // ---- pages --------------------------------------------------------------
 
-function titleOf(path) {
-	const m = readFileSync(path, 'utf8').match(/^title:\s*(.+)$/m);
-	return m ? m[1].trim() : relative(DEVICES_DIR, path);
-}
+const MARKER = /<!-- device-parameters: *(\w+) *-->/g;
 
-function frontMatterDevices(text) {
-	const fm = text.match(/^---\n([\s\S]*?)\n---/);
-	if (!fm) return [];
-	const line = fm[1].match(/^device:\s*(.+)$/m);
-	if (!line) return [];
-	return line[1]
-		.replace(/^\[|\]$/g, '')
-		.split(',')
-		.map((s) => s.trim())
-		.filter(Boolean);
-}
-
+/**
+ * Where each class is documented: the page, and the heading its block sits
+ * under, which is what a link to it names.
+ */
+const homes = new Map();
 const pagePaths = readdirSync(DEVICES_DIR)
 	.filter((f) => f.endsWith('.md'))
 	.map((f) => join(DEVICES_DIR, f));
-const pages = new Map(); // class -> page documenting it
-const pageClasses = new Map();
 for (const path of pagePaths) {
-	const classes = frontMatterDevices(readFileSync(path, 'utf8'));
-	pageClasses.set(path, classes);
-	for (const c of classes) pages.set(c, path);
+	const text = readFileSync(path, 'utf8');
+	const anchor = slugger();
+	let under = null;
+	for (const line of text.split('\n')) {
+		const hd = headingLine(line);
+		if (hd) under = { ...hd, anchor: anchor(hd.text) };
+		for (const m of line.matchAll(MARKER)) {
+			if (homes.has(m[1]))
+				throw new Error(`${m[1]} is documented twice: ${relative(REPO, homes.get(m[1]).path)} and ${relative(REPO, path)}`);
+			if (!under) throw new Error(`${relative(REPO, path)}: the ${m[1]} block has no heading above it`);
+			homes.set(m[1], { path, heading: under });
+		}
+	}
 }
-const documented = new Set(pages.keys());
+
+/** One page with every block in it written afresh. */
+function regenerate(path) {
+	const text = readFileSync(path, 'utf8');
+	const lines = text.split('\n');
+	const anchor = slugger();
+	const out = [];
+	let level = 1;
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
+		const m = line.match(/^<!-- device-parameters: *(\w+) *-->$/);
+		if (!m) {
+			const hd = headingLine(line);
+			if (hd) {
+				level = hd.level;
+				anchor(hd.text);
+			}
+			out.push(line);
+			continue;
+		}
+		const end = lines.indexOf(END, i);
+		if (end < 0) throw new Error(`${relative(REPO, path)}: the ${m[1]} block has no ${END}`);
+		const cls = m[1];
+		const others = new Set([...homes.keys()].filter((c) => c !== cls));
+		const link = (other) => {
+			const home = homes.get(other);
+			const page = home.path === path ? '' : relative(join(path, '..'), home.path).split('\\').join('/');
+			const name = home.heading.text.replace(/^./, (c) => c.toLowerCase());
+			return `[${name}](${page}#${home.heading.anchor})`;
+		};
+		out.push(
+			line,
+			`<!-- Written by ${GENERATOR} from the C++ source. Edit the source, then run it. -->`,
+			'',
+			render(cls, others, level, anchor, link),
+			'',
+			END,
+		);
+		i = end;
+	}
+	return out.join('\n');
+}
 
 const check = process.argv.includes('--check');
 let stale = 0;
-for (const [path, classes] of pageClasses) {
-	if (!classes.length) continue;
+for (const path of pagePaths) {
 	const text = readFileSync(path, 'utf8');
-	const b = text.indexOf(BEGIN);
-	const e = text.indexOf(END);
+	if (!MARKER.test(text)) continue;
+	MARKER.lastIndex = 0;
+	const next = regenerate(path);
 	const rel = relative(REPO, path);
-	if (b < 0 || e < b) throw new Error(`${rel} names a device but has no ${BEGIN} … ${END} block`);
-	// Each page's own classes are documented there, so they do not stop each other.
-	const others = new Set([...documented].filter((c) => !classes.includes(c)));
-	const block = [
-		BEGIN,
-		`<!-- Written by ${GENERATOR} from the C++ source. Edit the source, then run it. -->`,
-		'',
-		render(classes, others, pages, path),
-		'',
-		END,
-	].join('\n');
-	const next = text.slice(0, b) + block + text.slice(e + END.length);
 	if (next === text) continue;
 	if (check) {
 		console.error(`${rel} is out of date: run node ${GENERATOR}`);

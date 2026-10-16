@@ -97,36 +97,35 @@ and wants the same addition.
 
 ## Device pages
 
-A page in `devices/` is prose about the card — what it is, what the machine sees,
+A page in `devices/` is prose about a card — what it is, what the machine sees,
 what has been verified — around a parameter reference that nobody writes by hand.
-The page names the C++ class in its front matter and marks where the reference
-goes:
+Under a heading of the author's, a marked block names the C++ class it documents:
 
 ```markdown
----
-title: KA780 — VAX-11/780 processor
-bus: [unibus]
-device: cpuvax_c
----
-
 ## Parameters
 
-<!-- device-parameters -->
+<!-- device-parameters: cpuvax_c -->
 <!-- /device-parameters -->
 ```
 
-`tools/device-params.mjs` fills the block from the class declaration and its
-constructor: every parameter with its short name, type, unit, default and the
-one-line description the web interface shows, split into settings and running
-status. The longer explanation of a parameter is a `///` comment directly above
-its declaration in the source, and declarations that follow it without a blank
-line share it. A `/// @default <text>` line fills the Default column where the
-starting value is not a literal. Base classes are walked up to a class another
-page documents, which is linked — `qunibusdevice_c` is on the overview page and
-nowhere else.
+A page can carry several blocks — a controller and its drives — each under its
+own heading. `tools/device-params.mjs` fills each block from the class
+declaration and its constructor: every parameter with its short name, type, unit,
+default and the one-line description the web interface shows, split into
+settings and running status, under headings one level below the author's. The
+longer explanation of a parameter is a `///` comment directly above its
+declaration in the source; declarations that follow it without a blank line
+share it. A `/// @default <text>` line fills the Default column where the
+starting value is not a literal.
+
+Base classes are walked up to a class that has a block of its own, which is
+linked by the heading that block sits under. The overview page holds the blocks
+for what every device, every card on the bus and every drive carries, so those
+are written once. Each class is documented in one block only; the generator
+refuses a second.
 
 The build runs the generator first (`prebuild`), so the site always shows what
-the source says. The pages are committed with the block filled in, so they read
+the source says. The pages are committed with the blocks filled in, so they read
 complete in git too; CI runs `node tools/device-params.mjs --check` and fails
 when a source change has left a committed page behind. Run the generator after
 changing a device's parameters, and commit the page with the source.
