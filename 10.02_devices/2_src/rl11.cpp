@@ -170,10 +170,16 @@ RL11_c::RL11_c(void) :    storagecontroller_c()
     busreg_BA->active_on_dati = false; // pure storage
     busreg_BA->active_on_dato = false;
     busreg_BA->reset_value = 0; // read default: bit 7 set
-    // TD-001 §5.4.1: the BAR is two DC006 binary counters that store and return
-    // all 16 bits, including bit 0. DMA transfers are word-aligned (get_qunibus_address
-    // masks bit 0), but the register itself keeps whatever bit 0 was written.
-    busreg_BA->writable_bits = 0xffff;  // full 16-bit read/write register
+    // The RLV11/RLV12 BAR is two DC006 binary counters (TD-001 §5.4.1) that store
+    // and return all 16 bits, including bit 0. The UNIBUS RL11 keeps bits 15:1 and
+    // reads bit 0 as 0: CZRLG's test 10 sets it there and expects it back clear,
+    // as SimH's RL model has it. DMA transfers are word-aligned either way
+    // (get_qunibus_address masks bit 0).
+#if defined(UNIBUS)
+    busreg_BA->writable_bits = 0xfffe;
+#else
+    busreg_BA->writable_bits = 0xffff;
+#endif
 
     // disk address: offset +4
     busreg_DA = &(this->registers[2]);
