@@ -9,6 +9,7 @@
 #include <string.h>
 #include <assert.h>
 #include <pthread.h>
+#include <vector>
 
 #include "logger.hpp"
 #include "qunibus.h"
@@ -193,8 +194,11 @@ void rf11_c::worker(unsigned instance)
           case Worker_Execute:
           {
              _wc = get_register_dato_value(WC_reg);
-             uint16_t wordCount = ~_wc + 1;
-             uint16_t buffer[wordCount]; 
+             // WC holds the two's complement of the count, and 0 is the largest
+             // transfer, 65536 words. The buffers live on the heap: a transfer
+             // that size is 128 KB each.
+             uint32_t wordCount = 0x10000 - _wc;
+             std::vector<uint16_t> buffer(wordCount);
              uint32_t currentAddress = get_register_dato_value(CMA_reg) | (_dcs.Flags.XM << 16);
              uint32_t currentDiskAddress = get_current_disk_address();    
  
@@ -202,7 +206,7 @@ void rf11_c::worker(unsigned instance)
                 {
                    // Either a Read (which just reads data into memory from disk)
                    // or a Write Check (which reads data and compares it to data in memory)
-                   if (!_drive->read(currentDiskAddress, buffer, wordCount))
+                   if (!_drive->read(currentDiskAddress, buffer.data(), wordCount))
                    {
                       // Invalid address:
                       _dcs.Flags.NED = 1;
@@ -212,7 +216,7 @@ void rf11_c::worker(unsigned instance)
                       if (_dcs.Flags.FR == READ)
                       {
                          // Transfer the word to memory
-                         if (!dma_write(currentAddress, buffer, wordCount))
+                         if (!dma_write(currentAddress, buffer.data(), wordCount))
                          {
                             // DMA failed, set the non-existent memory flag and abort.
                             _dae.Flags.NEM = 1;
@@ -221,13 +225,13 @@ void rf11_c::worker(unsigned instance)
                       else
                       {
                          // Compare the word to memory
-                         uint16_t compareBuffer[wordCount];
-                         if (!dma_read(currentAddress, compareBuffer, wordCount))
+                         std::vector<uint16_t> compareBuffer(wordCount);
+                         if (!dma_read(currentAddress, compareBuffer.data(), wordCount))
                          {
                             // As above
                             _dae.Flags.NEM = 1;
                          }
-                         else if (memcmp(compareBuffer, buffer, wordCount * sizeof buffer[0]))
+                         else if (memcmp(compareBuffer.data(), buffer.data(), wordCount * sizeof buffer[0]))
                          {
                             _dcs.Flags.WCE = 1;
                          }
@@ -237,11 +241,11 @@ void rf11_c::worker(unsigned instance)
                 else
                 {
                    // A Write operation
-                   if (!dma_read(currentAddress, buffer, wordCount))
+                   if (!dma_read(currentAddress, buffer.data(), wordCount))
                    {
                       _dae.Flags.NEM = 1;
                    }
-                   else if (!_drive->write(currentDiskAddress, buffer, wordCount))
+                   else if (!_drive->write(currentDiskAddress, buffer.data(), wordCount))
                    {
                       // Invalid address:
                       _dcs.Flags.NED = 1;
