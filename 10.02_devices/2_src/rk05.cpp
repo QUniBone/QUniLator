@@ -219,12 +219,14 @@ void rk05_c::seek(uint32_t cylinder)
     controller->on_drive_status_changed(this);
 }
 
+// The drive's write lock, which RKDS reports as WPS and which turns a WRITE
+// away with WLO. Set by the WRITE LOCK function; DRIVE RESET and bus INIT
+// release it.
 void rk05_c::set_write_protect(bool protect) 
 {
-    UNUSED(protect);
-
-// Not implemented at the moment.
+    _wps = protect;
     _scp = false;
+    controller->on_drive_status_changed(this);
 }
 
 void rk05_c::drive_reset(void) 
@@ -240,6 +242,7 @@ void rk05_c::drive_reset(void)
     _sin = false;
     _dru = false;
     _dpl = false;
+    _wps = false;
     controller->on_drive_status_changed(this);
 
     seek(0);

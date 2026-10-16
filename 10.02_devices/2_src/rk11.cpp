@@ -777,7 +777,19 @@ void rk11_c::on_after_register_access(
                             error = true;
                             break;
                         }
- 
+
+                        // Third check: a WRITE to a write-locked drive is turned away with
+                        // WLO before anything is written.
+                        if (_function == Write && selected_drive()->get_write_protect())
+                        {
+                            _wlo = true;
+                            _he = true;
+                            _err = true;
+                            _scp = false;
+                            _go = false;
+                            error = true;
+                            break;
+                        }
         
                         // Clear RDY, SCP bits:
                         pthread_mutex_lock(&on_after_register_access_mutex); 
@@ -1101,10 +1113,12 @@ void rk11_c::on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_
 // QBUS/UNIBUS INIT: clear all registers
 void rk11_c::on_init_changed(void) 
 {
-    // write all registers to "reset-values"
+    // write all registers to "reset-values", and release every drive's write lock
     if (init_asserted) 
     {
         reset_controller();
+        for (unsigned i = 0; i < drivecount; i++)
+            dynamic_cast<rk05_c*>(storagedrives[i])->set_write_protect(false);
     }
 
     storagecontroller_c::on_init_changed();
