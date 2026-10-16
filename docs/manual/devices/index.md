@@ -134,7 +134,7 @@ What the device reports as it runs. A configuration does not store these.
 
 | Parameter | Short | Value | What it is |
 |---|---|---|---|
-| [`activityled`](#activityled) | `al` | number | Number of LED to used for activity display. |
+| [`activityled`](#activityled) | `al` | number | Number of the LED used for activity display. |
 | [`accesslamp`](#accesslamp) | `acl` | 0 or 1 | State of ACCESS lamp |
 
 It also carries the parameters under [parameters every device has](#parameters-every-device-has).

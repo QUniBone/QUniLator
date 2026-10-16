@@ -92,7 +92,7 @@ public:
     /// more lights none. Drives take the LEDs by unit number, so 3 keeps the
     /// controller clear of a machine with one drive.
     parameter_unsigned_c activity_led = parameter_unsigned_c(this, "activityled", "al", /*readonly*/
-                                        false, "", "%d", "Number of LED to used for activity display.", 8, 10);
+                                        false, "", "%d", "Number of the LED used for activity display.", 8, 10);
 
     /// On while frames move in either direction, held a moment past each frame
     /// so the web interface sees it.

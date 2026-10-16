@@ -143,7 +143,7 @@ public:
 
     /// Which of the card's LEDs the drive lights while it transfers.
     parameter_unsigned_c activity_led = parameter_unsigned_c(this, "activityled", "al", /*readonly*/
-                                        false, "", "%d", "Number of LED to used for activity display.", 8, 10);
+                                        false, "", "%d", "Number of the LED used for activity display.", 8, 10);
 
     // Lit while the drive is transferring, held on past the end of the access
     // so a periodic sampler sees it. Named "*lamp" like the RL02 panel lamps,

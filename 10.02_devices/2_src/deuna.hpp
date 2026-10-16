@@ -93,7 +93,7 @@ public:
     /// Which of the board's four activity LEDs, 0 to 3, traffic lights; 4 or
     /// more lights none.
     parameter_unsigned_c activity_led = parameter_unsigned_c(this, "activityled", "al", false,
-            "", "%d", "Number of LED to used for activity display.", 8, 10);
+            "", "%d", "Number of the LED used for activity display.", 8, 10);
 
     /// On while frames move in either direction, held a moment past each frame
     /// so the web interface sees it.

@@ -61,7 +61,7 @@ bool mscp_port_c::on_param_changed(parameter_c *param)
     }
     else if (param == &intr_vector)
     {
-        return false;  // Not configurable for the UDA50.
+        return false;  // the host sets the vector in initialisation step 1
     }
     else if (param == &twenty_two_bit_DMA)
     {
@@ -263,10 +263,10 @@ void mscp_port_c::worker(unsigned instance)
 
                  DEBUG_FAST("Transition to Init state S1.");
                  //
-                 // S1 is set, all other bits zero.  This indicates that we
-                 // support a host-settable interrupt vector, that we do not
-                 // implement enhanced diagnostics, and that no errors have
-                 // occurred.
+                 // S1 is set with the capability bits: a host-settable
+                 // interrupt vector, extended diagnostics and host buffer
+                 // mapping (step1_capability_flags()), 22-bit DMA where it is
+                 // configured, and no error.
                  //
                  DEBUG_FAST("22 bit dma is %d", _22bitDMA);
                  update_SA(STEP1 | step1_capability_flags() |

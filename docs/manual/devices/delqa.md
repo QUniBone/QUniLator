@@ -81,7 +81,7 @@ What the device reports as it runs. A configuration does not store these.
 
 | Parameter | Short | Value | What it is |
 |---|---|---|---|
-| [`activityled`](#activityled) | `al` | number | Number of LED to used for activity display. |
+| [`activityled`](#activityled) | `al` | number | Number of the LED used for activity display. |
 | [`activitylamp`](#activitylamp) | `actl` | 0 or 1 | State of activity lamp |
 
 It also carries the parameters under [parameters every card on the bus has](index.md#parameters-every-card-on-the-bus-has).

@@ -30,11 +30,8 @@
 #define KW11P_ADDR   0772540   // CSR; BUF = +2, CTR = +4
 #define KW11P_VECTOR 0104      // assigned vector, section 3.6.1
 #define KW11P_LEVEL  06        // priority level 6, section 3.6.2
-// Own arbitration slot at BR6. Clear of the console DL11 (1,2), the KW11-L line
-// clock (3), the serial-mux pools (dzv11 4..11, dhv11 12..15), the RL11 (15), the
-// RX floppy controllers (rxv11 16, rxv21 17) and the disk/network controllers
-// (uda 20, delqa 21, vcb01 24): a slot shared with another device's request would
-// drop one device's interrupts.
+// Own arbitration slot at BR6, clear of every other device's default slot: a
+// slot shared with another device's request would drop one device's interrupts.
 #define KW11P_SLOT   22
 
 // register indices
