@@ -100,6 +100,9 @@ private:
 
 	// serializes state between the bus-access callback and the worker
 	pthread_mutex_t state_mutex = PTHREAD_MUTEX_INITIALIZER;
+	// what the worker sleeps on between events, so a register write that
+	// starts or reprograms the clock takes effect at once
+	pthread_cond_t wake_cond;
 
 	// CSR-derived control state
 	bool running;         // RUN: clock gated to counter

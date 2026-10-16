@@ -11,6 +11,8 @@
 */
 
 #include <cstring>
+#include <pthread.h>
+#include <time.h>
 
 #include "utils.hpp"
 #include "logger.hpp"
@@ -31,6 +33,12 @@ kw11p_c::kw11p_c() : qunibusdevice_c()
 	name.value = "kw11p";
 	type_name.value = "kw11p_c";
 	log_label = "kw11p";
+
+	pthread_condattr_t attr;
+	pthread_condattr_init(&attr);
+	pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+	pthread_cond_init(&wake_cond, &attr);
+	pthread_condattr_destroy(&attr);
 
 	set_default_bus_params(KW11P_ADDR, KW11P_SLOT, KW11P_VECTOR, KW11P_LEVEL);
 
@@ -75,6 +83,7 @@ kw11p_c::kw11p_c() : qunibusdevice_c()
 
 kw11p_c::~kw11p_c()
 {
+	pthread_cond_destroy(&wake_cond);
 }
 
 bool kw11p_c::on_param_changed(parameter_c *param)
@@ -340,13 +349,14 @@ void kw11p_c::reset(void)
 
 void kw11p_c::worker_wake(void)
 {
-	// the worker re-reads state on its own short cadence; nothing to signal
+	pthread_mutex_lock(&state_mutex);
+	pthread_cond_signal(&wake_cond);
+	pthread_mutex_unlock(&state_mutex);
 }
 
 void kw11p_c::worker(unsigned instance)
 {
 	UNUSED(instance);
-	timeout_c timeout;
 
 	worker_init_realtime_priority(rt_device);
 
@@ -371,9 +381,15 @@ void kw11p_c::worker(unsigned instance)
 						remaining : KW11P_WORKER_CAP_NS;
 			}
 		}
+		// sleep until the next event is due, or a register write wakes it
+		if (wait_ns > 0 && !workers_terminate) {
+			struct timespec until;
+			clock_gettime(CLOCK_MONOTONIC, &until);
+			int64_t ns = until.tv_nsec + wait_ns;
+			until.tv_sec += ns / BILLION;
+			until.tv_nsec = ns % BILLION;
+			pthread_cond_timedwait(&wake_cond, &state_mutex, &until);
+		}
 		pthread_mutex_unlock(&state_mutex);
-
-		if (wait_ns > 0)
-			timeout.wait_ns(wait_ns);
 	}
 }
