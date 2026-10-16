@@ -1283,6 +1283,10 @@ void qunibusadapter_c::INTR(intr_request_c& intr_request,
 
     // put into schedule tables
     request_schedule(intr_request); // assertion, if twice for same slot
+    // Counted once it is scheduled: a re-raise of a pending request returned
+    // above, so each interrupt the device asks for counts once.
+    if (intr_request.device && intr_request.device->interrupt_metric)
+        intr_request.device->interrupt_metric->add(1);
 
     if (!prl->active) {
         // INTR of this level can be raised immediately

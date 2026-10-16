@@ -29,6 +29,7 @@
 
 #include <stdint.h>
 #include <pthread.h>
+#include <memory>
 
 #include "device.hpp"
 
@@ -152,6 +153,11 @@ public:
 	// requests in use
 	std::vector<dma_request_c *> dma_requests;
 	std::vector<intr_request_c *> intr_requests;
+
+	// Interrupts this device has raised, for the performance panel. The first
+	// intr_request_c a device constructs creates it, so a device that never
+	// interrupts reports no such rate; see qunibusadapter_c::INTR().
+	std::unique_ptr<metric_c> interrupt_metric;
 
 	void set_default_bus_params(uint32_t default_base_addr, unsigned default_priority_slot,
 			unsigned default_intr_vector, unsigned default_intr_level);
