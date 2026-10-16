@@ -343,13 +343,17 @@ bool m9312_c::on_before_install()
 	// console emulator is optional.
 	// BOOTROM1 is mandatory.
 	// ROM2,3,4 are optional, but must be present in asceding order
-	if (rom[1] == NULL) {
+	// Every socket has its ROM object; a socket holds a ROM when its file
+	// parameter names one, since a file that does not load is cleared.
+	parameter_string_c *bootrom_file[5] = { &consemurom_filepath, &bootrom1_filepath,
+			&bootrom2_filepath, &bootrom3_filepath, &bootrom4_filepath };
+	if (bootrom_file[1]->value.empty()) {
 		ERROR("BOOTROM1 must be plugged in");
 		return false;
 	}
 	for (int i = 2; i < 5; i++)
-		if (rom[i] != NULL && rom[i - 1] == NULL) {
-			WARNING("BOOTROM sockets not populated in ascending order: %u missing", i - 1);
+		if (!bootrom_file[i]->value.empty() && bootrom_file[i - 1]->value.empty()) {
+			ERROR("BOOTROM sockets not populated in ascending order: %u missing", i - 1);
 			return false;
 		}
 
