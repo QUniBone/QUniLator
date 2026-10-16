@@ -113,6 +113,8 @@ m9312_c::m9312_c() :	qunibusdevice_c()  // super class constructor
 
 	bootaddress = MEMORY_ADDRESS_INVALID;
 	bootaddress_info.value = "DISABLED";
+	// what the boot address resolved to, not part of a saved configuration
+	bootaddress_info.kind = parameter_c::PARAM_STATUS;
 
 	// Every socket is programmed from a file of the image tree, which is what
 	// makes the web interface offer the file browser for it and what lets the

@@ -69,6 +69,7 @@ RX0102drive_c::RX0102drive_c(RX0102uCPU_c *_uCPU, bool _is_RX02) :
     layout.value = "auto" ;
     layout_in_use.value = "physical" ;
     layout_in_use.kind = parameter_c::PARAM_STATUS ;
+    current_track.kind = parameter_c::PARAM_STATUS ;
 
     // "enable" and power switch are controlled by uCPU in case box
     enabled.readonly = true ;

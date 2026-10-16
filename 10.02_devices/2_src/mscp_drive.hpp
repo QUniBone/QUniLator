@@ -55,7 +55,16 @@ public:
     void on_init_changed(void) override;
 
 public:
-    parameter_bool_c use_image_size = parameter_bool_c(this, "useimagesize", "uis", true,
+    /// How many blocks the drive announces to the host. On, it is the size of
+    /// the image in 512-byte blocks, so the host sees exactly what the image
+    /// holds, whatever the drive type. Off, it is the block count of the drive
+    /// type set in `type` (an RA81 has 891072): a larger image is cut at that
+    /// count, and every block beyond it answers as lying past the end of the
+    /// drive, which corrupts a file system laid out across them. Turn it off
+    /// only for a guest that needs the drive type's exact size. The geometry
+    /// the drive reports (sectors per track, tracks per group) is the drive
+    /// type's either way.
+    parameter_bool_c use_image_size = parameter_bool_c(this, "useimagesize", "uis", /*readonly*/false,
         "Determine unit size from image file instead of drive type");
 
 private:

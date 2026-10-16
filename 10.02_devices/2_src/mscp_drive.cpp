@@ -28,6 +28,7 @@ mscp_drive_c::mscp_drive_c(storagecontroller_c *_controller, uint32_t _driveNumb
 {
     set_workers_count(0) ; // needs no worker()
     log_label = "MSCPD";
+    use_image_size.value = true;
     SetDriveType("RA81");
     SetOffline();
 
