@@ -1,18 +1,22 @@
 name: Documentation site
 
-# Only the manual and its generator affect the published site, so a change to
-# the software leaves it alone.
+# The manual, its generator, and the device sources the device reference is
+# written from affect the published site.
 on:
   push:
     branches: [main]
     paths:
       - 'docs/manual/**'
       - 'docs/site/**'
+      - '10.01_base/2_src/arm/**'
+      - '10.02_devices/2_src/**'
       - '.github/workflows/docs-site.yml'
   pull_request:
     paths:
       - 'docs/manual/**'
       - 'docs/site/**'
+      - '10.01_base/2_src/arm/**'
+      - '10.02_devices/2_src/**'
       - '.github/workflows/docs-site.yml'
   workflow_dispatch:
 
@@ -56,6 +60,11 @@ jobs:
           cache-dependency-path: docs/site/package-lock.json
 
       - run: npm ci
+
+      # The device pages are committed with their parameter tables filled in.
+      # A device source changed without regenerating them fails here.
+      - name: Device reference matches the source
+        run: node tools/device-params.mjs --check
 
       # Catches a malformed catalogue entry, a bad `bus:` value and any broken
       # component prop before anything is published — the content schema fails

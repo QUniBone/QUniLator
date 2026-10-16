@@ -86,6 +86,10 @@ public:
 	parameter_bool_c enabled = parameter_bool_c(NULL, "enabled", "en", true,
 			"device installed and ready to use?");
 
+	/// How fast the device's mechanics run against the original: a disk's
+	/// seeks and rotation, a tape's motion. 1 is the original speed, 10 ten
+	/// times as fast. A processor shows its own speed here and takes no
+	/// setting.
 	parameter_double_c emulation_speed = parameter_double_c(NULL, "emulation_speed", "es",
 	false, "", "%g", "1 = original speed, > 1: faster");
 	// 1 = original speed, > 1: mechanics is this factor faster
@@ -97,6 +101,12 @@ public:
 	// normal simulation is restored when the apply clears it.
 	volatile bool config_apply_immediate = false;
 
+	/// How much the device writes to the board's log: 1 only fatal errors, up
+	/// to 5 for everything it can say. The board keeps each device's level in
+	/// its own settings, not in a configuration, and sets it again whenever a
+	/// configuration is applied; `/api/logging` (the MCP server's
+	/// `set_log_level`) is the way to change it for good.
+	/// @default the board's log level
 	parameter_unsigned_c verbosity = parameter_unsigned_c(NULL, "verbosity", "v", false, "",
 			"%d", "1 = fatal, 2 = error, 3 = warning, 4 = info, 5 = debug", 8, 10);
 

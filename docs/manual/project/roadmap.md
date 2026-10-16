@@ -38,10 +38,11 @@ not yet in a release, so it has no page here. It gets one when it ships.
 
 ## Planned
 
-**A device reference**, one page per emulated card — what it is, its parameters,
-what the guest sees, and which DEC diagnostic it passes. Generated from the
-source rather than hand-maintained, so it cannot drift from what the software
-actually does.
+**The rest of the device reference.** The [device reference](../devices/index.md)
+has its first page, the [KA780](../devices/ka780.md): what the card is, what the
+guest sees, what has been verified, and every parameter, written from the source
+so it cannot drift from what the software does. Every other emulated card gets a
+page of the same shape.
 
 **A compatibility matrix** — guest operating system against device, with status
 and a link to the notes. The project knows a great deal of this and it is

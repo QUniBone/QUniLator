@@ -102,6 +102,13 @@ export default defineConfig({
 					],
 				},
 				{
+					label: 'Devices',
+					items: [
+						{ label: 'Device reference', slug: 'devices' },
+						{ label: 'KA780 — VAX-11/780', slug: 'devices/ka780' },
+					],
+				},
+				{
 					label: 'Configurations',
 					items: [
 						// Starlight prefixes the base itself; do not prefix it here.

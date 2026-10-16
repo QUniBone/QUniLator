@@ -41,6 +41,11 @@ is in [`../site/`](../site/); [STRUCTURE.md](../site/STRUCTURE.md) describes it.
 2. [2.11BSD on an MSCP disk, on the LAN](walkthroughs/211bsd-network.md) — real 11/53, QBUS
 3. [VMS on an emulated VAX-11/780](walkthroughs/vax-vms.md) — emulated processor, UNIBUS
 
+**Devices** — one page per emulated card, its parameters written from the source.
+
+- [Device reference](devices/index.md) — and the parameters every device has
+- [KA780 — VAX-11/780 processor](devices/ka780.md)
+
 **The card**
 
 - [What is on the card](hardware/the-card.md)

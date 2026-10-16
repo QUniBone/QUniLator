@@ -38,6 +38,11 @@ export const collections = {
 				 * shared, and only the pages that genuinely differ narrow themselves.
 				 */
 				bus: z.array(busEnum).default(['unibus', 'qbus']),
+				/**
+				 * The C++ class a device reference page documents, or several.
+				 * `tools/device-params.mjs` writes the page's parameter tables from it.
+				 */
+				device: z.union([z.string(), z.array(z.string())]).optional(),
 			}),
 		}),
 	}),

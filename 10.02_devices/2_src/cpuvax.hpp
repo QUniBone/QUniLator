@@ -59,55 +59,84 @@ public:
     // qunibusadapter as a DATI or DATO like any other bus master's.
     dma_request_c data_transfer_request{this};
 
+    /// The memory the processor has, in megabytes: 1, 2 or 4. The board shares
+    /// 4 MB with the bus, and the processor's memory has to fit in it so that a
+    /// device's transfer can reach it, so 4 is the most a board can give. The
+    /// size is read when the processor is enabled; changing it means disabling
+    /// the processor first.
     parameter_unsigned_c memory_mb = parameter_unsigned_c(this, "memory", "mem",/*readonly*/
                                      false, "MB", "%u", "Main memory size in megabytes.", 8, 10);
 
-    // The system volume, attached to the MSCP controller inside the core. It is
-    // how stage 1 boots a machine at all, and it goes when the emulated UDA50
-    // on the bus takes over.
+    /// The disk the machine boots from, and where it is. With `bootimage`
+    /// empty — the usual machine — every peripheral is a device on the bus, and
+    /// `bootdevice` names the unit the console boots: `RQ0` is drive 0 of the
+    /// UDA50 at 772150, which is where the emulated `uda` answers. With an
+    /// image named in `bootimage`, it is attached to an MSCP controller inside
+    /// the processor instead, at the same address; `bus_exclusive` then has to
+    /// be 0, so the bus leaves that address to it. This is for bringing a
+    /// machine up before its devices are configured. An empty `bootdevice`
+    /// brings the processor up at
+    /// its console prompt without booting anything. Both are read when the
+    /// processor is enabled.
+    //
+    // The controller inside the core is the stage 1 scaffolding of
+    // docs/vax-host.md.
     parameter_string_c bootimage = parameter_string_c(this, "bootimage", "bi",/*readonly*/false,
             "Disk image booted from the controller inside the processor. Empty: console only.");
-
     parameter_string_c bootdevice = parameter_string_c(this, "bootdevice", "bd",/*readonly*/false,
             "Unit the processor boots from, as the console names it.");
 
-    // The core's own tracing for one of the devices it carries, written to
-    // /tmp/simh-<device>.log. What it says about a controller inside the
-    // processor is what the same controller on the bus can be compared against.
+    /// Debugging aids for the emulation itself. `core_debug` names a device
+    /// the processor carries inside it, such as `RQ`, and writes the core's own
+    /// trace of it to `/tmp/simh-<device>.log` on the board. `core_history`
+    /// keeps that many of the last instructions executed and writes them to
+    /// `/tmp/vax-history.log` after an interrupt arrives from the bus; it can
+    /// only be changed while the processor is halted.
+    //
+    // What the trace says about a controller inside the processor is what the
+    // same controller on the bus can be compared against; what the processor
+    // does with a vector it has been given cannot be watched from the
+    // device's side of the bus.
     parameter_string_c core_debug = parameter_string_c(this, "core_debug", "cdbg",/*readonly*/false,
             "Trace a device the core carries, e.g. \"RQ\". Empty: off.");
-
-    // The last N instructions the processor executed. Written to
-    // /tmp/vax-history.log one pass after an interrupt arrives from the bus,
-    // which is the moment worth seeing: what the processor does with a vector
-    // it has been given cannot be watched from the device's side of the bus.
     parameter_unsigned_c core_history = parameter_unsigned_c(this, "core_history", "chst",/*readonly*/
                                         false, "", "%u", "Instructions of history kept. 0: off.", 32, 10);
 
-    // The UNIBUS adapter's window on the I/O page. With it the processor's
-    // register accesses become bus cycles and reach the emulated devices;
-    // without it the machine sees only what simh carries inside it.
+    /// How the processor's UNIBUS adapter meets the bus. All three are on for a
+    /// working machine, and are there to take the bus out of the picture when
+    /// comparing against the emulation alone.
+    ///
+    /// `bus_iopage`: the processor's accesses to the I/O page become bus cycles
+    /// and reach the devices on the bus. Off, the machine sees only the devices
+    /// the processor carries inside it.
+    ///
+    /// `bus_dma`: a device's transfer to or from memory goes out on the bus and
+    /// is translated through the adapter's map registers there, as on a real
+    /// UNIBUS, so a card that is not emulated can take part. Off, the transfer
+    /// is answered inside the program.
+    ///
+    /// `bus_exclusive`: the bus answers the whole I/O page, including the
+    /// addresses of the controllers the processor carries inside it. Off, it
+    /// answers only the addresses those leave free.
+    ///
+    /// `bus_iopage` and `bus_exclusive` are read when the processor is enabled.
     parameter_bool_c bus_iopage = parameter_bool_c(this, "bus_iopage", "bio",/*readonly*/
                                   false, "1 = UNIBUS register accesses go on the bus.");
-
-    // Where a device's transfer is answered. Clear, and this program answers
-    // it: the adapter hands the transfer over before it reaches the bus and
-    // the map translation is done here. Set, and the transfer goes out as bus
-    // cycles like any other master's, and the PRU answers it from the same
-    // memory through the same map registers - which is what a device on a real
-    // UNIBUS does, and what lets a card that is not emulated take part.
+    // With bus_dma clear the adapter hands the transfer over before it reaches
+    // the bus and the map translation is done here; set, the PRU answers it
+    // from the same memory through the same map registers.
     parameter_bool_c bus_dma = parameter_bool_c(this, "bus_dma", "bdma",/*readonly*/
                                false, "1 = a device's transfer is answered on the bus, not here.");
-
-    // Whether the bus gets the I/O page whole, over the addresses the
-    // controller inside the core claims, or only what that controller leaves.
     parameter_bool_c bus_exclusive = parameter_bool_c(this, "bus_exclusive", "bx",/*readonly*/
                                      false, "1 = the bus owns the I/O page over the core's own devices.");
 
-    // What a real 780's console does with EXAMINE and DEPOSIT, and the only way
-    // to reach a device register before an operating system has a driver for
-    // it. Writing an address to bus_examine performs a DATI and leaves the
-    // answer in bus_data; writing bus_deposit performs a DATO of bus_data.
+    /// What a real 780's console does with EXAMINE and DEPOSIT on a UNIBUS
+    /// register, and a way to reach a device before an operating system has a
+    /// driver for it. Writing an address (octal, as a UNIBUS address) to
+    /// `bus_examine` reads that register and leaves the word in `bus_data`. To
+    /// write one, set `bus_data` first, then write the address to
+    /// `bus_deposit`. The access is made by the processor, so it needs the
+    /// processor enabled.
     parameter_unsigned_c bus_examine = parameter_unsigned_c(this, "bus_examine", "bex",/*readonly*/
                                        false, "", "%06o", "Read this UNIBUS register into bus_data.", 18, 8);
     parameter_unsigned_c bus_deposit = parameter_unsigned_c(this, "bus_deposit", "bdep",/*readonly*/
@@ -115,9 +144,10 @@ public:
     parameter_unsigned_c bus_data = parameter_unsigned_c(this, "bus_data", "bd",/*readonly*/
                                     false, "", "%06o", "Data of the last examine, or for the next deposit.", 16, 8);
 
-    // The other half of what a 780's console reaches: the processor's own
-    // memory, by physical address. Writing an address to mem_examine leaves the
-    // longword there in mem_data; writing mem_deposit puts mem_data back.
+    /// The other half of what a 780's console reaches: the processor's own
+    /// memory, by physical address, in hex. Writing an address to
+    /// `mem_examine` leaves the longword there in `mem_data`; to change it, set
+    /// `mem_data` and write the address to `mem_deposit`.
     parameter_unsigned_c mem_examine = parameter_unsigned_c(this, "mem_examine", "mex",/*readonly*/
                                        false, "", "%08x", "Read this physical longword into mem_data.", 32, 16);
     parameter_unsigned_c mem_deposit = parameter_unsigned_c(this, "mem_deposit", "mdep",/*readonly*/
@@ -125,6 +155,15 @@ public:
     parameter_unsigned_c mem_data = parameter_unsigned_c(this, "mem_data", "md",/*readonly*/
                                     false, "", "%08x", "Data of the last memory examine, or for the next deposit.", 32, 16);
 
+    /// What the UNIBUS adapter has carried since the processor was enabled:
+    /// register accesses, those nothing answered, and interrupts taken from
+    /// devices. `bus_timeouts` rising during a boot is normal: the operating
+    /// system probes addresses to find out which devices are there.
+    ///
+    /// `dma_words` and `dma_failures` count a device's transfers through the
+    /// map registers when this program answers them, which is with `bus_dma`
+    /// at 0. With `bus_dma` at 1 the board answers them on the bus and these
+    /// stay at 0.
     parameter_unsigned64_c bus_cycles = parameter_unsigned64_c(this, "bus_cycles", "bc",/*readonly*/
                                         true, "", "%u", "UNIBUS register accesses made", 63, 10);
     parameter_unsigned64_c bus_timeouts = parameter_unsigned64_c(this, "bus_timeouts", "bt",/*readonly*/
@@ -135,26 +174,37 @@ public:
                                        true, "", "%u", "words a device moved through the map", 63, 10);
     parameter_unsigned64_c dma_failures = parameter_unsigned64_c(this, "dma_failures", "df",/*readonly*/
                                           true, "", "%u", "transfers the map registers refused", 63, 10);
-    // A map entry with the byte offset bit set moves the transfer one byte up,
-    // so the processor's address is odd where the device's is even. Counted
-    // because it is the path a driver's unaligned buffer takes.
+    /// A map entry with the byte offset bit set moves the transfer one byte
+    /// up, so the processor's address is odd where the device's is even. This
+    /// counts the transfers that took that path, which is the one a driver's
+    /// unaligned buffer takes. Like `dma_words`, it counts only with `bus_dma`
+    /// at 0.
     parameter_unsigned64_c dma_byte_offset = parameter_unsigned64_c(this, "dma_byte_offset", "dbo",/*readonly*/
                                              true, "", "%u", "transfers the map registers offset by a byte", 63, 10);
 
-    // How many instructions worker() runs before it looks at the switches, the
-    // power events and the terminate flag again. Long enough that the check
-    // costs nothing, short enough that a HALT is not noticeably late.
+    /// How many instructions the processor runs before it looks at the
+    /// switches and the power state again. The default is long enough that the
+    /// check costs nothing and short enough that a HALT takes effect at once.
+    //
+    // The pass is a run of worker(); the terminate flag is checked with the
+    // switches.
     parameter_unsigned_c batch_size = parameter_unsigned_c(this, "batch", "b",/*readonly*/
                                       false, "", "%u", "Instructions executed per worker pass.", 32, 10);
 
-    // Run the machine on emulated (instruction-driven) time rather than the
-    // wall. The guest calibrates its software timing loops once at boot; on
-    // wall time a boot preempted during that window mis-times every driver
-    // wait afterwards, so instruction-driven time is the default. Wall time
-    // remains selectable for comparing against real-time behaviour.
+    /// The machine's clock advances with the instructions it executes, at the
+    /// 2 µs an instruction a real 780 takes, so the interval timer and every
+    /// device delay keep pace with the processor whatever else the board is
+    /// doing. VMS calibrates its timing loops once at boot; on the wall clock,
+    /// a boot the board's other work interrupts during that moment mis-times
+    /// every driver wait from then on. Set to 0, the clock follows the wall,
+    /// which is there to compare against real-time behaviour.
     parameter_bool_c emulated_time = parameter_bool_c(this, "emulated_time", "et",/*readonly*/
                                      false, "1 = machine time advances with executed instructions.");
 
+    /// The processor's front panel, which the dashboard's RUN, HALT, START
+    /// and CONT controls drive. `start_switch` and `continue_switch` act once
+    /// and fall back to 0. Enabling the processor builds the machine and
+    /// leaves it halted; START boots it from `bootdevice`.
     parameter_bool_c runmode = parameter_bool_c(this, "run_led", "r",/*readonly*/
                                true, "RUN LED: 1 = processor running, 0 = halted.");
     parameter_bool_c halt_switch = parameter_bool_c(this, "halt_switch", "h",/*readonly*/
@@ -170,6 +220,12 @@ public:
     parameter_bool_c *panel_start_switch(void) override { return &start_switch; }
     parameter_bool_c *panel_continue_switch(void) override { return &continue_switch; }
 
+    /// Where the processor is, read whenever it stops and as it runs: the
+    /// program counter, the processor status longword and the interrupt
+    /// priority level it runs at, all in hex. `uba_init`, `iopage_dispatches`
+    /// and `iopage_claimed` describe the UNIBUS adapter: whether it is being
+    /// initialised, how many I/O page accesses the processor has made, and how
+    /// many words of the I/O page the bus answers (4096 is all of it).
     parameter_unsigned_c pc = parameter_unsigned_c(this, "PC", "pc",/*readonly*/
                               true, "", "%08x", "Program counter.", 32, 16);
     parameter_unsigned_c psl = parameter_unsigned_c(this, "PSL", "psl",/*readonly*/
@@ -182,17 +238,23 @@ public:
                                                true, "", "%u", "I/O page accesses the processor made", 63, 10);
     parameter_unsigned_c iopage_claimed = parameter_unsigned_c(this, "iopage_claimed", "ioc",/*readonly*/
                                           true, "", "%u", "I/O page words the bus answers", 16, 10);
-    // A reset of a controller the core carries runs the auto-configuration,
-    // which takes the boot device's registers back for the core; the claim is
-    // healed on the spot, and this counts how often that happened.
+    /// A reset of a controller the processor carries inside it takes the boot
+    /// device's registers back from the bus. They are handed back to the bus
+    /// at once; this counts how often that happened, and `bootdev_on_bus`
+    /// says whether the bus has them now.
     parameter_unsigned_c iopage_reclaims = parameter_unsigned_c(this, "iopage_reclaims", "ior",/*readonly*/
                                            true, "", "%u", "boot device registers reclaimed from the core", 32, 10);
     parameter_bool_c bootdev_on_bus = parameter_bool_c(this, "bootdev_on_bus", "bob",/*readonly*/
                                       true, "1 = the boot device's address is answered by the bus, now.");
+
+    /// The UNIBUS adapter's registers and interrupt state, for diagnosing a
+    /// machine that is not taking a device's interrupts. `intr_pending` is the
+    /// bus request level whose vector the adapter is still holding; non-zero
+    /// for long says the processor is not taking what it was given.
+    /// `nexus_req` shows the requests BR4 to BR7 the adapter has posted and
+    /// the processor has not yet taken.
     parameter_unsigned_c uba_cr = parameter_unsigned_c(this, "uba_cr", "ucr",/*readonly*/
                                   true, "", "%08x", "UNIBUS adapter control register.", 32, 16);
-    // The bus request level whose vector the adapter is still holding, if any.
-    // Non-zero for long says the processor is not taking what it was given.
     parameter_unsigned_c intr_pending = parameter_unsigned_c(this, "intr_pending", "ip",/*readonly*/
                                         true, "", "%u", "BR level whose vector the adapter holds.", 8, 10);
     parameter_unsigned_c uba_dr = parameter_unsigned_c(this, "uba_dr", "udr",/*readonly*/
@@ -205,6 +267,7 @@ public:
                                               true, "", "%06o", "Vector read back at the last grant.", 16, 8);
     parameter_unsigned_c intr_level_stored = parameter_unsigned_c(this, "intr_level_stored", "ils",/*readonly*/
                                              true, "", "%u", "Level index it was stored at.", 8, 10);
+
     parameter_unsigned64_c cycle_count = parameter_unsigned64_c(this, "cycle_count", "cc",/*readonly*/
                                          true, "", "%u", "Instructions executed since the last start", 63, 10);
 
@@ -240,6 +303,10 @@ public:
     };
     static const unsigned IOTRACE_ENTRIES = 64;
 
+    /// Writes the processor's last 64 accesses to the boot device's
+    /// registers, and the interrupts between them, to the log, together with
+    /// the instruction history when `core_history` is on. It acts once and
+    /// falls back to 0.
     parameter_bool_c iotrace_dump_switch = parameter_bool_c(this, "iotrace_dump", "iotd",/*readonly*/
                                            false, "1 = write the register-access trace to the log.");
 

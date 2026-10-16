@@ -81,7 +81,7 @@ on a `.md` link that reached the built HTML unconverted.
 | `README.md` | The manual's contents page, for anyone reading it in git. |
 | `start/` | Ordered. Read top to bottom: what it is, choosing a card, getting one, installing, acceptance test. |
 | `guide/` | *Not yet written.* The operator's manual — web interface, configurations, images, console, memory, networking, booting a guest, diagnostics, updating. |
-| `devices/` | *Not yet written.* Reference, one page per emulated card. Generated from the source. |
+| `devices/` | Reference, one page per emulated card, with parameter tables written from the source. `index.md` is the overview and the parameters every device has. |
 | `hardware/` | The card itself: the board, fitting it, bus drivers. Later: panels, BeagleBone notes. |
 | `configurations/` | The format a catalogue is published in. The catalogue itself is generated here, from `src/content/configurations/`. |
 | `background/` | The PDP-11, UNIBUS and QBUS. Material that has not changed since 1975. |
@@ -94,6 +94,42 @@ and `configurations/` are reference — arrived at by search or link.
 Adding a page means two edits: the page itself, and its sidebar entry in
 `astro.config.mjs`. The manual's `README.md` mirrors that sidebar for git readers
 and wants the same addition.
+
+## Device pages
+
+A page in `devices/` is prose about the card — what it is, what the machine sees,
+what has been verified — around a parameter reference that nobody writes by hand.
+The page names the C++ class in its front matter and marks where the reference
+goes:
+
+```markdown
+---
+title: KA780 — VAX-11/780 processor
+bus: [unibus]
+device: cpuvax_c
+---
+
+## Parameters
+
+<!-- device-parameters -->
+<!-- /device-parameters -->
+```
+
+`tools/device-params.mjs` fills the block from the class declaration and its
+constructor: every parameter with its short name, type, unit, default and the
+one-line description the web interface shows, split into settings and running
+status. The longer explanation of a parameter is a `///` comment directly above
+its declaration in the source, and declarations that follow it without a blank
+line share it. A `/// @default <text>` line fills the Default column where the
+starting value is not a literal. Base classes are walked up to a class another
+page documents, which is linked — `qunibusdevice_c` is on the overview page and
+nowhere else.
+
+The build runs the generator first (`prebuild`), so the site always shows what
+the source says. The pages are committed with the block filled in, so they read
+complete in git too; CI runs `node tools/device-params.mjs --check` and fails
+when a source change has left a committed page behind. Run the generator after
+changing a device's parameters, and commit the page with the source.
 
 ## Bus variance
 

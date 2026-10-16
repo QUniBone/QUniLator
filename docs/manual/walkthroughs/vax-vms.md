@@ -60,7 +60,7 @@ On **Configurations**, five devices:
 
 | Device | Setting |
 |---|---|
-| `cpuvax` | the VAX-11/780 processor, `memory` = 4 (MB) |
+| `cpuvax` | the VAX-11/780 processor, `memory` = 4 (MB) — see [KA780](../devices/ka780.md) |
 | `uda` | the UDA50 MSCP controller |
 | `uda0` | the system disk, holding `vms47.dsk` |
 | `deuna` | Ethernet, on interface `veth-pdp` |

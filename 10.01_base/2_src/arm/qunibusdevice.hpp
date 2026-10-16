@@ -124,13 +124,20 @@ public:
 
 	// 0 = not "Plugged" in to UNIBUS
 	// QBUS: "address_with" is variable 16,18,22, must be set in device constructor
+	/// Where the card sits on the bus: the address of its first register in
+	/// the I/O page, the interrupt vector and bus request level it interrupts
+	/// with, and its slot, which orders devices that request at the same
+	/// level — 0 is nearest the processor. Each starts at DEC's standard values
+	/// for the device type, and the Configurations screen offers the type's
+	/// other standard addresses and vectors. They can be changed while the
+	/// device is disabled. A device with no registers on the bus has 0 here.
+	/// @default DEC's, for the device type
 	parameter_unsigned_c base_addr = parameter_unsigned_c(this, "base_addr", "addr", true, "",
 			"%06o", "controller base address in IO page", 18, 8);
 	parameter_unsigned_c priority_slot = parameter_unsigned_c(this, "slot", "sl", true, "",
 			"%d", "backplane slot #, interrupt priority within one level, 0 = next to CPU", 16,
 			10);
 	// dump devices without buffers toward CPU, smart buffering devices other end
-
 	parameter_unsigned_c intr_vector = parameter_unsigned_c(this, "intr_vector", "iv", true, "",
 			"%03o", "interrupt vector address", 9, 8);
 	parameter_unsigned_c intr_level = parameter_unsigned_c(this, "intr_level", "il", true, "",
