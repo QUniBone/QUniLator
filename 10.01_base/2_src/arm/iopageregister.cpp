@@ -74,6 +74,8 @@ void iopageregisters_init()
 		pru_iopage_registers->memory_write_count[slot] = 0 ;
 	}
 	pru_iopage_registers->rom_access_count = 0 ;
+	pru_iopage_registers->map_refused_count = 0 ;
+	pru_iopage_registers->map_byte_offset_count = 0 ;
 
   	// clear the iopage addr map: no register assigned
 	memset((void *) pru_iopage_registers->register_handles, 0,

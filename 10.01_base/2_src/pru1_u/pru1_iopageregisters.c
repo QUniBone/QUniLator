@@ -60,11 +60,17 @@ uint8_t emulated_addr_read(uint32_t addr, uint16_t *val) {
 		uint32_t phys = addr;
 		if (DDRMEM_MAP_ACTIVE) {
 			uint32_t entry;
-			if (!DDRMEM_MAP_COVERS(addr))
+			if (!DDRMEM_MAP_COVERS(addr)) {
+				pru_iopage_registers.map_refused_count++;
 				return 0; // no register for this page
+			}
 			entry = DDRMEM_MAP_ENTRY(addr);
-			if (!(entry & UNIBUS_MAP_VALID))
+			if (!(entry & UNIBUS_MAP_VALID)) {
+				pru_iopage_registers.map_refused_count++;
 				return 0; // page not allocated: the transfer fails
+			}
+			if (entry & UNIBUS_MAP_BYTE_OFFSET)
+				pru_iopage_registers.map_byte_offset_count++;
 			phys = DDRMEM_MAP_APPLY(entry, addr);
 		}
 		*val = DDRMEM_MEMGET_W(phys);
@@ -113,11 +119,17 @@ uint8_t emulated_addr_write_w(uint32_t addr, uint16_t w) {
 		uint32_t phys = addr;
 		if (DDRMEM_MAP_ACTIVE) {
 			uint32_t entry;
-			if (!DDRMEM_MAP_COVERS(addr))
+			if (!DDRMEM_MAP_COVERS(addr)) {
+				pru_iopage_registers.map_refused_count++;
 				return 0; // no register for this page
+			}
 			entry = DDRMEM_MAP_ENTRY(addr);
-			if (!(entry & UNIBUS_MAP_VALID))
+			if (!(entry & UNIBUS_MAP_VALID)) {
+				pru_iopage_registers.map_refused_count++;
 				return 0; // page not allocated: the transfer fails
+			}
+			if (entry & UNIBUS_MAP_BYTE_OFFSET)
+				pru_iopage_registers.map_byte_offset_count++;
 			phys = DDRMEM_MAP_APPLY(entry, addr);
 		}
 		DDRMEM_MEMSET_W(phys, w);
@@ -152,11 +164,17 @@ uint8_t emulated_addr_write_b(uint32_t addr, uint8_t b) {
 		uint32_t phys = addr;
 		if (DDRMEM_MAP_ACTIVE) {
 			uint32_t entry;
-			if (!DDRMEM_MAP_COVERS(addr))
+			if (!DDRMEM_MAP_COVERS(addr)) {
+				pru_iopage_registers.map_refused_count++;
 				return 0; // no register for this page
+			}
 			entry = DDRMEM_MAP_ENTRY(addr);
-			if (!(entry & UNIBUS_MAP_VALID))
+			if (!(entry & UNIBUS_MAP_VALID)) {
+				pru_iopage_registers.map_refused_count++;
 				return 0; // page not allocated: the transfer fails
+			}
+			if (entry & UNIBUS_MAP_BYTE_OFFSET)
+				pru_iopage_registers.map_byte_offset_count++;
 			phys = DDRMEM_MAP_APPLY(entry, addr);
 		}
 		DDRMEM_MEMSET_B(phys, b);

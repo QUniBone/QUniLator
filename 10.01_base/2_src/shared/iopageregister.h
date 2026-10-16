@@ -183,6 +183,14 @@ typedef struct {
 	uint32_t	memory_write_count[DDRMEM_RANGE_COUNT] ;
 	uint32_t	rom_access_count ;
 
+	/* What the map of a UNIBUS adapter did with a device's transfer, for the
+	 * processor behind it to report: cycles it refused because the page has no
+	 * valid map register, and cycles a register moved up one byte. The UNIBUS
+	 * PRU counts them while the map is active; they stay 0 otherwise. Wrapping
+	 * is harmless, as above. */
+	uint32_t	map_refused_count ;
+	uint32_t	map_byte_offset_count ;
+
 	uint32_t	iopage_start_addr ; // 0160000, 0760000, 017760000
 	
 	// iopage address table:

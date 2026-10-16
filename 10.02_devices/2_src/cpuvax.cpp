@@ -22,6 +22,7 @@
 #include "qunibus.h"
 #include "qunibusadapter.hpp"
 #include "ddrmem.h"
+#include "iopageregister.h"
 #include "cpuvax.hpp"
 
 #include "cpu_bus_adapter.h"          // unibone_prioritylevelchange()
@@ -66,7 +67,9 @@ cpuvax_c::cpuvax_c() :
     // number is and is not.
     instructions.reference_per_second = 500000;
 
-    memory_mb.value = 8;
+    // The most the range the board shares with the bus holds; see
+    // configure_machine().
+    memory_mb.value = 4;
     bootdevice.value = "RQ0";
     batch_size.value = 10000;
     // The bus takes the I/O page whole by default: a machine whose peripherals
@@ -101,6 +104,7 @@ cpuvax_c::cpuvax_c() :
     ipl.kind = parameter_c::PARAM_STATUS;
     uba_init.kind = parameter_c::PARAM_STATUS;
     iopage_dispatches.kind = parameter_c::PARAM_STATUS;
+    iopage_reclaims.kind = parameter_c::PARAM_STATUS;
     iopage_claimed.kind = parameter_c::PARAM_STATUS;
     bootdev_on_bus.kind = parameter_c::PARAM_STATUS;
     uba_cr.kind = parameter_c::PARAM_STATUS;
@@ -321,6 +325,15 @@ bool cpuvax_c::configure_machine(void)
     simh_shim_status_t r;
     char setting[64];
 
+    // The adapter's counters describe this machine, from the moment it is built.
+    bus_cycles.value = 0;
+    bus_timeouts.value = 0;
+    bus_interrupts.value = 0;
+    dma_words.value = 0;
+    dma_failures.value = 0;
+    dma_byte_offset.value = 0;
+    pru_dma_counts_seen = pru_dma_counts();
+
     memset(&host, 0, sizeof host);
     host.context = this;
     host.console_get = vax_console_get;
@@ -522,6 +535,21 @@ void cpuvax_c::machine_stop(const char *why)
         INFO("VAX halted at PC %08x: %s", (unsigned) pc.value, why);
 }
 
+/* The PRU's counts of the memory cycles it answered in the processor's range,
+   and of what the map did with them. They wrap, so a reader takes differences. */
+cpuvax_c::pru_dma_counts_t cpuvax_c::pru_dma_counts(void)
+{
+    pru_dma_counts_t c = { 0, 0, 0 };
+
+    if (pru_iopage_registers == nullptr)
+        return c;
+    c.words = pru_iopage_registers->memory_read_count[DDRMEM_RANGE_MEMORY]
+              + pru_iopage_registers->memory_write_count[DDRMEM_RANGE_MEMORY];
+    c.refused = pru_iopage_registers->map_refused_count;
+    c.byte_offset = pru_iopage_registers->map_byte_offset_count;
+    return c;
+}
+
 void cpuvax_c::publish_status(void)
 {
     simh_shim_state_t state;
@@ -541,6 +569,18 @@ void cpuvax_c::publish_status(void)
             bootdev_on_bus.value = simh_shim_bus_owns(ba) != 0;
     }
     iopage_reclaims.value = simh_shim_bus_reclaims();
+    // A transfer answered on the bus never reaches on_dma(); the PRU counts it
+    // instead, and what it counted since the last pass is added here.
+    {
+        pru_dma_counts_t now = pru_dma_counts();
+
+        if (bus_iopage.value && bus_dma.value) {
+            dma_words.value += (uint32_t) (now.words - pru_dma_counts_seen.words);
+            dma_failures.value += (uint32_t) (now.refused - pru_dma_counts_seen.refused);
+            dma_byte_offset.value += (uint32_t) (now.byte_offset - pru_dma_counts_seen.byte_offset);
+        }
+        pru_dma_counts_seen = now;
+    }
     uba_cr.value = state.uba_cr;
     intr_pending.value = simh_shim_bus_interrupt_pending();
     uba_dr.value = state.uba_dr;

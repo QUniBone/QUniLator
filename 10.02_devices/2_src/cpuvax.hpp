@@ -160,10 +160,12 @@ public:
     /// devices. `bus_timeouts` rising during a boot is normal: the operating
     /// system probes addresses to find out which devices are there.
     ///
-    /// `dma_words` and `dma_failures` count a device's transfers through the
-    /// map registers when this program answers them, which is with `bus_dma`
-    /// at 0. With `bus_dma` at 1 the board answers them on the bus and these
-    /// stay at 0.
+    /// `dma_words` counts the words devices moved through the map registers
+    /// (a byte written counts as one), and `dma_failures` the transfers the
+    /// map refused because no valid map register covers the page — on a real
+    /// adapter, a device writing where the operating system has not mapped
+    /// anything. All of them start again from 0 when the processor is
+    /// enabled.
     parameter_unsigned64_c bus_cycles = parameter_unsigned64_c(this, "bus_cycles", "bc",/*readonly*/
                                         true, "", "%u", "UNIBUS register accesses made", 63, 10);
     parameter_unsigned64_c bus_timeouts = parameter_unsigned64_c(this, "bus_timeouts", "bt",/*readonly*/
@@ -177,8 +179,7 @@ public:
     /// A map entry with the byte offset bit set moves the transfer one byte
     /// up, so the processor's address is odd where the device's is even. This
     /// counts the transfers that took that path, which is the one a driver's
-    /// unaligned buffer takes. Like `dma_words`, it counts only with `bus_dma`
-    /// at 0.
+    /// unaligned buffer takes.
     parameter_unsigned64_c dma_byte_offset = parameter_unsigned64_c(this, "dma_byte_offset", "dbo",/*readonly*/
                                              true, "", "%u", "transfers the map registers offset by a byte", 63, 10);
 
@@ -311,6 +312,16 @@ public:
                                            false, "1 = write the register-access trace to the log.");
 
 private:
+    // What the PRU had counted at the last publish_status(), for the transfers
+    // it answers on the bus with bus_dma set.
+    struct pru_dma_counts_t {
+        uint32_t words;
+        uint32_t refused;
+        uint32_t byte_offset;
+    };
+    pru_dma_counts_t pru_dma_counts_seen = { 0, 0, 0 };
+    pru_dma_counts_t pru_dma_counts(void);
+
     iotrace_entry iotrace[IOTRACE_ENTRIES];
     uint64_t iotrace_seq = 0;
     uint32_t iotrace_base = 0;          // the watched registers; 0 = off
