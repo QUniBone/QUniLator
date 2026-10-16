@@ -119,6 +119,13 @@ $CXX -std=c++11 -Wall -Wextra -I "$DEV" \
 	"$DEV/simh_tape.cpp" \
 	-o "$OUT/simh_tape_test"
 
+# An Ethernet controller's kernel receive filter is classic BPF, which the
+# kernel runs on a datagram socket pair as it would on the bridge socket.
+$CXX -std=c++11 -Wall -Wextra -I "$DEV" \
+	"$TOOLS/ether_filter_test.cpp" \
+	"$DEV/ether_filter.cpp" \
+	-o "$OUT/ether_filter_test"
+
 # The copy-on-write disk image is file I/O on a base, its sparse overlay and a
 # bitmap sidecar; it links with the logger and the path helpers it reports and
 # resolves through, and works in a temp directory.
@@ -162,5 +169,6 @@ $CXX -std=c++11 -Wall -Wextra -I "$STUBS" -I "$WEB" -I "$BASE" -I "$COMMON" \
 "$OUT/metrics_test"
 "$OUT/serial_tcp_line_test"
 "$OUT/simh_tape_test"
+"$OUT/ether_filter_test"
 "$OUT/cow_image_test"
 "$OUT/upload_test"

@@ -163,6 +163,7 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/vcb01_input.o	\
 	$(OBJDIR)/x11display.o	\
 	$(OBJDIR)/ether_bridge.o	\
+	$(OBJDIR)/ether_filter.o	\
 	$(OBJDIR)/rx0102drive.o	\
 	$(OBJDIR)/rx0102ucpu.o	\
 	$(OBJDIR)/rx11.o	\
@@ -451,7 +452,7 @@ $(OBJDIR)/ts11.o :   $(DEVICE_SRC_DIR)/ts11.cpp $(DEVICE_SRC_DIR)/ts11.hpp
 $(OBJDIR)/simh_tape.o :   $(DEVICE_SRC_DIR)/simh_tape.cpp $(DEVICE_SRC_DIR)/simh_tape.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/delqa.o :   $(DEVICE_SRC_DIR)/delqa.cpp $(DEVICE_SRC_DIR)/delqa.hpp $(DEVICE_SRC_DIR)/delqa_bootrom.h $(DEVICE_SRC_DIR)/ether_bridge.hpp
+$(OBJDIR)/delqa.o :   $(DEVICE_SRC_DIR)/delqa.cpp $(DEVICE_SRC_DIR)/delqa.hpp $(DEVICE_SRC_DIR)/delqa_bootrom.h $(DEVICE_SRC_DIR)/ether_bridge.hpp $(DEVICE_SRC_DIR)/ether_filter.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/vcb01.o :   $(DEVICE_SRC_DIR)/vcb01.cpp $(DEVICE_SRC_DIR)/vcb01.hpp $(DEVICE_SRC_DIR)/vcb01_render.hpp $(DEVICE_SRC_DIR)/vcb01_input.hpp $(DEVICE_SRC_DIR)/x11display.hpp
@@ -466,7 +467,10 @@ $(OBJDIR)/vcb01_input.o :   $(DEVICE_SRC_DIR)/vcb01_input.cpp $(DEVICE_SRC_DIR)/
 $(OBJDIR)/x11display.o :   $(DEVICE_SRC_DIR)/x11display.cpp $(DEVICE_SRC_DIR)/x11display.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/ether_bridge.o :   $(DEVICE_SRC_DIR)/ether_bridge.cpp $(DEVICE_SRC_DIR)/ether_bridge.hpp
+$(OBJDIR)/ether_bridge.o :   $(DEVICE_SRC_DIR)/ether_bridge.cpp $(DEVICE_SRC_DIR)/ether_bridge.hpp $(DEVICE_SRC_DIR)/ether_filter.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/ether_filter.o :   $(DEVICE_SRC_DIR)/ether_filter.cpp $(DEVICE_SRC_DIR)/ether_filter.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/rs232.o :  $(DEVICE_SRC_DIR)/rs232.cpp $(DEVICE_SRC_DIR)/rs232.hpp

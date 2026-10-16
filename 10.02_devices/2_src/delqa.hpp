@@ -317,6 +317,7 @@ private:
 
     bool bridge_accept(const uint8_t *frame, unsigned len);
     const uint8_t *active_physical_address(void);
+    void update_bridge_filter(void);
     bool address_recognised(const uint8_t *dst);
     void bridge_receive(const uint8_t *frame, unsigned len);
     bool transmit_packet(const std::vector<uint8_t> &data);

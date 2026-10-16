@@ -230,6 +230,7 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/dhv11.o \
 	$(OBJDIR)/deuna.o \
 	$(OBJDIR)/ether_bridge.o \
+	$(OBJDIR)/ether_filter.o \
 	$(OBJDIR)/m9312.o \
     $(OBJDIR)/ke11.o \
 	$(OBJDIR)/storageimage.o	\
@@ -549,10 +550,13 @@ $(OBJDIR)/dzv11.o :  $(DEVICE_SRC_DIR)/dzv11.cpp $(DEVICE_SRC_DIR)/dzv11.hpp $(D
 $(OBJDIR)/dhv11.o :  $(DEVICE_SRC_DIR)/dhv11.cpp $(DEVICE_SRC_DIR)/dhv11.hpp $(DEVICE_SRC_DIR)/serial_tcp_line.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/deuna.o :  $(DEVICE_SRC_DIR)/deuna.cpp $(DEVICE_SRC_DIR)/deuna.hpp $(DEVICE_SRC_DIR)/deuna_bootrom.h $(DEVICE_SRC_DIR)/ether_bridge.hpp
+$(OBJDIR)/deuna.o :  $(DEVICE_SRC_DIR)/deuna.cpp $(DEVICE_SRC_DIR)/deuna.hpp $(DEVICE_SRC_DIR)/deuna_bootrom.h $(DEVICE_SRC_DIR)/ether_bridge.hpp $(DEVICE_SRC_DIR)/ether_filter.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
-$(OBJDIR)/ether_bridge.o :  $(DEVICE_SRC_DIR)/ether_bridge.cpp $(DEVICE_SRC_DIR)/ether_bridge.hpp
+$(OBJDIR)/ether_bridge.o :  $(DEVICE_SRC_DIR)/ether_bridge.cpp $(DEVICE_SRC_DIR)/ether_bridge.hpp $(DEVICE_SRC_DIR)/ether_filter.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/ether_filter.o :  $(DEVICE_SRC_DIR)/ether_filter.cpp $(DEVICE_SRC_DIR)/ether_filter.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/m9312.o :  $(DEVICE_SRC_DIR)/m9312.cpp $(DEVICE_SRC_DIR)/m9312.hpp

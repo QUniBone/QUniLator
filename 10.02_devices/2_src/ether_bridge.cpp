@@ -141,29 +141,23 @@ bool ether_bridge_c::open(const std::string &ifname, const uint8_t station_addre
 
 bool ether_bridge_c::set_station_address(const uint8_t station_address[6])
 {
+    ether_address_t a;
+    memcpy(a.bytes, station_address, 6);
+    return set_filter({ a }, false);
+}
+
+bool ether_bridge_c::set_filter(const std::vector<ether_address_t> &addresses,
+        bool promiscuous)
+{
     if (fd < 0)
         return true;
 
-    // queue only frames this controller could want: its station address,
+    // queue only frames this controller could want: its physical addresses,
     // broadcast and multicast
-    const uint8_t *sa = station_address;
-    uint32_t sa_hi = ((uint32_t) sa[0] << 24) | ((uint32_t) sa[1] << 16)
-            | ((uint32_t) sa[2] << 8) | sa[3];
-    uint32_t sa_lo = ((uint32_t) sa[4] << 8) | sa[5];
-    struct sock_filter code[] = {
-        { BPF_LD | BPF_B | BPF_ABS, 0, 0, 0 },      // A = dst[0]
-        { BPF_ALU | BPF_AND | BPF_K, 0, 0, 1 },     // A &= multicast bit
-        { BPF_JMP | BPF_JEQ | BPF_K, 0, 4, 0 },     // set? -> accept
-        { BPF_LD | BPF_W | BPF_ABS, 0, 0, 0 },      // A = dst[0..3]
-        { BPF_JMP | BPF_JEQ | BPF_K, 0, 3, sa_hi },
-        { BPF_LD | BPF_H | BPF_ABS, 0, 0, 4 },      // A = dst[4..5]
-        { BPF_JMP | BPF_JEQ | BPF_K, 0, 1, sa_lo },
-        { BPF_RET | BPF_K, 0, 0, 0xffff },          // accept
-        { BPF_RET | BPF_K, 0, 0, 0 },               // drop
-    };
+    std::vector<struct sock_filter> code = ether_receive_filter(addresses, promiscuous);
     struct sock_fprog prog;
-    prog.len = sizeof(code) / sizeof(code[0]);
-    prog.filter = code;
+    prog.len = code.size();
+    prog.filter = code.data();
     if (setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, &prog, sizeof(prog)) < 0) {
         WARNING("bridge: cannot attach address filter: %s", strerror(errno));
         return false;

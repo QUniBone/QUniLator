@@ -36,8 +36,10 @@
 
 #include <stdint.h>
 #include <string>
+#include <vector>
 
 #include "logsource.hpp"
+#include "ether_filter.hpp"
 
 // The station address an emulated Ethernet controller powers on with: DEC's
 // OUI (08:00:2b) with the low three bytes taken from the board's own Ethernet
@@ -64,6 +66,11 @@ public:
     // address it powered up with. Nothing to do while the socket is closed:
     // open() installs the filter for the address it is given.
     bool set_station_address(const uint8_t station_address[6]);
+
+    // The same for a controller that answers to several physical addresses,
+    // or to every frame while promiscuous. A controller calls it whenever the
+    // set changes, and again after open(), which installs one address.
+    bool set_filter(const std::vector<ether_address_t> &addresses, bool promiscuous);
 
     bool is_open(void) const {
         return fd >= 0;

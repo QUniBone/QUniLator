@@ -192,6 +192,7 @@ bool delqa_c::on_param_changed(parameter_c *param)
             return false;
         pthread_mutex_lock(&on_after_register_access_mutex);
         update_prom_registers();
+        update_bridge_filter();
         pthread_mutex_unlock(&on_after_register_access_mutex);
     } else if (param == &deqna_lock) {
         if (enabled.value)
@@ -294,6 +295,7 @@ void delqa_c::software_reset(void)
     // for them again.
     setup.promiscuous = false;
     setup.all_multicast = false;
+    update_bridge_filter();
 }
 
 // power_on_reset(): DCLO cycle.  Full reset including VAR.
@@ -1167,9 +1169,8 @@ void delqa_c::process_setup(uint16_t descriptor_count)
                     setup.macs[i][3], setup.macs[i][4], setup.macs[i][5]);
     }
 
+    update_bridge_filter();
     pthread_mutex_unlock(&on_after_register_access_mutex);
-
-    // TODO stage 3: reprogram the eth0 bridge receive filter
 }
 
 // process_bootrom(): deliver the on-board boot/diagnostic ROM into host
@@ -1244,6 +1245,30 @@ void delqa_c::enqueue_packet(enum packet_c::type_e type, const std::vector<uint8
 // interface: the DELQA station address is distinct from the host MAC, and
 // the software filter below decides which frames reach the emulated
 // controller.
+
+// update_bridge_filter(): aim the bridge's kernel filter at every physical
+// address the controller answers to - the PROM station address and the
+// unicast entries of the setup RAM - or at every frame while promiscuous.
+// The software filter (bridge_accept) decides from there; the kernel filter
+// only keeps away the frames it would never take. Call with
+// on_after_register_access_mutex held.
+void delqa_c::update_bridge_filter(void)
+{
+    std::vector<ether_address_t> addresses;
+    ether_address_t a;
+    memcpy(a.bytes, station_address, 6);
+    addresses.push_back(a);
+    if (setup.valid)
+        for (unsigned i = 0; i < FILTER_MAX; i++) {
+            const uint8_t *m = setup.macs[i];
+            bool empty = !(m[0] | m[1] | m[2] | m[3] | m[4] | m[5]);
+            if (empty || (m[0] & 0x01) || memcmp(m, station_address, 6) == 0)
+                continue;
+            memcpy(a.bytes, m, 6);
+            addresses.push_back(a);
+        }
+    bridge.set_filter(addresses, setup.valid && setup.promiscuous);
+}
 
 // active_physical_address(): the one physical address the receive logic
 // recognises - the first setup entry with a clear multicast bit, or the
@@ -1462,6 +1487,10 @@ void delqa_c::bridge_worker(void)
                     timeout.wait_ms(50);
                 continue;
             }
+            // open() installs the PROM address; the setup RAM may name more
+            pthread_mutex_lock(&on_after_register_access_mutex);
+            update_bridge_filter();
+            pthread_mutex_unlock(&on_after_register_access_mutex);
         }
 
         // Keep draining the socket while the receiver is off: the controller's
