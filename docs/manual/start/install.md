@@ -234,6 +234,10 @@ The bouncing sweep is what you are waiting for: the emulator service is running.
 Anything else still blinking after about five minutes means setup did not finish,
 and the serial console is how to find out why. `usr3` is SD-card activity.
 
+`XXX` blinking on a QUniLator that was already running means the emulator has
+stopped; [restarting the service](../project/faq.md#the-emulator-has-crashed-or-stopped-responding)
+brings it back without a reboot.
+
 ## The machine comes up dark
 
 A QUniLator that has just started serves a machine that is **switched off**. The

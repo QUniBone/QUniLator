@@ -1,6 +1,6 @@
 ---
 title: FAQ
-description: Which BeagleBone, which backplane, powering the card outside a machine, and the usual reasons a machine will not start.
+description: Which BeagleBone, which backplane, powering the card outside a machine, restarting a crashed emulator, and the usual reasons a machine will not start.
 ---
 
 ## Which BeagleBone will work?
@@ -99,6 +99,50 @@ can do no interrupts and no DMA, which rules out device emulation.
 
 A UniProbe or QProbe terminator shows open BG/NPG signals and a raised SACK on its
 LEDs, which turns this from guesswork into a glance.
+
+## The emulator has crashed or stopped responding
+
+The emulator is a systemd service — `qbone` on a QBone, `unibone` on a UniBone —
+and restarting that service brings it back without rebooting the BeagleBone. Log
+in with `ssh` as the operator account, which has `sudo`, and run:
+
+```
+sudo systemctl restart qbone      # unibone on a UNIBUS board
+```
+
+The service does not restart itself: a crashed emulator stays down until it is
+restarted by hand or the board reboots. How it looks depends on what happened:
+
+- **It exited.** The LEDs fall back to the three-LED `XXX` blink, and the web
+  interface does not answer. `systemctl status qbone` reads `failed`.
+- **It hangs.** The process is still alive, so the LEDs keep their ready sweep
+  even though the web interface and the machine have stopped responding.
+
+The restart works for both. A hung emulator that ignores the stop request is
+killed after 15 seconds, and the new one starts in its place. It reloads the PRU
+firmware and selects the configuration by the DIP switches, as at boot, and the
+machine comes up [dark](../start/install.md#the-machine-comes-up-dark): switch it
+on with **AUX ON/OFF** on the [control panel](../operating/dashboard.md#control-panel).
+A configuration marked **autostart** switches itself on.
+
+While the emulator is down, the grant chain through its slot is open, which
+usually stops the machine on the bus as well (see
+[My machine will not start with the card fitted](#my-machine-will-not-start-with-the-card-fitted)).
+
+To see why it stopped, and to report it:
+
+```
+systemctl status qbone                     # state and the last log lines
+journalctl -u qbone -b                     # everything since the board booted
+journalctl -u qbone -b -1                  # the boot before, after a reboot
+```
+
+A crash also leaves a core dump as `/var/lib/qunilator/core`. Mention it in the
+[issue](https://github.com/QUniBone/QUniLator/issues) along with the journal; the
+next crash overwrites it.
+
+Only when `systemctl restart` itself does not return does the board need a
+reboot (`sudo reboot`).
 
 ## XXDP boots from an emulated drive but nothing else does
 
