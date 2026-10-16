@@ -164,6 +164,8 @@ void RX11_c::on_after_install()
 
 void RX11_c::on_after_uninstall() 
 {
+    // the drives go with the controller, as the RX211's do
+    storagecontroller_c::on_after_uninstall();
 }
 
 

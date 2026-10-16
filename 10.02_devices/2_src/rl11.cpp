@@ -249,6 +249,8 @@ bool RL11_c::on_before_install()
 void RL11_c::on_after_uninstall() 
 {
     disconnect_from_panel();
+    // the drives go with the controller, their workers stopped
+    storagecontroller_c::on_after_uninstall();
 }
 
 
