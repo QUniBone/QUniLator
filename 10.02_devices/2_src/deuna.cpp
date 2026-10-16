@@ -711,6 +711,7 @@ void deuna_c::reset_controller(void)
 
     stats = stats_state();
     stats.last_update_ns = timeout_c::abstime_ns();
+    publish_stats();
 
     memset(load_server, 0, sizeof(load_server));
     init_internal_memory();
@@ -1561,6 +1562,7 @@ bool deuna_c::execute_command(void)
         if (fnc == FC_RDCLCTR) {
             stats = stats_state();
             stats.last_update_ns = timeout_c::abstime_ns();
+            publish_stats();
         }
         break;
     }
@@ -1704,8 +1706,19 @@ void deuna_c::enqueue_readq(const uint8_t *data, size_t len, bool loopback)
     if (dropped) {
         std::lock_guard<std::recursive_mutex> lock(state_mutex);
         stats.rlossl++;
-        stat_rx_errors.value = stats.rlossl;
+        publish_stats();
     }
+}
+
+// The frame and error counters the web interface shows, from the counters
+// the controller keeps: whenever those change, including when a reset or a
+// read-and-clear starts them again from zero.
+void deuna_c::publish_stats(void)
+{
+    stat_rx_frames.value = stats.frecv;
+    stat_rx_errors.value = stats.frecve + stats.rlossl;
+    stat_tx_frames.value = stats.ftrans;
+    stat_tx_errors.value = stats.ftransa;
 }
 
 /*
@@ -1874,8 +1887,7 @@ bool deuna_c::process_receive(void)
             }
 
             pcsr0 |= PCSR0_RXI;
-            stat_rx_frames.value = stats.frecv;
-            stat_rx_errors.value = stats.frecve + stats.rlossl;
+            publish_stats();
 
             current_item.reset();
         }
@@ -2113,8 +2125,7 @@ bool deuna_c::process_transmit(unsigned max_descriptors)
                 stats.mtbytes += static_cast<uint32_t>(write_buffer.len > 14 ? write_buffer.len - 14 : 0);
             }
 
-            stat_tx_frames.value = stats.ftrans;
-            stat_tx_errors.value = stats.ftransa;
+            publish_stats();
         }
 
         txhdr[2] &= ~TXR_OWN;

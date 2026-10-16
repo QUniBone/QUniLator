@@ -371,6 +371,7 @@ private:
      * Packet filtering
      */
     bool accept_packet(const uint8_t *data, size_t len) const;
+    void publish_stats(void);
     // Point the bridge's kernel filter at the address the driver has set, so
     // the socket carries what this controller answers to and little else.
     void update_address_filter(void);
