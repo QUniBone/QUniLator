@@ -710,6 +710,38 @@ function regenerate(path) {
 	return out.join('\n');
 }
 
+/**
+ * Two parameters of one device under one short name: the command-line menu
+ * finds a parameter by either name, so the second can never be reached by its
+ * short one. Refused here, for every documented device on both builds.
+ */
+const clashes = [];
+for (const cls of homes.keys()) {
+	for (const bus of BUSES) {
+		sources = SOURCES[bus];
+		let all;
+		try {
+			all = collect(cls, new Set()).params;
+		} catch (e) {
+			if (/is not declared/.test(e.message)) continue;
+			throw e;
+		}
+		const by = new Map();
+		for (const p of all) {
+			for (const key of new Set([p.name, p.short].filter(Boolean).map((k) => k.toLowerCase()))) {
+				if (by.has(key) && by.get(key) !== p.name)
+					clashes.push(`${cls} (${BUS_NAME[bus]}): "${key}" names both ${by.get(key)} and ${p.name}`);
+				else by.set(key, p.name);
+			}
+		}
+	}
+}
+sources = SOURCES.unibus;
+if (clashes.length) {
+	console.error([...new Set(clashes)].join('\n'));
+	process.exit(1);
+}
+
 const check = process.argv.includes('--check');
 let stale = 0;
 for (const path of pagePaths) {

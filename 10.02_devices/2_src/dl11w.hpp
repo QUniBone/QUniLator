@@ -194,7 +194,7 @@ public:
 	/// port's transmit line spacing for as long as the program keeps it set, which
 	/// is how a program sends BREAK; a TU58 needs it. A line carried over the
 	/// network has no break condition to send.
-	parameter_bool_c break_enable = parameter_bool_c(this, "break", "b", /*readonly*/false,
+	parameter_bool_c break_enable = parameter_bool_c(this, "break", "brk", /*readonly*/false,
 			"Enable BREAK transmission (M7856 SW4-1)");
 
 	/// Carries the line over the network. `listen` accepts one client on

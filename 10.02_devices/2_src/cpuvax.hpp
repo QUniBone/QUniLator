@@ -141,7 +141,7 @@ public:
                                        false, "", "%06o", "Read this UNIBUS register into bus_data.", 18, 8);
     parameter_unsigned_c bus_deposit = parameter_unsigned_c(this, "bus_deposit", "bdep",/*readonly*/
                                        false, "", "%06o", "Write bus_data to this UNIBUS register.", 18, 8);
-    parameter_unsigned_c bus_data = parameter_unsigned_c(this, "bus_data", "bd",/*readonly*/
+    parameter_unsigned_c bus_data = parameter_unsigned_c(this, "bus_data", "bdat",/*readonly*/
                                     false, "", "%06o", "Data of the last examine, or for the next deposit.", 16, 8);
 
     /// The other half of what a 780's console reaches: the processor's own
@@ -170,7 +170,7 @@ public:
                                         true, "", "%u", "UNIBUS register accesses made", 63, 10);
     parameter_unsigned64_c bus_timeouts = parameter_unsigned64_c(this, "bus_timeouts", "bt",/*readonly*/
                                           true, "", "%u", "UNIBUS accesses that were not answered", 63, 10);
-    parameter_unsigned64_c bus_interrupts = parameter_unsigned64_c(this, "bus_interrupts", "bi",/*readonly*/
+    parameter_unsigned64_c bus_interrupts = parameter_unsigned64_c(this, "bus_interrupts", "bint",/*readonly*/
                                             true, "", "%u", "interrupts taken from the bus", 63, 10);
     parameter_unsigned64_c dma_words = parameter_unsigned64_c(this, "dma_words", "dw",/*readonly*/
                                        true, "", "%u", "words a device moved through the map", 63, 10);
