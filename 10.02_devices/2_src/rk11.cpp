@@ -739,10 +739,27 @@ void rk11_c::on_after_register_access(
 
                     default:
                         // All other commands take significant time and happen on the worker thread.
-                        // First check: 
-                        // If this is not a Drive Reset command and the drive is not ready or has taken
-                        // a fault, we will abort, set the appropriate error bits and interrupt.
-                        //
+                        // First check: a drive that is not in the subsystem answers nothing,
+                        // which is NXD. It comes first, as on the RK11, so a missing drive is
+                        // never reported as merely not ready.
+                        if (!check_drive_present())
+                        {
+                            _nxd = true;
+                            _he = true;
+                            _err = true;
+                            _scp = false;
+                            _go = false;
+                            // update_RKCS();
+                            // update_RKER();
+ 
+                            // invoke_interrupt();
+                            error = true;
+                            break;
+                        } 
+
+                        // Second check: if this is not a Drive Reset command and the drive is
+                        // not ready or has taken a fault, we will abort, set the appropriate
+                        // error bits and interrupt.
                         if (_function != Drive_Reset && !check_drive_ready())
                         {
                             _dre = true;
@@ -761,22 +778,6 @@ void rk11_c::on_after_register_access(
                             break;
                         }
  
-                        // If this is an attempt to address a nonexistent (not present or not
-                        // loaded) drive, this triggers an NXD error.
-                        if (!check_drive_present())
-                        {
-                            _nxd = true;
-                            _he = true;
-                            _err = true;
-                            _scp = false;
-                            _go = false;
-                            // update_RKCS();
-                            // update_RKER();
- 
-                            // invoke_interrupt();
-                            error = true;
-                            break;
-                        } 
         
                         // Clear RDY, SCP bits:
                         pthread_mutex_lock(&on_after_register_access_mutex); 
@@ -876,9 +877,11 @@ bool rk11_c::check_drive_ready(void)
    }
 }
 
+// A drive is present when it is enabled: switched into the subsystem, whether
+// or not a pack is loaded and spinning (that is check_drive_ready()).
 bool rk11_c::check_drive_present(void)
 {
-    return (selected_drive()->get_drive_ready());  
+    return selected_drive()->enabled.value;
 }
 
 void rk11_c::on_drive_status_changed(storagedrive_c *drive)
