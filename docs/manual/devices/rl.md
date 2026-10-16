@@ -166,6 +166,6 @@ The cartridge cover. It can be opened (1) only while the drive is in LOAD, and a
 
 #### `spinupdelay`
 
-With 1, a drive that is loaded takes the time a real one does to come READY: 25 seconds of spin-up, then the heads load. With 0, it comes READY as soon as it is loaded, which saves that wait on every boot. Seek and settle times are modelled either way.
+With 1, a drive takes the time a real one does to start and stop: 25 seconds of spin-up before the heads load and READY lights, and as long again to spin down to LOAD. With 0, it is READY as soon as it is loaded and at LOAD as soon as it is stopped, which saves those waits on every boot and every cartridge change. Seek and settle times are modelled either way.
 
 <!-- /device-parameters -->

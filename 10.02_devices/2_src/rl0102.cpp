@@ -461,7 +461,8 @@ void RL0102_c::state_spin_down()
 
     INFO("Spin down drive speed = %d", rotation_umin.value);
 
-    if (config_apply_immediate) {       // a configuration apply skips the spin-down delay
+    // skip the modeled spin-down, as state_spin_up() skips the spin-up
+    if (!spinup_delay.value || config_apply_immediate) {
         rotation_umin.value = 0;
         change_state(RL0102_STATE_load_cartridge);
         return;

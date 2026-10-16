@@ -212,10 +212,12 @@ public:
 	false, "1, if RL cover is open");
 	// not readonly only in "load" state
 
-	/// With 1, a drive that is loaded takes the time a real one does to come
-	/// READY: 25 seconds of spin-up, then the heads load. With 0, it comes
-	/// READY as soon as it is loaded, which saves that wait on every boot.
-	/// Seek and settle times are modelled either way.
+	/// With 1, a drive takes the time a real one does to start and stop: 25
+	/// seconds of spin-up before the heads load and READY lights, and as long
+	/// again to spin down to LOAD. With 0, it is READY as soon as it is loaded
+	/// and at LOAD as soon as it is stopped, which saves those waits on every
+	/// boot and every cartridge change. Seek and settle times are modelled
+	/// either way.
 	parameter_bool_c spinup_delay = parameter_bool_c(this, "spinupdelay", "sud", /*readonly*/
 	false, "1 = model the drive's spin-up/spin-down delay; 0 = ready at once");
 
