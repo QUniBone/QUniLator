@@ -7,7 +7,7 @@ import { liveControl, loadConfigs, fetchConfigSnapshot, setConfigLayout } from '
 import { initLiveTerminal, teardownTerminals, consoleSource, focusConsole } from '../lib/terminals';
 import { recordingState, startRecording, stopRecording } from '../api';
 import { enabledDevices } from '../lib/devmodel';
-import { placeItems, gridRows, fits, occupancyExcept } from '../lib/dashlayout';
+import { placeItems, gridRows, fits, occupancyExcept, firstFree } from '../lib/dashlayout';
 import type { GridItem } from '../lib/dashlayout';
 import { toast } from '../lib/toast';
 import { Led, Chip } from './common';
@@ -421,6 +421,7 @@ function DashGrid() {
   const [measured, setMeasured] = useState<Record<string, Cells>>({});
   const drag = useRef<{ key: string; dx: number; dy: number } | null>(null);
   const [preview, setPreview] = useState<{ key: string; x: number; y: number; ok: boolean } | null>(null);
+  const [hiddenOpen, setHiddenOpen] = useState(false);
 
   // load the stored layout for the running configuration
   useEffect(() => {
@@ -680,13 +681,51 @@ function DashGrid() {
     else setLayout({});
   };
 
+  // The cards the dashboard leaves out. Outside edit mode nothing else says
+  // they exist, so the heading names how many there are and offers each back.
+  const hiddenKeys = allItems.filter((it) => isHidden(it.key)).map((it) => it.key);
+  const titleOf = (key: string): string => {
+    const d = devByName[key];
+    return d ? d.label || d.name : fixedLabel(key);
+  };
+  // Showing a card saves the layout at once: it is a change to the screen made
+  // outside edit mode, which has no Save of its own. A card the layout has never
+  // placed goes in the first free space.
+  const show = async (key: string) => {
+    setHiddenOpen(false);
+    const it = sized(key);
+    const at = layout[key] || firstFree(occupancyExcept(placed, key), it.w, it.h, cols, 0);
+    const next: DashLayout = { ...layout, [key]: { ...at, hidden: false } };
+    setLayout(next);
+    if (cfg && (await setConfigLayout(cfg, next))) toast('dashboard', titleOf(key) + ' shown');
+  };
+  const hiddenMenu = hiddenKeys.length
+    ? html`<span class="export-wrap">
+        <button class="btn small" onClick=${() => setHiddenOpen(!hiddenOpen)}
+          >${hiddenKeys.length} hidden ▾</button>
+        ${
+          hiddenOpen
+            ? html`<div class="export-menu" onMouseLeave=${() => setHiddenOpen(false)}>
+                ${hiddenKeys.map(
+                  (k) => html`<button class="export-item" onClick=${() => show(k)}>
+                    <span>${titleOf(k)}</span>
+                    <span class="muted">show it on the dashboard</span>
+                  </button>`
+                )}
+              </div>`
+            : null
+        }
+      </span>`
+    : null;
+
   // the layout controls sit with the cog, on the right of the heading, since
   // both are about the screen rather than about the machine on it
   const tools = edit
     ? html`<span class="muted dash-edit-hint">drag a card to move it; the eye hides it</span>
         <button class="btn small primary" disabled=${!dirty} onClick=${save}>Save layout</button>
         <button class="btn small" onClick=${revert}>Revert</button>`
-    : html`<button class="btn small" onClick=${() => setEdit(true)}>Edit layout</button>`;
+    : html`${hiddenMenu}
+        <button class="btn small" onClick=${() => setEdit(true)}>Edit layout</button>`;
 
   return html`<${DashHeader} tools=${tools} />
     <div class=${'dash-grid' + (edit ? ' editing' : '')} ref=${gridRef}

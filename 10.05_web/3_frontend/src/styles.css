@@ -1415,7 +1415,8 @@ button.tree-name:hover .mono { color: var(--accent); }
 .lampbtn.cap-mini { font-size: .5rem; padding: .12rem .3rem; min-width: 0;
   letter-spacing: .04em; margin-left: auto; }
 
-/* Export menu on a configuration, and the import control beside the list. */
+/* Export menu on a configuration, and the import control beside the list.
+   The dashboard's list of hidden cards is the same menu. */
 .export-wrap { position: relative; display: inline-block; }
 .export-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 40;
   min-width: 17rem; padding: .25rem; border-radius: 7px;
