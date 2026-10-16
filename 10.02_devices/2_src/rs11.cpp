@@ -7,6 +7,7 @@
  */
 
 #include <assert.h>
+#include <algorithm>
 
 using namespace std;
 
@@ -22,6 +23,7 @@ rs11_c::rs11_c(storagecontroller_c *parentController) :
    name.value = "RS11";
    type_name.value = "RS11";
    log_label = "RS11";
+   capacity.value = (uint64_t) (get_max_address() + 1) * 2; // bytes
 }
 
 bool rs11_c::on_param_changed(parameter_c *param) 
@@ -103,17 +105,15 @@ uint32_t rs11_c::get_max_address()
     return (0x40000 * 8) - 1; 
 }
 
+// The words of a transfer that lie on the drum: get_max_address() is the
+// last word there, so a transfer may end on it.
 size_t rs11_c::clip_into_range(uint32_t wordAddress, size_t count)
 {
-    int32_t diff = (wordAddress + count) - get_max_address();
+    uint32_t words = get_max_address() + 1;
 
-    if (diff > 0)
-    {
-        // Adjust count so it fits within the available address space
-        count = max(static_cast<uint32_t>(0), count - diff);
-    }
-
-    return count;
+    if (wordAddress >= words)
+        return 0;
+    return std::min(count, (size_t) (words - wordAddress));
 }
 
 void rs11_c::drive_reset(void) 
