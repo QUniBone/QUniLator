@@ -781,17 +781,27 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
 .term-tabs #serial-bar { align-items: center; gap: 6px; margin-left: auto; }
 
 /* ---- the performance panel ----
-   A block per device, a row per metric. The rows are a grid rather than a flex
-   run so the numbers of every device line up in one column whatever their
-   labels are: a column of rates that does not align cannot be scanned, which is
-   the only thing this panel is for. */
+   A block per device, a row per metric. The panel body is one grid, and every
+   device block and row takes its columns as a subgrid, so the numbers of every
+   device line up in one column however long a label is: a column of rates that
+   does not align cannot be scanned, which is the only thing this panel is for.
+   The trace always takes the last column, so the traces line up too, whether
+   or not a row carries a percentage. */
 .perf-card .card-body { padding-bottom: 10px; }
-.perf-body { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.perf-body {
+  display: grid;
+  grid-template-columns: minmax(6.5em, max-content) minmax(3.5em, max-content) minmax(4em, max-content) 1fr auto;
+  gap: 12px 8px; min-width: 0;
+}
+.perf-body > .perf-empty { grid-column: 1 / -1; }
 .perf-cadence { font-size: var(--fs-1); }
 .perf-empty { margin: 2px 0 4px; color: var(--ink-muted); font-size: var(--fs-2); }
 
-.perf-dev { display: flex; flex-direction: column; gap: 1px; }
+.perf-dev {
+  display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; row-gap: 1px;
+}
 .perf-dev-head {
+  grid-column: 1 / -1;
   display: flex; align-items: baseline; gap: 8px;
   padding-bottom: 3px; margin-bottom: 2px;
   border-bottom: 1px solid var(--line-soft);
@@ -801,17 +811,15 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
 .perf-dev-kind { margin-left: auto; color: var(--ink-faint); font-size: var(--fs-1); }
 
 .perf-row {
-  display: grid;
-  grid-template-columns: minmax(6.5em, auto) minmax(3.5em, max-content) minmax(4em, max-content) 1fr auto;
-  align-items: center; gap: 0 8px;
-  padding: 1px 0;
+  display: grid; grid-template-columns: subgrid; grid-column: 1 / -1;
+  align-items: center; padding: 1px 0;
 }
 .perf-label { color: var(--ink-muted); font-size: var(--fs-2); white-space: nowrap; }
 .perf-num { text-align: right; font-variant-numeric: tabular-nums; font-size: var(--fs-2); }
 .perf-unit { color: var(--ink-faint); font-size: var(--fs-1); white-space: nowrap; }
 .perf-pct { color: var(--ink-muted); font-size: var(--fs-1); white-space: nowrap; }
 
-.perf-spark { width: 78px; height: 20px; display: block; }
+.perf-spark { width: 78px; height: 20px; display: block; grid-column: -2; }
 .perf-spark-line { fill: none; stroke: var(--accent); stroke-width: 1.25; stroke-linejoin: round; }
 .perf-spark-fill { fill: var(--accent-soft); stroke: none; }
 
