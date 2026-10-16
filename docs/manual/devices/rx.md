@@ -84,9 +84,8 @@ RXV21, and RX02 floppies read and write.
 
 - 2.11BSD on the QBone reads and writes RX02 floppies through the RXV21 with
   `mxv22` on, and what it writes is in the image afterwards.
-- The RX01 diagnostic ZRXAF0 (CZRXA) does not pass on the QBone's RXV11: it
-  reports NO INTERRUPT AT DONE. The cause is in the controller model, which can
-  take back a DONE interrupt it has just raised.
+- The RX01 diagnostic ZRXAF0 (CZRXA) runs clean passes on the QBone's RXV11
+  with a real KDJ11, and on a UniBone's RX11 with the emulated PDP-11/34.
 
 ## Interface card parameters
 
