@@ -1,3 +1,52 @@
+qbone (1.22.0-1) trixie; urgency=low
+
+  1.22.0 makes a drive say plainly whether it holds its disk: the web
+  interface puts in only an image the board has, refuses one the drive cannot
+  open, and the Storage page marks a drive that holds no file. It adds a
+  console switch and display register, interrupt rates on the performance
+  card, and a device reference in the manual, and fixes a long list of
+  register-level details across the emulated cards. Scripts that create a
+  disk by attaching a name that does not exist now make it with
+  `POST /api/images` first.
+
+  * Device reference. The manual describes every emulated card: what it
+    answers on the bus, each parameter with its short name, and what its
+    status readouts mean.
+  * Switch and display register. A card at 777570 gives a processor without
+    its own the console switches and display lamps, drawn on the dashboard as
+    sixteen toggles and sixteen lamps with their octal values.
+  * Interrupt rates. Every device that interrupts reports how often it does,
+    so terminal and network load read off the DZ, DHV, DL11 and Ethernet
+    controllers on the performance card. The dashboard heading lists its
+    hidden cards, which is where the performance card starts.
+  * Media a drive can use. Putting a file the board does not have into a
+    drive answers 404 instead of making an empty disk, a file the drive
+    cannot open answers 409 and leaves the drive as it was, and the Storage
+    page shows a drive whose image is not open as "not open". The CLI keeps
+    its create-on-attach.
+  * Overlays move with their image. Renaming or deleting an image takes its
+    `.ovl` and `.ovl.map` along, so a later image of the same name no longer
+    picks up the old one's writes, and consolidating finds the drive holding
+    an image however its path is spelled.
+  * Parameters. Every parameter has a short name of its own: the DL11's
+    break is `brk`, the KA780's bus_data and bus_interrupts are `bdat` and
+    `bint`. An MSCP drive's `useimagesize` can be set, and the Ethernet
+    controllers keep their activity LED in a saved configuration. The DEUNA
+    starts on `veth-pdp` and the KA780 with 4 MB.
+  * Emulated cards. The RK11 reports a missing drive as NXD and honours WRITE
+    LOCK, the RF11 compares a whole WRITE CHECK and takes a word count of 0
+    as 65536, the RS11 reaches the drum's last word, the UNIBUS RL11 reads
+    RLBA bit 0 as 0, and the VCB01, KE11-A, KW11-P, DEUNA and DELQA registers
+    follow their manuals more closely.
+  * Stability. One read past the end of a plain disk image turned every later
+    read of it into zeros; it reads on now. Disabling the RL11 or RX11 takes
+    its drives with it, which ended a crash on shutdown; changing a console
+    setting reopens ttyS2 at once instead of failing on its own lock; logging
+    no longer holds up device threads behind a write to flash; an upload cut
+    off halfway is refused.
+
+ -- Hans Huebner <hans@huebner.org>  Sat, 17 Oct 2026 10:30:00 +0200
+
 qbone (1.21.0-1) trixie; urgency=low
 
   1.21.0 makes the copy-on-write overlay safe to rely on: what a guest wrote
