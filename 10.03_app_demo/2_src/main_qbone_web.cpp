@@ -453,6 +453,7 @@ int main(int argc, char *argv[])
 	std::string held_config;
 	handlers.yield = [&]() {
 		held_config = webconfigs_current();
+		webconfigs_mirror_hold(true);
 		std::lock_guard<std::mutex> ops_lock(device_configuration_c::operations_mutex);
 
 		// Switch the machine off first, the way the panel switch does. Taking
@@ -521,6 +522,7 @@ int main(int argc, char *argv[])
 					held_config.c_str(), apply_error.c_str());
 		for (const std::string &r : rejections)
 			WEB_WARNING("Configuration \"%s\": %s", held_config.c_str(), r.c_str());
+		webconfigs_mirror_hold(false);
 	};
 	std::string claim_error;
 	if (!boardclaim_serve(handlers, &claim_error))

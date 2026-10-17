@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <iterator>
 #include <list>
 #include <mutex>
 #include <sstream>
@@ -762,6 +763,33 @@ int main(void) {
 		}
 		check(dipA_v == 3, "list reports dipA at DIP 3");
 		check(dipB_v == 7, "list reports dipB at DIP 7");
+
+		// The event stream asks for the mirror from the moment the server is
+		// up, before startup has brought the machine back from it; the mirror
+		// stays as it is until startup has run, so DIP 0 restores the machine
+		// that was running and not the empty set standing in for it.
+		{
+			picojson::value mirror = make_doc({ dev_entry("rl", true, {}),
+					dev_entry("rl0", true, {}) });
+			mirror.get<picojson::object>()["derived_from"] = picojson::value("dipB");
+			std::string body = mirror.serialize();
+			{
+				std::ofstream out(cfg_path(".current").c_str());
+				out << body;
+			}
+			webconfigs_mirror_current();
+			std::ifstream in(cfg_path(".current").c_str());
+			std::string read_back((std::istreambuf_iterator<char>(in)),
+					std::istreambuf_iterator<char>());
+			check(read_back == body, "the mirror is left alone before startup");
+			g_dip_value = 0;
+			webconfigs_startup("");
+			check(webconfigs_current() == "dipB",
+					"DIP 0 comes up as the mirrored machine, named as it was");
+			check(webpower_is_in_machine(rl) && webpower_is_in_machine(rl0),
+					"carrying the mirrored cards");
+			unlink(cfg_path(".current").c_str());
+		}
 
 		// DIP 3 → dipA (rl on, rl0 off)
 		g_dip_value = 3;

@@ -73,6 +73,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <fstream>
 #include <list>
 #include <map>
@@ -713,11 +714,18 @@ static const char *current_mirror_name = ".current";
 static std::mutex mirror_mutex;
 static std::string last_mirrored;
 
+// The event stream asks for the mirror from the moment the web server is up,
+// which is before startup has brought the machine back from it; written then,
+// the mirror would record the empty, unnamed set standing in for the machine
+// and startup would restore that. So it stays shut until startup is done, and
+// while the interactive menu has the device set down.
+static std::atomic<bool> mirror_live(false);
+
 // Write the live machine to the mirror, if it has changed and the registry is
 // free. A busy machine is skipped rather than waited for: the mirror is a
 // record of a state that is still there to be recorded on the next pass.
 static void mirror_current_machine(void) {
-	if (configs_dir.empty())
+	if (configs_dir.empty() || !mirror_live)
 		return;
 	picojson::value snapshot;
 	if (!snapshot_devices_now(&snapshot, 20)
@@ -744,6 +752,10 @@ static void mirror_current_machine(void) {
 
 void webconfigs_mirror_current(void) {
 	mirror_current_machine();
+}
+
+void webconfigs_mirror_hold(bool hold) {
+	mirror_live = !hold;
 }
 
 // The backplane slots a device occupies, as offsets from its "slot" parameter.
@@ -1953,6 +1965,7 @@ void webconfigs_startup(const std::string &override_config) {
 	else
 		WEB_INFO("The machine is loaded and switched off; the panel switch "
 				"brings it up.");
+	mirror_live = true;
 }
 
 // /api/configs, /api/configs/<name>, /api/configs/<name>/apply

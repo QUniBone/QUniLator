@@ -30,8 +30,15 @@ void webconfigs_startup(const std::string &override_config);
 
 // Mirror the live machine to disk, so a board can come back up as it stands
 // rather than as the last thing anyone saved. Cheap and idempotent: it writes
-// only when the machine has changed, and skips a busy registry.
+// only when the machine has changed, and skips a busy registry. It writes
+// nothing until webconfigs_startup() has brought the machine up, and nothing
+// while a hold is in force.
 void webconfigs_mirror_current(void);
+
+// Hold the mirror while the device set is down and rebuilt (the interactive
+// menu has the board), so the record of the machine is not overwritten by the
+// empty set standing in for it; releasing the hold resumes mirroring.
+void webconfigs_mirror_hold(bool hold);
 
 // The device set was destroyed and reconstructed (the board came back from the
 // interactive menu or a self-test): drop the captured parameter defaults, whose
