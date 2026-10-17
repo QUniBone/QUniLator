@@ -66,6 +66,7 @@
 */
 
 #include <dirent.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -669,26 +670,30 @@ static bool write_config_file(const std::string &name, const std::string &body,
 		std::string *error) {
 	std::string path = config_path(name);
 	std::string tmp = path + ".tmp";
+	// The reason goes into the message: a card that has filled up is the usual
+	// one, and the operator can do something about it only when told.
+	std::string why;
+	errno = 0;
 	{
 		std::ofstream out(tmp.c_str(), std::ios::trunc);
-		if (!out.is_open()) {
-			if (error != nullptr)
-				*error = "cannot write configuration \"" + name + "\"";
-			return false;
-		}
-		out << body;
-		out.close();
-		if (out.fail()) {
-			::unlink(tmp.c_str());
-			if (error != nullptr)
-				*error = "cannot write configuration \"" + name + "\"";
-			return false;
+		if (!out.is_open())
+			why = errno != 0 ? strerror(errno) : "cannot create it";
+		else {
+			out << body;
+			out.close();
+			if (out.fail()) {
+				why = errno != 0 ? strerror(errno) : "write failed";
+				::unlink(tmp.c_str());
+			}
 		}
 	}
-	if (::rename(tmp.c_str(), path.c_str()) != 0) {
+	if (why.empty() && ::rename(tmp.c_str(), path.c_str()) != 0) {
+		why = strerror(errno);
 		::unlink(tmp.c_str());
+	}
+	if (!why.empty()) {
 		if (error != nullptr)
-			*error = "cannot write configuration \"" + name + "\"";
+			*error = "cannot write configuration \"" + name + "\": " + why;
 		return false;
 	}
 	return true;
