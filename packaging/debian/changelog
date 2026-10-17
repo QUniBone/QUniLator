@@ -1,3 +1,17 @@
+qbone (1.22.1-1) trixie; urgency=low
+
+  1.22.1 makes the display register's lamps follow the program at its own
+  pace, so a moving pattern such as RSX's idle display moves on the
+  dashboard as it does on a console.
+
+  * Display lamps in motion. Every change a program makes to 777570 reaches
+    the dashboard and is replayed in turn, a fraction of a second behind the
+    machine, where the card used to show ten samples a second. A lamp that
+    goes out fades briefly, as a bulb does. The event stream carries the
+    changes as a `trace` event.
+
+ -- Hans Huebner <hans@huebner.org>  Sat, 17 Oct 2026 18:35:14 +0200
+
 qbone (1.22.0-1) trixie; urgency=low
 
   1.22.0 makes a drive say plainly whether it holds its disk: the web
