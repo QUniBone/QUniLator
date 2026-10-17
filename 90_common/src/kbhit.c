@@ -36,6 +36,7 @@ int os_getkey(void)
 #else
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <termios.h>
@@ -58,8 +59,10 @@ void set_conio_terminal_mode()
     tcgetattr(0, &orig_termios);
     memcpy(&new_termios, &orig_termios, sizeof(new_termios));
 
-    /* register cleanup handler, and set the new terminal mode */
+    /* register cleanup handler, and set the new terminal mode; a FATAL
+       leaves through quick_exit(), so it is registered there as well */
     atexit(reset_terminal_mode);
+    at_quick_exit(reset_terminal_mode);
     cfmakeraw(&new_termios);
     tcsetattr(0, TCSANOW, &new_termios);
 }

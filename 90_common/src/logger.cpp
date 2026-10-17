@@ -52,6 +52,7 @@
 #include <fstream>
 #include <string>
 #include <string.h>
+#include <cstdlib>
 #include <stdarg.h>
 #include <assert.h>
 
@@ -487,10 +488,14 @@ void logger_c::vlog(logsource_c *logsource, unsigned msglevel, bool late_evaluat
     fifo_mutex.unlock();
 //	pthread_mutex_unlock (&mutex);
 
-    // stop program
+    // Stop the program. A fatal error can come from any thread, and the
+    // static destructors exit() runs would meet threads still running and
+    // abort, losing the buffered output with the message in it - so the
+    // output is flushed and the process leaves without them.
     if (msglevel == LL_FATAL) {
         output_flush();
-        exit(1);
+        fflush(nullptr);
+        quick_exit(1);
     }
 }
 
