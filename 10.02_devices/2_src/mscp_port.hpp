@@ -124,15 +124,21 @@ public:
     // Whether the host has passed the controller a command it has not taken
     // yet: the descriptor the ring pointer stands on is owned by the
     // controller. Reads the descriptor and changes nothing, so the polling
-    // thread can ask it on the way to sleeping.
+    // thread can ask it on the way to sleeping; a descriptor it cannot read
+    // raises a port error.
     //
     bool CommandPending(void);
 
     //
     // Posts a response message to the response ring and memory
     // if there is space.
-    // Returns FALSE if the ring is full.
+    // Returns FALSE if the ring is full, or if reading it failed, which raises
+    // a port error and takes the port out of the running state.
     bool PostResponse(Message* response);
+
+    // Whether the port has completed initialization and not been reset or
+    // stopped by a port error since.
+    bool IsRunning(void) { return _initStep == Complete; }
 
     uint32_t GetDriveCount(void);
     storagedrive_c* GetDrive(uint32_t driveNumber);

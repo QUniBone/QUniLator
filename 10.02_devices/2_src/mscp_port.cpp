@@ -581,7 +581,7 @@ mscp_port_c::update_SA(uint16_t value)
 bool
 mscp_port_c::CommandPending(void)
 {
-    if (0 == _ringBase)
+    if (0 == _ringBase || !IsRunning())
     {
         return false;                   // no communications area yet
     }
@@ -593,7 +593,14 @@ mscp_port_c::CommandPending(void)
                 sizeof(Descriptor),
                 sizeof(Descriptor))));
 
-    return cmdDescriptor && cmdDescriptor->Word1.Fields.Ownership;
+    // A ring the port cannot read is a fatal port error, as on a command
+    // fetch: the port stops until the host initializes it again.
+    if (!cmdDescriptor)
+    {
+        PortError(PORT_ERROR_PACKET_READ);
+        return false;
+    }
+    return cmdDescriptor->Word1.Fields.Ownership;
 }
 
 Message*

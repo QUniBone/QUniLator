@@ -408,12 +408,29 @@ mscp_server_base::Poll(void)
             }
 
             //
-            // Post the response to the port's response ring.
-            // If everything is working properly, there should always be room.
+            // Post the response to the port's response ring. A host that
+            // keeps to its credits always leaves room; one that does not -
+            // an operating system going down mid-transfer - leaves the
+            // response waiting for a free slot, as a real controller holds
+            // it. A port error raised while posting, or a reset of the port
+            // by the host, ends the wait and the response is dropped with the
+            // rest of the port's state.
             //
-            if(!_port->PostResponse(message.get()))
+            if (!_port->PostResponse(message.get()))
             {
-                FATAL("Unexpected: no room in response ring.");
+                bool reported = false;
+                while (!_abort_polling
+                        && _pollState != PollingState::InitRestart
+                        && _port->IsRunning()
+                        && !_port->PostResponse(message.get()))
+                {
+                    if (!reported)
+                    {
+                        WARNING("Response ring full: holding the response until the host frees a slot.");
+                        reported = true;
+                    }
+                    timeout_c::wait_ms(1);
+                }
             }
 
             //
