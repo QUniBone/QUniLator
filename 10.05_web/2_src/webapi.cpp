@@ -366,6 +366,18 @@ static void notify_carried(device_c *dev) {
 	}
 }
 
+// A drive that opens its medium as it is attached and holds no file after
+// being given one: the open failed, and the machine sees no disk there.
+static bool attach_failed(device_c *dev, const std::string &value) {
+	storagedrive_c *drv = dynamic_cast<storagedrive_c *>(dev);
+	return drv != nullptr && !value.empty() && drv->opens_medium_on_attach()
+			&& !drv->image_is_open();
+}
+
+static std::string attach_failed_message(device_c *dev, const std::string &value) {
+	return dev->name.value + " could not open " + value + "; the journal says why";
+}
+
 // PUT /api/devices/<device>/params/<param> {"value": ...} — set a parameter
 static void device_param_set(struct mg_connection *conn, const std::string &devname,
 		const std::string &paramname) {
@@ -588,6 +600,11 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 							return;
 						}
 						param->parse(value);
+						if (attach_failed(dev, value)) {
+							param->parse("");
+							send_error(conn, 409, attach_failed_message(dev, value));
+							return;
+						}
 						dev->enabled.set(true);
 						WEB_INFO("%s enabled with its medium", dev->name.value.c_str());
 						web_send_json(conn, 200, param_to_json(dev, param));
@@ -607,12 +624,20 @@ static void device_param_set(struct mg_connection *conn, const std::string &devn
 				// the device logged rather than a 200 quoting a value that
 				// never took. A device that normalizes what it stores writes
 				// the value it settled on and logs nothing, and that stands.
+				std::string previous = *param->render();
 				dev->last_error.clear();
 				param->parse(value);
 				if (*param->render() != value && !dev->last_error.empty()) {
 					send_error(conn, 409, dev->name.value + "." + param->name
 							+ " could not be set to \"" + value + "\": "
 							+ dev->last_error);
+					return;
+				}
+				// a medium that did not open leaves the drive with what it held
+				if (param->content == parameter_c::CONTENT_IMAGE
+						&& attach_failed(dev, value)) {
+					param->parse(previous);
+					send_error(conn, 409, attach_failed_message(dev, value));
 					return;
 				}
 			}

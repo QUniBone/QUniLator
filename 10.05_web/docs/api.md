@@ -431,6 +431,12 @@ to exist - the file, or its `.gz` master - and a name with nothing behind it
 answers `404`; a blank medium is made with
 [`POST /api/images`](#post-apiimages-json-body) first.
 
+A drive that opens its medium as it is attached — an MSCP disk, RK05, RS11 or
+RX drive — reports a file that does not open: the attach answers `409` naming
+the drive and the image, and the drive keeps the medium it held before (none,
+and switched off, if it was off). An RL drive opens its pack as it spins up,
+and reports a pack that does not open through its fault lamp.
+
 **Media follow the drive into the machine and out of it.** Attaching an image to
 a disabled drive switches the drive on; a drive whose controller is off is
 refused with `409` naming the controller. Setting `enabled` to `0` on a drive

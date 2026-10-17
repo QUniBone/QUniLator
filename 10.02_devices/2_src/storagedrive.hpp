@@ -87,6 +87,10 @@ public:
     // changeable: a drive that models a spin-up brings the pack to rest as part
     // of the change rather than asking for it first.
     virtual bool locked(void) const { return lock.value; }
+    // True for a drive that opens its medium as it is attached, so the attach
+    // itself says whether the file opened. A drive that opens it later - an RL
+    // pack as it spins up - answers false.
+    virtual bool opens_medium_on_attach(void) const { return false; }
 private:
     uint8_t	zeros[4096] ; // a block of 00s
 

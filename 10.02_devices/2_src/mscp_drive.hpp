@@ -24,6 +24,7 @@ public:
     ~mscp_drive_c(void);
 
     bool on_param_changed(parameter_c *param) override;
+    bool opens_medium_on_attach(void) const override { return true; }
 
     uint32_t GetBlockSize(void);
     uint32_t GetBlockCount(void);

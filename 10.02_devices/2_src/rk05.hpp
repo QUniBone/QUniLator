@@ -69,6 +69,7 @@ public:
 	rk05_c(storagecontroller_c *controller);
 
     bool on_param_changed(parameter_c* param) override;
+    bool opens_medium_on_attach(void) const override { return true; }
 
 	void on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge) override;
 

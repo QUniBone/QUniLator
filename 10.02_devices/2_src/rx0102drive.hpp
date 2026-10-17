@@ -40,6 +40,7 @@
 class RX0102uCPU_c;
 class RX0102drive_c: public storagedrive_c {
 public:
+    bool opens_medium_on_attach(void) const override { return true; }
     bool removable(void) const override { return true; }
 private:
 
