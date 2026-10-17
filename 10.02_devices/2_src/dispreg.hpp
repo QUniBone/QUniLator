@@ -15,14 +15,30 @@
    latches the two halves need: DATI answers the switches out of the read
    latch, and each write lands in the write latch, from which the display is
    copied.
+
+   A program can move the display far faster than the dashboard's status poll
+   samples it - RSX's idle pattern shifts on every return from WAIT - so each
+   change is also logged with the time it happened, and the web layer drains
+   that log on every poll and sends it along, for the dashboard to replay at
+   the program's own pace.
 */
 #ifndef _DISPREG_HPP_
 #define _DISPREG_HPP_
 
+#include <atomic>
+#include <cstdint>
+#include <vector>
 #include "qunibusdevice.hpp"
 #include "parameter.hpp"
 
 #define DISPREG_ADDR 0777570
+
+// One change of the display: the word written and when, in microseconds of
+// the monotonic clock.
+struct dispreg_change_t {
+	uint64_t us;
+	uint16_t value;
+};
 
 class dispreg_c: public qunibusdevice_c {
 public:
@@ -50,8 +66,28 @@ public:
 	void on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge) override;
 	void on_init_changed(void) override;
 
+	// Move the changes logged since the last call into `out`, oldest first.
+	// Returns how many were dropped because the log was full.
+	unsigned drain_changes(std::vector<dispreg_change_t> &out);
+
 private:
 	qunibusdevice_register_t *reg;
+
+	// The change log, a single-producer single-consumer ring: the bus thread
+	// writes it on DATO and the web layer's poll reads it, with no lock on the
+	// bus thread's path. A change is logged only when at least
+	// CHANGE_SPACING_US has passed since the last one logged, which bounds the
+	// log to what a screen can draw however fast the program writes; the
+	// display parameter always carries the latest word.
+	static const unsigned CHANGES = 256;
+	static const uint64_t CHANGE_SPACING_US = 1000;
+	dispreg_change_t changes[CHANGES];
+	std::atomic<unsigned> change_head { 0 }; // next slot written, by the bus thread
+	std::atomic<unsigned> change_tail { 0 }; // next slot read, by the poll
+	std::atomic<unsigned> changes_dropped { 0 };
+	uint64_t last_logged_us = 0;
+	uint16_t last_logged_value = 0;
+	bool logged_any = false;
 };
 
 #endif // _DISPREG_HPP_

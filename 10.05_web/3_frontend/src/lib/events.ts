@@ -2,6 +2,7 @@
 import { store, setStore, emit, emitSoon } from '../store';
 import { refreshDevices, refreshSettings } from '../api';
 import { patchParam, patchStatus } from './devmodel';
+import { applyTrace } from './trace';
 import { clearConsole, updateConsoleSource } from './terminals';
 import { wsURL } from './util';
 import { syncVersion } from './version';
@@ -46,8 +47,9 @@ export function initEvents(): void {
       let soon = false,
         now = false;
       for (const item of ev.events || []) {
-        if (applyEvent(item) === 'soon') soon = true;
-        else now = true;
+        const how = applyEvent(item);
+        if (how === 'soon') soon = true;
+        else if (how === 'now') now = true;
       }
       if (now) emit();
       else if (soon) emitSoon();
@@ -55,13 +57,17 @@ export function initEvents(): void {
     }
     const how = applyEvent(ev);
     if (how === 'soon') emitSoon();
-    else emit();
+    else if (how === 'now') emit();
   };
 
   // Apply one event to the store. Returns how urgently the screen should
-  // follow: a lamp storm is damped, everything else repaints at once.
-  function applyEvent(ev: any): 'soon' | 'now' {
-    if (ev.t === 'param') {
+  // follow: a lamp storm is damped, everything else repaints at once, and a
+  // trace is painted by its player without a render at all.
+  function applyEvent(ev: any): 'soon' | 'now' | 'none' {
+    if (ev.t === 'trace') {
+      applyTrace(ev);
+      return 'none';
+    } else if (ev.t === 'param') {
       patchParam(ev.dev, ev.param, ev.value);
       // a device coming or going can be the one that carries the console — a
       // VAX holds its console inside the processor — so re-point the terminal

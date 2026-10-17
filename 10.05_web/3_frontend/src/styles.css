@@ -696,6 +696,18 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
   letter-spacing: .08em; color: var(--sw-legend); width: 9ch;
 }
 .dsp-bits { display: flex; gap: 9px; }
+/* The display lamps are lit by the replay a frame at a time, and go out with a
+   short afterglow, as an incandescent bulb does: a pattern that moves faster
+   than the screen draws leaves a trail rather than flickering. The lit lens is
+   an overlay, so its opacity can fade where a gradient cannot. */
+.dsp-lamp { position: relative; }
+.dsp-lamp::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  background: radial-gradient(circle at 50% 41%, var(--lens-core) 0%, var(--lens) 78%);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18), 0 0 8px 0 var(--lens-glow);
+  opacity: 0; transition: opacity 120ms ease-out;
+}
+.dsp-lamp.lit::after { opacity: 1; transition: none; }
 .dsp-group { display: flex; gap: 4px; }
 .dsp-group > * { width: var(--led-size); flex: 0 0 var(--led-size); }
 .dsp-sw {

@@ -7,6 +7,7 @@
    See dispreg.hpp.
 */
 #include <cstring>
+#include <time.h>
 #include <iostream>
 #include "utils.hpp"
 #include "logger.hpp"
@@ -70,7 +71,35 @@ void dispreg_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 	UNUSED(access);
 	if (device_reg != reg || unibus_control != QUNIBUS_CYCLE_DATO)
 		return;
-	display.value = get_register_dato_value(reg);
+	uint16_t value = get_register_dato_value(reg);
+	display.value = value;
+	if (logged_any && value == last_logged_value)
+		return;
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	uint64_t us = (uint64_t) ts.tv_sec * 1000000u + (uint64_t) ts.tv_nsec / 1000u;
+	if (logged_any && us - last_logged_us < CHANGE_SPACING_US)
+		return;
+	unsigned head = change_head.load(std::memory_order_relaxed);
+	if (head - change_tail.load(std::memory_order_acquire) >= CHANGES) {
+		changes_dropped.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
+	changes[head % CHANGES] = { us, value };
+	change_head.store(head + 1, std::memory_order_release);
+	last_logged_us = us;
+	last_logged_value = value;
+	logged_any = true;
+}
+
+unsigned dispreg_c::drain_changes(std::vector<dispreg_change_t> &out)
+{
+	unsigned tail = change_tail.load(std::memory_order_relaxed);
+	unsigned head = change_head.load(std::memory_order_acquire);
+	for (; tail != head; tail++)
+		out.push_back(changes[tail % CHANGES]);
+	change_tail.store(tail, std::memory_order_release);
+	return changes_dropped.exchange(0, std::memory_order_relaxed);
 }
 
 bool dispreg_c::on_param_changed(parameter_c *param)

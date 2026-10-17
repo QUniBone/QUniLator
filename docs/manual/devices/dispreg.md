@@ -31,6 +31,13 @@ as sixteen lamps grouped by octal digit, with the octal value beside them, and
 the switches as sixteen toggles with their value in a field: click a toggle, or
 type an octal word and press Enter.
 
+The lamps follow the program at its own pace, a fraction of a second behind
+the machine: every change the program makes is replayed in turn, so a pattern
+that moves, such as RSX's idle display, moves on the card as it does on a
+console. A lamp that goes out fades briefly, as a bulb does. A program
+changing the display more often than a thousand times a second shows as a
+blur of the lamps it lights, which is what a real console shows too.
+
 ## Parameters
 
 <!-- device-parameters: dispreg_c -->

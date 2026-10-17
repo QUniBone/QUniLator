@@ -526,6 +526,30 @@ struct status_cache_t {
 };
 static std::map<device_c *, status_cache_t> status_cache;
 
+// The display register moves faster than this poll samples it, so every change
+// the device logged since the last pass travels as a trace: the words in the
+// order written and when, in microseconds of the board's monotonic clock. The
+// dashboard replays them at that pace, a fixed delay behind the machine.
+static void publish_display_trace(dispreg_c *dsp) {
+	static std::vector<dispreg_change_t> changes;
+	changes.clear();
+	dsp->drain_changes(changes);
+	if (changes.empty())
+		return;
+	picojson::array at, values;
+	for (const dispreg_change_t &c : changes) {
+		at.push_back(picojson::value((double) c.us));
+		values.push_back(picojson::value((double) c.value));
+	}
+	picojson::object event;
+	event["t"] = picojson::value("trace");
+	event["dev"] = picojson::value(dsp->name.value);
+	event["param"] = picojson::value(dsp->display.name);
+	event["at"] = picojson::value(at);
+	event["values"] = picojson::value(values);
+	enqueue(event);
+}
+
 static void poll_status_params(void) {
 	static unsigned pass = 0;
 	pass++;
@@ -564,6 +588,8 @@ static void poll_status_params(void) {
 			event["value"] = v;
 			enqueue(event);
 		}
+		if (dispreg_c *dsp = dynamic_cast<dispreg_c *>(dev))
+			publish_display_trace(dsp);
 		// A disk drive's verbal status is derived from the very signals scanned
 		// above, so it moves whenever they do — a pack spinning down, a medium
 		// coming out, a transfer starting. Publishing it here carries a state
