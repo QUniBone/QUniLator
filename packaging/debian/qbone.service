@@ -39,10 +39,15 @@ LimitMEMLOCK=infinity
 # A crash here leaves nothing to look at otherwise: the emulator dies with the
 # machine's whole state in it - the device set, the bus adapter's schedule, the
 # thread that was mid-transfer - and none of that reaches the journal. Allow a
-# core so the next one can be read (#48). The board writes it as "core" in the
+# core so the next one can be read (#48). The board writes it as "core.<pid>" in the
 # working directory below, since it carries no systemd-coredump; the cap keeps
 # a mapped bus window from filling the card.
 LimitCORE=2G
+# A core is named for the process that left it, so every crash adds one; with
+# an emulated VAX each is several hundred megabytes, and a few of them fill the
+# card - after which no configuration can be saved. Only the latest crashes are
+# worth reading, so a start keeps the three newest and removes the rest.
+ExecStartPre=/bin/sh -c 'cd /var/lib/qunilator && ls -1t core core.* 2>/dev/null | tail -n +4 | xargs -r rm -f --'
 Restart=no
 # Answering SIGTERM shuts the device set down in order, but a stop must never
 # be able to hang a reboot: if the process has not exited in time - e.g. a
