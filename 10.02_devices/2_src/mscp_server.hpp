@@ -146,6 +146,14 @@ protected:
     enum UnitFlags
     {
         REMOVABLE_MEDIA = 0x80,
+        WRITE_PROTECT_HARDWARE = 0x2000,    // UF_WPH
+    };
+
+    // Write-protect status subcodes (raw, shifted <<5 by STATUS()).
+    enum WriteProtectSubcodes
+    {
+        SW_WRITE_LOCK = 128,    // SB_WPR_SW
+        HW_WRITE_LOCK = 256,    // SB_WPR_HW
     };
 
     enum UnitOfflineSubcodes
@@ -302,6 +310,7 @@ private:
     uint32_t DoDiskTransfer(uint16_t operation, std::shared_ptr<Message> message, uint16_t unitNumber, uint16_t modifiers);
 
     mscp_drive_c* GetDiskDrive(uint32_t unitNumber);
+    uint16_t DiskUnitFlags(mscp_drive_c *drive);
 };
 
 // The disk server is the concrete MSCP server in use today.  Retain the old
@@ -369,13 +378,6 @@ private:
     enum TapeSuccessSubcodes
     {
         SB_SUC_EOT = 0x20,
-    };
-
-    // Write-protect status subcodes (raw, shifted <<5 by STATUS()).
-    enum WriteProtectSubcodes
-    {
-        SW_WRITE_LOCK = 128,    // SB_WPR_SW
-        HW_WRITE_LOCK = 256,    // SB_WPR_HW
     };
 
     // TK50 tape format and menu (TF_CTP | TF_CTP_LO).

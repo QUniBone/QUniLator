@@ -55,6 +55,12 @@ A new drive is an RA81. The RX50, RX33, RC25, RC25F and RA60 take removable
 media, and the drive reports that in its unit flags, which is how a boot ROM tells
 a floppy or cartridge from a fixed disk.
 
+An image file with its write permission cleared (`chmod 444`) is a write-protected
+unit: the drive reports hardware write protect in its unit flags, and a Write or
+Erase to it ends with Write Protected before anything is written. An operating
+system that has to write to its system disk does not come up from one; VMS V3.5
+stops with a bug check. Give a system disk mode `664`.
+
 ## Using it
 
 1. On the **Configurations** screen, enable `uda`. The defaults are right for a

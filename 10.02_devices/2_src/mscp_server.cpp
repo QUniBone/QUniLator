@@ -946,7 +946,7 @@ mscp_disk_server::GetUnitStatus(
     // The removable-media flag steers hosts: the MXV11-B2 bootstrap runs
     // separate DU boot passes for removable and fixed units and matches each
     // unit against this bit alone.
-    params->UnitFlags = drive->IsRemovable() ? UnitFlags::REMOVABLE_MEDIA : 0;
+    params->UnitFlags = DiskUnitFlags(drive);
     params->MultiUnitCode = 0; // Controller dependent, we don't support multi-unit drives.
     params->UnitIdDeviceNumber = drive->GetDeviceNumber();
     params->UnitIdClassModel = drive->GetClassModel();
@@ -1141,7 +1141,7 @@ mscp_disk_server::SetUnitCharacteristicsInternal(
         return STATUS(Status::UNIT_OFFLINE, UnitOfflineSubcodes::UNIT_UNKNOWN, 0);
     }
 
-    params->UnitFlags = drive->IsRemovable() ? UnitFlags::REMOVABLE_MEDIA : 0;
+    params->UnitFlags = DiskUnitFlags(drive);
     params->MultiUnitCode = 0; // Controller dependent, we don't support multi-unit drives.
     params->UnitIdDeviceNumber = drive->GetDeviceNumber();
     params->UnitIdClassModel = drive->GetClassModel();
@@ -1163,6 +1163,20 @@ mscp_disk_server::SetUnitCharacteristicsInternal(
     {
         return STATUS(Status::SUCCESS, 0, 0);
     }
+}
+
+// The unit flags a disk drive reports in GET UNIT STATUS, ONLINE and SET UNIT
+// CHARACTERISTICS: removable media, and a hardware write protect for an image
+// the drive may not write.
+uint16_t
+mscp_disk_server::DiskUnitFlags(mscp_drive_c *drive)
+{
+    uint16_t flags = 0;
+    if (drive->IsRemovable())
+        flags |= UnitFlags::REMOVABLE_MEDIA;
+    if (drive->IsWriteProtected())
+        flags |= UnitFlags::WRITE_PROTECT_HARDWARE;
+    return flags;
 }
 
 //
@@ -1242,6 +1256,13 @@ mscp_disk_server::DoDiskTransfer(
         return STATUS(Status::INVALID_COMMAND, subCode, 0);
     }
 
+    // A write-protected unit refuses everything that would change the medium.
+    if ((operation == Opcodes::WRITE || operation == Opcodes::ERASE)
+            && drive->IsWriteProtected())
+    {
+        return STATUS(Status::WRITE_PROTECTED, WriteProtectSubcodes::HW_WRITE_LOCK, 0);
+    }
+
     //
     // OK: do the transfer from the PDP-11 to a buffer
     //
@@ -1256,7 +1277,7 @@ mscp_disk_server::DoDiskTransfer(
         case Opcodes::COMPARE_HOST_DATA:
         {
             // Read the data in from disk, read the data in from memory, and compare.
-            std::unique_ptr<uint8_t> diskBuffer;
+            std::unique_ptr<uint8_t[]> diskBuffer;
 
             if (rctAccess)
             {
@@ -1289,7 +1310,7 @@ mscp_disk_server::DoDiskTransfer(
 
         case Opcodes::ERASE:
         {
-            std::unique_ptr<uint8_t> memBuffer(new uint8_t[params->ByteCount]);
+            std::unique_ptr<uint8_t[]> memBuffer(new uint8_t[params->ByteCount]);
             memset(reinterpret_cast<void*>(memBuffer.get()), 0, params->ByteCount);
 
             if (rctAccess)
@@ -1308,7 +1329,7 @@ mscp_disk_server::DoDiskTransfer(
 
         case Opcodes::READ:
         {
-            std::unique_ptr<uint8_t> diskBuffer;
+            std::unique_ptr<uint8_t[]> diskBuffer;
 
             if (rctAccess)
             {

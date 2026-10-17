@@ -39,6 +39,9 @@ public:
     uint8_t GetRBNs(void);
     uint8_t GetRCTCopies(void);
     bool IsRemovable(void);
+    // An image the drive may not write is the pack's WRITE PROTECT button
+    // pressed: the host is told, and a write is refused rather than made.
+    bool IsWriteProtected(void) { return image_is_readonly(); }
 
     void SetOnline(void);
     void SetOffline(void);bool IsOnline(void);bool IsAvailable(void);
@@ -131,5 +134,5 @@ private:
     // there is no other purpose.
     // This data is not persisted to disk as it is unnecessary.
     //
-    std::unique_ptr<uint8_t> _rctData;
+    std::unique_ptr<uint8_t[]> _rctData;
 };

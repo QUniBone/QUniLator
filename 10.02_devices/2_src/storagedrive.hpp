@@ -102,6 +102,8 @@ private:
     // uCPU worker calling image_is_open()/check_ready()) sees a stable value
     // instead of racing the live fstream state of a concurrently accessed image.
     std::atomic<bool> medium_present{false} ;
+    // a refused write to a write-protected medium is logged once per attach
+    bool refused_write_logged = false ;
 
 public:
     storagecontroller_c *controller; // link to parent

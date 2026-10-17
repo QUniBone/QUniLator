@@ -198,6 +198,7 @@ bool storagedrive_c::image_open(bool create)
     // virtual method of implementation
     bool ok = image->open(this, create) ;
     medium_present = ok && image->is_open() ;
+    refused_write_logged = false ;
     return ok ;
 }
 
@@ -252,6 +253,17 @@ void storagedrive_c::image_write(uint8_t *buffer, uint64_t position, unsigned le
 {
     if (image == nullptr)
         return ;
+    // A controller reports write protection to its host and refuses the
+    // command; a write that still arrives here is dropped, so a controller
+    // that does not check loses the data and the process keeps running.
+    if (image->is_readonly()) {
+        if (!refused_write_logged) {
+            ERROR("%s: write to the write-protected medium %s refused",
+                  name.value.c_str(), image_filepath.value.c_str()) ;
+            refused_write_logged = true ;
+        }
+        return ;
+    }
     set_activity_led(true) ;
     image->write(buffer, position, len) ;
     write_bytes.add(len) ;
