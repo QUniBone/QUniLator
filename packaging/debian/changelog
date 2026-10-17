@@ -1,3 +1,29 @@
+qbone (1.22.2-1) trixie; urgency=low
+
+  1.22.2 keeps the service running when a guest writes to a write-protected
+  disk or stops serving its MSCP rings, brings a restarted board back as the
+  machine it was running, and keeps crash dumps from filling the card.
+
+  * Write-protected MSCP disks. An image file without its owner write bit is
+    a write-protected unit: the drive reports it to the host and refuses a
+    write with Write Protected. Such a write used to stop the service. A
+    system disk needs mode `664`; VMS stops with a bug check on a protected
+    one.
+  * MSCP rings. A response with no free slot waits for one, and a ring the
+    controller cannot read stops the port with a port error, so a VAX that
+    bug-checks and reboots mid-transfer no longer takes the service down or
+    fills the log with failed transfers.
+  * Restarts. A restart comes back as the machine that was running, unsaved
+    changes included. It could come back empty, with no current
+    configuration.
+  * Crash dumps. The service keeps the three newest cores in
+    `/var/lib/qunilator` and removes the rest when it starts. Each held
+    several hundred megabytes, and a few of them filled the card until no
+    configuration could be saved. A save that fails names the reason, such
+    as "No space left on device", and a fatal error reaches the journal.
+
+ -- Hans Huebner <hans@huebner.org>  Sat, 17 Oct 2026 21:46:03 +0200
+
 qbone (1.22.1-1) trixie; urgency=low
 
   1.22.1 makes the display register's lamps follow the program at its own
