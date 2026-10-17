@@ -363,7 +363,7 @@ bool cpuvax_c::configure_machine(void)
 
         if (stat(bootimage.value.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
             ERROR("bootimage \"%s\" names no disk image file; it is a volume for the"
-                  " controller inside the processor, and empty boots %s on the bus",
+                  " emulation's own test controller, and empty boots %s from the uda",
                   bootimage.value.c_str(), bootdevice.value.c_str());
             return false;
         }
@@ -483,7 +483,7 @@ bool cpuvax_c::configure_machine(void)
             // the info's address form carries the core's physical prefix;
             // transfers name the eighteen bit bus address
             iotrace_base = ba & 0777777;
-        } else
+        } else if (!bootdevice.value.empty())
             ERROR("the processor has no device called %s", bootdevice.value.c_str());
     }
 
@@ -495,7 +495,7 @@ bool cpuvax_c::configure_machine(void)
     }
 
     if (bootdevice.value.empty()) {
-        INFO("no bootdevice set, the VAX comes up with its console only");
+        INFO("no bootdevice set, so nothing is booted and the VAX stays halted");
         return true;
     }
 

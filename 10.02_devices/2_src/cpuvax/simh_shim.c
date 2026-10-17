@@ -1394,7 +1394,8 @@ char gbuf[CBUFSIZE];
 DEVICE *dptr;
 UNIT *uptr;
 
-shim_get_glyph (name, gbuf, 0, TRUE);
+/* the name may be a whole boot command, with boot flags after a slash */
+shim_get_glyph (name, gbuf, '/', TRUE);
 if ((dptr = find_dev (gbuf)) == NULL) {
     if ((dptr = find_unit (gbuf, &uptr)) == NULL)
         return 0;

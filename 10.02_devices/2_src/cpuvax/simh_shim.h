@@ -136,8 +136,9 @@ unsigned simh_shim_bus_interrupt_pending (void);
 
 /* Where a device the core carries would answer, and whether it is taking part
    at all. A boot command reads its address out of the same descriptor and tells
-   the bootstrap, so this is what the bootstrap will be looking for. Returns
-   zero when there is no such device. */
+   the bootstrap, so this is what the bootstrap will be looking for. The name
+   may carry boot flags after it, as in "RQ0/R5:1". Returns zero when there is
+   no such device. */
 int simh_shim_device_info (const char *name, unsigned *base_addr, int *enabled);
 
 /* Turn the core's own tracing on for one device, into a file, with every debug

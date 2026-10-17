@@ -24,8 +24,8 @@
  transfer is answered here through the adapter's map registers rather than on
  the bus. docs/vax-host.md is the running record of what that reaches.
 
- A machine is booted either from the disk simh carries inside the core or from
- the emulated UDA50 on the bus, which bootdevice and bootimage choose between.
+ A machine boots from the emulated UDA50 on the bus, or, with bootimage set,
+ from the disk simh carries inside the core; bootdevice names the unit.
  */
 #ifndef _CPUVAX_HPP_
 #define _CPUVAX_HPP_
@@ -67,26 +67,31 @@ public:
     parameter_unsigned_c memory_mb = parameter_unsigned_c(this, "memory", "mem",/*readonly*/
                                      false, "MB", "%u", "Main memory size in megabytes.", 8, 10);
 
-    /// The disk the machine boots from, and where it is. With `bootimage`
-    /// empty — the usual machine — every peripheral is a device on the bus, and
-    /// `bootdevice` names the unit the console boots: `RQ0` is drive 0 of the
-    /// UDA50 at 772150, which is where the emulated `uda` answers. With an
-    /// image named in `bootimage`, it is attached to an MSCP controller inside
-    /// the processor instead, at the same address; `bus_exclusive` then has to
-    /// be 0, so the bus leaves that address to it. This is for bringing a
-    /// machine up before its devices are configured. `bootimage` is a file
-    /// path, and enabling the processor fails when it names no disk image
-    /// file or an empty one. An empty `bootdevice`
-    /// brings the processor up at
-    /// its console prompt without booting anything. Both are read when the
-    /// processor is enabled.
+    /// What START boots. `bootdevice` is the argument of a 780 console's BOOT
+    /// command, in SIMH's spelling: a drive of the UDA50 at 772150, `RQ0` to
+    /// `RQ3` for the `uda` drive whose `unit` is 0 to 3 — `uda0` to `uda3`
+    /// unless a unit was changed. Boot flags follow as `/R5:` and a hex value, so `RQ0 /R5:1`
+    /// stops VMS at `SYSBOOT>` for a conversational boot; with none, R5 is 0.
+    /// An empty `bootdevice` boots nothing: START resets the processor and it
+    /// halts again at once.
+    ///
+    /// `bootimage` stays empty on a working machine: the disks are the `uda`
+    /// drives, cards on the UNIBUS like any other. A file named here is
+    /// instead attached to a test MSCP controller that is part of the VAX
+    /// emulation itself and never appears on the UNIBUS. It answers at the same
+    /// 772150, so `bus_exclusive` has to be 0 for it, and it boots whatever
+    /// `bootdevice` names. It is there for testing the processor with no
+    /// devices configured; enabling the processor fails when it names no disk
+    /// image file or an empty one.
+    ///
+    /// Both are read when the processor is enabled.
     //
     // The controller inside the core is the stage 1 scaffolding of
     // docs/vax-host.md.
     parameter_string_c bootimage = parameter_string_c(this, "bootimage", "bi",/*readonly*/false,
-            "Disk image file for the MSCP controller inside the processor. Empty: boot bootdevice on the bus.");
+            "Test only: disk image for the emulation's own MSCP controller. Empty: boot from the uda.");
     parameter_string_c bootdevice = parameter_string_c(this, "bootdevice", "bd",/*readonly*/false,
-            "Unit the processor boots, as the console names it (RQ0). Empty: console only.");
+            "What START boots: RQ0..RQ3, with boot flags as RQ0 /R5:1. Empty: no boot.");
 
     /// Debugging aids for the emulation itself. `core_debug` names a device
     /// the processor carries inside it, such as `RQ`, and writes the core's own
