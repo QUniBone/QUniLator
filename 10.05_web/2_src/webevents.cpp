@@ -529,7 +529,9 @@ static std::map<device_c *, status_cache_t> status_cache;
 // The display register moves faster than this poll samples it, so every change
 // the device logged since the last pass travels as a trace: the words in the
 // order written and when, in microseconds of the board's monotonic clock. The
-// dashboard replays them at that pace, a fixed delay behind the machine.
+// dashboard replays them at that pace behind the machine; "now", the same clock
+// as the trace leaves, is what lets it measure how long delivery takes and how
+// much that varies, and size its delay to the network it is on.
 static void publish_display_trace(dispreg_c *dsp) {
 	static std::vector<dispreg_change_t> changes;
 	changes.clear();
@@ -547,6 +549,10 @@ static void publish_display_trace(dispreg_c *dsp) {
 	event["param"] = picojson::value(dsp->display.name);
 	event["at"] = picojson::value(at);
 	event["values"] = picojson::value(values);
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	event["now"] = picojson::value((double) ((uint64_t) ts.tv_sec * 1000000u
+			+ (uint64_t) ts.tv_nsec / 1000u));
 	enqueue(event);
 }
 
