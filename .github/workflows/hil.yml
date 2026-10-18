@@ -88,8 +88,9 @@ jobs:
     if: ${{ !cancelled() && (needs.package.result == 'success' || needs.package.result == 'skipped') }}
     runs-on: [self-hosted, netmbx, unibone]
     # The board's own unattended upgrade can hold dpkg for up to half an hour
-    # before the deploy gets its turn.
-    timeout-minutes: 90
+    # before the deploy gets its turn, and the operating-system upgrade after
+    # the boot runs for up to an hour when a month of updates has piled up.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v7
 
@@ -104,6 +105,13 @@ jobs:
 
       - name: Boot VMS on the UniBone
         run: tools/ci/hil-unibone.sh pkg/unibone_*_armhf.deb hil-out
+
+      - name: Upgrade the operating system from the Updates page
+        # What an operator gets from "Upgrade the operating system": the
+        # BeagleBone's pending package updates, installed through the web API
+        # with the build under test, followed until they are done.
+        if: ${{ !cancelled() }}
+        run: tools/ci/hil-os-upgrade.sh hil-out/os-upgrade
 
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
