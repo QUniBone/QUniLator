@@ -1,3 +1,21 @@
+qbone (1.22.3-1) trixie; urgency=low
+
+  Every release since yours on the Updates page
+
+  1.22.3 shows every release between the installed version and the one on
+  offer, each named in one line, and keeps an offered update on screen
+  while a check runs.
+
+  * Releases since yours. The Updates page lists each release newer than
+    the installed one with its version, title and date; a click opens its
+    full note. Every release now opens with a one-line title, which also
+    names its GitHub Release.
+  * Checking. Check now says that it is checking for new updates until
+    the answer is in. The version already on offer stays on screen
+    meanwhile; it used to vanish for the minute a check takes.
+
+ -- Hans Huebner <hans@huebner.org>  Sun, 18 Oct 2026 06:03:28 +0200
+
 qbone (1.22.2-1) trixie; urgency=low
 
   Write-protected disks, MSCP rings, restarts, crash dumps
