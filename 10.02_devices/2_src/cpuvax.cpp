@@ -214,6 +214,31 @@ bool cpuvax_c::bus_write(unsigned addr, unsigned data, bool byte)
     return true;
 }
 
+/* A console examine or deposit on the bus. A running processor makes it as
+   one of its own transfers. A stopped one neither arbitrates nor drives the
+   PRU's master side, so a transfer of its own would wait for a grant nobody
+   gives and hold this thread for good - and the next disable would cancel the
+   thread with its locks held. The board makes the cycle itself then, as it
+   does to load memory into a stopped machine, and bounds the wait so an
+   address nothing answers reads as no answer. */
+bool cpuvax_c::console_bus_access(uint8_t cycle, unsigned addr, unsigned *data)
+{
+    uint16_t word = (uint16_t) *data;
+
+    if (machine_running)
+        return cycle == QUNIBUS_CYCLE_DATI ? bus_read(addr, data)
+               : bus_write(addr, *data, /*byte*/false);
+    bus_cycles.value++;
+    if (!qunibus->dma(/*blocking*/true, cycle, addr, &word, 1, /*share_bus*/false,
+                      /*timeout_ms*/100)) {
+        bus_timeouts.value++;
+        return false;
+    }
+    if (cycle == QUNIBUS_CYCLE_DATI)
+        *data = word;
+    return true;
+}
+
 /* The ring keeps only the watched device's registers, so a stalled dialogue
    is not scrolled away by the traffic of a healthy one. Two threads write it -
    the processor's transfers and the adapter's interrupt injections - so the
@@ -724,11 +749,11 @@ void cpuvax_c::service_console_access(void)
     case console_access_none:
         return;
     case console_access_examine:
-        console_access_ok = bus_read(console_access_addr, &data);
+        console_access_ok = console_bus_access(QUNIBUS_CYCLE_DATI, console_access_addr, &data);
         console_access_data = data;
         break;
     case console_access_deposit:
-        console_access_ok = bus_write(console_access_addr, data, false);
+        console_access_ok = console_bus_access(QUNIBUS_CYCLE_DATO, console_access_addr, &data);
         break;
     case console_access_mem_examine:
         console_access_ok = simh_shim_mem_read(console_access_addr, &data) != 0;

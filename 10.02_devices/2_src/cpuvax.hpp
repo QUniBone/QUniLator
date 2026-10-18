@@ -298,6 +298,9 @@ public:
     bool bus_read(unsigned addr, unsigned *data);
     bool bus_write(unsigned addr, unsigned data, bool byte);
 
+    // a console examine or deposit on the bus, running or stopped
+    bool console_bus_access(uint8_t cycle, unsigned addr, unsigned *data);
+
 public:
     // The processor's last accesses to the boot device's registers, and the
     // interrupts injected between them, kept in a small ring that is always
