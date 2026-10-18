@@ -1,3 +1,20 @@
+qbone (1.22.4-1) trixie; urgency=low
+
+  Display lamps that keep pace over slow networks
+
+  1.22.4 times the display register's replay to the network the page is
+  on, so the lamps move evenly across the internet as well as beside the
+  board.
+
+  * Display lamps over a distance. The dashboard measures how long the
+    board's frames take to arrive and how much that varies, and runs the
+    replay just far enough behind to cover it: about an eighth of a
+    second on the local network, up to half a second on a poor
+    connection. A frame that arrived late used to make the lamps stall
+    and then jump.
+
+ -- Hans Huebner <hans@huebner.org>  Sun, 18 Oct 2026 06:03:28 +0200
+
 qbone (1.22.3-1) trixie; urgency=low
 
   Every release since yours on the Updates page
