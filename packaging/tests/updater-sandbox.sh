@@ -106,6 +106,13 @@ EOF
 knob() { sed -n "s/^$1=//p" "$SB_DIR/knobs" | tail -1; }
 cmd=""
 for a in "$@"; do case "$a" in update|download|install|upgrade) cmd=$a; break;; esac; done
+# a simulated upgrade reports what it would keep back, and changes nothing
+for a in "$@"; do case "$a" in -s|--simulate)
+   if [ -s "$SB_DIR/kept" ]; then
+      echo "The following packages have been kept back:"; sed 's/^/  /' "$SB_DIR/kept"
+   fi
+   echo "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded."; exit 0 ;;
+esac; done
 case "$cmd" in
   update)
      # what the status said while the refresh ran, for the check's own test
@@ -143,7 +150,22 @@ case "$cmd" in
   upgrade)
      [ "$(knob upgrade_fails)" = yes ] && {
         echo "E: Sub-process /usr/bin/dpkg returned an error code (1)" >&2; exit 100; }
-     echo "Setting up libc6 ..."; exit 0 ;;
+     # apt's status stream on fd 3, and dpkg's output with the carriage returns
+     # its progress redraws carry
+     { echo "dlstatus:1:50:Retrieving file 1 of 1" >&3
+       echo "pmstatus:libc6:40.5:Preparing libc6" >&3; } 2>/dev/null
+     printf 'Unpacking libc6 ...\r\nSetting up libc6 ...\r\n\tdone\n'
+     # held open until the updater has published progress (or five seconds),
+     # and what it published kept for the test; sleep is stubbed, so the wait
+     # takes the system's own
+     if [ "$(knob slow_upgrade)" = yes ]; then
+        for _ in $(seq 1 50); do
+           grep -q '"step":"installing"' "$SB_DIR/state/status.json" 2>/dev/null && break
+           command -p sleep 0.1
+        done
+        cp "$SB_DIR/state/status.json" "$SB_DIR/during-upgrade.json"
+     fi
+     exit 0 ;;
 esac
 exit 0
 EOF
@@ -253,6 +275,8 @@ sandbox_reset() {
     echo "deb http://repo.invalid trixie main" > "$SB/apt/sources.list.d/qbone.list"
     : > "$SB/upgradable"
     : > "$SB/holds"
+    : > "$SB/kept"
+    rm -f "$SB/during-update.json" "$SB/during-upgrade.json"
     mkdeb qbone 1.11.0-1 "1.11.0-1 1.10.0-1"
     mkdeb qbone 1.12.0-1 "1.12.0-1 1.11.0-1 1.10.0-1"
     mkdeb qbone 1.13.0-1 "1.13.0-1 1.12.0-1 1.11.0-1 1.10.0-1"

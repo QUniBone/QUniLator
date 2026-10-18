@@ -65,6 +65,13 @@ LOCK="$STATE_DIR/lock"
 CHECKED_AT="$STATE_DIR/checked.at"
 OS_FILE="$STATE_DIR/os.json"
 LAST_FILE="$STATE_DIR/last.json"
+# The last operating-system upgrade's outcome and the tail of its output, kept
+# apart from the emulator's so neither reports the other.
+OS_LAST_FILE="$STATE_DIR/os-last.json"
+# A running operating-system upgrade's apt output and its APT::Status-Fd
+# stream, read back while it runs to report progress.
+OS_LOG="$STATE_DIR/os-upgrade.log"
+OS_PROGRESS="$STATE_DIR/os-upgrade.progress"
 
 export DEBIAN_FRONTEND=noninteractive
 # --force-confold keeps an operator's edited /etc/qunilator/network.conf.
@@ -82,17 +89,22 @@ die() { echo "qunilator-update: $*" >&2; exit 1; }
 # assembled from shell strings rather than by a JSON tool the appliance may not
 # carry. Everything interpolated is a version, a package name, an apt message or
 # a journal line, so quoting, backslashes and control characters are all a
-# string needs handled.
+# string needs handled. JSON takes no raw control character inside a string -
+# tab, carriage return and newline included - and apt's output carries all
+# three, so tabs and line breaks become spaces (in json_lines, line
+# boundaries) and every other control character is dropped.
 json_str() {
     printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
-        | tr -d '\000-\010\013\014\016-\037'
+        | tr '\011\012\015' '   ' | tr -d '\000-\037'
 }
 
 json_q() { printf '"%s"' "$(json_str "$1")"; }
 
-# a JSON array of strings, one per input line
+# a JSON array of strings, one per input line. A carriage return - dpkg
+# redrawing a progress line - starts a line of its own; blank lines are dropped.
 json_lines() {
-    sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\010\013\014\016-\037' |
+    tr '\011\015' ' \012' | sed -e '/^[[:space:]]*$/d' -e 's/\\/\\\\/g' -e 's/"/\\"/g' |
+        tr -d '\000-\011\013-\037' |
         awk 'BEGIN {printf "["} {printf "%s\"%s\"", (NR>1 ? "," : ""), $0} END {printf "]"}'
 }
 
@@ -123,6 +135,8 @@ CANDIDATE=""
 # when an install has to be undone
 ROLLBACK=false
 NEEDS_REPAIR=false
+# what a running operating-system upgrade is doing, as a JSON object, or null
+PROGRESS=null
 
 # Whether the board could step back a version: a cached package exists and it is
 # not the one installed. Derived rather than remembered, so a check cannot report
@@ -151,8 +165,10 @@ write_status() {
         printf ',"rollback":%s' "$rb"
         printf ',"needs_repair":%s' "$NEEDS_REPAIR"
         printf ',"os":%s' \
-            "$(file_or "$OS_FILE" '{"count":0,"packages":[],"held_back":[],"reboot_required":false}')"
+            "$(file_or "$OS_FILE" '{"count":0,"packages":[],"held_back":[],"kept_back":[],"reboot_required":false}')"
         printf ',"last":%s' "$(file_or "$LAST_FILE" '{}')"
+        printf ',"os_last":%s' "$(file_or "$OS_LAST_FILE" '{}')"
+        printf ',"progress":%s' "$PROGRESS"
         printf ',"error":%s' "$(json_q "$ERROR")"
         printf ',"journal":%s' "$JOURNAL"
         printf '}\n'
@@ -227,12 +243,21 @@ os_report() {
     or_held=$(LC_ALL=C apt-mark showhold 2>/dev/null | grep -v "^$PKG\$" | json_lines)
     or_reboot=false
     [ -e /var/run/reboot-required ] && or_reboot=true
+    # What "apt-get upgrade" keeps back - a package whose new version needs a
+    # package not yet installed, such as the kernel meta-package naming a new
+    # kernel. The upgrade offered here leaves those alone, so they are reported
+    # apart rather than counted as something the button would upgrade.
+    or_kept=$(LC_ALL=C apt-get -s upgrade 2>/dev/null |
+        awk '/have been kept back:/ {f = 1; next} f && /^ / {print; next} f {exit}' |
+        tr -s ' \t' '\n' | grep -v '^$' || true)
+    or_kept_json=$(printf '%s\n' "$or_kept" | grep -v '^$' | json_lines)
     or_body=$(LC_ALL=C apt list --upgradable 2>/dev/null | sed 1d |
-        awk -v self="$PKG" '
+        awk -v self="$PKG" -v kept="$(printf '%s' "$or_kept" | tr '\n' ' ')" '
+            BEGIN {n = split(kept, k, " "); for (i = 1; i <= n; i++) skip[k[i]] = 1; n = 0}
             # libfoo/trixie 1.2-3 armhf [upgradable from: 1.2-2]
             /\/.* .* \[upgradable from: .*\]/ {
                 split($1, a, "/")
-                if (a[1] == self) next
+                if (a[1] == self || (a[1] in skip)) next
                 from = $0
                 sub(/^.*\[upgradable from: /, "", from)
                 sub(/\].*$/, "", from)
@@ -243,8 +268,8 @@ os_report() {
     or_pkgs=$(printf '%s' "$or_body" | sed '$d')
     or_count=$(printf '%s\n' "$or_body" | tail -1)
     install -d -m 0700 "$STATE_DIR"
-    printf '{"count":%s,"packages":[%s],"held_back":%s,"reboot_required":%s}\n' \
-        "${or_count:-0}" "$or_pkgs" "$or_held" "$or_reboot" > "$OS_FILE"
+    printf '{"count":%s,"packages":[%s],"held_back":%s,"kept_back":%s,"reboot_required":%s}\n' \
+        "${or_count:-0}" "$or_pkgs" "$or_held" "$or_kept_json" "$or_reboot" > "$OS_FILE"
     chmod 600 "$OS_FILE"
 }
 
@@ -605,10 +630,38 @@ do_rollback() {
 # build, "upgrade" removes nothing and pulls nothing new in, and the emulator is
 # held out of it, so a running machine is not stopped by an OS upgrade at all.
 # Nothing here reboots the board.
+# PROGRESS from where apt stands: the last line of its status stream, which
+# reads "dlstatus:<n>:<percent>:<what>" while it downloads and
+# "pmstatus:<package>:<percent>:<what>" while dpkg works, and the tail of its
+# output as the journal. $1 names the step while apt has reported nothing yet.
+os_progress() {
+    op_step=$1 op_pct=null op_msg=""
+    op_last=$(tail -n 1 "$OS_PROGRESS" 2>/dev/null || true)
+    case "$op_last" in
+        dlstatus:*|pmstatus:*)
+            op_kind=${op_last%%:*}
+            op_rest=${op_last#*:}
+            op_rest=${op_rest#*:}
+            op_pct=${op_rest%%:*}
+            op_msg=${op_rest#*:}
+            case "$op_pct" in
+                ''|*[!0-9.]*) op_pct=null ;;
+                *) op_pct=${op_pct%%.*}; [ -n "$op_pct" ] || op_pct=0 ;;
+            esac
+            if [ "$op_kind" = dlstatus ]; then op_step=downloading; else op_step=installing; fi
+            ;;
+    esac
+    PROGRESS=$(printf '{"step":%s,"percent":%s,"message":%s,"started_at":%s}' \
+        "$(json_q "$op_step")" "$op_pct" "$(json_q "$op_msg")" "$(json_q "$OS_STARTED")")
+    JOURNAL=$(tail -c 16384 "$OS_LOG" 2>/dev/null | tr '\015' '\012' \
+        | grep -v '^[[:space:]]*$' | tail -n 50 | json_lines)
+}
+
 do_os_upgrade() {
     take_lock
     ERROR=""
     JOURNAL="[]"
+    OS_STARTED=$(now_iso)
 
     if dpkg_needs_repair; then
         say "repairing an interrupted install"
@@ -623,6 +676,9 @@ do_os_upgrade() {
         die "$ERROR"
     fi
 
+    : > "$OS_LOG"
+    : > "$OS_PROGRESS"
+    os_progress refreshing
     phase os-upgrading
     apt-get update -qq >/dev/null 2>&1 || true
 
@@ -630,23 +686,44 @@ do_os_upgrade() {
     apt-mark showhold 2>/dev/null | grep -qx "$PKG" && was_held=true
     apt-mark hold "$PKG" >/dev/null 2>&1 || true
 
+    # apt runs in the background so its progress is published while it works:
+    # an upgrade on a BeagleBone runs for minutes, and a page that shows nothing
+    # in that time cannot tell a slow upgrade from a stuck one.
+    # shellcheck disable=SC2086
+    apt-get -y $APT_OPTS -o APT::Status-Fd=3 upgrade \
+        > "$OS_LOG" 2>&1 3> "$OS_PROGRESS" &
+    ou_pid=$!
+    while kill -0 "$ou_pid" 2>/dev/null; do
+        os_progress starting
+        write_status
+        sleep 2
+    done
     rc=0
-    out=$(apt-get -y $APT_OPTS upgrade 2>&1) || rc=$?
+    wait "$ou_pid" || rc=$?
+    out=$(tr '\015' '\012' < "$OS_LOG")
 
     [ "$was_held" = true ] || apt-mark unhold "$PKG" >/dev/null 2>&1 || true
 
     os_report
+    PROGRESS=null
     if [ "$rc" -ne 0 ]; then
         ERROR="the upgrade failed: $(printf '%s' "$out" | tail -3 | tr '\n' ' ')"
-        JOURNAL=$(printf '%s\n' "$out" | tail -50 | json_lines)
+        oj=$(printf '%s\n' "$out" | tail -50 | json_lines)
         STATE=failed
-        write_status
-        die "$ERROR"
+    else
+        oj=$(printf '%s\n' "$out" | grep -E '^(Setting up|Unpacking|Get:)' | tail -50 \
+            | json_lines)
+        STATE=done
     fi
-    JOURNAL=$(printf '%s\n' "$out" | grep -E '^(Setting up|Unpacking|Get:)' | tail -50 \
-        | json_lines)
-    STATE=done
+    printf '{"state":%s,"started_at":%s,"at":%s,"error":%s,"journal":%s}\n' \
+        "$(json_q "$STATE")" "$(json_q "$OS_STARTED")" "$(json_q "$(now_iso)")" \
+        "$(json_q "$ERROR")" "$oj" > "$OS_LAST_FILE"
+    chmod 600 "$OS_LAST_FILE"
+    rm -f "$OS_LOG" "$OS_PROGRESS"
+    # the emulator's journal belongs to its own last install, which this was not
+    JOURNAL="[]"
     write_status
+    [ "$STATE" = done ] || die "$ERROR"
     say "operating-system upgrade complete"
 }
 

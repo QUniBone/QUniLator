@@ -250,6 +250,7 @@ export interface OsUpdates {
   count: number;
   packages: OsPackageUpdate[];
   held_back: string[];
+  kept_back?: string[]; // upgradable, but only by installing new packages
   reboot_required: boolean;
 }
 
@@ -258,6 +259,24 @@ export interface UpdateOutcome {
   from?: string;
   to?: string;
   at?: string;
+}
+
+// What a running operating-system upgrade is doing: apt's own step and
+// percentage, and when the upgrade started.
+export interface UpdateProgress {
+  step: 'refreshing' | 'starting' | 'downloading' | 'installing';
+  percent: number | null;
+  message: string;
+  started_at: string;
+}
+
+// The last operating-system upgrade, apart from the emulator's own installs.
+export interface OsUpgradeOutcome {
+  state?: 'done' | 'failed';
+  started_at?: string;
+  at?: string;
+  error?: string;
+  journal?: string[];
 }
 
 export interface UpdateStatus {
@@ -272,6 +291,8 @@ export interface UpdateStatus {
   dismissed: string;
   os: OsUpdates;
   last: UpdateOutcome;
+  os_last?: OsUpgradeOutcome;
+  progress?: UpdateProgress | null;
   error: string;
   journal: string[];
 }

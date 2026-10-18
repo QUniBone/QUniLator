@@ -9,7 +9,7 @@
 // be undone by apt at all, and leaves the machine running, so it says that
 // instead.
 import { html } from '../html';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { useStore } from '../store';
 import { apiJSON, liveControl, listRecordings, deleteRecording, type Recording } from '../api';
 import {
@@ -36,7 +36,7 @@ import {
   updateRunning,
 } from '../lib/update';
 import type { Release } from '../lib/update';
-import type { UpdateStatus } from '../types';
+import type { UpdateProgress, UpdateStatus } from '../types';
 
 // "2026-07-30T09:12:00Z" as something a person reads, in local time
 function when(iso: string): string {
@@ -148,10 +148,84 @@ function InstallDialog({ u, onDone }: { u: UpdateStatus; onDone: () => void }) {
   </div>`;
 }
 
+// mm:ss, or h:mm:ss past an hour
+function duration(ms: number): string {
+  const t = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const sec = String(t % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+}
+
+const STEP_TEXT: Record<UpdateProgress['step'], string> = {
+  refreshing: 'Refreshing the package lists',
+  starting: 'Working out what to upgrade',
+  downloading: 'Downloading',
+  installing: 'Installing',
+};
+
+// A running operating-system upgrade: apt's step and percentage, how long it
+// has been going, and the tail of its output, which moves as long as apt does.
+// The status is rewritten every two seconds while apt runs, so a log that has
+// stopped moving for minutes is the sign of a stuck upgrade.
+function OsProgress({ u }: { u: UpdateStatus }) {
+  const p = u.progress;
+  const [now, setNow] = useState(Date.now());
+  const logRef = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const journal = u.journal || [];
+  useEffect(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [journal.length, journal[journal.length - 1]]);
+  const started = p?.started_at ? new Date(p.started_at).getTime() : NaN;
+  const pct = p && p.percent !== null ? Math.min(100, Math.max(0, p.percent)) : null;
+  return html`<div class="upd-progress">
+    <p class="upd-phase">${p ? STEP_TEXT[p.step] || p.step : 'Upgrading'}${
+      pct !== null ? html` — ${pct}%` : null
+    }${p && p.message ? html`<span class="muted"> · ${p.message}</span>` : null}</p>
+    <div class=${'upd-bar' + (pct !== null ? ' determinate' : '')}>
+      <div class="upd-bar-fill" style=${pct !== null ? `width:${pct}%` : ''}></div>
+    </div>
+    <p class="muted upd-elapsed">${
+      isNaN(started) ? '' : duration(now - started) + ' elapsed. '
+    }An upgrade on a BeagleBone takes several minutes; the emulated machine keeps running.</p>
+    ${journal.length ? html`<pre class="upd-changelog upd-live" ref=${logRef}>${journal.join('\n')}</pre>` : null}
+  </div>`;
+}
+
+// How the last operating-system upgrade went, with its output a click away.
+function OsLast({ u }: { u: UpdateStatus }) {
+  const l = u.os_last;
+  const [open, setOpen] = useState(false);
+  if (!l || !l.state) return null;
+  const took =
+    l.started_at && l.at ? new Date(l.at).getTime() - new Date(l.started_at).getTime() : NaN;
+  return html`<div class="upd-last">
+    <div class="set-name">Last upgrade</div>
+    <p class="muted">${l.state === 'done' ? 'Upgraded' : 'Failed'} — ${when(l.at || '')}${
+      isNaN(took) ? '' : `, in ${duration(took)}`
+    }.${
+      l.journal && l.journal.length
+        ? html` <button class="btn small" onClick=${() => setOpen(!open)}>${open ? 'Hide' : 'Show'} the log</button>`
+        : null
+    }</p>
+    ${l.state === 'failed' && l.error ? html`<p class="upd-warn">${l.error}</p>` : null}
+    ${open && l.journal ? html`<pre class="upd-changelog">${l.journal.join('\n')}</pre>` : null}
+  </div>`;
+}
+
 function OsRow({ u }: { u: UpdateStatus }) {
   const os = u.os || { count: 0, packages: [], held_back: [], reboot_required: false };
   const [open, setOpen] = useState(false);
   const busy = updateRunning(u);
+  if (u.state === 'os-upgrading')
+    return html`<div class="card" style="max-width:720px; margin-top:14px">
+      <div class="card-head"><h3>Operating system</h3><span class="chip warn">upgrading</span></div>
+      <div class="card-body"><${OsProgress} u=${u} /></div></div>`;
   return html`<div class="card" style="max-width:720px; margin-top:14px">
     <div class="card-head"><h3>Operating system</h3>
       ${os.count ? html`<span class="chip warn">${os.count} to upgrade</span>` : html`<span class="chip ok">up to date</span>`}</div>
@@ -175,6 +249,13 @@ function OsRow({ u }: { u: UpdateStatus }) {
         os.held_back && os.held_back.length
           ? html`<p class="muted" style="margin:0 0 10px">Held back: <span class="mono">${os.held_back.join(', ')}</span>.
             The kernel is held deliberately — the cape port depends on it.</p>`
+          : null
+      }
+      ${
+        os.kept_back && os.kept_back.length
+          ? html`<p class="muted" style="margin:0 0 10px">Kept back: <span class="mono">${os.kept_back.join(', ')}</span>.
+            ${os.kept_back.length === 1 ? 'Its new version needs' : 'Their new versions need'} packages
+            that are not installed yet, such as a new kernel, which this upgrade does not add.</p>`
           : null
       }
       ${
@@ -204,6 +285,7 @@ function OsRow({ u }: { u: UpdateStatus }) {
             }}>Upgrade the operating system</button>`
           : null
       }
+      <${OsLast} u=${u} />
     </div></div>`;
 }
 
@@ -685,7 +767,9 @@ export function SystemUpdatePage() {
         }
         ${
           busy
-            ? html`<p class="muted">An update is running: <span class="mono">${u.state}</span>.</p>`
+            ? u.state === 'os-upgrading'
+              ? html`<p class="muted">The operating system is being upgraded; its progress is below.</p>`
+              : html`<p class="muted">An update is running: <span class="mono">${u.state}</span>.</p>`
             : updateAvailable(u)
               ? html`<${InstallDialog} u=${u} onDone=${() => setTick(tick + 1)} />`
               : u.candidate && u.candidate === u.dismissed && u.candidate !== u.installed
@@ -707,7 +791,7 @@ export function SystemUpdatePage() {
                     ? 'Rolled back'
                     : 'Failed'} — <span class="mono">${last.from || '—'}</span> → ${' '}<span class="mono">${last.to || '—'}</span>, ${when(last.at || '')}.</p>
                 ${
-                  u.journal && u.journal.length
+                  u.journal && u.journal.length && u.state !== 'os-upgrading'
                     ? html`<pre class="upd-changelog">${u.journal.join('\n')}</pre>`
                     : null
                 }

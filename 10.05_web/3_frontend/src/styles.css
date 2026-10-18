@@ -1381,6 +1381,11 @@ button.tree-name:hover .mono { color: var(--accent); }
   white-space: pre-wrap; word-break: break-word;
 }
 
+.upd-progress .upd-phase { margin: 0 0 8px; }
+.upd-progress .upd-elapsed { margin: 8px 0 0; }
+.upd-bar.determinate .upd-bar-fill { animation: none; transition: width 0.4s linear; }
+.upd-live { max-height: 220px; }
+
 .upd-releases { margin: 4px 0 12px; }
 .upd-releases > p { margin: 0 0 6px; }
 .upd-release { border-top: 1px solid var(--line-soft); }

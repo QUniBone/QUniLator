@@ -1590,8 +1590,9 @@ and these endpoints publish that file and start the updater's units.
  "checked_at": "2026-07-30T09:12:00Z", "installed": "1.12.0-1",
  "candidate": "1.13.0-1", "rollback": true, "needs_repair": false,
  "dismissed": "", "os": {"count": 4, "packages": [], "held_back": [],
- "reboot_required": false}, "last": {"state": "done", "from": "1.11.0-1",
- "to": "1.12.0-1", "at": "2026-07-28T06:40:11Z"}, "error": "", "journal": []}
+ "kept_back": [], "reboot_required": false}, "last": {"state": "done",
+ "from": "1.11.0-1", "to": "1.12.0-1", "at": "2026-07-28T06:40:11Z"},
+ "os_last": {}, "progress": null, "error": "", "journal": []}
 ```
 
 `state` is `idle`, `checking`, `ahead`, `downloading`, `installing`,
@@ -1612,7 +1613,25 @@ It is kept in `settings.json` (`update.dismissed_version`), so it belongs to the
 board rather than to one browser.
 
 `os` is what else the board could upgrade, the emulator package excluded — see
-[`POST /api/update/os`](#post-apiupdateos).
+[`POST /api/update/os`](#post-apiupdateos). `count` and `packages` are what that
+upgrade installs; `kept_back` names packages with a newer version that needs
+packages not yet installed, such as the kernel meta-package naming a new kernel,
+which the upgrade leaves alone.
+
+While the state is `os-upgrading`, `progress` says where apt stands and
+`journal` is the tail of its output, both rewritten every two seconds:
+
+```json
+{"step": "installing", "percent": 73, "message": "Configuring cockpit-bridge (armhf)",
+ "started_at": "2026-10-18T04:56:11Z"}
+```
+
+`step` is `refreshing` (the package lists), `starting` (apt working out the
+upgrade), `downloading` or `installing`; `percent` is apt's own figure for that
+step, `null` before apt has given one. `progress` is `null` at any other time.
+`os_last` is the last operating-system upgrade's outcome — `state` (`done` or
+`failed`), `started_at`, `at`, `error` and the tail of its output as `journal` —
+kept apart from `last`, which belongs to the emulator's installs.
 
 ### `POST /api/update/check`
 

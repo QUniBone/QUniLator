@@ -265,6 +265,20 @@ expect "rollback after the check" true "$(status_bool rollback)" && ok
 
 # --------------------------------------------------------------- OS upgrade ----
 
+case_begin "check: what an upgrade keeps back is reported apart, not counted"
+cat > "$SANDBOX_ROOT/upgradable" <<'EOF'
+libc6/trixie 2.41-8 armhf [upgradable from: 2.41-7]
+bbb.io-kernel-6.12-bone/trixie 1.20261015.0 armhf [upgradable from: 1.20260713.0]
+EOF
+echo bbb.io-kernel-6.12-bone > "$SANDBOX_ROOT/kept"
+run --check
+st=$(cat "$SANDBOX_ROOT/state/status.json")
+expect_rc 0 &&
+case "$st" in
+    *'"count":1,"packages":[{"name":"libc6"'*'"kept_back":["bbb.io-kernel-6.12-bone"]'*) ok ;;
+    *) fail "the kept-back package is counted, or not reported" ;;
+esac
+
 case_begin "os-upgrade: upgrades the others and reports the reboot notice"
 cat > "$SANDBOX_ROOT/upgradable" <<'EOF'
 libc6/trixie 2.41-8 armhf [upgradable from: 2.41-7]
@@ -285,6 +299,33 @@ run --os-upgrade
 expect_rc 1 &&
 expect "state" failed "$(status_field state)" &&
 expect "installed" 1.12.0-1 "$(status_field installed)" && ok
+
+case_begin "os-upgrade: progress is published while apt runs"
+knob slow_upgrade yes
+run --os-upgrade
+snap="$SANDBOX_ROOT/during-upgrade.json"
+expect_rc 0 &&
+expect "state during the upgrade" os-upgrading \
+    "$(sed -n 's/.*"state":"\([^"]*\)".*/\1/p' "$snap" | head -1)" &&
+case "$(cat "$snap")" in
+    *'"progress":{"step":"installing","percent":40,"message":"Preparing libc6"'*) ok ;;
+    *) fail "no progress in the status while apt ran: $(cat "$snap")" ;;
+esac
+
+case_begin "os-upgrade: apt's control characters leave the status valid JSON"
+run --os-upgrade
+expect_rc 0 &&
+if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' \
+        "$SANDBOX_ROOT/state/status.json" 2>/dev/null; then ok
+else fail "status.json does not parse"; fi
+
+case_begin "os-upgrade: the outcome is the operating system's, not the emulator's"
+run --os-upgrade
+expect_rc 0 &&
+case "$(cat "$SANDBOX_ROOT/state/status.json")" in
+    *'"os_last":{"state":"done"'*'"journal":["Unpacking libc6 ...","Setting up libc6 ..."]}'*'"journal":[]'*) ok ;;
+    *) fail "os_last does not carry the upgrade, or the emulator journal does" ;;
+esac
 
 # ------------------------------------------------------------------- status ----
 

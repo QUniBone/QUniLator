@@ -152,9 +152,12 @@ static picojson::value status_json_locked(void) {
 		os["count"] = picojson::value((double) 0);
 		os["packages"] = picojson::value(picojson::array());
 		os["held_back"] = picojson::value(picojson::array());
+		os["kept_back"] = picojson::value(picojson::array());
 		os["reboot_required"] = picojson::value(false);
 		o["os"] = picojson::value(os);
 		o["last"] = picojson::value(picojson::object());
+		o["os_last"] = picojson::value(picojson::object());
+		o["progress"] = picojson::value();
 	}
 	o["dismissed"] = picojson::value(websettings_dismissed_version());
 	return picojson::value(o);
@@ -170,6 +173,8 @@ std::string webupdate_event_json(void) {
 
 // The state the last frame reported, so a change can be logged once.
 static std::string last_logged_state;
+// The mtime of a status file that did not parse, so it is reported once.
+static time_t unparsable_mtime = 0;
 
 // Reread the status file when it has moved. Size as well as mtime: two writes in
 // the same second are what a fast install produces, and the file is replaced by
@@ -185,8 +190,17 @@ static bool reload_status(void) {
 		if (status_known && st.st_mtime == status_mtime && st.st_size == status_size)
 			return false;
 		picojson::object fresh;
-		if (!read_status(&fresh))
-			return false;   // mid-rename or malformed: try again next tick
+		if (!read_status(&fresh)) {
+			// Mid-rename, which the next tick gets past, or malformed, which it
+			// does not: the status published stays the last one that parsed,
+			// and the journal says why it is not moving.
+			if (st.st_mtime != unparsable_mtime && time(nullptr) - st.st_mtime >= 2) {
+				unparsable_mtime = st.st_mtime;
+				WEB_WARNING("update: %s does not parse; publishing the last status that did",
+						status_path().c_str());
+			}
+			return false;
+		}
 		status_obj = fresh;
 		status_known = true;
 		status_mtime = st.st_mtime;
