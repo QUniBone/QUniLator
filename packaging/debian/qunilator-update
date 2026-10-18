@@ -253,7 +253,13 @@ os_report() {
 # and what else on the board has updates. Runs from the timer and by hand; never
 # installs anything.
 do_check() {
+    # The candidate the last check found stays in the status while this one
+    # runs, so an offered update stays on screen until a fresh answer replaces
+    # it. A check stopped by its unit's timeout says so instead of staying
+    # "checking".
+    CANDIDATE=$(candidate_version)
     STATE=checking
+    trap 'STATE=idle; ERROR="the check did not finish"; write_status; exit 1' TERM INT
     write_status
 
     if [ ! -f "$SOURCE_LIST" ]; then
@@ -293,6 +299,7 @@ do_check() {
     else
         STATE=idle
     fi
+    trap - TERM INT
     now_iso > "$CHECKED_AT"
     write_status
     say "installed ${inst:-none}, candidate ${CANDIDATE:-none}"

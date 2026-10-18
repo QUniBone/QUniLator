@@ -7,9 +7,12 @@ version gives them and what it changes under them.
 ## Where they come from
 
 The top stanza of `packaging/debian/changelog` is the source. `release-deb`
-renders it into the GitHub Release body — the stanza body verbatim, `  * `
+renders it into the GitHub Release — the title line into the release's title
+after the tag, the rest of the stanza body verbatim into its body, `  * `
 bullets turned into `- `, plus a line naming the artifacts and the image base —
-so the text in the changelog is the text the world sees. There is no second
+so the text in the changelog is the text the world sees. A board's Updates page
+reads the same stanzas out of the candidate package: one row per release newer
+than the installed one, showing its title, opening to the full note on a click. There is no second
 place to write, and nothing to copy between them.
 
 That also means the stanza is written for two readers at once: `apt changelog`
@@ -18,7 +21,15 @@ that only works in one of the two does not belong in it.
 
 ## Shape
 
-**A summary paragraph, then one bullet per change.**
+**A title line, a summary paragraph, then one bullet per change.**
+
+The title is the first line of the stanza, a paragraph of its own: one line, no
+bullet marker, no full stop, at most about 55 characters — it shares a row with
+the version and the date. It names what the release is about in the words an
+operator would scan a list for: "Write-protected disks, MSCP rings, restarts,
+crash dumps". No version, distribution or product name; the row has those.
+`release-deb` refuses a stanza whose first paragraph is not a single unbulleted
+line.
 
 The summary is two to four sentences with no bullet marker, and it is what
 somebody deciding whether to upgrade reads. It names the theme of the release,

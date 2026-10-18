@@ -75,6 +75,9 @@ async function post(
 export async function checkForUpdate(): Promise<void> {
   const res = await post('/api/update/check');
   toast('POST /api/update/check', res.ok ? 'checking…' : res.error || 'the check was refused');
+  // The updater's own "checking" reaches the page a second or so later; shown at
+  // once, so the button answers the click.
+  if (res.ok && store.update) setStore({ update: { ...store.update, state: 'checking' } });
 }
 
 export async function fetchChangelog(): Promise<string> {
@@ -86,6 +89,67 @@ export async function fetchChangelog(): Promise<string> {
   } catch {
     return '';
   }
+}
+
+// One stanza of the candidate's changelog: a release between the installed
+// version and the candidate.
+export interface Release {
+  version: string;
+  date: string; // the trailer's RFC 2822 date, as written
+  title: string;
+  note: string; // the stanza body below the title, de-indented
+}
+
+// The first sentence of a paragraph, for a stanza written before releases
+// carried a title line.
+function firstSentence(para: string): string {
+  const flat = para.replace(/^\* /, '').replace(/\s+/g, ' ').trim();
+  const m = /^(.*?[.:;])(\s|$)/.exec(flat);
+  return m ? m[1].replace(/[.:;]$/, '') : flat;
+}
+
+// Split the text GET /api/update/changelog returns into its releases, newest
+// first. A stanza's title is its first paragraph when that is a single
+// unbulleted line (docs/release-notes.md); an older stanza is named by its first
+// sentence.
+export function parseChangelog(text: string): Release[] {
+  const out: Release[] = [];
+  let cur: { version: string; date: string; body: string[] } | null = null;
+  const finish = () => {
+    if (!cur) return;
+    const body = cur.body.join('\n').replace(/^\n+|\n+$/g, '');
+    const paras = body.split(/\n\s*\n/);
+    const first = paras[0] || '';
+    let title: string;
+    let note: string;
+    if (first && !first.includes('\n') && !first.startsWith('* ')) {
+      title = first.trim();
+      note = paras.slice(1).join('\n\n');
+    } else {
+      title = firstSentence(first);
+      note = body;
+    }
+    out.push({ version: cur.version, date: cur.date, title, note });
+    cur = null;
+  };
+  for (const line of text.split('\n')) {
+    const head = /^\S+ \(([^)]+)\)/.exec(line);
+    if (head) {
+      finish();
+      cur = { version: head[1], date: '', body: [] };
+      continue;
+    }
+    if (!cur) continue;
+    const trailer = /^ -- .*?>\s+(.*)$/.exec(line);
+    if (trailer) {
+      cur.date = trailer[1].trim();
+      finish();
+      continue;
+    }
+    cur.body.push(line.replace(/^ {2}/, ''));
+  }
+  finish();
+  return out;
 }
 
 export async function dismissUpdate(version: string): Promise<void> {

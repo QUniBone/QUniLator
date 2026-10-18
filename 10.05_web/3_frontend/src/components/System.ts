@@ -28,12 +28,14 @@ import {
   refreshUpdate,
   checkForUpdate,
   fetchChangelog,
+  parseChangelog,
   dismissUpdate,
   installUpdate,
   upgradeOs,
   updateAvailable,
   updateRunning,
 } from '../lib/update';
+import type { Release } from '../lib/update';
 import type { UpdateStatus } from '../types';
 
 // "2026-07-30T09:12:00Z" as something a person reads, in local time
@@ -45,6 +47,7 @@ function when(iso: string): string {
 }
 
 function StateChip({ u }: { u: UpdateStatus }) {
+  if (u.state === 'checking') return html`<span class="chip warn">checking</span>`;
   if (updateRunning(u)) return html`<span class="chip warn">${u.state}</span>`;
   if (u.state === 'failed') return html`<span class="chip err">failed</span>`;
   if (u.state === 'rolled-back') return html`<span class="chip err">rolled back</span>`;
@@ -55,9 +58,15 @@ function StateChip({ u }: { u: UpdateStatus }) {
   return html`<span class="chip ok">up to date</span>`;
 }
 
-// The changelog since the installed version, fetched when the operator asks for
-// it: reading it makes QUniLator download the candidate, which is also the
-// staging step an install wants, so it is not fetched on every page view.
+function releaseDate(rfc2822: string): string {
+  const d = new Date(rfc2822);
+  return isNaN(d.getTime()) ? rfc2822 : d.toLocaleDateString();
+}
+
+// The releases since the installed version, fetched when the operator asks for
+// them: reading the changelog makes QUniLator download the candidate, which is
+// also the staging step an install wants, so it is not fetched on every page
+// view. One row per release, its title showing and its note a click away.
 function Changelog({ open }: { open: boolean }) {
   const [text, setText] = useState<string | null>(null);
   useEffect(() => {
@@ -68,7 +77,23 @@ function Changelog({ open }: { open: boolean }) {
   }, [open]);
   if (!open) return null;
   if (text === '') return html`<p class="muted">Fetching the changelog…</p>`;
-  return html`<pre class="upd-changelog">${text}</pre>`;
+  const releases: Release[] = parseChangelog(text || '');
+  if (!releases.length) return html`<pre class="upd-changelog">${text}</pre>`;
+  return html`<div class="upd-releases">
+    <p class="muted">${releases.length === 1
+      ? 'One release since the installed version.'
+      : `${releases.length} releases since the installed version.`} Click one for its full note.</p>
+    ${releases.map(
+      (r) => html`<details class="upd-release" key=${r.version}>
+        <summary>
+          <span class="pill mono">${r.version}</span>
+          <span class="upd-release-title">${r.title}</span>
+          <span class="muted upd-release-date">${releaseDate(r.date)}</span>
+        </summary>
+        <pre class="upd-changelog">${r.note}</pre>
+      </details>`
+    )}
+  </div>`;
 }
 
 // What an install costs, said before the button rather than after: the machine
@@ -79,8 +104,11 @@ function InstallDialog({ u, onDone }: { u: UpdateStatus; onDone: () => void }) {
   const [showLog, setShowLog] = useState(true);
   const running = !!s.hw.powered && !s.bus.halted;
   const modified = s.configModified === true;
+  // A check refreshes the package lists the changelog download reads, so the
+  // changelog waits for it; keyed by candidate, so a check that finds a newer one
+  // fetches again.
   return html`<div class="upd-install">
-    <${Changelog} open=${showLog} />
+    <${Changelog} key=${u.candidate} open=${showLog && u.state !== 'checking'} />
     ${!showLog
       ? html`<button class="btn small" onClick=${() => setShowLog(true)}>Show what changed</button>`
       : null}
@@ -601,6 +629,7 @@ export function SystemUpdatePage() {
       <p class="muted">Reading the update status…</p></section>`;
 
   const busy = updateRunning(u);
+  const checking = u.state === 'checking';
   const last = u.last || {};
   return html`<section class="page active" data-page="system-update">
     <p class="lede">What this QUniLator runs, and what the repository offers.</p>
@@ -618,12 +647,14 @@ export function SystemUpdatePage() {
           <div class="set-name">Available</div>
           <div class="set-val">
             ${u.candidate ? html`<span class="pill mono">${u.candidate}</span>` : html`<span class="muted">—</span>`}
-            <button class="btn small" disabled=${busy} onClick=${async () => {
+            <button class="btn small" disabled=${busy || checking} onClick=${async () => {
               await checkForUpdate();
               setTick(tick + 1);
-            }}>Check now</button>
+            }}>${checking ? 'Checking…' : 'Check now'}</button>
           </div>
-          <div class="set-info">Last checked ${when(u.checked_at)}.</div>
+          <div class="set-info">${checking
+            ? html`<strong>Checking for new updates</strong> — this takes a minute or two. `
+            : null}Last checked ${when(u.checked_at)}.</div>
         </div>
 
         ${

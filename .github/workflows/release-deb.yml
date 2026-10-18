@@ -98,17 +98,25 @@ jobs:
           # release notes: the top changelog stanza as markdown, plus a summary.
           # docs/release-notes.md is the style that stanza is written in.
           # awk prints the stanza body (past the version header, up to the
-          # signature); sed turns "  * " bullets into "- " and reindents
-          # continuation lines.
-          body=$(awk 'NR==1 {next} /^ --/ {exit} {print}' packaging/debian/changelog \
+          # signature). Its first paragraph is the title line, which names the
+          # release; sed turns "  * " bullets into "- " and reindents
+          # continuation lines of the rest.
+          stanza=$(awk 'NR==1 {next} /^ --/ {exit} {print}' packaging/debian/changelog)
+          title=$(printf '%s\n' "$stanza" | awk 'NF {n++} n==1 && NF {t=$0} n==1 && !NF && t {print t; exit} n==2 {exit}' \
+                  | sed 's/^ *//')
+          if [ -z "$title" ] || [ "${title#\* }" != "$title" ]; then
+            echo "the top changelog stanza has no title line (docs/release-notes.md)" >&2
+            exit 1
+          fi
+          body=$(printf '%s\n' "$stanza" | awk 'NF && !t {t=1; next} t' | sed '/./,$!d' \
                  | sed -e 's/^  \* /- /' -e 's/^    /  /')
           notes=$(printf '%s\n\nPackages and appliance images for both boards (qbone/QBUS, unibone/UNIBUS). Image base: %s.\n' \
                   "$body" "$BASE_VERSION")
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release edit "$GITHUB_REF_NAME" --notes "$notes"
+            gh release edit "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME — $title" --notes "$notes"
             gh release upload "$GITHUB_REF_NAME" *_armhf.deb --clobber
           else
-            gh release create "$GITHUB_REF_NAME" *_armhf.deb --title "$GITHUB_REF_NAME" \
+            gh release create "$GITHUB_REF_NAME" *_armhf.deb --title "$GITHUB_REF_NAME — $title" \
               --notes "$notes"
           fi
 

@@ -108,6 +108,8 @@ cmd=""
 for a in "$@"; do case "$a" in update|download|install|upgrade) cmd=$a; break;; esac; done
 case "$cmd" in
   update)
+     # what the status said while the refresh ran, for the check's own test
+     cp "$SB_DIR/state/status.json" "$SB_DIR/during-update.json" 2>/dev/null
      [ "$(knob reachable)" = no ] && {
         echo "E: Could not resolve host repo.invalid" >&2; exit 100; }
      exit 0 ;;

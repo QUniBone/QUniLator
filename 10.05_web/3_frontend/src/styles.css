@@ -1381,6 +1381,19 @@ button.tree-name:hover .mono { color: var(--accent); }
   white-space: pre-wrap; word-break: break-word;
 }
 
+.upd-releases { margin: 4px 0 12px; }
+.upd-releases > p { margin: 0 0 6px; }
+.upd-release { border-top: 1px solid var(--line-soft); }
+.upd-release:last-child { border-bottom: 1px solid var(--line-soft); }
+.upd-release > summary {
+  display: flex; align-items: baseline; gap: 10px; padding: 7px 2px;
+  cursor: pointer; list-style-position: outside;
+}
+.upd-release > summary::marker { color: var(--ink-muted); }
+.upd-release-title { flex: 1; min-width: 0; }
+.upd-release-date { white-space: nowrap; font-size: var(--fs-0); }
+.upd-release > .upd-changelog { margin-top: 2px; }
+
 /* The install overlay outlives the socket it was raised from, so it carries its
    own state and never blocks on the server it is waiting for. */
 .update-overlay { width: 520px; }

@@ -97,6 +97,13 @@ expect "candidate" 1.13.0-1 "$(status_field candidate)" &&
 expect "source_configured" true "$(status_bool source_configured)" &&
 [ -n "$(status_field checked_at)" ] && ok || fail "checked_at was not stamped"
 
+case_begin "check: the last candidate stays in the status while a check runs"
+run --check
+during() { sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p" "$SANDBOX_ROOT/during-update.json"; }
+expect_rc 0 &&
+expect "state during the check" checking "$(during state)" &&
+expect "candidate during the check" 1.13.0-1 "$(during candidate)" && ok
+
 case_begin "check: a board with no apt source says so, and does not fail"
 rm -f "$SANDBOX_ROOT/apt/sources.list.d/qbone.list"
 run --check

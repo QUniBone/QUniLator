@@ -1,5 +1,7 @@
 qbone (1.22.2-1) trixie; urgency=low
 
+  Write-protected disks, MSCP rings, restarts, crash dumps
+
   1.22.2 keeps the service running when a guest writes to a write-protected
   disk or stops serving its MSCP rings, brings a restarted board back as the
   machine it was running, and keeps crash dumps from filling the card.
@@ -26,6 +28,8 @@ qbone (1.22.2-1) trixie; urgency=low
 
 qbone (1.22.1-1) trixie; urgency=low
 
+  Display lamps that follow the program
+
   1.22.1 makes the display register's lamps follow the program at its own
   pace, so a moving pattern such as RSX's idle display moves on the
   dashboard as it does on a console.
@@ -39,6 +43,8 @@ qbone (1.22.1-1) trixie; urgency=low
  -- Hans Huebner <hans@huebner.org>  Sat, 17 Oct 2026 18:35:14 +0200
 
 qbone (1.22.0-1) trixie; urgency=low
+
+  Drives that say whether they hold a disk
 
   1.22.0 makes a drive say plainly whether it holds its disk: the web
   interface puts in only an image the board has, refuses one the drive cannot
@@ -88,6 +94,8 @@ qbone (1.22.0-1) trixie; urgency=low
  -- Hans Huebner <hans@huebner.org>  Sat, 17 Oct 2026 10:30:00 +0200
 
 qbone (1.21.0-1) trixie; urgency=low
+
+  Dependable overlays, catalogue import, self-tests
 
   1.21.0 makes the copy-on-write overlay safe to rely on: what a guest wrote
   survives a crash, stays reachable after its drive is switched off, and can
@@ -140,6 +148,8 @@ qbone (1.21.0-1) trixie; urgency=low
  -- Hans Huebner <hans@huebner.org>  Tue, 13 Oct 2026 08:46:00 +0200
 
 qbone (1.20.0-1) trixie; urgency=low
+
+  A card that sets itself up, a leaner bus engine
 
   1.20.0 makes a flashed card self-sufficient: it installs its own build
   environment, fetches the example machines and the disk images they mount, and
@@ -219,6 +229,8 @@ qbone (1.20.0-1) trixie; urgency=low
 
 qbone (1.19.2-1) trixie; urgency=low
 
+  Fresh cards create their operator
+
   * An SD card written from an image carries an installation with no operator
     account, and a setup file on it now creates one. Applying the file adopted
     the account it names rather than creating it, and adopting refuses a name
@@ -230,6 +242,8 @@ qbone (1.19.2-1) trixie; urgency=low
  -- Hans Huebner <hans@huebner.org>  Sat, 08 Aug 2026 08:11:47 +0200
 
 qbone (1.19.1-1) trixie; urgency=low
+
+  Setup file read on first boot, one DHCP lease
 
   * A board flashed from an image now reads the setup file its card carries.
     The unit that does it was installed and never enabled: the package enables
@@ -248,6 +262,8 @@ qbone (1.19.1-1) trixie; urgency=low
 
 qbone (1.19.0-1) trixie; urgency=low
 
+  A smaller release image
+
   * The image is 429 MB smaller. The free space it ships with was added on top
     of what the shrink arrived at, and the shrink cannot pack a filesystem down
     to what it holds: metadata it will not relocate sets a floor, and on the
@@ -259,6 +275,8 @@ qbone (1.19.0-1) trixie; urgency=low
  -- Hans Huebner <hans@huebner.org>  Fri, 07 Aug 2026 14:02:59 +0200
 
 qbone (1.18.0-1) trixie; urgency=low
+
+  More ssh keys and a fixed address in the setup file
 
   * A setup file may carry several ssh keys, as the authorized_keys file it is
     named after does: somebody with a workstation and a laptop has two. Every
@@ -277,6 +295,8 @@ qbone (1.18.0-1) trixie; urgency=low
  -- Hans Huebner <hans.huebner@gmail.com>  Thu, 06 Aug 2026 19:15:00 +0200
 
 qbone (1.17.0-1) trixie; urgency=low
+
+  One operator account, card setup, debug panel
 
   * A QUniLator carries one operator: a user name and a password together, which
     open the web interface, the SMB, FTP and SFTP shares of the image library
@@ -328,6 +348,8 @@ qbone (1.17.0-1) trixie; urgency=low
 
 qbone (1.16.0-1) trixie; urgency=low
 
+  File mode as write ring, serial login choice
+
   * An image file's mode is the medium's write ring. Clearing a file's write
     permission write-protects the image it holds, the way pulling a tape's ring
     does: the emulator reads the mode as the cartridge goes into the drive
@@ -347,6 +369,8 @@ qbone (1.16.0-1) trixie; urgency=low
  -- Hans Huebner <hans.huebner@gmail.com>  Tue, 04 Aug 2026 09:05:00 +0200
 
 qbone (1.15.0-1) trixie; urgency=low
+
+  TS11/TSV05 tape, console scripting harness
 
   * A TS11/TSV05 tape subsystem answers on the bus. The reel turns after a
     rewind answers, an erase blanks the tape ahead and motion into the blank
@@ -393,6 +417,8 @@ qbone (1.15.0-1) trixie; urgency=low
 
 qbone (1.14.0-1) trixie; urgency=low
 
+  MRV11-D bootstrap module, steady 2.11BSD
+
   * An MRV11-D universal PROM module sits on the bus with the MXV11-B2 bootstrap
     set DEC supplied for it in its sockets, so a machine whose backplane carries
     no bootstrap boots one. The sockets take a ROM image or a MACRO-11 listing
@@ -428,6 +454,8 @@ qbone (1.14.0-1) trixie; urgency=low
  -- Hans Huebner <hans.huebner@gmail.com>  Fri, 31 Jul 2026 19:00:00 +0200
 
 qbone (1.13.0-1) trixie; urgency=low
+
+  Self-update from the web interface
 
   * The web interface announces a newer package when one is published, shows the
     candidate's own changelog since the version the board runs, and installs it.
@@ -478,6 +506,8 @@ qbone (1.13.0-1) trixie; urgency=low
 
 qbone (1.12.0-1) trixie; urgency=low
 
+  Renamed to QUniLator
+
   * The web interface and the service's startup banners show the software's own
     product name, QUniLator, the same on the QBUS and UNIBUS capes.
   * The appliance's provisioning tools and their units are named qunilator-*
@@ -492,6 +522,8 @@ qbone (1.12.0-1) trixie; urgency=low
  -- Hans Huebner <hans.huebner@gmail.com>  Tue, 28 Jul 2026 07:54:10 +0200
 
 qbone (1.11.0-1) trixie; urgency=low
+
+  TK50 tape, arrangeable dashboard
 
   * A TQK50/TK50 cartridge-tape subsystem runs on a shared MSCP port and server
     base alongside the disk controller. It is backed by SIMH .tap images with a
@@ -513,6 +545,8 @@ qbone (1.11.0-1) trixie; urgency=low
  -- Hans Huebner <hans.huebner@gmail.com>  Tue, 28 Jul 2026 07:00:00 +0200
 
 qbone (1.10.0-1) trixie; urgency=low
+
+  New web interface, networked serial ports
 
   * The web interface is rebuilt as a Vite + Preact + TypeScript application,
     bundled on the development machine and served as static files by the board.
@@ -551,6 +585,8 @@ qbone (1.10.0-1) trixie; urgency=low
 
 qbone (1.9.0-1) trixie; urgency=low
 
+  Bus-neutral names, finding the board on the network
+
   * Name for the bus only what is built for the bus. The emulator binary, the
     unit that runs it and the package carry the board's name; the tools, their
     units and the files under /etc/qunilator, /var/lib/qunilator and /usr/share/qunilator are
@@ -566,6 +602,8 @@ qbone (1.9.0-1) trixie; urgency=low
 
 qbone (1.8.0-1) trixie; urgency=low
 
+  DEUNA Ethernet on UNIBUS
+
   * Emulate the DEC DEUNA Ethernet controller on the UNIBUS board, with its
     port-command interface and descriptor rings, attached to the host network
     through a raw socket on a shared interface. The emulation has not yet been
@@ -578,6 +616,8 @@ qbone (1.8.0-1) trixie; urgency=low
 
 qbone (1.7.0-1) trixie; urgency=low
 
+  A unibone package for UNIBUS
+
   * Ship a separate unibone package for the UNIBUS board beside qbone for QBUS,
     built from the same sources with the brand and the web interface's display
     name tracking the board.
@@ -585,6 +625,8 @@ qbone (1.7.0-1) trixie; urgency=low
  -- Hans Huebner <hans.huebner@gmail.com>  Tue, 22 Jul 2026 06:30:00 +0200
 
 qbone (1.6.0-1) trixie; urgency=low
+
+  Debian 13 and the remoteproc PRU backend
 
   * Build on Debian 13 with the remoteproc PRU backend.
   * Enable the services on installation, so an installed package is a
@@ -596,6 +638,8 @@ qbone (1.6.0-1) trixie; urgency=low
  -- Hans Huebner <hans.huebner@gmail.com>  Mon, 20 Jul 2026 11:00:00 +0200
 
 qbone (1.5.0-1) jessie; urgency=low
+
+  The first package
 
   * Package the demo application as "qbone", with the web frontend, a
     systemd unit and a state directory under /var/lib/qbone.
