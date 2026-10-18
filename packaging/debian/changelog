@@ -1,3 +1,18 @@
+qbone (1.22.5-1) trixie; urgency=low
+
+  Examine and deposit on a halted VAX
+
+  1.22.5 makes the emulated VAX answer console examines and deposits while it
+  is halted, which could leave a UniBone unable to switch configurations.
+
+  * Examine and deposit on a halted VAX. `bus_examine` and `bus_deposit`
+    reach the bus on a halted processor too, and an address nothing answers
+    reads as no answer within a fraction of a second. Such an access used to
+    wait for good: the next configuration switch or power-down then hung,
+    SAVE stayed lit, and only a restart of the service got the board back.
+
+ -- Hans Huebner <hans@huebner.org>  Sun, 18 Oct 2026 10:09:28 +0200
+
 qbone (1.22.4-1) trixie; urgency=low
 
   Display lamps that keep pace over slow networks
