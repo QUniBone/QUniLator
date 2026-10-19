@@ -30,7 +30,9 @@ import {
   fetchChangelog,
   parseChangelog,
   dismissUpdate,
+  discardUpdateFile,
   installUpdate,
+  uploadUpdateFile,
   upgradeOs,
   updateAvailable,
   updateRunning,
@@ -66,13 +68,22 @@ function releaseDate(rfc2822: string): string {
 // The releases since the installed version, fetched when the operator asks for
 // them: reading the changelog makes QUniLator download the candidate, which is
 // also the staging step an install wants, so it is not fetched on every page
-// view. One row per release, its title showing and its note a click away.
-function Changelog({ open }: { open: boolean }) {
+// view. One row per release, its title showing and its note a click away. With
+// `local` it reads the staged update file's package, which may carry nothing
+// newer than what is installed.
+function Changelog({ open, local = false }: { open: boolean; local?: boolean }) {
   const [text, setText] = useState<string | null>(null);
   useEffect(() => {
     if (!open || text !== null) return;
     setText('');
-    fetchChangelog().then((t) => setText(t || 'The changelog could not be read.'));
+    fetchChangelog(local).then((t) =>
+      setText(
+        t ||
+          (local
+            ? 'The update file carries no release newer than the installed version.'
+            : 'The changelog could not be read.')
+      )
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
   if (!open) return null;
@@ -98,17 +109,36 @@ function Changelog({ open }: { open: boolean }) {
 
 // What an install costs, said before the button rather than after: the machine
 // stops, its configuration is the startup one again, and unsaved edits are lost.
-function InstallDialog({ u, onDone }: { u: UpdateStatus; onDone: () => void }) {
+// `local` offers the staged update file's version rather than the repository's
+// candidate, and discards the file where the repository's offer is dismissed.
+function InstallDialog({
+  u,
+  version,
+  local = false,
+  onDone,
+}: {
+  u: UpdateStatus;
+  version: string;
+  local?: boolean;
+  onDone: () => void;
+}) {
   const s = useStore();
   const [confirmed, setConfirmed] = useState(false);
   const [showLog, setShowLog] = useState(true);
   const running = !!s.hw.powered && !s.bus.halted;
   const modified = s.configModified === true;
+  const again = version === u.installed;
   // A check refreshes the package lists the changelog download reads, so the
-  // changelog waits for it; keyed by candidate, so a check that finds a newer one
+  // changelog waits for it; keyed by version, so a check that finds a newer one
   // fetches again.
   return html`<div class="upd-install">
-    <${Changelog} key=${u.candidate} open=${showLog && u.state !== 'checking'} />
+    ${local
+      ? html`<p class="muted">The update file carries <span class="mono">${version}</span>${again
+          ? html` — the version this QUniLator runs, so installing it installs it again`
+          : null}. Its signature checks out.</p>`
+      : null}
+    <${Changelog} key=${(local ? 'file:' : '') + version} local=${local}
+      open=${showLog && (local || u.state !== 'checking')} />
     ${!showLog
       ? html`<button class="btn small" onClick=${() => setShowLog(true)}>Show what changed</button>`
       : null}
@@ -139,13 +169,48 @@ function InstallDialog({ u, onDone }: { u: UpdateStatus; onDone: () => void }) {
     }
     <div class="upd-buttons">
       <button class="btn primary" disabled=${running && !confirmed}
-        onClick=${() => installUpdate(u.candidate)}>Install ${u.candidate}</button>
+        onClick=${() => installUpdate(version, local)}>${again ? 'Reinstall' : 'Install'} ${version}</button>
       <button class="btn" onClick=${async () => {
-        await dismissUpdate(u.candidate);
+        if (local) await discardUpdateFile();
+        else await dismissUpdate(version);
         onDone();
-      }}>Dismiss</button>
+      }}>${local ? 'Discard the file' : 'Dismiss'}</button>
     </div>
   </div>`;
+}
+
+// The way to update a QUniLator that cannot reach the repository: an update file
+// fetched on another computer and uploaded here. QUniLator checks it before it
+// answers, so a file that is not signed by the repository, or is for the other
+// board, is refused here rather than at install time; the reason is the
+// updater's, shown with the page's other update errors.
+function UpdateFileRow({ u, busy }: { u: UpdateStatus; busy: boolean }) {
+  const [checking, setChecking] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const staged = u.local?.version || '';
+  const pick = async (e: Event) => {
+    const el = e.target as HTMLInputElement;
+    const file = el.files && el.files[0];
+    el.value = '';
+    if (!file) return;
+    setChecking(true);
+    const res = await uploadUpdateFile(file);
+    setChecking(false);
+    toast('POST /api/update/upload', res.ok ? 'update file verified' : res.error || 'the file was refused');
+  };
+  return html`
+    <div class="set-name">Update file</div>
+    <div class="set-val">
+      ${staged ? html`<span class="pill mono">${staged}</span>` : null}
+      <input type="file" accept=".tar" ref=${input} hidden onChange=${pick} />
+      <button class="btn small" disabled=${busy || checking}
+        onClick=${() => input.current?.click()}>${checking ? 'Checking the file…' : 'Upload…'}</button>
+    </div>
+    <div class="set-info">For a QUniLator that cannot reach the repository. On another computer,
+      download <span class="mono">${u.package + "_<version>_armhf.update.tar"}</span> from the${' '}
+      <a href="https://github.com/QUniBone/QUniLator/releases" target="_blank" rel="noopener">release
+      page</a> and upload it here. It is checked against the repository's signature before
+      anything is offered for installing.</div>`;
 }
 
 // mm:ss, or h:mm:ss past an hour
@@ -737,6 +802,8 @@ export function SystemUpdatePage() {
           <div class="set-info">${checking
             ? html`<strong>Checking for new updates</strong> — this takes a minute or two. `
             : null}Last checked ${when(u.checked_at)}.</div>
+
+          <${UpdateFileRow} u=${u} busy=${busy} />
         </div>
 
         ${
@@ -770,8 +837,11 @@ export function SystemUpdatePage() {
             ? u.state === 'os-upgrading'
               ? html`<p class="muted">The operating system is being upgraded; its progress is below.</p>`
               : html`<p class="muted">An update is running: <span class="mono">${u.state}</span>.</p>`
+            : u.local?.version
+              ? html`<${InstallDialog} u=${u} version=${u.local.version} local=${true}
+                  onDone=${() => setTick(tick + 1)} />`
             : updateAvailable(u)
-              ? html`<${InstallDialog} u=${u} onDone=${() => setTick(tick + 1)} />`
+              ? html`<${InstallDialog} u=${u} version=${u.candidate} onDone=${() => setTick(tick + 1)} />`
               : u.candidate && u.candidate === u.dismissed && u.candidate !== u.installed
                 ? html`<p class="muted"><span class="mono">${u.candidate}</span> is available and
                     dismissed. <button class="btn small" onClick=${async () => {

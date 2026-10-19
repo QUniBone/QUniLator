@@ -92,7 +92,9 @@ EOF
 case "$1" in
   -f) case "$3" in
         Version)
-           if [ -f "${2%.deb}.ver" ]; then cat "${2%.deb}.ver"
+           # an update file's package carries its version as its content
+           if grep -q '^Version: ' "$2" 2>/dev/null; then sed -n 's/^Version: //p' "$2"
+           elif [ -f "${2%.deb}.ver" ]; then cat "${2%.deb}.ver"
            else v=$(ls "$(dirname "$2")"/*.ver 2>/dev/null | head -1)
                 [ -n "$v" ] && cat "$v"; fi ;;
         Installed-Size) echo 6000 ;;
@@ -113,6 +115,31 @@ for a in "$@"; do case "$a" in -s|--simulate)
    fi
    echo "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded."; exit 0 ;;
 esac; done
+# The one-package repository an update file is laid out as: apt is pointed at
+# its sources.list, which names the repository directory.
+local_repo=""
+for a in "$@"; do case "$a" in
+  Dir::Etc::sourcelist=*/local/work/sources.list)
+     local_repo=$(sed -n 's/.*file:\([^ ]*\) .*/\1/p' "${a#Dir::Etc::sourcelist=}") ;;
+esac; done
+if [ -n "$local_repo" ]; then
+  case "$cmd" in
+    update)
+       [ "$(knob bundle_signed)" = no ] && {
+          echo "Err:1 file:$local_repo trixie InRelease"
+          echo "E: The repository 'file:$local_repo trixie InRelease' is not signed."; }
+       exit 0 ;;
+    download)
+       spec=""; for a in "$@"; do case "$a" in *=*.*) spec=$a;; esac; done
+       pkg=${spec%%=*}; ver=${spec#*=}
+       [ "$(knob bundle_tampered)" = yes ] && {
+          echo "E: Failed to fetch file:$local_repo/pool/main/${pkg}_${ver}_armhf.deb  Hash Sum mismatch" >&2
+          exit 100; }
+       deb=$(find "$local_repo/pool" -name "${pkg}_${ver}_armhf.deb" | head -1)
+       [ -n "$deb" ] || { echo "E: Can't find a source to download version '$ver' of '$pkg'" >&2; exit 100; }
+       cp "$deb" . ; exit 0 ;;
+  esac
+fi
 case "$cmd" in
   update)
      # what the status said while the refresh ran, for the check's own test
@@ -247,6 +274,33 @@ mkdeb() {
     rm -rf "$_d"
 }
 
+# mkbundle <deb name> <version> [extra member] - an update file, as the service
+# leaves an upload for the updater. The package's content is its version, which
+# is what the dpkg-deb stub reads back out of it.
+mkbundle() {
+    _d=$(mktemp -d)
+    echo "signed index" > "$_d/InRelease"
+    _pkg=${1%%_*}
+    printf 'Package: %s\nVersion: %s\nFilename: pool/main/%s\n\n' "$_pkg" "$2" "$1" \
+        > "$_d/Packages"
+    echo "Version: $2" > "$_d/$1"
+    _members="InRelease Packages $1"
+    if [ -n "${3:-}" ]; then
+        mkdir -p "$_d/$(dirname "$3")"; : > "$_d/$3"; _members="$_members $3"
+    fi
+    # shellcheck disable=SC2086
+    ( cd "$_d" && tar -cf "$SB/state/upload.tar" $_members )
+    rm -rf "$_d"
+}
+
+# a source signed with a keyring that exists, which is what an update file is
+# checked against
+signed_source() {
+    : > "$SB/apt/keyring.gpg"
+    echo "deb [signed-by=$SB/apt/keyring.gpg] http://repo.invalid trixie main" \
+        > "$SB/apt/sources.list.d/qbone.list"
+}
+
 # knob <name> <value> - what the stubs report about the world
 knob() {
     sed -i.bak "/^$1=/d" "$SB/knobs" 2>/dev/null || true
@@ -270,6 +324,8 @@ sandbox_reset() {
     knob upgrade_fails no
     knob repair_fails no
     knob broken_version ""
+    knob bundle_signed yes
+    knob bundle_tampered no
     echo "1.12.0-1" > "$SB/run/version"
     rm -f "$SB/run/reboot-required"
     echo "deb http://repo.invalid trixie main" > "$SB/apt/sources.list.d/qbone.list"

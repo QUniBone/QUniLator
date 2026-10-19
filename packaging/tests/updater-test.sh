@@ -327,6 +327,108 @@ case "$(cat "$SANDBOX_ROOT/state/status.json")" in
     *) fail "os_last does not carry the upgrade, or the emulator journal does" ;;
 esac
 
+# -------------------------------------------------------------- update file ----
+
+local_version_of() {
+    sed -n 's/.*"local":{"version":"\([^"]*\)".*/\1/p' "$SANDBOX_ROOT/state/status.json"
+}
+
+case_begin "update file: a signed one is staged and reported"
+signed_source
+mkbundle qbone_1.13.0-1_armhf.deb 1.13.0-1
+run --stage-local
+expect_rc 0 &&
+expect "staged version" 1.13.0-1 "$(local_version_of)" &&
+expect "error" "" "$(status_field error)" &&
+[ ! -e "$SANDBOX_ROOT/state/upload.tar" ] && [ ! -e "$SANDBOX_ROOT/state/local/work" ] &&
+[ -f "$SANDBOX_ROOT/state/local/qbone.deb" ] && ok \
+    || fail "the upload or the work directory was left behind, or no package was kept"
+
+case_begin "update file: one for the other board is refused"
+signed_source
+mkbundle unibone_1.13.0-1_armhf.deb 1.13.0-1
+run --stage-local
+expect_rc 1 &&
+expect "error" "the file updates unibone; this QUniLator is qbone" "$(status_field error)" &&
+expect "staged version" "" "$(local_version_of)" && ok
+
+case_begin "update file: one apt finds unsigned is refused"
+signed_source
+knob bundle_signed no
+mkbundle qbone_1.13.0-1_armhf.deb 1.13.0-1
+run --stage-local
+expect_rc 1 &&
+expect_out "not signed with the key" &&
+expect "staged version" "" "$(local_version_of)" &&
+[ ! -e "$SANDBOX_ROOT/state/local/qbone.deb" ] && ok || fail "a package was kept"
+
+case_begin "update file: a package that does not match its index is refused"
+signed_source
+knob bundle_tampered yes
+mkbundle qbone_1.13.0-1_armhf.deb 1.13.0-1
+run --stage-local
+expect_rc 1 &&
+expect_out "does not match its signed index" &&
+expect "staged version" "" "$(local_version_of)" && ok
+
+case_begin "update file: an archive holding anything more is refused"
+signed_source
+mkbundle qbone_1.13.0-1_armhf.deb 1.13.0-1 etc/cron.d/evil
+run --stage-local
+expect_rc 1 &&
+expect_out "this is not an update file" &&
+[ ! -e "$SANDBOX_ROOT/state/etc" ] && [ ! -e "$SANDBOX_ROOT/state/local/work/etc" ] && ok \
+    || fail "a member outside the update file's three was unpacked"
+
+case_begin "update file: a board with no source has no key to check it against"
+mkbundle qbone_1.13.0-1_armhf.deb 1.13.0-1
+run --stage-local
+expect_rc 1 &&
+expect_out "no key to check an update file against" && ok
+
+case_begin "update file: installs without the repository, and is gone afterwards"
+signed_source
+mkbundle qbone_1.13.0-1_armhf.deb 1.13.0-1
+run --stage-local
+knob reachable no
+printf '{"version":"1.13.0-1","source":"local"}' > "$SANDBOX_ROOT/state/request.json"
+run --install-requested
+expect_rc 0 &&
+expect "state" done "$(status_field state)" &&
+expect "installed" 1.13.0-1 "$(status_field installed)" &&
+expect "staged version" "" "$(local_version_of)" &&
+[ ! -e "$SANDBOX_ROOT/state/local" ] && ok || fail "the staged package is still there"
+
+case_begin "update file: the version it carries is installed again when it is the running one"
+signed_source
+mkbundle qbone_1.12.0-1_armhf.deb 1.12.0-1
+run --stage-local
+printf '{"version":"1.12.0-1","source":"local"}' > "$SANDBOX_ROOT/state/request.json"
+run --install-requested
+expect_rc 0 &&
+expect "state" done "$(status_field state)" &&
+expect "installed" 1.12.0-1 "$(status_field installed)" && ok
+
+case_begin "update file: a request for a version that is not staged fails"
+signed_source
+mkbundle qbone_1.13.0-1_armhf.deb 1.13.0-1
+run --stage-local
+printf '{"version":"1.11.0-1","source":"local"}' > "$SANDBOX_ROOT/state/request.json"
+run --install-requested
+expect_rc 1 &&
+expect "state" failed "$(status_field state)" &&
+expect "installed" 1.12.0-1 "$(status_field installed)" &&
+expect_out "no update file for version 1.11.0-1 is staged" && ok
+
+case_begin "update file: discarding it clears the status"
+signed_source
+mkbundle qbone_1.13.0-1_armhf.deb 1.13.0-1
+run --stage-local
+run --discard-local
+expect_rc 0 &&
+expect "staged version" "" "$(local_version_of)" &&
+[ ! -e "$SANDBOX_ROOT/state/local" ] && ok || fail "the staged package is still there"
+
 # ------------------------------------------------------------------- status ----
 
 case_begin "status: prints the file, and makes one when there is none"

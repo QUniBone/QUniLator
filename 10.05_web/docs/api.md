@@ -1592,7 +1592,7 @@ and these endpoints publish that file and start the updater's units.
  "dismissed": "", "os": {"count": 4, "packages": [], "held_back": [],
  "kept_back": [], "reboot_required": false}, "last": {"state": "done",
  "from": "1.11.0-1", "to": "1.12.0-1", "at": "2026-07-28T06:40:11Z"},
- "os_last": {}, "progress": null, "error": "", "journal": []}
+ "os_last": {}, "progress": null, "local": {}, "error": "", "journal": []}
 ```
 
 `state` is `idle`, `checking`, `ahead`, `downloading`, `installing`,
@@ -1607,6 +1607,10 @@ when a cached copy of another version is present, which
 interrupted by a power loss; the next install repairs it first. `journal` carries
 the failed unit's last lines when an install did not work. `last` is the previous
 install's outcome, so a page that reconnects after one is told how it went.
+
+`local` is the update file waiting to be installed —
+`{"version": "1.13.0-1", "staged_at": "2026-10-19T09:48:00Z"}` — and `{}` when
+none is; see [`POST /api/update/upload`](#post-apiupdateupload).
 
 `dismissed` is the version an operator has told the interface to stop announcing.
 It is kept in `settings.json` (`update.dismissed_version`), so it belongs to the
@@ -1650,6 +1654,9 @@ the text that shipped, byte for byte. The updater downloads the candidate to rea
 it, which takes a moment; the download doubles as the staging step an install
 wants anyway. `502` when the candidate could not be fetched.
 
+`?source=local` reads the staged update file's package instead, and answers an
+empty changelog when it carries nothing newer than the installed version.
+
 ### `POST /api/update/install`
 
 ```json
@@ -1662,11 +1669,35 @@ recorded — anything else is refused with `422`, and `409` answers a board with
 candidate or an update already running. The version is written to a request file
 for the updater to read, so no string from a request reaches a command line.
 
+`"source": "local"` installs the staged update file instead, and the version must
+be the one it carries (`409` when none is staged, `422` for another version). A
+file carrying the installed version installs it again.
+
 **This stops the emulated machine.** The device set is shut down in order, so the
 images are flushed, but a running Unix or RSX has its buffer cache cut, and the
 board comes back up in its startup configuration rather than the one it was
 running. The install then waits for the new service to come up and stay up, and
 reinstalls the previous version if it does not.
+
+### `POST /api/update/upload`
+
+A multipart upload of one file: an update file,
+`<pkg>_<version>_armhf.update.tar` from a release, for a board with no way to the
+repository. It holds the repository's signed `InRelease`, its `Packages` index and
+the package. The updater lays them out as a one-package repository and lets apt
+check the signature against the keyring of the board's own source and the
+package against the index, so it is installable only if it came from the
+repository unaltered.
+
+Answers `200` with `{"ok": true, "version": "1.13.0-1"}` once the file checks
+out, and the status names it as `local`. `422` carries the reason a file is
+refused — not an update file, for the other board, not signed with the
+repository's key, a package that does not match its index, or no update source to
+take a key from. `409` while an update runs. The file's name is not used.
+
+### `POST /api/update/discard`
+
+Drops the staged update file.
 
 ### `POST /api/update/os`
 

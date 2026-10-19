@@ -93,6 +93,29 @@ configuration applied by hand needs re-applying afterwards.
 **Dismiss** stops a version being announced in the sidebar badge; **Announce it
 again** undoes that.
 
+### Updating without the internet
+
+A QUniLator that cannot reach the repository is updated from an **update file**.
+On another computer, download `qbone_<version>_armhf.update.tar` (or the
+`unibone_` one, for a UniBone) from the
+[release page](https://github.com/QUniBone/QUniLator/releases), get it to a
+computer that reaches the board's web interface, and choose **Upload…** beside
+**Update file**.
+
+The file carries the repository's signed index next to the package, and
+QUniLator checks both against the repository key it already holds before it
+offers anything: a file that has been altered, that was not signed for this
+repository, or that is for the other board is refused with the reason. Once it
+checks out, the page shows the version it carries and what changed since the
+installed one, and installing it works like an update from the repository — the
+machine stops, the new version has to come up, and the old one goes back if it
+does not. A file carrying the version already installed installs it again.
+**Discard the file** drops it without installing.
+
+An update file installs the emulator package only. A new version that needs a
+Debian package the board does not have yet cannot be installed this way; the
+install fails and the running version stays.
+
 The **Updates** page carries two sections: the emulator package this QUniLator
 is — `qbone` or `unibone` — and the Debian underneath it.
 

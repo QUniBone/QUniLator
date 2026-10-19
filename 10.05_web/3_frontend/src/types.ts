@@ -293,6 +293,9 @@ export interface UpdateStatus {
   last: UpdateOutcome;
   os_last?: OsUpgradeOutcome;
   progress?: UpdateProgress | null;
+  // the update file uploaded and verified, waiting to be installed; empty when
+  // none is staged
+  local?: { version?: string; staged_at?: string };
   error: string;
   journal: string[];
 }

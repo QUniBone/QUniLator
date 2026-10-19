@@ -139,3 +139,20 @@ jobs:
           tar -c *_armhf.deb | ssh -i "$key" -p "${APT_DEPLOY_PORT:-22}" \
             -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
             "$APT_DEPLOY_HOST"
+
+      - name: Attach the update files
+        # A board with no way to the repository updates from an update file:
+        # the repository's signed index and the package, which the board checks
+        # against the keyring it already carries. Built from the index the step
+        # above has just rebuilt, so it skips itself with the apt publish.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APT_DEPLOY_KEY: ${{ secrets.APT_DEPLOY_KEY }}
+          APT_REPO_URL: ${{ vars.APT_REPO_URL }}
+        run: |
+          if [ -z "$APT_DEPLOY_KEY" ] || [ -z "$APT_REPO_URL" ]; then
+            echo "no apt repository configured (APT_DEPLOY_KEY secret / APT_REPO_URL var); skipping"
+            exit 0
+          fi
+          ./packaging/build-update-bundle.sh "$APT_REPO_URL" *_armhf.deb
+          gh release upload "$GITHUB_REF_NAME" *_armhf.update.tar --clobber

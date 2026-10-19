@@ -17,6 +17,7 @@ interface InstallFlag {
   from: string;
   to: string;
   started: number;
+  lastAt?: string; // when the outcome recorded before this install was
 }
 const FLAG_KEY = 'qunilator.installing';
 
@@ -80,9 +81,13 @@ export async function checkForUpdate(): Promise<void> {
   if (res.ok && store.update) setStore({ update: { ...store.update, state: 'checking' } });
 }
 
-export async function fetchChangelog(): Promise<string> {
+// The changelog of the repository's candidate, or with `local` of the staged
+// update file's package.
+export async function fetchChangelog(local = false): Promise<string> {
   try {
-    const r = await fetch('/api/update/changelog', { cache: 'no-store' });
+    const r = await fetch('/api/update/changelog' + (local ? '?source=local' : ''), {
+      cache: 'no-store',
+    });
     const d = (await r.json().catch(() => ({}))) as { changelog?: string; error?: string };
     if (!r.ok) return '';
     return d.changelog || '';
@@ -162,6 +167,28 @@ export async function dismissUpdate(version: string): Promise<void> {
         : 'dismissal cleared'
       : res.error || 'rejected'
   );
+  await refreshUpdate();
+}
+
+// Upload an update file. QUniLator verifies it before answering, so the answer
+// says whether it can be installed; the staged version reaches the page in the
+// status.
+export async function uploadUpdateFile(file: File): Promise<{ ok: boolean; error?: string }> {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  try {
+    const r = await fetch('/api/update/upload', { method: 'POST', body: form });
+    const data = (await r.json().catch(() => ({}))) as { error?: string };
+    await refreshUpdate();
+    return { ok: r.ok, error: data.error };
+  } catch {
+    return { ok: false, error: 'network error' };
+  }
+}
+
+export async function discardUpdateFile(): Promise<void> {
+  const res = await post('/api/update/discard');
+  toast('POST /api/update/discard', res.ok ? 'update file discarded' : res.error || 'rejected');
   await refreshUpdate();
 }
 
@@ -279,42 +306,56 @@ function mmss(ms: number): string {
 }
 
 // Wait for QUniLator to come back on `to`, then reload. A connection refusal is
-// "not back yet", not a fault: the server is being replaced.
+// "not back yet", not a fault: the server is being replaced. The install's own
+// outcome is the one the updater records after `lastAt`, the time of the outcome
+// it had recorded when the install was asked for: an older one belongs to an
+// earlier install. A reinstall - `to` is the version `from` already runs -
+// answers with `to` throughout, so it is back only once that outcome is in.
 async function awaitNewVersion(
+  from: string,
   to: string,
+  lastAt: string,
   ui: ReturnType<typeof installOverlay>,
   startedAt: number = Date.now()
 ): Promise<void> {
   // the last moment QUniLator answered anything; the deadline runs from here,
   // so it measures silence rather than the length of the install
   let lastAnswer = Date.now();
+  const again = to === from;
   for (;;) {
     await new Promise((r) => setTimeout(r, 1000));
     const v = await fetchVersion();
     if (v) lastAnswer = Date.now();
     ui.waiting(Date.now() - startedAt, v != null);
-    if (v && v.version === to) {
+    if (v && v.version === to && !again) {
       writeFlag(null);
       location.reload();
       return;
     }
     if (v) {
-      // The server answers, on a version that is not the target: either the
-      // install has not restarted it yet, or it failed and was rolled back.
+      // The server answers, on a version that is not the target or on the one
+      // being reinstalled: the install is still working, or it has finished,
+      // failed or been rolled back.
       const u = await fetch('/api/update', { cache: 'no-store' })
         .then((r) => (r.ok ? (r.json() as Promise<UpdateStatus>) : null))
         .catch(() => null);
-      if (u && (u.state === 'failed' || u.state === 'rolled-back')) {
+      const outcome = u && u.last && u.last.at && u.last.at !== lastAt ? u.last.state : '';
+      if (u && outcome === 'done' && v.version === to) {
+        writeFlag(null);
+        location.reload();
+        return;
+      }
+      if (u && (outcome === 'failed' || outcome === 'rolled-back')) {
         writeFlag(null);
         // the updater's message is a fragment, not a sentence, so it is
         // punctuated here rather than assumed to end in a full stop
         const why = u.error ? u.error.replace(/[.;]\s*$/, '') + '. ' : '';
         ui.fail(
-          u.state === 'rolled-back' ? 'The update was rolled back' : 'The update failed',
+          outcome === 'rolled-back' ? 'The update was rolled back' : 'The update failed',
           why +
             'QUniLator is running ' +
             v.version +
-            (u.state === 'rolled-back' ? ' again.' : '.'),
+            (outcome === 'rolled-back' ? ' again.' : '.'),
           u.journal || []
         );
         return;
@@ -339,17 +380,21 @@ async function awaitNewVersion(
 }
 
 // Start an install and follow it through the restart. Returns once the outcome is
-// known — normally by reloading the page.
-export async function installUpdate(to: string): Promise<void> {
+// known — normally by reloading the page. `local` installs the staged update file.
+export async function installUpdate(to: string, local = false): Promise<void> {
   const from = store.update?.installed || bundleVersion;
-  const res = await post('/api/update/install', { version: to });
+  const res = await post('/api/update/install', {
+    version: to,
+    source: local ? 'local' : 'repository',
+  });
   if (!res.ok) {
     toast('POST /api/update/install', res.error || 'the install was refused');
     return;
   }
-  writeFlag({ from, to, started: Date.now() });
+  const lastAt = store.update?.last?.at || '';
+  writeFlag({ from, to, started: Date.now(), lastAt });
   const ui = installOverlay(from, to);
-  await awaitNewVersion(to, ui);
+  await awaitNewVersion(from, to, lastAt, ui);
 }
 
 // Called once at startup: a page loaded (or reloaded) during an install window
@@ -363,7 +408,7 @@ export function resumeInstallIfPending(): void {
     writeFlag(null);
     return;
   }
-  if (f.to === bundleVersion) {
+  if (f.to === bundleVersion && f.to !== f.from) {
     // this page already is the new version: the install finished
     writeFlag(null);
     return;
@@ -371,5 +416,5 @@ export function resumeInstallIfPending(): void {
   // the elapsed counter runs from when the install was started, not from this
   // page load, so a reload mid-install does not restart the clock
   const ui = installOverlay(f.from, f.to);
-  awaitNewVersion(f.to, ui, f.started).catch(() => {});
+  awaitNewVersion(f.from, f.to, f.lastAt || '', ui, f.started).catch(() => {});
 }

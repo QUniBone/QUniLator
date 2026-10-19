@@ -14,9 +14,19 @@
 # verifies the signed index and the package hash, so there is no unsigned
 # install path, nothing extra to host and nothing extra to sign.
 #
+# A board with no way to the repository is updated from an update file: the
+# repository's signed InRelease, its Packages index and the package, as a release
+# publishes them in <pkg>_<version>_armhf.update.tar. The file is laid out as a
+# one-package repository and handed to apt as a file: source, so apt checks the
+# signature against the board's own keyring and the package against the index
+# exactly as it does online.
+#
 # usage:
 #   qunilator-update --check              refresh the index and report versions
 #   qunilator-update --changelog [ver]    the candidate's stanzas since installed
+#   qunilator-update --stage-local        verify the uploaded update file
+#   qunilator-update --changelog-local    the staged update file's stanzas
+#   qunilator-update --discard-local      drop the staged update file
 #   qunilator-update --install-requested  install the version in request.json
 #   qunilator-update --install <ver>      install a version named here
 #   qunilator-update --os-upgrade         upgrade the board's other packages
@@ -72,6 +82,12 @@ OS_LAST_FILE="$STATE_DIR/os-last.json"
 # stream, read back while it runs to report progress.
 OS_LOG="$STATE_DIR/os-upgrade.log"
 OS_PROGRESS="$STATE_DIR/os-upgrade.progress"
+# An update file: the service writes the upload to UPLOAD, --stage-local verifies
+# it into LOCAL_DIR, where the verified package waits as $PKG.deb and LOCAL_FILE
+# names its version for the status.
+UPLOAD="$STATE_DIR/upload.tar"
+LOCAL_DIR="$STATE_DIR/local"
+LOCAL_FILE="$STATE_DIR/local.json"
 
 export DEBIAN_FRONTEND=noninteractive
 # --force-confold keeps an operator's edited /etc/qunilator/network.conf.
@@ -168,6 +184,7 @@ write_status() {
             "$(file_or "$OS_FILE" '{"count":0,"packages":[],"held_back":[],"kept_back":[],"reboot_required":false}')"
         printf ',"last":%s' "$(file_or "$LAST_FILE" '{}')"
         printf ',"os_last":%s' "$(file_or "$OS_LAST_FILE" '{}')"
+        printf ',"local":%s' "$(file_or "$LOCAL_FILE" '{}')"
         printf ',"progress":%s' "$PROGRESS"
         printf ',"error":%s' "$(json_q "$ERROR")"
         printf ',"journal":%s' "$JOURNAL"
@@ -376,6 +393,174 @@ stanzas_since() {
     return 0
 }
 
+# ------------------------------------------------------------- update file ----
+# The keyring this package's own source is signed with, read off its signed-by
+# option. An update file is checked against the key that would check the
+# repository, so a board with no source has nothing to check one against.
+source_keyring() {
+    [ -f "$SOURCE_LIST" ] || return 1
+    sk_ring=$(sed -n 's/.*signed-by=\([^] ]*\).*/\1/p' "$SOURCE_LIST" | head -1)
+    [ -n "$sk_ring" ] && [ -f "$sk_ring" ] || return 1
+    printf '%s' "$sk_ring"
+}
+
+# Staging failed: the reason goes in the status, the work directory and the
+# upload go away. The journal in the status stays the last install's; what apt
+# said about the file goes to stderr, which the service logs.
+local_fail() {
+    rm -rf "$LOCAL_DIR/work"
+    rm -f "$UPLOAD"
+    ERROR=$1
+    STATE=idle
+    write_status
+    die "$1"
+}
+
+# Verify the uploaded update file and keep the package it carries. Nothing in the
+# file is trusted before apt has checked it: the names it carries only pick
+# members out and place them, both against fixed patterns, and the package kept
+# is the one apt fetched through the verified index.
+do_stage_local() {
+    take_lock
+    CANDIDATE=$(candidate_version)
+    ERROR=""
+    [ -f "$UPLOAD" ] || die "no update file uploaded"
+    rm -rf "$LOCAL_DIR"
+    rm -f "$LOCAL_FILE"
+    sl_work=$LOCAL_DIR/work
+    install -d -m 0700 "$LOCAL_DIR" "$sl_work"
+
+    sl_ring=$(source_keyring) \
+        || local_fail "this QUniLator has no update source, so it has no key to check an update file against"
+
+    # Exactly three regular files at the top of the archive: the signed index,
+    # the package index and one package. A directory, a link or a path is not
+    # part of an update file.
+    sl_list=$(tar -tvf "$UPLOAD" 2>/dev/null) \
+        || local_fail "this is not an update file: it is not a tar archive"
+    sl_deb=""
+    sl_n=0
+    sl_bad=""
+    sl_old_ifs=$IFS
+    IFS='
+'
+    for sl_line in $sl_list; do
+        sl_n=$((sl_n + 1))
+        case "$sl_line" in
+            -*) ;;
+            *) sl_bad="it holds something other than plain files" ;;
+        esac
+        sl_name=${sl_line##* }
+        case "$sl_name" in
+            InRelease|Packages) ;;
+            */*) sl_bad="it holds $sl_name" ;;
+            *.deb) [ -z "$sl_deb" ] || sl_bad="it holds two packages"
+                   sl_deb=$sl_name ;;
+            *) sl_bad="it holds $sl_name" ;;
+        esac
+    done
+    IFS=$sl_old_ifs
+    [ -z "$sl_bad" ] || local_fail "this is not an update file: $sl_bad"
+    [ "$sl_n" = 3 ] && [ -n "$sl_deb" ] \
+        || local_fail "this is not an update file: it needs InRelease, Packages and one package"
+
+    # <pkg>_<version>_armhf.deb, for this board's package
+    case "$sl_deb" in
+        "${PKG}"_*_armhf.deb) ;;
+        *_*_*.deb) local_fail "the file updates ${sl_deb%%_*}; this QUniLator is $PKG" ;;
+        *) local_fail "this is not an update file: $sl_deb is not a package name" ;;
+    esac
+    sl_ver=${sl_deb#"${PKG}"_}
+    sl_ver=${sl_ver%_armhf.deb}
+    case "$sl_ver" in
+        ''|*[!0-9A-Za-z.+~:-]*) local_fail "this is not an update file: $sl_deb names no version" ;;
+    esac
+
+    ( cd "$sl_work" && tar -xf "$UPLOAD" --no-same-owner --no-same-permissions \
+        InRelease Packages "$sl_deb" ) 2>/dev/null \
+        || local_fail "the update file could not be unpacked"
+    rm -f "$UPLOAD"
+
+    # Where the index says the package lives, which is where apt looks for it.
+    # Read before apt has checked the index, so it is held to the shape of a pool
+    # path; apt then refuses an index that is not the signed one.
+    sl_path=$(awk -v p="$PKG" -v v="$sl_ver" '
+        /^$/ {if (pk == p && vr == v && fn != "") {print fn; exit} pk = vr = fn = ""}
+        /^Package: / {pk = $2} /^Version: / {vr = $2} /^Filename: / {fn = $2}
+        END {if (pk == p && vr == v && fn != "") print fn}' "$sl_work/Packages" | head -1)
+    case "$sl_path" in
+        pool/*.deb) ;;
+        *) local_fail "the update file's index does not list $PKG $sl_ver" ;;
+    esac
+    case "$sl_path" in
+        *..*|*[!0-9A-Za-z./+~_:-]*) local_fail "the update file's index names an unusable path" ;;
+    esac
+
+    sl_repo=$sl_work/repo
+    install -d "$sl_repo/dists/trixie/main/binary-armhf" "$sl_repo/$(dirname "$sl_path")" \
+        "$sl_work/lists/partial" "$sl_work/parts" "$sl_work/get"
+    mv "$sl_work/InRelease" "$sl_repo/dists/trixie/InRelease"
+    mv "$sl_work/Packages" "$sl_repo/dists/trixie/main/binary-armhf/Packages"
+    mv "$sl_work/$sl_deb" "$sl_repo/$sl_path"
+    printf 'deb [signed-by=%s] file:%s trixie main\n' "$sl_ring" "$sl_repo" > "$sl_work/sources.list"
+
+    # This source alone, with lists of its own and no package cache file, so the
+    # board's own view of its repositories stays as it was.
+    sl_opts="-o Dir::Etc::sourcelist=$sl_work/sources.list -o Dir::Etc::sourceparts=$sl_work/parts"
+    sl_opts="$sl_opts -o Dir::State::Lists=$sl_work/lists -o Dir::Cache::pkgcache= -o Dir::Cache::srcpkgcache="
+    # apt-get update answers 0 for an index it refused, and says so with E: or W:
+    # shellcheck disable=SC2086
+    if ! sl_out=$(apt-get update -q $sl_opts $APT_OPTS 2>&1) \
+            || printf '%s\n' "$sl_out" | grep -q '^[EW]: '; then
+        printf '%s\n' "$sl_out" | grep -v '^\(Get\|Hit\|Reading\)' | tail -20 >&2
+        local_fail "the update file is not signed with the key of this QUniLator's repository"
+    fi
+    # shellcheck disable=SC2086
+    if ! sl_out=$( (cd "$sl_work/get" && apt-get download -q $sl_opts $APT_OPTS "$PKG=$sl_ver") 2>&1 ); then
+        printf '%s\n' "$sl_out" | tail -20 >&2
+        local_fail "the package in the update file does not match its signed index"
+    fi
+    sl_got=$(ls "$sl_work/get"/*.deb 2>/dev/null | head -1)
+    [ -n "$sl_got" ] || local_fail "the package in the update file does not match its signed index"
+
+    mv "$sl_got" "$LOCAL_DIR/$PKG.deb"
+    rm -rf "$sl_work"
+    printf '{"version":%s,"staged_at":%s}\n' "$(json_q "$sl_ver")" "$(json_q "$(now_iso)")" \
+        > "$LOCAL_FILE"
+    chmod 600 "$LOCAL_FILE"
+    STATE=idle
+    write_status
+    say "update file verified: $PKG $sl_ver"
+}
+
+# The staged package's version, when one is staged.
+local_version() {
+    [ -f "$LOCAL_DIR/$PKG.deb" ] || return 1
+    dpkg-deb -f "$LOCAL_DIR/$PKG.deb" Version 2>/dev/null
+}
+
+# The staged package's changelog stanzas newer than the installed version: empty
+# for an update file that is not newer.
+do_changelog_local() {
+    local_version >/dev/null || die "no update file staged"
+    dpkg-deb --fsys-tarfile "$LOCAL_DIR/$PKG.deb" \
+        | tar -xO "./usr/share/doc/$PKG/changelog.Debian.gz" 2>/dev/null | gunzip |
+        stanzas_since "$(installed_version)"
+}
+
+discard_local() {
+    rm -rf "$LOCAL_DIR"
+    rm -f "$LOCAL_FILE" "$UPLOAD"
+}
+
+do_discard_local() {
+    take_lock
+    CANDIDATE=$(candidate_version)
+    discard_local
+    write_status
+    say "update file discarded"
+}
+
 # ----------------------------------------------------------------- install ----
 # apt-get download into staging/, so apt checks the hash against the signed
 # index before anything is unpacked. Prints the path of the file it fetched.
@@ -483,13 +668,22 @@ do_install_requested() {
     [ -f "$REQUEST" ] || die "no update requested"
     want=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$REQUEST" \
         | head -1)
+    source=$(sed -n 's/.*"source"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$REQUEST" \
+        | head -1)
     rm -f "$REQUEST"
     [ -n "$want" ] || die "the request names no version"
-    install_version "$want"
+    if [ "$source" = local ]; then
+        install_version "$want" local
+    else
+        install_version "$want"
+    fi
 }
 
+# $2 "local" installs the package of the staged update file rather than one
+# fetched from the repository.
 install_version() {
     want=$1
+    via=${2:-repository}
     from=$(installed_version)
     ERROR=""
     JOURNAL="[]"
@@ -509,27 +703,37 @@ install_version() {
         fi
     fi
 
-    # 2. every source refreshed, so a new dependency can resolve
-    phase downloading
-    if ! apt_update_all; then
-        ERROR="the repository could not be reached"
-        record_outcome failed "$from" "$want"
-        die "$ERROR"
-    fi
+    if [ "$via" = local ]; then
+        # 2-4. the package --stage-local verified against its signed index
+        deb=$LOCAL_DIR/$PKG.deb
+        if [ "$(local_version || true)" != "$want" ]; then
+            ERROR="no update file for version $want is staged"
+            record_outcome failed "$from" "$want"
+            die "$ERROR"
+        fi
+    else
+        # 2. every source refreshed, so a new dependency can resolve
+        phase downloading
+        if ! apt_update_all; then
+            ERROR="the repository could not be reached"
+            record_outcome failed "$from" "$want"
+            die "$ERROR"
+        fi
 
-    # 3. the version asked for must be one the repository offers
-    if ! available_versions | grep -qx -- "$want"; then
-        ERROR="version $want is not available from the repository"
-        record_outcome failed "$from" "$want"
-        die "$ERROR"
-    fi
+        # 3. the version asked for must be one the repository offers
+        if ! available_versions | grep -qx -- "$want"; then
+            ERROR="version $want is not available from the repository"
+            record_outcome failed "$from" "$want"
+            die "$ERROR"
+        fi
 
-    # 4. staged, so apt checks the hash against the signed index; nothing is
-    #    installed until this succeeds
-    if ! deb=$(stage_download "$want"); then
-        ERROR="version $want could not be downloaded"
-        record_outcome failed "$from" "$want"
-        die "$ERROR"
+        # 4. staged, so apt checks the hash against the signed index; nothing is
+        #    installed until this succeeds
+        if ! deb=$(stage_download "$want"); then
+            ERROR="version $want could not be downloaded"
+            record_outcome failed "$from" "$want"
+            die "$ERROR"
+        fi
     fi
 
     # 5. room to unpack, before dpkg starts
@@ -549,9 +753,14 @@ install_version() {
 
     # 7. installing the local file lets apt resolve dependencies from the
     #    repository. The package's own postinst restarts the unit, which was
-    #    active - so the machine stops here.
+    #    active - so the machine stops here. An update file carrying the version
+    #    the board already runs is installed again, which is what uploading it
+    #    asks for.
     phase installing
-    if ! out=$(apt-get install -y --allow-change-held-packages --allow-downgrades \
+    again=""
+    [ "$want" = "$from" ] && again=--reinstall
+    # shellcheck disable=SC2086
+    if ! out=$(apt-get install -y --allow-change-held-packages --allow-downgrades $again \
             $APT_OPTS "$deb" 2>&1); then
         ERROR="the install failed: $(printf '%s' "$out" | tail -3 | tr '\n' ' ')"
         JOURNAL=$(printf '%s\n' "$out" | tail -50 | json_lines)
@@ -569,6 +778,7 @@ install_version() {
     fi
 
     rm -f "$STAGING"/*.deb
+    [ "$via" = local ] && discard_local
     CANDIDATE=""
     record_outcome done "$from" "$want"
     say "updated ${from:-none} -> $want"
@@ -731,6 +941,9 @@ do_os_upgrade() {
 case "${1:---status}" in
     --check)             do_check ;;
     --changelog)         do_changelog "${2:-}" ;;
+    --stage-local)       do_stage_local ;;
+    --changelog-local)   do_changelog_local ;;
+    --discard-local)     do_discard_local ;;
     --install-requested) do_install_requested ;;
     --install)           [ -n "${2:-}" ] || die "--install needs a version"
                          take_lock
@@ -741,6 +954,6 @@ case "${1:---status}" in
     # this always answers with a status document rather than with silence
     --status)            [ -f "$STATUS" ] || write_status
                          cat "$STATUS" ;;
-    --help|-h)           sed -n '17,25p' "$0" | sed 's/^# \{0,1\}//' ;;
+    --help|-h)           sed -n '24,35p' "$0" | sed 's/^# \{0,1\}//' ;;
     *)                   die "unknown option \"$1\"" ;;
 esac

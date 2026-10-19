@@ -61,6 +61,11 @@ static std::string request_path(void) {
 	return state_dir() + "/request.json";
 }
 
+// Where an uploaded update file lands for qunilator-update --stage-local.
+static std::string upload_path(void) {
+	return state_dir() + "/upload.tar";
+}
+
 static const char *UPDATER = "/usr/sbin/qunilator-update";
 
 // The status file as last read, and the mtime it was read at. Guarded by
@@ -159,6 +164,8 @@ static picojson::value status_json_locked(void) {
 		o["os_last"] = picojson::value(picojson::object());
 		o["progress"] = picojson::value();
 	}
+	if (!o["local"].is<picojson::object>())
+		o["local"] = picojson::value(picojson::object());
 	o["dismissed"] = picojson::value(websettings_dismissed_version());
 	return picojson::value(o);
 }
@@ -261,29 +268,66 @@ static void update_get(struct mg_connection *conn) {
 	send_json(conn, 200, status_json_locked());
 }
 
-// The changelog of the staged candidate, as plain text: the stanzas the package
-// itself ships, newer than the installed version. The updater stages the package
-// to read it, which takes a moment, so this is its own request rather than part
-// of the status.
-static void update_changelog(struct mg_connection *conn) {
-	// Bounded: reading the changelog downloads the candidate, and an apt that
-	// hangs would otherwise hold this civetweb worker thread for as long as it
-	// felt like. The command line is fixed - nothing from the request reaches it.
-	std::string cmd = std::string("timeout 90 ") + UPDATER + " --changelog 2>/dev/null";
+// Run the updater with one of a fixed set of options and collect what it prints,
+// bounded in time and in size. Nothing from a request reaches the command line.
+// Returns the updater's exit status, -1 when it could not be run.
+static int run_updater(const char *option, unsigned seconds, bool with_stderr,
+		std::string *out) {
+	std::string cmd = "timeout " + std::to_string(seconds) + " " + UPDATER + " " + option
+			+ (with_stderr ? " 2>&1" : " 2>/dev/null");
 	FILE *p = popen(cmd.c_str(), "r");
-	if (p == nullptr) {
-		send_error(conn, 500, "the updater could not be run");
-		return;
-	}
-	std::string text;
+	if (p == nullptr)
+		return -1;
 	char buf[4096];
 	size_t n;
 	while ((n = fread(buf, 1, sizeof buf, p)) > 0) {
-		text.append(buf, n);
-		if (text.size() > 512 * 1024) // a changelog, not a log file
-			break;
+		if (out->size() < 512 * 1024) // a changelog, not a log file
+			out->append(buf, n);
 	}
 	int rc = pclose(p);
+	return WIFEXITED(rc) ? WEXITSTATUS(rc) : 1;
+}
+
+// The last line the updater printed, without its "qunilator-update: " prefix,
+// for a refusal that never reached the status file.
+static std::string last_line(const std::string &out) {
+	std::string s = out;
+	while (!s.empty() && (s.back() == '\n' || s.back() == '\r'))
+		s.pop_back();
+	size_t nl = s.rfind('\n');
+	if (nl != std::string::npos)
+		s = s.substr(nl + 1);
+	const std::string prefix = "qunilator-update: ";
+	if (s.compare(0, prefix.size(), prefix) == 0)
+		s = s.substr(prefix.size());
+	return s;
+}
+
+// Whether the request asks about the staged update file: ?source=local.
+static bool wants_local(struct mg_connection *conn) {
+	const struct mg_request_info *ri = mg_get_request_info(conn);
+	if (ri->query_string == nullptr)
+		return false;
+	char buf[16];
+	int n = mg_get_var(ri->query_string, strlen(ri->query_string), "source", buf, sizeof buf);
+	return n > 0 && strcmp(buf, "local") == 0;
+}
+
+// The changelog of the staged candidate, as plain text: the stanzas the package
+// itself ships, newer than the installed version. The updater stages the package
+// to read it, which takes a moment, so this is its own request rather than part
+// of the status. ?source=local reads the staged update file's package instead.
+static void update_changelog(struct mg_connection *conn) {
+	// Bounded: reading the changelog downloads the candidate, and an apt that
+	// hangs would otherwise hold this civetweb worker thread for as long as it
+	// felt like.
+	std::string text;
+	int rc = run_updater(wants_local(conn) ? "--changelog-local" : "--changelog", 90,
+			false, &text);
+	if (rc < 0) {
+		send_error(conn, 500, "the updater could not be run");
+		return;
+	}
 	picojson::object o;
 	if (rc != 0 && text.empty()) {
 		send_error(conn, 502, "the candidate's changelog could not be read");
@@ -303,10 +347,31 @@ static void update_check(struct mg_connection *conn) {
 	send_json(conn, 202, picojson::value(o));
 }
 
+// Whether the updater is in the middle of an install or an upgrade, by the state
+// it last published.
+static bool update_running(void) {
+	std::lock_guard<std::mutex> lock(status_mutex);
+	if (!status_known || !status_obj["state"].is<std::string>())
+		return false;
+	const std::string &state = status_obj["state"].get<std::string>();
+	return state == "downloading" || state == "installing" || state == "verifying"
+			|| state == "os-upgrading";
+}
+
+// The version of the staged update file, empty when none is staged.
+static std::string local_version(void) {
+	std::lock_guard<std::mutex> lock(status_mutex);
+	if (!status_known || !status_obj["local"].is<picojson::object>())
+		return "";
+	const picojson::value &v = status_obj["local"].get("version");
+	return v.is<std::string>() ? v.get<std::string>() : "";
+}
+
 // The version to install, checked against the candidate the updater reported and
 // written to request.json for qunilator-update.service to read. Refusing a
 // version the repository does not offer here is what keeps the interface from
-// asking for an install that can only fail.
+// asking for an install that can only fail. "source": "local" installs the
+// staged update file, and its version is checked against that file's.
 static void update_install(struct mg_connection *conn) {
 	picojson::value req;
 	if (!read_json_body(conn, &req) || !req.get("version").is<std::string>()) {
@@ -318,27 +383,39 @@ static void update_install(struct mg_connection *conn) {
 		send_error(conn, 422, "\"version\" is not a version string");
 		return;
 	}
+	std::string source = req.get("source").is<std::string>()
+			? req.get("source").get<std::string>() : "repository";
+	if (source != "repository" && source != "local") {
+		send_error(conn, 422, "\"source\" is \"repository\" or \"local\"");
+		return;
+	}
+	bool local = source == "local";
 
-	std::string candidate, state;
+	std::string candidate;
 	{
 		std::lock_guard<std::mutex> lock(status_mutex);
-		if (status_known) {
-			if (status_obj["candidate"].is<std::string>())
-				candidate = status_obj["candidate"].get<std::string>();
-			if (status_obj["state"].is<std::string>())
-				state = status_obj["state"].get<std::string>();
-		}
+		if (status_known && status_obj["candidate"].is<std::string>())
+			candidate = status_obj["candidate"].get<std::string>();
 	}
-	if (state == "downloading" || state == "installing" || state == "verifying"
-			|| state == "os-upgrading") {
+	if (update_running()) {
 		send_error(conn, 409, "an update is already running");
 		return;
 	}
-	if (candidate.empty()) {
+	if (local) {
+		std::string staged = local_version();
+		if (staged.empty()) {
+			send_error(conn, 409, "no update file is staged — upload one first");
+			return;
+		}
+		if (want != staged) {
+			send_error(conn, 422, "version " + want + " is not the version of the "
+					"staged update file (" + staged + ")");
+			return;
+		}
+	} else if (candidate.empty()) {
 		send_error(conn, 409, "no candidate version — run a check first");
 		return;
-	}
-	if (want != candidate) {
+	} else if (want != candidate) {
 		send_error(conn, 422, "version " + want + " is not the candidate the "
 				"repository offers (" + candidate + ")");
 		return;
@@ -358,6 +435,7 @@ static void update_install(struct mg_connection *conn) {
 		std::ofstream f(tmp.c_str());
 		picojson::object r;
 		r["version"] = picojson::value(want);
+		r["source"] = picojson::value(source);
 		r["requested_at"] = picojson::value(std::string(""));
 		if (!f || !(f << picojson::value(r).serialize())) {
 			send_error(conn, 500, "the request could not be written");
@@ -370,7 +448,7 @@ static void update_install(struct mg_connection *conn) {
 		send_error(conn, 500, "the request could not be written");
 		return;
 	}
-	WEB_INFO("update: %s requested", want.c_str());
+	WEB_INFO("update: %s requested%s", want.c_str(), local ? " from the update file" : "");
 	if (!start_unit("qunilator-update.service")) {
 		unlink(path.c_str());
 		send_error(conn, 500, "the install could not be started");
@@ -382,15 +460,127 @@ static void update_install(struct mg_connection *conn) {
 	send_json(conn, 202, picojson::value(o));
 }
 
-static void update_os(struct mg_connection *conn) {
-	std::string state;
-	{
-		std::lock_guard<std::mutex> lock(status_mutex);
-		if (status_known && status_obj["state"].is<std::string>())
-			state = status_obj["state"].get<std::string>();
+// ---- the update file ----
+
+// An update file is a few megabytes: the package and two small indexes.
+static const long long UPLOAD_MAX = 64ll * 1024 * 1024;
+
+struct update_upload {
+	bool seen = false; // a file part arrived
+	bool stored = false; // and civetweb wrote it to its end
+	long long size = 0;
+};
+
+static int upload_found(const char *, const char *filename, char *path, size_t pathlen,
+		void *user_data) {
+	update_upload *u = (update_upload *) user_data;
+	if (filename == nullptr || u->seen)
+		return MG_FORM_FIELD_STORAGE_SKIP; // the first file part is the update file
+	u->seen = true;
+	snprintf(path, pathlen, "%s", upload_path().c_str());
+	return MG_FORM_FIELD_STORAGE_STORE;
+}
+
+static int upload_get(const char *, const char *, size_t, void *) {
+	return MG_FORM_FIELD_HANDLE_NEXT;
+}
+
+static int upload_stored(const char *, long long file_size, void *user_data) {
+	update_upload *u = (update_upload *) user_data;
+	u->stored = true;
+	u->size = file_size;
+	return MG_FORM_FIELD_HANDLE_NEXT;
+}
+
+// POST /api/update/upload — multipart, one file: an update file. It is written
+// where the updater reads it and verified there and then, so the answer says
+// whether the file is one this QUniLator can install. The file's name is not
+// used; the updater reads what the file holds.
+static void update_upload_post(struct mg_connection *conn) {
+	if (update_running()) {
+		send_error(conn, 409, "an update is already running");
+		return;
 	}
-	if (state == "downloading" || state == "installing" || state == "verifying"
-			|| state == "os-upgrading") {
+	if (mkdir(state_dir().c_str(), 0700) != 0 && errno != EEXIST) {
+		send_error(conn, 500, "the update state directory is not writable");
+		return;
+	}
+	update_upload u;
+	struct mg_form_data_handler handler;
+	handler.field_found = upload_found;
+	handler.field_get = upload_get;
+	handler.field_store = upload_stored;
+	handler.user_data = &u;
+	int fields = mg_handle_form_request(conn, &handler);
+	if (!u.seen) {
+		send_error(conn, 400, "no file in upload");
+		return;
+	}
+	if (fields < 0 || !u.stored) {
+		unlink(upload_path().c_str());
+		WEB_WARNING("update: the upload of an update file did not complete");
+		send_error(conn, 400, "the upload did not complete");
+		return;
+	}
+	if (u.size > UPLOAD_MAX) {
+		unlink(upload_path().c_str());
+		send_error(conn, 413, "this is not an update file: it is far too large");
+		return;
+	}
+	chmod(upload_path().c_str(), S_IRUSR | S_IWUSR);
+
+	// Verifying runs apt over the file, which takes some seconds on a BeagleBone.
+	std::string out;
+	int rc = run_updater("--stage-local", 180, true, &out);
+	reload_status();
+	if (rc != 0) {
+		// The updater records why in the status; a refusal before it got that
+		// far (another update holding the lock) is only in what it printed.
+		std::string why;
+		{
+			std::lock_guard<std::mutex> lock(status_mutex);
+			if (status_known && status_obj["error"].is<std::string>())
+				why = status_obj["error"].get<std::string>();
+		}
+		if (why.empty())
+			why = last_line(out);
+		if (why.empty())
+			why = "the update file could not be checked";
+		WEB_WARNING("update: update file refused: %s", why.c_str());
+		WEB_INFO("update: the updater said:\n%s", out.c_str());
+		send_error(conn, 422, why);
+		return;
+	}
+	std::string version = local_version();
+	WEB_INFO("update: update file for %s verified", version.c_str());
+	picojson::object o;
+	o["ok"] = picojson::value(true);
+	o["version"] = picojson::value(version);
+	send_json(conn, 200, picojson::value(o));
+}
+
+// POST /api/update/discard — drop the staged update file.
+static void update_discard(struct mg_connection *conn) {
+	if (update_running()) {
+		send_error(conn, 409, "an update is already running");
+		return;
+	}
+	std::string out;
+	int rc = run_updater("--discard-local", 30, true, &out);
+	reload_status();
+	if (rc != 0) {
+		send_error(conn, 500, last_line(out).empty() ? "the update file could not be discarded"
+				: last_line(out));
+		return;
+	}
+	WEB_INFO("update: update file discarded");
+	picojson::object o;
+	o["ok"] = picojson::value(true);
+	send_json(conn, 200, picojson::value(o));
+}
+
+static void update_os(struct mg_connection *conn) {
+	if (update_running()) {
 		send_error(conn, 409, "an update is already running");
 		return;
 	}
@@ -455,6 +645,10 @@ static int api_update_handler(struct mg_connection *conn, void * /*cbdata*/) {
 		update_check(conn);
 	else if (rest == "/install")
 		update_install(conn);
+	else if (rest == "/upload")
+		update_upload_post(conn);
+	else if (rest == "/discard")
+		update_discard(conn);
 	else if (rest == "/os")
 		update_os(conn);
 	else if (rest == "/dismiss")
