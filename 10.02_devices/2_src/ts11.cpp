@@ -129,16 +129,26 @@ ts05_tape_c::~ts05_tape_c(void)
 //  clearing it takes the reel off the hub. A read/write mount creates the file
 //  if it is absent, and falls back to a read-only mount when it cannot be
 //  written, which reads to the host as a reel with no write-enable ring.
+//  Mounting is the operator's whole load sequence: the reel goes on at BOT and
+//  the transport on-line. The swap waits for a command in progress to finish,
+//  and the controller reports the new reel to the host as a volume check.
 //
 bool ts05_tape_c::on_param_changed(parameter_c *param)
 {
     if (param == &image_filepath) {
-        _tape.close();
         const std::string &path = image_filepath.new_value;
-        if (!path.empty() && !_tape.open(path, false)) {
-            ERROR("ts05: cannot open tape image '%s'", path.c_str());
-            return false;
+        {
+            std::lock_guard<std::mutex> reel_lock(reel_mutex);
+            _tape.close();
+            _erased_bytes = 0;
+            reel_generation++;
+            if (!path.empty() && !_tape.open(path, false)) {
+                ERROR("ts05: cannot open tape image '%s'", path.c_str());
+                return false;
+            }
         }
+        if (!path.empty())
+            online_switch.set(true);
         return true;
     }
 
@@ -304,6 +314,7 @@ void ts11_c::reset_subsystem(void)
     // thing to do.
     _pending_autoload = (drivecount > 0) && drive()->is_online();
     _last_online = (drivecount > 0) && drive()->is_online();
+    _last_reel = (drivecount > 0) ? drive()->reel_generation : 0;
     // A command the worker is finishing belongs to the subsystem as it was.
     _reset_generation++;
 
@@ -525,19 +536,27 @@ void ts11_c::on_drive_status_changed(storagedrive_c *changed)
 
 //
 // check_transport_status():
-//  Watches the transport for a change of on-line state, which is a volume
-//  check and an attention condition. The host sees it in OFL in TSSR straight
-//  away, and in an attention message once it hands the controller the message
-//  buffer. Run from the worker's idle tick as well as from the drive's own
-//  notification, so a reel mounted or a switch thrown from the web interface
-//  reaches the host without a command in flight.
+//  Watches the transport for a change of on-line state or of reel, either of
+//  which is a volume check and an attention condition. The host sees it in
+//  OFL in TSSR straight away, and in an attention message once it hands the
+//  controller the message buffer. Run from the worker's idle tick as well as
+//  from the drive's own notification, so a reel mounted or a switch thrown
+//  from the web interface reaches the host without a command in flight.
 //
 void ts11_c::check_transport_status(void)
 {
     bool online = drive()->is_online();
-    if (online == _last_online)
+    unsigned reel = drive()->reel_generation;
+    if (online == _last_online && reel == _last_reel)
         return;
+    if (reel != _last_reel) {
+        // a new reel sits at BOT
+        _bot_strip = false;
+        _bot_blank = false;
+        _rewinding = false;
+    }
     _last_online = online;
+    _last_reel = reel;
     _volume_check = true;
     update_tssr();
     raise_attention(0);     // class 0: on- or off-line
@@ -547,10 +566,15 @@ void ts11_c::check_transport_status(void)
 // raise_attention():
 //  Queues an attention condition. The controller can only put out the message
 //  once it owns the message buffer, which happens on the next command carrying
-//  ACK or after a message buffer release command.
+//  ACK or after a message buffer release command. Attention messages exist
+//  only while the last write characteristics set EAI; with it clear the
+//  condition is the volume check the next command meets (EK-OTS11-TM-003
+//  table 5-11 EAI; TSV05 UG 3.3.3.1 item 2).
 //
 void ts11_c::raise_attention(unsigned class_code)
 {
+    if (!_eai)
+        return;
     _attn_pending = true;
     _attn_class = class_code;
 
@@ -856,6 +880,8 @@ void ts11_c::worker(unsigned instance)
         if (init_asserted)
             continue;
 
+        std::lock_guard<std::mutex> reel_lock(drive()->reel_mutex);
+
         // The auto-load a subsystem initialize asks for, on the thread that
         // owns the transport.
         if (_pending_autoload) {
@@ -975,16 +1001,16 @@ void ts11_c::execute_command(void)
     // way out of it (TSV05 UG 3.3.3.2).
     bool names_the_buffer = (command == TS_CMD_WRITE_CHARACTERISTICS
             || command == TS_CMD_WRITE_SUBSYSTEM_MEM);
-    if (_attn_pending && _msgbuf_owned && !_nba && !names_the_buffer) {
+    if (_attn_pending && _eai && _msgbuf_owned && !_nba && !names_the_buffer) {
         _attn_pending = false;
         _tc = TC_ATTENTION;
         send_message(MSG_ATTN, _attn_class, false);
         _msgbuf_owned = false;
         _ssr = true;
-        // An attention interrupts when the message buffer release that armed
-        // it enabled interrupts and attention interrupts are enabled
-        // (EK-OTS11-TM-003 table 5-11 EAI; TSV05 UG 3.3.3.2).
-        if (_eai)
+        // The attention ends the command the CPU issued, so that command's
+        // interrupt enable decides whether it interrupts: the CPU is waiting
+        // for it as it would for the command's own completion.
+        if (format & 0x04)
             update_tssr_and_interrupt();
         else
             update_tssr();
@@ -1496,6 +1522,8 @@ unsigned ts11_c::command_write_characteristics(uint16_t low, uint16_t high, uint
         _enb = (data[3] & 0x0040) != 0;
         _eai = (data[3] & 0x0020) != 0;
         _eri = (data[3] & 0x0010) != 0;
+        if (!_eai)
+            _attn_pending = false;
     }
     // Likewise a count under 10 leaves the extended control word unfetched.
     if (extended_active() && extent >= 10) {

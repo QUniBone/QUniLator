@@ -27,6 +27,7 @@
 #define _TS11_HPP_
 
 #include <stdint.h>
+#include <mutex>
 #include <vector>
 
 #include "qunibusadapter.hpp"
@@ -107,8 +108,8 @@ public:
     /// while it is on-line with a reel mounted; otherwise TSSR reports it
     /// off-line. Turning it off or on, like changing the reel, sets volume
     /// check, which the host meets with its next command. A rewind and unload
-    /// command from the host turns it off; set it again to bring the tape
-    /// back.
+    /// command from the host turns it off; set it again, or mount a reel,
+    /// to bring the tape back. Mounting a reel loads it and turns it on.
     parameter_bool_c online_switch = parameter_bool_c(this, "online", "onl",
                                      /*readonly*/ false,
                                      "Transport is on-line and accepts tape motion commands");
@@ -148,6 +149,14 @@ public:
         _erased_bytes = _erased_bytes > bytes ? _erased_bytes - bytes : 0;
     }
     void rewind(void) { _tape.rewind(); _erased_bytes = 0; }
+
+    // Held by the controller's worker across everything it does with the
+    // reel, and by a reel change, so a tape mounted from the web interface
+    // never swaps the image out from under a command in progress.
+    std::mutex reel_mutex;
+    // Counts reel changes, so the controller sees one even when the transport
+    // was on-line before and after it.
+    volatile unsigned reel_generation = 0;
 
     // How long the reel takes to wind back to BOT from where it stands.
     uint64_t rewind_time_us(void) {
@@ -230,6 +239,7 @@ private:
     bool _attn_pending;
     unsigned _attn_class;
     bool _last_online;              // to detect the transport's status changes
+    unsigned _last_reel;            // reel_generation the host last saw
 
     /*** per-command status ***/
     uint16_t _xst0_errors;          // TMK/RLS/LET/RLL/WLE/NEF/ILC/ILA
