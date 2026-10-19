@@ -74,7 +74,7 @@ public:
 			true, "State of WRITE PROT lamp");
 
 	/// With 1, the drive takes the 30 seconds a real one does to spin up, run
-	/// its brush cycle and load the heads, and as long again to spin down.
+	/// its brush cycle and load the heads.
 	/// With 0, it is ready as soon as it is loaded. Seek, offset and rotation
 	/// times are modelled either way.
 	parameter_bool_c spinup_delay = parameter_bool_c(this, "spinupdelay", "sud", /*readonly*/
@@ -194,7 +194,7 @@ private:
 	seek_result_e cmd_seek(unsigned desired_cylinder, bool return_to_centerline);
 	void cmd_write_gate(void);  // a write began: Write Lock check
 	void init_line(void);
-	void parity_error(bool seek);
+	void parity_error(bool head_motion);
 
 	// the header the controller reads at a physical sector position
 	unsigned track_sectors(unsigned cyl, unsigned track);

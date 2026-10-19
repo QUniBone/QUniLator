@@ -280,14 +280,18 @@ void rk0607_c::step_mechanics(uint64_t now)
 	if (!medium)
 		medium_was_present = false;
 	bool want_spinning = enabled.value && medium && runstop_switch.value && !offline_by_command;
+	// UG 1.x: 30 seconds to start, the heads loading in the last of them;
+	// the heads unload at the next sector pulse (UG 7.2.6), after which the
+	// drive reports its spindle stopped
 	bool modeled = spinup_delay.value && !config_apply_immediate;
-	uint64_t start_stop_ns = modeled ? scaled_ns(30000000000ULL) : 0;
+	uint64_t start_ns = modeled ? scaled_ns(30000000000ULL) : 0;
+	uint64_t unload_ns = modeled ? scaled_ns(100000000ULL) : 0;
 
 	switch (spindle) {
 	case SPINDLE_STOPPED:
 		if (want_spinning) {
 			spindle = SPINDLE_STARTING;
-			spindle_until_ns = now + start_stop_ns;
+			spindle_until_ns = now + start_ns;
 			medium_was_present = true;
 		}
 		break;
@@ -308,7 +312,7 @@ void rk0607_c::step_mechanics(uint64_t now)
 		if (!want_spinning) {
 			// UG 2.5.1: Attention at the beginning of an Unload Heads
 			spindle = SPINDLE_UNLOADING;
-			spindle_until_ns = now + start_stop_ns;
+			spindle_until_ns = now + unload_ns;
 			position_op = POSITION_NONE;
 			volume_valid = false;
 			offset_mode = false;
@@ -381,7 +385,8 @@ uint16_t rk0607_c::message_a(unsigned n)
 			v |= A1_SERVO | A1_SPEED_OK;
 		else
 			v |= A1_HEADS_HOME;
-		if (spindle == SPINDLE_STARTING)
+		if (spindle == SPINDLE_STARTING
+				&& now_ns() + scaled_ns(2000000000ULL) >= spindle_until_ns)
 			v |= A1_LOADING;
 		if (spindle == SPINDLE_UNLOADING)
 			v |= A1_UNLOADING;
@@ -439,6 +444,9 @@ uint16_t rk0607_c::message_b(unsigned n)
 		v |= (cylinder & (rk07 ? 01777 : 0777)) << 4;
 		break;
 	case 3: {
+		// the sector counter and the head register run with the heads loaded
+		if (!heads_loaded())
+			break;
 		unsigned sectors = sector_format_20 ? 20 : sectors_per_track;
 		unsigned sector = sector_under_heads(now_ns(), sectors);
 		v |= (sector & 037) << 4;
@@ -451,11 +459,11 @@ uint16_t rk0607_c::message_b(unsigned n)
 
 /*** commands ***/
 
+// the program acknowledges the medium; the flip-flop is set whether or not
+// the heads are loaded, and an unload or a cartridge change resets it
 void rk0607_c::cmd_pack_acknowledge(void)
 {
-	// the program acknowledges the medium the heads are on
-	if (heads_loaded())
-		volume_valid = true;
+	volume_valid = true;
 }
 
 void rk0607_c::cmd_drive_clear(void)
@@ -466,10 +474,15 @@ void rk0607_c::cmd_drive_clear(void)
 	status_change = false;
 }
 
+// UG 2.5.1: Attention at the beginning of an Unload, as the drive takes it;
+// an unload of a drive already unloaded raises none (UG 7.7)
 void rk0607_c::cmd_unload(void)
 {
-	if (spindle == SPINDLE_LOADED || spindle == SPINDLE_STARTING)
-		offline_by_command = true; // step_mechanics() unloads, with Attention
+	if (spindle == SPINDLE_LOADED) {
+		offline_by_command = true;
+		step_mechanics(now_ns());
+	} else if (spindle == SPINDLE_STARTING)
+		offline_by_command = true;
 }
 
 void rk0607_c::cmd_start_spindle(void)
@@ -561,14 +574,14 @@ void rk0607_c::init_line(void)
 	status_change = false;
 }
 
-// A controller-to-drive message arrived with even parity. The drive acts on
-// none of it; a seek it carried is a seek not completed.
-void rk0607_c::parity_error(bool seek)
+// A controller-to-drive message arrived with even parity: the drive reports
+// it, and acts on the message all the same. A head motion it carries raises
+// the drive's Attention as it ends; anything else raises it now.
+void rk0607_c::parity_error(bool head_motion)
 {
 	err_parity = true;
-	if (seek)
-		err_seek_incomplete = true;
-	set_status_change();
+	if (!head_motion)
+		set_status_change();
 }
 
 /*** headers ***/

@@ -412,18 +412,17 @@ void rk611_c::on_init_changed(void)
 /*** messages ***/
 
 // Send the command message pair to the drive. With Parity Test set the
-// controller sends even parity, which the drive refuses, and checks the
-// drive's odd-parity reply against even parity, which fails (UG 7.2.11).
-// False: the command ends here.
+// controller sends even parity, which the drive reports as a parity error
+// while it carries out the command, and checks the drive's odd-parity reply
+// against even parity, which fails (UG 7.2.11). False: the command ends here.
 bool rk611_c::exchange_messages(rk0607_c *d, bool check_drive_type)
 {
 	d->sector_format_20 = format_20;
 	if (maintenance1 & MR1_PAT) {
-		d->parity_error(function == FNC_SEEK || function >= FNC_READ);
-		receive_status(d, 0);
+		d->parity_error(function == FNC_RECAL || function == FNC_OFFSET
+				|| function == FNC_SEEK || function >= FNC_READ);
 		dtc_parity_error = true;
 		set_error(0, 0);
-		return false;
 	}
 	if (check_drive_type && d->is_rk07() != drive_type_rk07) {
 		// UG 7.2.6: the drive type must compare before a command executes
