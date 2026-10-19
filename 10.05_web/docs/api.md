@@ -1972,6 +1972,11 @@ without one the board names the file after the channel and the time. Answers
 
 The cast itself, as `text/plain`.
 
+With `?format=text` it is the session as a page of text instead: what the
+machine printed, with carriage returns, backspaces and tabs applied and escape
+sequences removed, so typing shows as far as the machine echoed it. It comes as
+an attachment named after the recording, with `.txt` for `.cast`.
+
 #### `DELETE /api/recordings/<name>`
 
 Removes it. Answers `{"ok": true}`; `404` when there is no such recording.

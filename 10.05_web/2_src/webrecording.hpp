@@ -66,4 +66,11 @@ private:
 	double last_ms_ = 0;
 };
 
+// The session as a terminal would have left it on paper: the machine's output
+// with line endings, backspaces and tabs applied and escape sequences dropped.
+// What was typed is in it as far as the machine echoed it, which is how it
+// appeared on the screen. Takes the whole cast file; lines that are not events
+// are skipped.
+std::string recording_transcript(const std::string &cast);
+
 #endif // _WEBRECORDING_HPP_

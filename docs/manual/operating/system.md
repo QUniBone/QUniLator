@@ -76,8 +76,11 @@ it by turning the device or the
 ## Console recordings
 
 Sessions captured with **Record** on the [dashboard](dashboard.md#console) — both
-what the machine printed and what was typed at it, whoever typed it. Each can be
-downloaded or deleted.
+what the machine printed and what was typed at it, whoever typed it. **Download**
+gives the recording itself, an [asciicast](https://docs.asciinema.org/manual/asciicast/v3/)
+file that keeps the timing and both directions for replaying or analysis.
+**Text** gives the session as it read on the screen: plain text, with what was
+typed showing where the machine echoed it. Each can be deleted.
 
 ## Updates
 

@@ -49,6 +49,9 @@ line, or the emulated DL11 channel otherwise.
 *and* what was typed at it, whoever typed it. The recordings are listed on
 [System](system.md#console-recordings).
 
+Selecting text in the console copies it to the clipboard; **Ctrl+Shift+C**
+copies the selection again. Ctrl+C itself goes to the machine.
+
 > [!CAUTION]
 > **The line has no receive buffer**
 >

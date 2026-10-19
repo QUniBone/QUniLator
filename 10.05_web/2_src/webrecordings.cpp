@@ -241,6 +241,29 @@ static int api_recordings_handler(struct mg_connection *conn, void *) {
 		send_error(conn, 405, "method not allowed");
 		return 1;
 	}
+	// ?format=text: the transcript, named after the recording, as a download
+	if (ri->query_string != nullptr && strcmp(ri->query_string, "format=text") == 0) {
+		FILE *f = fopen(path.c_str(), "r");
+		if (f == nullptr) {
+			send_error(conn, 404, "no recording " + name);
+			return 1;
+		}
+		std::string cast;
+		char buf[65536];
+		size_t n;
+		while ((n = fread(buf, 1, sizeof buf, f)) > 0)
+			cast.append(buf, n);
+		fclose(f);
+		std::string text = recording_transcript(cast);
+		std::string txtname = name.substr(0, name.size() - 5) + ".txt";
+		mg_printf(conn,
+				"HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\n"
+				"Content-Disposition: attachment; filename=\"%s\"\r\n"
+				"Content-Length: %u\r\nConnection: close\r\n\r\n",
+				txtname.c_str(), (unsigned) text.size());
+		mg_write(conn, text.data(), text.size());
+		return 1;
+	}
 	// A cast is text; serve it as such so a browser can open it directly.
 	mg_send_mime_file(conn, path.c_str(), "text/plain; charset=utf-8");
 	return 1;

@@ -8,6 +8,7 @@
    into the host test harness unchanged.
 */
 
+#include <stdlib.h>
 #include <sys/time.h>
 
 #include "webrecording.hpp"
@@ -153,4 +154,175 @@ std::string console_recorder_c::path(void) {
 size_t console_recorder_c::bytes_written(void) {
 	std::lock_guard<std::mutex> lock(mutex_);
 	return written_;
+}
+
+// The bytes of the JSON string starting at s[*i] (the opening quote), with
+// *i left past the closing quote. A \u escape below 0x100 is the byte itself,
+// which is how the writer above encodes them; one above is written as UTF-8.
+static bool read_json_string(const std::string &s, size_t *i, std::string *out) {
+	if (*i >= s.size() || s[*i] != '"')
+		return false;
+	size_t p = *i + 1;
+	out->clear();
+	while (p < s.size()) {
+		char c = s[p++];
+		if (c == '"') {
+			*i = p;
+			return true;
+		}
+		if (c != '\\') {
+			out->push_back(c);
+			continue;
+		}
+		if (p >= s.size())
+			return false;
+		char e = s[p++];
+		switch (e) {
+		case 'n': out->push_back('\n'); break;
+		case 'r': out->push_back('\r'); break;
+		case 't': out->push_back('\t'); break;
+		case 'b': out->push_back('\b'); break;
+		case 'f': out->push_back('\f'); break;
+		case 'u': {
+			if (p + 4 > s.size())
+				return false;
+			unsigned cp = (unsigned) strtoul(s.substr(p, 4).c_str(), nullptr, 16);
+			p += 4;
+			if (cp < 0x100) {
+				out->push_back((char) cp);
+			} else if (cp < 0x800) {
+				out->push_back((char) (0xc0 | (cp >> 6)));
+				out->push_back((char) (0x80 | (cp & 0x3f)));
+			} else {
+				out->push_back((char) (0xe0 | (cp >> 12)));
+				out->push_back((char) (0x80 | ((cp >> 6) & 0x3f)));
+				out->push_back((char) (0x80 | (cp & 0x3f)));
+			}
+			break;
+		}
+		default: out->push_back(e); break; // \" \\ \/
+		}
+	}
+	return false;
+}
+
+// A byte above 0x7f is a latin1 character on the guest's line; the transcript
+// is UTF-8.
+static void append_latin1(std::string &out, unsigned char c) {
+	if (c < 0x80) {
+		out.push_back((char) c);
+	} else {
+		out.push_back((char) (0xc0 | (c >> 6)));
+		out.push_back((char) (0x80 | (c & 0x3f)));
+	}
+}
+
+namespace {
+
+// One line of paper under a print head: carriage return moves the head back
+// to the margin and what follows overprints, backspace moves it one left.
+struct transcript_writer {
+	std::string text;
+	std::string line;   // one byte per column, latin1
+	size_t col = 0;
+	enum { NORMAL, ESC, CSI, STRING } state = NORMAL;
+	bool string_esc = false;
+	std::string csi_params;
+
+	void put(unsigned char c) {
+		if (col < line.size())
+			line[col] = (char) c;
+		else {
+			line.append(col - line.size(), ' ');
+			line.push_back((char) c);
+		}
+		col++;
+	}
+
+	void newline(void) {
+		size_t end = line.find_last_not_of(' ');
+		std::string kept = end == std::string::npos ? "" : line.substr(0, end + 1);
+		for (unsigned char c : kept)
+			append_latin1(text, c);
+		text.push_back('\n');
+		line.clear();
+		col = 0;
+	}
+
+	void feed(unsigned char c) {
+		switch (state) {
+		case ESC:
+			if (c == '[')
+				state = CSI, csi_params.clear();
+			else if (c == ']' || c == 'P' || c == '_' || c == '^')
+				state = STRING, string_esc = false;
+			else if (c < 0x20 || c > 0x2f)  // intermediates continue the sequence
+				state = NORMAL;
+			return;
+		case CSI:
+			if (c >= 0x40 && c <= 0x7e) {
+				state = NORMAL;
+				// erase to the end of the line, the one erase that changes
+				// what a line reads as
+				if (c == 'K' && (csi_params.empty() || csi_params == "0") && col < line.size())
+					line.resize(col);
+			} else {
+				csi_params.push_back((char) c);
+			}
+			return;
+		case STRING:    // OSC/DCS run to BEL or ESC backslash
+			if (c == 0x07 || (string_esc && c == '\\'))
+				state = NORMAL;
+			string_esc = (c == 0x1b);
+			return;
+		case NORMAL:
+			break;
+		}
+		switch (c) {
+		case 0x1b: state = ESC; break;
+		case '\n': case '\f': case '\v': newline(); break;
+		case '\r': col = 0; break;
+		case '\b': if (col > 0) col--; break;
+		case '\t': do put(' '); while (col % 8 != 0); break;
+		default:
+			if (c >= 0x20 && c != 0x7f && !(c >= 0x80 && c < 0xa0))
+				put(c);
+		}
+	}
+};
+
+} // namespace
+
+std::string recording_transcript(const std::string &cast) {
+	transcript_writer w;
+	size_t start = 0;
+	std::string code, data;
+	while (start < cast.size()) {
+		size_t nl = cast.find('\n', start);
+		if (nl == std::string::npos)
+			nl = cast.size();
+		std::string ev = cast.substr(start, nl - start);
+		start = nl + 1;
+		if (ev.empty() || ev[0] != '[')
+			continue;           // the header, or anything else that is not an event
+		size_t i = ev.find('"');
+		if (i == std::string::npos || !read_json_string(ev, &i, &code))
+			continue;
+		i = ev.find('"', i);
+		if (i == std::string::npos || !read_json_string(ev, &i, &data))
+			continue;
+		if (code == "o") {
+			for (unsigned char c : data)
+				w.feed(c);
+		} else if (code == "m") {
+			if (!w.line.empty())
+				w.newline();
+			for (unsigned char c : "[" + data + "]")
+				w.put(c);
+			w.newline();
+		}
+	}
+	if (!w.line.empty())
+		w.newline();
+	return w.text;
 }

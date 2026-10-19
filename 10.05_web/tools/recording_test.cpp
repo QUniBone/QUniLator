@@ -146,6 +146,26 @@ int main(void) {
 				"and stops when the recorder is detached");
 	}
 
+	/* 6. the transcript is the session as it read on the screen */
+	{
+		std::string cast =
+			"{\"version\":3}\n"
+			"[0.1,\"i\",\"s\"]\n"
+			"[0.1,\"o\",\"$ S\"]\n"
+			"[0.1,\"o\",\"Y\"]\n"
+			"[0.1,\"o\",\"X\\b \\b\"]\n"
+			"[0.1,\"o\",\"S\\r\\n\"]\n"
+			"[0.1,\"o\",\"\\u001b[1mbold\\u001b[0m\\ta\\r\\n\"]\n"
+			"[0.1,\"o\",\"12345\\rab\\n\\r\"]\n"
+			"[0.1,\"o\",\"caf\\u00e9   \\r\\n\"]\n"
+			"[0,\"x\",\"0\"]\n";
+		std::string text = recording_transcript(cast);
+		check(text == "$ SYS\nbold    a\nab345\ncaf\xc3\xa9\n",
+				"output is rendered with CR, BS, TAB applied and escapes dropped");
+		if (text != "$ SYS\nbold    a\nab345\ncaf\xc3\xa9\n")
+			fprintf(stderr, "got: [%s]\n", text.c_str());
+	}
+
 	unlink(path.c_str());
 	rmdir(dir);
 	printf("%d checks, %d failures\n", checks, failures);

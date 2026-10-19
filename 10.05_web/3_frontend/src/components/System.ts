@@ -678,10 +678,10 @@ function SerialPortsCard() {
     </div></div>`;
 }
 
-// What this QUniLator has recorded. A recording is downloaded and read with
-// `qcon render`, which turns it into a page with the typing marked off from
-// what the machine printed; the file itself is standard asciicast, so an
-// asciinema player takes it too.
+// What this QUniLator has recorded. Download is the asciicast file, which
+// `qcon render` turns into a page with the typing marked off from what the
+// machine printed and an asciinema player replays; Text is the session as it
+// read on the screen.
 function RecordingsCard() {
   const [items, setItems] = useState<Recording[] | null>(null);
   const [tick, setTick] = useState(0);
@@ -713,6 +713,8 @@ function RecordingsCard() {
                   <td>
                     <a class="btn small" href=${'/api/recordings/' + encodeURIComponent(r.name)}
                        download=${r.name}>Download</a>
+                    <a class="btn small" href=${'/api/recordings/' + encodeURIComponent(r.name) + '?format=text'}
+                       download=${r.name.replace(/\.cast$/, '.txt')}>Text</a>
                     <button class="btn small danger" onClick=${async () => {
                       await deleteRecording(r.name);
                       setTick(tick + 1);

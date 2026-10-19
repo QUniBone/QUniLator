@@ -168,13 +168,20 @@ function wireTerminal(): void {
   // Selecting console text copies it. A terminal has no other use for a
   // selection — there is nothing to drag it onto — so the gesture that makes
   // one is taken to mean "I want this", and the operator is spared a second
-  // one. Writing to the clipboard needs the document focused, which it is,
-  // having just been clicked in; a browser that refuses is ignored, since the
-  // selection is still there to copy by hand.
+  // one. Ctrl+Shift+C copies it again, the terminal-emulator convention, since
+  // Ctrl+C belongs to the guest.
   t.onSelectionChange(() => {
     const text = t.getSelection();
-    if (!text || !navigator.clipboard) return;
-    navigator.clipboard.writeText(text).catch(() => {});
+    if (text) copyText(text);
+  });
+  t.attachCustomKeyEventHandler((e) => {
+    if (e.type === 'keydown' && e.ctrlKey && e.shiftKey && e.code === 'KeyC') {
+      const text = t.getSelection();
+      if (text) copyText(text);
+      e.preventDefault();
+      return false;
+    }
+    return true;
   });
   // the physical-disconnect hook lives on navigator.serial, which outlives every
   // mount, so register it once rather than on each rebuild
@@ -184,6 +191,30 @@ function wireTerminal(): void {
       if (serialPort && e.target === serialPort) serialDisconnect();
     });
   }
+}
+
+// Put text on the clipboard. The board serves plain HTTP, where browsers
+// withhold navigator.clipboard, so the copy runs as a document copy command
+// whose event carries the text; that works on any page while the user's click
+// or keystroke is still the current activation. A browser that refuses leaves
+// the selection standing, to copy from the context menu.
+function copyText(text: string): void {
+  if (window.isSecureContext && navigator.clipboard) {
+    navigator.clipboard.writeText(text).catch(() => {});
+    return;
+  }
+  const onCopy = (e: ClipboardEvent) => {
+    e.clipboardData?.setData('text/plain', text);
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  };
+  document.addEventListener('copy', onCopy, true);
+  try {
+    document.execCommand('copy');
+  } catch {
+    /* refused: the selection is still there */
+  }
+  document.removeEventListener('copy', onCopy, true);
 }
 
 // Connect the console channel, and keep reconnecting while this mount lives: a
