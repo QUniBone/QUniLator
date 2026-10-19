@@ -1,3 +1,33 @@
+qbone (1.23.0-1) trixie; urgency=low
+
+  RK06/RK07 disks, and updating without the internet
+
+  1.23.0 gives the UniBone an RK611 controller with RK06 and RK07 drives,
+  installs updates from a file on a board that cannot reach the repository,
+  and fixes tape changes under VMS.
+
+  * RK611 with RK06/RK07 drives (UniBone). The controller `hk` carries eight
+    drives, `hk0` to `hk7`, each an RK06 or an RK07, and takes SimH images
+    as they are. RT-11 runs and boots from one on an emulated PDP-11, VMS
+    uses it as DMA0:, and the emulated VAX-11/780 boots from it with
+    `bootdevice` HK0 to HK7.
+  * Update files. A QUniLator with no internet connection is updated by
+    uploading `<board>_<version>_armhf.update.tar` from the release page on
+    System -> Updates. The file is checked against the repository's signing
+    key before anything is offered, and installs like an update from the
+    repository.
+  * Tapes under VMS. A tape attached while VMS runs no longer hangs it, and
+    one VMS unloaded with DISMOUNT comes back by attaching it again, which
+    now also puts the transport on-line. Changing the tape waits for a
+    transfer in progress.
+  * TS05 widget. ON LINE switches the transport on-line and off-line, and
+    WRITE PROT takes the write ring out and puts it back.
+  * Console. Selecting text copies it to the clipboard on the board's plain
+    HTTP page, and Ctrl+Shift+C copies the selection again. A recording
+    downloads as plain text too, as the session read on the screen.
+
+ -- Hans Huebner <hans@huebner.org>  Mon, 19 Oct 2026 20:30:00 +0200
+
 qbone (1.22.5-1) trixie; urgency=low
 
   Examine and deposit on a halted VAX
