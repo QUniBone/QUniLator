@@ -9,7 +9,8 @@
  *
  * So the list here is the machine and nothing else - the processor, its memory
  * management, the SBI, the memory controllers, the UNIBUS and MASSBUS adapters,
- * the interval and time-of-year clocks, and the console terminal and floppy.
+ * the interval and time-of-year clocks, and the console terminal and floppy -
+ * and HK, a boot descriptor for the RK611 on the bus, described below.
  *
  * SHIM_WITH_DISK adds simh's own MSCP controller to that list, for the test
  * configuration 10.07_vax/2_src/makefile builds as vax780-shim-disk. It exists
@@ -55,6 +56,31 @@ extern DEVICE uw_dev;
 extern DEVICE rq_dev;
 #endif
 
+/* The RK611 the machine boots from is an emulated device on the bus, but
+   BOOT HKn reads the controller's address out of a descriptor in the core and
+   hands it to VMB, which does its own I/O over the bus. So HK is a descriptor
+   and nothing more: eight units, the RK611's standard address 777440, no
+   registers in the core. It stays disabled, which keeps it out of the
+   auto-configuration and the I/O page. */
+static UNIT hk_boot_units[8] = {
+    { UDATA (NULL, 0, 0) }, { UDATA (NULL, 0, 0) },
+    { UDATA (NULL, 0, 0) }, { UDATA (NULL, 0, 0) },
+    { UDATA (NULL, 0, 0) }, { UDATA (NULL, 0, 0) },
+    { UDATA (NULL, 0, 0) }, { UDATA (NULL, 0, 0) }
+    };
+
+static DIB hk_boot_dib = {
+    IOPAGEBASE + 017440, 040, NULL, NULL, 1, IVCL (HK), 0210
+    };
+
+static DEVICE hk_boot_dev = {
+    "HK", hk_boot_units, NULL, NULL,
+    8, 8, 24, 1, 8, 16,
+    NULL, NULL, NULL,
+    NULL, NULL, NULL,
+    &hk_boot_dib, DEV_DIS | DEV_UBUS
+    };
+
 DEVICE *sim_devices[] = {
     &cpu_dev,
     &tlb_dev,
@@ -73,6 +99,7 @@ DEVICE *sim_devices[] = {
 #ifdef SHIM_WITH_DISK
     &rq_dev,
 #endif
+    &hk_boot_dev,
     NULL
     };
 

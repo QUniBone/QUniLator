@@ -70,7 +70,9 @@ public:
     /// What START boots. `bootdevice` is the argument of a 780 console's BOOT
     /// command, in SIMH's spelling: a drive of the UDA50 at 772150, `RQ0` to
     /// `RQ3` for the `uda` drive whose `unit` is 0 to 3 — `uda0` to `uda3`
-    /// unless a unit was changed. Boot flags follow as `/R5:` and a hex value, so `RQ0 /R5:1`
+    /// unless a unit was changed — or a drive of the RK611 at 777440, `HK0` to
+    /// `HK7` for the `hk` drive with that unit, from which VMB loads the system
+    /// over the bus. Boot flags follow as `/R5:` and a hex value, so `RQ0 /R5:1`
     /// stops VMS at `SYSBOOT>` for a conversational boot; with none, R5 is 0.
     /// An empty `bootdevice` boots nothing: START resets the processor and it
     /// halts again at once.
