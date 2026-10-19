@@ -138,6 +138,28 @@ export class RemovableDriveWidget extends DriveWidget {
   }
 }
 
+// The TS05 transport: an ON-LINE switch, a READY cap with the unit number, a USE
+// lamp that follows tape motion, and WRITE PROT, which takes the write-enable
+// ring off the reel and puts it back. READY lights while a reel is mounted and
+// the transport is on-line, which a rewind-and-unload from the machine ends.
+export class TapeWidget extends DriveWidget {
+  protected caps(): ComponentChildren {
+    const active = this.lamp('accesslamp');
+    const online = this.param('online') === '1';
+    const onlineToggle = () =>
+      liveSetParam(this.d.name, 'online', online ? '0' : '1',
+        online ? 'transport off-line' : 'transport on-line');
+    const ring = this.param('writering') === '1';
+    const ringToggle = () =>
+      liveSetParam(this.d.name, 'writering', ring ? '0' : '1',
+        ring ? 'write ring out — reel write protected' : 'write ring in');
+    return html`${html`<${Cap} cls="cap-white" lit=${this.lit(online)} onClick=${onlineToggle}>ON<br />LINE</${Cap}>`}
+      ${html`<${ReadyCap} unit=${this.unit()} lit=${this.lit(this.loaded() && online && !active)} />`}
+      ${html`<${Cap} cls="cap-yellow" lit=${this.lit(active)}>USE</${Cap}>`}
+      ${html`<${Cap} cls="cap-orange" lit=${this.lit(this.lamp('writeprotectlamp'))} onClick=${ringToggle}>WRITE<br />PROT</${Cap}>`}`;
+  }
+}
+
 // The RX01/RX02 floppy: the removable bezel over a foot that also carries the
 // sector order of the medium. A floppy image comes either as the surface was
 // written or as the volume's blocks in order, and the drive reads which when the

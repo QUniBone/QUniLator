@@ -10,6 +10,7 @@ import {
   Ra81Widget,
   RemovableDriveWidget,
   RlWidget,
+  TapeWidget,
 } from './drives';
 import { CpuWidget } from './cpu';
 import { MemoryWidget } from './memory';
@@ -37,6 +38,7 @@ const WIDGET_MODELS: Record<string, WidgetClass> = {
   VCB01: Vcb01Widget,
   RX01: FloppyDriveWidget,
   RX02: FloppyDriveWidget,
+  TS05: TapeWidget,
   dzv11_c: DzWidget,
   dhv11_c: DhWidget,
   dispreg_c: DispRegWidget,
