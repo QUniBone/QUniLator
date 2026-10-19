@@ -62,6 +62,7 @@
 #endif
 #if defined(UNIBUS)
 #include "m9312.hpp"
+#include "rk611.hpp"
 #include "ke11.hpp"
 #include "deuna.hpp"
 #include "cpu20.hpp"
@@ -81,6 +82,8 @@ public:
 #if defined(UNIBUS)
 	RL11_c *RL11;
 	rk11_c *RK11;
+	// RK611 + 8 RK06/RK07 drives, a UNIBUS-only controller
+	rk611_c *RK611;
 	RX11_c *RX11;
 	RX211_c *RX211;
 	m9312_c *m9312;

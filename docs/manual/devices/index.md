@@ -27,6 +27,7 @@ The short name beside each one is what the board's command-line menu accepts.
 | [UDA50](uda50.md) | The MSCP disk controller, with RA, RD and RX drives. |
 | [RL11, RLV12](rl.md) | The RL01/RL02 cartridge disk controller. |
 | [RK11, RKV11](rk.md) | The RK05 cartridge disk controller. |
+| [RK611](rk611.md) | The RK06/RK07 cartridge disk controller. UNIBUS only. |
 | [RF11](rf11.md) | The fixed-head disk controller with its RS11 platters. |
 | **Floppies and tapes** | |
 | [RX11, RX211](rx.md) | The RX01/RX02 floppy subsystem. |

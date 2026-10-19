@@ -142,6 +142,7 @@ device_configuration_c::device_configuration_c() :
 	MEM = new memory_c();
 
 #if defined(UNIBUS)
+	RK611 = new rk611_c();
 	RX11 = new RX11_c();
 	RX211 = new RX211_c();
 	m9312 = new m9312_c();
@@ -191,6 +192,8 @@ device_configuration_c::~device_configuration_c() {
 	}
 	m9312->enabled.set(false);
 	delete m9312;
+	RK611->enabled.set(false);
+	delete RK611;
 	KE11A->enabled.set(false);
 	delete KE11A;
 	DEUNA->enabled.set(false);

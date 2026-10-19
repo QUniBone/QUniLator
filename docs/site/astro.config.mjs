@@ -114,6 +114,7 @@ export default defineConfig({
 						{ label: 'UDA50 — MSCP disks', slug: 'devices/uda50' },
 						{ label: 'RL11, RLV12 — RL01/RL02', slug: 'devices/rl' },
 						{ label: 'RK11, RKV11 — RK05', slug: 'devices/rk' },
+						{ label: 'RK611 — RK06/RK07', slug: 'devices/rk611' },
 						{ label: 'RF11 — RS11', slug: 'devices/rf11' },
 						{ label: 'RX11, RX211 — RX01/RX02', slug: 'devices/rx' },
 						{ label: 'TS11, TSV05 — TS05 tape', slug: 'devices/ts11' },

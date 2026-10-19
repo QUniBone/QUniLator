@@ -206,6 +206,8 @@ OBJECTS = $(OBJDIR)/application.o	\
     $(OBJDIR)/rl11.o	\
     $(OBJDIR)/rk11.o        \
     $(OBJDIR)/rk05.o        \
+    $(OBJDIR)/rk611.o       \
+    $(OBJDIR)/rk0607.o      \
     $(OBJDIR)/rf11.o    \
     $(OBJDIR)/rs11.o    \
 	$(OBJDIR)/uda.o         \
@@ -484,6 +486,12 @@ $(OBJDIR)/rk05.o :  $(DEVICE_SRC_DIR)/rk05.cpp $(DEVICE_SRC_DIR)/rk05.hpp
 
 $(OBJDIR)/rk11.o :  $(DEVICE_SRC_DIR)/rk11.cpp $(DEVICE_SRC_DIR)/rk11.hpp
 	$(CC) $(CCFLAGS) -Wno-missing-field-initializers $< -o $@
+
+$(OBJDIR)/rk611.o :  $(DEVICE_SRC_DIR)/rk611.cpp $(DEVICE_SRC_DIR)/rk611.hpp $(DEVICE_SRC_DIR)/rk0607.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/rk0607.o :  $(DEVICE_SRC_DIR)/rk0607.cpp $(DEVICE_SRC_DIR)/rk0607.hpp $(DEVICE_SRC_DIR)/rk611.hpp
+	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/rs11.o :  $(DEVICE_SRC_DIR)/rs11.cpp $(DEVICE_SRC_DIR)/rs11.hpp
 	$(CC) $(CCFLAGS) $< -o $@
