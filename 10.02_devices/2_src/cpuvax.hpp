@@ -75,7 +75,8 @@ public:
     /// over the bus. Boot flags follow as `/R5:` and a hex value, so `RQ0 /R5:1`
     /// stops VMS at `SYSBOOT>` for a conversational boot; with none, R5 is 0.
     /// An empty `bootdevice` boots nothing: START resets the processor and it
-    /// halts again at once.
+    /// halts again at once. A change takes effect at the next START, so the
+    /// boot flags for one boot are set on the running machine and START pressed.
     ///
     /// `bootimage` stays empty on a working machine: the disks are the `uda`
     /// drives, cards on the UNIBUS like any other. A file named here is
@@ -86,7 +87,7 @@ public:
     /// devices configured; enabling the processor fails when it names no disk
     /// image file or an empty one.
     ///
-    /// Both are read when the processor is enabled.
+    /// `bootimage` is read when the processor is enabled.
     //
     // The controller inside the core is the stage 1 scaffolding of
     // docs/vax-host.md.
@@ -363,16 +364,24 @@ private:
     // A console examine or deposit asked for from the web thread. The transfer
     // itself belongs to the processor's own thread, which is the bus master, so
     // the request is left here and worker() performs it.
-    // A change of the console floppy goes the same way: the floppy is read and
-    // written by the processor's thread.
+    // A change of the console floppy or of the boot command goes the same way:
+    // the floppy is read and written, and the boot command read, by the
+    // processor's thread.
     enum console_access_e { console_access_none, console_access_examine,
                             console_access_deposit, console_access_mem_examine,
-                            console_access_mem_deposit, console_access_floppy };
+                            console_access_mem_deposit, console_access_floppy,
+                            console_access_boot_command };
     volatile enum console_access_e console_access = console_access_none;
     volatile unsigned console_access_addr = 0;
     volatile unsigned console_access_data = 0;
     volatile bool console_access_ok = false;
-    std::string console_access_floppy_path;
+    std::string console_access_text;
+
+    // What START boots, the processor's own copy of bootdevice, and the address
+    // the boot device answers at as the last START found it.
+    std::string boot_command;
+    unsigned boot_ba = 0;
+    bool boot_ba_known = false;
 
     void service_console_access(void);
     void publish_unibus_map(void);

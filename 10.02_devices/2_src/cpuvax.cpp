@@ -326,6 +326,8 @@ bool cpuvax_c::on_before_install(void)
     machine_running = false;
     runmode.value = false;
 
+    // the processor's thread is not running yet, so the copy is taken here
+    boot_command = bootdevice.value;
     if (!configure_machine())
         return false;                           // qunibusdevice_c aborts the enable
 
@@ -396,7 +398,7 @@ bool cpuvax_c::configure_machine(void)
         if (stat(bootimage.value.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
             ERROR("bootimage \"%s\" names no disk image file; it is a volume for the"
                   " emulation's own test controller, and empty boots %s from the uda",
-                  bootimage.value.c_str(), bootdevice.value.c_str());
+                  bootimage.value.c_str(), boot_command.c_str());
             return false;
         }
         if (st.st_size == 0) {
@@ -407,11 +409,11 @@ bool cpuvax_c::configure_machine(void)
     // The console floppy is the one boot device the processor carries whatever
     // the bus holds, and with no floppy in it VMB reports only that it found
     // nothing to boot.
-    if (!strncasecmp(bootdevice.value.c_str(), "CS", 2)
-            && (bootdevice.value.size() == 2 || !isalpha((unsigned char) bootdevice.value[2]))
+    if (!strncasecmp(boot_command.c_str(), "CS", 2)
+            && (boot_command.size() == 2 || !isalpha((unsigned char) boot_command[2]))
             && image.value.empty()) {
         ERROR("bootdevice %s is the console floppy, and image names no floppy for it",
-              bootdevice.value.c_str());
+              boot_command.c_str());
         return false;
     }
     if (!bus_iopage.value)
@@ -514,9 +516,12 @@ bool cpuvax_c::configure_machine(void)
         unsigned ba = 0;
         int on = 0;
 
-        if (simh_shim_device_info(bootdevice.value.c_str(), &ba, &on)) {
+        boot_ba_known = false;
+        if (simh_shim_device_info(boot_command.c_str(), &ba, &on)) {
+            boot_ba = ba;
+            boot_ba_known = true;
             INFO("boot device %s: %s, would answer at %06o",
-                 bootdevice.value.c_str(), on ? "configured" : "not configured", ba);
+                 boot_command.c_str(), on ? "configured" : "not configured", ba);
             // A reset of the controller the core carries re-runs the
             // auto-configuration, which takes these registers back for the
             // core mid-run; watching them heals the claim within the same
@@ -527,14 +532,14 @@ bool cpuvax_c::configure_machine(void)
             // the info's address form carries the core's physical prefix;
             // transfers name the eighteen bit bus address
             iotrace_base = ba & 0777777;
-        } else if (!bootdevice.value.empty())
-            ERROR("the processor has no device called %s", bootdevice.value.c_str());
+        } else if (!boot_command.empty())
+            ERROR("the processor has no device called %s", boot_command.c_str());
     }
 
     if (internal_disk
-            && (r = simh_shim_attach(bootdevice.value.c_str(), bootimage.value.c_str())) != 0) {
+            && (r = simh_shim_attach(boot_command.c_str(), bootimage.value.c_str())) != 0) {
         ERROR("VAX cannot attach %s to %s: %s", bootimage.value.c_str(),
-              bootdevice.value.c_str(), simh_shim_status_text(r));
+              boot_command.c_str(), simh_shim_status_text(r));
         return false;
     }
 
@@ -543,16 +548,16 @@ bool cpuvax_c::configure_machine(void)
     if (!insert_floppy(image.value))
         return false;
 
-    if (bootdevice.value.empty()) {
+    if (boot_command.empty()) {
         INFO("no bootdevice set, so nothing is booted and the VAX stays halted");
         return true;
     }
 
-    if ((r = simh_shim_boot(bootdevice.value.c_str())) != 0) {
-        ERROR("VAX cannot boot %s: %s", bootdevice.value.c_str(), simh_shim_status_text(r));
+    if ((r = simh_shim_boot(boot_command.c_str())) != 0) {
+        ERROR("VAX cannot boot %s: %s", boot_command.c_str(), simh_shim_status_text(r));
         return false;
     }
-    INFO("booting from %s%s", bootdevice.value.c_str(),
+    INFO("booting from %s%s", boot_command.c_str(),
          internal_disk ? "" : " on the bus");
     return true;
 }
@@ -641,13 +646,8 @@ void cpuvax_c::publish_status(void)
     uba_init.value = state.uba_init;
     iopage_dispatches.value = state.iopage_dispatches;
     iopage_claimed.value = state.iopage_claimed;
-    {
-        unsigned ba = 0;
-        int on = 0;
-
-        if (simh_shim_device_info(bootdevice.value.c_str(), &ba, &on))
-            bootdev_on_bus.value = simh_shim_bus_owns(ba) != 0;
-    }
+    if (boot_ba_known)
+        bootdev_on_bus.value = simh_shim_bus_owns(boot_ba) != 0;
     iopage_reclaims.value = simh_shim_bus_reclaims();
     // A transfer answered on the bus never reaches on_dma(); the PRU counts it
     // instead, and what it counted since the last pass is added here.
@@ -795,7 +795,11 @@ void cpuvax_c::service_console_access(void)
         console_access_ok = simh_shim_mem_write(console_access_addr, data) != 0;
         break;
     case console_access_floppy:
-        console_access_ok = insert_floppy(console_access_floppy_path);
+        console_access_ok = insert_floppy(console_access_text);
+        break;
+    case console_access_boot_command:
+        boot_command = console_access_text;
+        console_access_ok = true;
         break;
     }
     console_access = console_access_none;
@@ -1026,9 +1030,22 @@ bool cpuvax_c::on_param_changed(parameter_c *param)
 
     // The floppy is changed by the processor's own thread, which is the one
     // reading it; a machine that is not enabled takes it when it is built.
+    // The boot command is read when START builds the machine. A running
+    // processor's thread holds its own copy, which this hands the new one to.
+    if (param == &bootdevice) {
+        if (enabled.value) {
+            console_access_text = bootdevice.new_value;
+            if (!wait_for_console_access(console_access_boot_command)) {
+                ERROR("the processor did not take the new bootdevice");
+                return false;
+            }
+        }
+        return true;
+    }
+
     if (param == &image) {
         if (enabled.value) {
-            console_access_floppy_path = image.new_value;
+            console_access_text = image.new_value;
             if (!wait_for_console_access(console_access_floppy)) {
                 ERROR("the processor did not take the console floppy");
                 return false;
@@ -1133,7 +1150,7 @@ bool cpuvax_c::on_param_changed(parameter_c *param)
     // The machine is built when it is enabled, so its size and its volume are
     // read then; changing them under a running processor would describe a
     // machine that is not there.
-    if ((param == &memory_mb || param == &bootimage || param == &bootdevice
+    if ((param == &memory_mb || param == &bootimage
             || param == &bus_iopage || param == &bus_exclusive) && enabled.value) {
         ERROR("%s can only be changed while the processor is disabled",
               param->name.c_str());
