@@ -1226,6 +1226,8 @@ button.tree-name:hover .mono { color: var(--accent); }
 .disk-status.load { background: var(--accent-soft); color: var(--accent); }
 .disk-status.idle { opacity: .7; }
 .diskface .rl-foot .imgfield { flex: 1 1 auto; min-width: 0; }
+/* the VAX console card: the console floppy under the switches */
+.cpucard .rl-foot { display: flex; align-items: center; gap: 8px; }
 
 /* the floppy's sector-order control: a silkscreened legend and a selector,
    on their own line under the medium */

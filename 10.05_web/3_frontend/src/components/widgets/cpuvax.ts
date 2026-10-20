@@ -5,6 +5,7 @@ import { liveSetParam } from '../../api';
 import { statusParam } from '../../lib/devmodel';
 import type { LiveParam } from '../../types';
 import { Bit, Cap, DeviceWidget } from './base';
+import { DiskFoot } from './drives';
 
 // The processor status longword, as far as a console shows it. A VAX keeps its
 // condition codes in the low four bits and the level it runs at in <20:16>, and
@@ -31,7 +32,8 @@ function decodePsl(hex: string | undefined) {
 // register.
 //
 // The card shows what an operator reads a console for — where the processor is,
-// what mode and priority it runs at, and the four console switches. The
+// what mode and priority it runs at, the four console switches, and the floppy
+// in the console's own drive. The
 // adapter's running totals of bus cycles, interrupts and mapped words are a
 // bring-up instrument: they carry no rate and no scale, so nothing on a working
 // machine can be told from them. They stay available through the device's
@@ -90,6 +92,10 @@ export class VaxCpuWidget extends DeviceWidget {
             onClick=${() => pulse('start_switch', 'START')}>START</${Cap}>
           <${Cap} cls="cap-white" lit=${false}
             onClick=${() => pulse('continue_switch', 'CONT')}>CONT</${Cap}>
+        </div>
+        <div class="rl-foot">
+          <span class="layoutlegend" title="console floppy">CSA1</span>
+          <${DiskFoot} d=${this.d} />
         </div>
       </div></div>`;
   }

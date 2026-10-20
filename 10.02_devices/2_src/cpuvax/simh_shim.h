@@ -89,6 +89,20 @@ simh_shim_status_t simh_shim_run (int max_instructions);
 /* Attach a file to a unit named as scp names it, "RQ0" or "FL". */
 simh_shim_status_t simh_shim_attach (const char *unit_name, const char *filename);
 
+/* A removable medium: whatever the unit holds is taken out first, writing a
+   buffered unit's contents back to its file when they changed. With readonly
+   set the new file is kept as it stands: a buffered unit takes the guest's
+   writes in memory and drops them when the medium comes out, and any other
+   unit goes in write locked. An empty or NULL filename leaves the unit empty. */
+simh_shim_status_t simh_shim_attach_medium (const char *unit_name, const char *filename,
+                                            int readonly);
+
+/* Write a buffered unit's contents back to its file when they have changed
+   since it was attached or last written back. A unit simh reads whole into
+   memory otherwise reaches its file only when it is detached. Call from the
+   thread that runs the processor. */
+simh_shim_status_t simh_shim_flush (const char *unit_name);
+
 /* Set a device or unit parameter out of its modifier table, as scp's SET does:
    simh_shim_set("RQ0 RD54"), simh_shim_set("RQ UDA50"). */
 simh_shim_status_t simh_shim_set (const char *setting);

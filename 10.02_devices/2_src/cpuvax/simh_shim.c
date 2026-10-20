@@ -1492,6 +1492,106 @@ if (dptr->attach != NULL)
 return attach_unit (uptr, filename);
 }
 
+/* What a buffered medium held when it last reached its file, so a write-back
+   happens only when the guest changed something. One unit carries a removable
+   medium of this kind - the console floppy - so one copy is kept. */
+static UNIT *shim_written_unit = NULL;
+static void *shim_written = NULL;
+static size_t shim_written_bytes = 0;
+
+/* A buffered medium whose file is kept as it stands: the guest writes to the
+   copy in memory, and the copy goes when the medium comes out. */
+static UNIT *shim_kept_unit = NULL;
+
+static void shim_note_written (UNIT *uptr, DEVICE *dptr)
+{
+size_t bytes = (size_t) uptr->hwmark * SHIM_SZ_D (dptr);
+void *copy;
+
+if ((copy = realloc (shim_written, bytes ? bytes : 1)) == NULL) {
+    shim_written_unit = NULL;                           /* next flush writes */
+    return;
+    }
+shim_written = copy;
+memcpy (shim_written, uptr->filebuf, bytes);
+shim_written_bytes = bytes;
+shim_written_unit = uptr;
+}
+
+simh_shim_status_t simh_shim_attach_medium (const char *unit_name, const char *filename,
+                                            int readonly)
+{
+DEVICE *dptr;
+UNIT *uptr;
+t_stat r;
+
+if ((dptr = find_unit (unit_name, &uptr)) == NULL)
+    return SCPE_NXDEV;
+if (uptr == NULL)
+    return SCPE_NXUN;
+/* What changed reaches the file here, and the detach is then told the medium
+   is locked, so a floppy the guest only read is left as it is on disk. */
+if ((uptr->flags & UNIT_ATT) && (uptr->flags & UNIT_BUF)) {
+    if ((r = simh_shim_flush (unit_name)) != SCPE_OK)
+        return r;
+    uptr->flags |= UNIT_RO;
+    }
+if (uptr == shim_written_unit)
+    shim_written_unit = NULL;
+if (uptr == shim_kept_unit)
+    shim_kept_unit = NULL;
+r = (dptr->detach != NULL) ? dptr->detach (uptr) : detach_unit (uptr);
+if (r != SCPE_OK)
+    return r;
+if ((filename == NULL) || (*filename == 0))
+    return SCPE_OK;
+
+/* A kept file is opened for reading only, which a unit that takes no
+   read-only file is allowed for this one. */
+if (readonly)
+    uptr->flags |= UNIT_RO | UNIT_ROABLE;
+else
+    uptr->flags &= ~UNIT_RO;
+r = (dptr->attach != NULL) ? dptr->attach (uptr, filename) : attach_unit (uptr, filename);
+if ((r == SCPE_OK) && (uptr->flags & UNIT_BUF)) {
+    shim_note_written (uptr, dptr);
+    /* The guest sees the medium it would on the real drive, which may be one
+       with no write protection at all; the file is protected by never
+       reaching it. */
+    if (readonly) {
+        uptr->flags &= ~UNIT_RO;
+        shim_kept_unit = uptr;
+        }
+    }
+return r;
+}
+
+simh_shim_status_t simh_shim_flush (const char *unit_name)
+{
+DEVICE *dptr;
+UNIT *uptr;
+size_t bytes;
+
+if ((dptr = find_unit (unit_name, &uptr)) == NULL)
+    return SCPE_NXDEV;
+if (uptr == NULL)
+    return SCPE_NXUN;
+if (((uptr->flags & UNIT_ATT) == 0) || ((uptr->flags & UNIT_BUF) == 0)
+        || (uptr->flags & UNIT_RO) || (uptr->filebuf == NULL)
+        || (uptr == shim_kept_unit))
+    return SCPE_OK;
+bytes = (size_t) uptr->hwmark * SHIM_SZ_D (dptr);
+if ((uptr == shim_written_unit) && (bytes == shim_written_bytes)
+        && (memcmp (uptr->filebuf, shim_written, bytes) == 0))
+    return SCPE_OK;
+rewind (uptr->fileref);
+if ((sim_fwrite (uptr->filebuf, SHIM_SZ_D (dptr), uptr->hwmark, uptr->fileref) != uptr->hwmark)
+        || (fflush (uptr->fileref) != 0))
+    return SCPE_IOERR;
+shim_note_written (uptr, dptr);
+return SCPE_OK;
+}
+
 simh_shim_status_t simh_shim_boot (const char *unit_name)
 {
 CTAB *cmd;

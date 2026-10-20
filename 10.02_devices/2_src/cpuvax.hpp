@@ -93,7 +93,24 @@ public:
     parameter_string_c bootimage = parameter_string_c(this, "bootimage", "bi",/*readonly*/false,
             "Test only: disk image for the emulation's own MSCP controller. Empty: boot from the uda.");
     parameter_string_c bootdevice = parameter_string_c(this, "bootdevice", "bd",/*readonly*/false,
-            "What START boots: RQ0..RQ3, with boot flags as RQ0 /R5:1. Empty: no boot.");
+            "What START boots: RQ0..RQ3, HK0..HK7 or CS, with boot flags as RQ0 /R5:1. Empty: no boot.");
+
+    /// The console floppy: the RX01 drive that is part of a 780's console,
+    /// which VMS calls `CSA1:` once `SYSGEN CONNECT CONSOLE` has made it
+    /// known. `image` names the RX01 image in it, 256256 bytes, and empty
+    /// leaves the drive empty. It is the processor's own drive, separate from
+    /// the RX11 or RX211 on the UNIBUS, which VMS calls `DY` or `DX`.
+    ///
+    /// `bootdevice` set to `CS` boots from it, which is how a 780 starts
+    /// standalone BACKUP.
+    ///
+    /// The floppy can be changed at any time, as on the real drive. What the
+    /// machine writes reaches the file within a few seconds, and when the
+    /// floppy is changed or the processor disabled. An RX01 has no write
+    /// protection, so a protected file (mode 444) goes in as any other floppy
+    /// and keeps none of what is written to it.
+    parameter_string_c image = parameter_string_c(this, "image", "img",/*readonly*/false,
+            "Console floppy (CSA1:): RX01 image. Empty: no floppy.");
 
     /// Debugging aids for the emulation itself. `core_debug` names a device
     /// the processor carries inside it, such as `RQ`, and writes the core's own
@@ -346,17 +363,24 @@ private:
     // A console examine or deposit asked for from the web thread. The transfer
     // itself belongs to the processor's own thread, which is the bus master, so
     // the request is left here and worker() performs it.
+    // A change of the console floppy goes the same way: the floppy is read and
+    // written by the processor's thread.
     enum console_access_e { console_access_none, console_access_examine,
                             console_access_deposit, console_access_mem_examine,
-                            console_access_mem_deposit };
+                            console_access_mem_deposit, console_access_floppy };
     volatile enum console_access_e console_access = console_access_none;
     volatile unsigned console_access_addr = 0;
     volatile unsigned console_access_data = 0;
     volatile bool console_access_ok = false;
+    std::string console_access_floppy_path;
 
     void service_console_access(void);
     void publish_unibus_map(void);
+    bool wait_for_console_access(enum console_access_e what);
     bool request_console_access(enum console_access_e what, unsigned addr);
+
+    bool insert_floppy(const std::string &path);    // on the processor's thread
+    uint64_t floppy_flush_due = 0;                  // CLOCK_MONOTONIC second of the next write-back
 
     unsigned history_countdown = 0;     // passes left before the history is written
     bool machine_running = false;       // the core is executing, not halted

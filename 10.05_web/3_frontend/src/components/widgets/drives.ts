@@ -13,7 +13,7 @@ import { Cap, PanelWidget, ReadyCap, mediumParam } from './base';
 // control. The medium is always changeable — a drive that models a spin-up
 // brings the pack to rest as part of the change — so the foot carries no tag
 // saying whether it is.
-function DiskFoot({ d }: { d: LiveDev }) {
+export function DiskFoot({ d }: { d: LiveDev }) {
   const medium = mediumParam(d);
   const img = d.img || (medium ? medium.v : '');
   // A medium puts the drive in the machine, which the machine can refuse; the

@@ -13,9 +13,12 @@
  types - the same arrangement cpu20.cpp has with the KA11.
  */
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #include "logger.hpp"
 #include "timeout.hpp"
@@ -25,6 +28,7 @@
 #include "ddrmem.h"
 #include "iopageregister.h"
 #include "cpuvax.hpp"
+#include "medium_write_protect.hpp"
 
 #include "cpu_bus_adapter.h"          // unibone_prioritylevelchange()
 #include "cpuvax/simh_shim.h"
@@ -72,6 +76,9 @@ cpuvax_c::cpuvax_c() :
     // configure_machine().
     memory_mb.value = 4;
     bootdevice.value = "RQ0";
+    // the floppy is a file of the image tree, which is how the web interface
+    // knows to offer the file browser for it
+    image.content = parameter_c::CONTENT_IMAGE;
     batch_size.value = 10000;
     // The bus takes the I/O page whole by default: a machine whose peripherals
     // are on the bus wants nothing of the core's own answering there.
@@ -397,6 +404,16 @@ bool cpuvax_c::configure_machine(void)
             return false;
         }
     }
+    // The console floppy is the one boot device the processor carries whatever
+    // the bus holds, and with no floppy in it VMB reports only that it found
+    // nothing to boot.
+    if (!strncasecmp(bootdevice.value.c_str(), "CS", 2)
+            && (bootdevice.value.size() == 2 || !isalpha((unsigned char) bootdevice.value[2]))
+            && image.value.empty()) {
+        ERROR("bootdevice %s is the console floppy, and image names no floppy for it",
+              bootdevice.value.c_str());
+        return false;
+    }
     if (!bus_iopage.value)
         WARNING("bus_iopage is 0: the processor reaches none of the devices on the bus");
     else if (!bus_dma.value)
@@ -503,8 +520,10 @@ bool cpuvax_c::configure_machine(void)
             // A reset of the controller the core carries re-runs the
             // auto-configuration, which takes these registers back for the
             // core mid-run; watching them heals the claim within the same
-            // event pass instead of a batch later.
-            simh_shim_bus_watch(ba);
+            // event pass instead of a batch later. The console floppy has no
+            // registers on the bus, and its address reads as zero.
+            if (ba != 0)
+                simh_shim_bus_watch(ba);
             // the info's address form carries the core's physical prefix;
             // transfers name the eighteen bit bus address
             iotrace_base = ba & 0777777;
@@ -518,6 +537,11 @@ bool cpuvax_c::configure_machine(void)
               bootdevice.value.c_str(), simh_shim_status_text(r));
         return false;
     }
+
+    // A reset leaves the drive as it was, so the floppy goes in afresh with
+    // every build of the machine and is read as it now stands on disk.
+    if (!insert_floppy(image.value))
+        return false;
 
     if (bootdevice.value.empty()) {
         INFO("no bootdevice set, so nothing is booted and the VAX stays halted");
@@ -667,16 +691,11 @@ void cpuvax_c::publish_status(void)
 /* Ask the processor's thread for a bus cycle and wait for it. A bus master's
    transfer is serviced by the adapter against this device's own request, so it
    has to be issued by the thread that owns it. */
-bool cpuvax_c::request_console_access(enum console_access_e what, unsigned addr)
+bool cpuvax_c::wait_for_console_access(enum console_access_e what)
 {
     timeout_c timeout;
     unsigned waited_ms = 0;
 
-    if (!enabled.value) {
-        ERROR("%s is not enabled", name.value.c_str());
-        return false;
-    }
-    console_access_addr = addr;
     console_access_ok = false;
     console_access = what;
     while (console_access != console_access_none && waited_ms < 1000) {
@@ -685,6 +704,19 @@ bool cpuvax_c::request_console_access(enum console_access_e what, unsigned addr)
     }
     if (console_access != console_access_none) {
         console_access = console_access_none;
+        return false;
+    }
+    return true;
+}
+
+bool cpuvax_c::request_console_access(enum console_access_e what, unsigned addr)
+{
+    if (!enabled.value) {
+        ERROR("%s is not enabled", name.value.c_str());
+        return false;
+    }
+    console_access_addr = addr;
+    if (!wait_for_console_access(what)) {
         ERROR("the processor did not answer for %06o", addr);
         return false;
     }
@@ -762,8 +794,43 @@ void cpuvax_c::service_console_access(void)
     case console_access_mem_deposit:
         console_access_ok = simh_shim_mem_write(console_access_addr, data) != 0;
         break;
+    case console_access_floppy:
+        console_access_ok = insert_floppy(console_access_floppy_path);
+        break;
     }
     console_access = console_access_none;
+}
+
+/* Put a floppy in the console drive, or with an empty path take it out. What
+   the machine wrote to the one it held reaches that file first. An RX01 has no
+   write protection, so a file the board may not write goes in as any other
+   floppy: the machine may write to it, and what it writes is dropped when the
+   floppy comes out, leaving the file as it was. */
+bool cpuvax_c::insert_floppy(const std::string &path)
+{
+    simh_shim_status_t r;
+    bool readonly = false;
+
+    if (!path.empty()) {
+        struct stat st;
+
+        if (stat(path.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
+            ERROR("console floppy \"%s\" names no image file", path.c_str());
+            return false;
+        }
+        readonly = medium_write_protected(path);
+    }
+    if ((r = simh_shim_attach_medium("CS", path.c_str(), readonly ? 1 : 0)) != 0) {
+        ERROR("console floppy \"%s\" could not go in: %s", path.c_str(),
+              simh_shim_status_text(r));
+        return false;
+    }
+    if (path.empty())
+        INFO("console floppy drive empty");
+    else
+        INFO("console floppy %s in the drive%s", path.c_str(),
+             readonly ? "; the file is protected and keeps none of what is written" : "");
+    return true;
 }
 
 void cpuvax_c::worker(unsigned instance)
@@ -777,6 +844,23 @@ void cpuvax_c::worker(unsigned instance)
 
     while (!workers_terminate) {
         service_console_access();
+
+        // The core holds the console floppy in memory, so what the machine
+        // writes is carried to the file every few seconds, and an unexpected
+        // end of the program costs at most that much.
+        {
+            struct timespec now;
+
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            if ((uint64_t) now.tv_sec >= floppy_flush_due) {
+                simh_shim_status_t r = simh_shim_flush("CS");
+
+                if (r != 0)
+                    WARNING("console floppy could not be written: %s",
+                            simh_shim_status_text(r));
+                floppy_flush_due = (uint64_t) now.tv_sec + 3;
+            }
+        }
 
         if (start_switch.value) {
             start_switch.value = false;         // momentary action
@@ -929,8 +1013,32 @@ void cpuvax_c::on_init_changed(void)
 
 bool cpuvax_c::on_param_changed(parameter_c *param)
 {
-    if (param == &enabled)
-        return qunibusdevice_c::on_param_changed(param);
+    if (param == &enabled) {
+        bool ok = qunibusdevice_c::on_param_changed(param);
+
+        // Disabled, the processor's thread has stopped, and the floppy comes
+        // out of the drive here, which writes what the machine wrote to it.
+        // The parameter keeps naming it for the next time.
+        if (ok && !enabled.new_value)
+            simh_shim_attach_medium("CS", NULL, 0);
+        return ok;
+    }
+
+    // The floppy is changed by the processor's own thread, which is the one
+    // reading it; a machine that is not enabled takes it when it is built.
+    if (param == &image) {
+        if (enabled.value) {
+            console_access_floppy_path = image.new_value;
+            if (!wait_for_console_access(console_access_floppy)) {
+                ERROR("the processor did not take the console floppy");
+                return false;
+            }
+            if (!console_access_ok)
+                return false;
+        }
+        image.value = image.new_value;
+        return true;
+    }
 
     // A configuration apply puts every parameter back to its default, and a
     // console access is an action, not a setting: during an apply the value is
