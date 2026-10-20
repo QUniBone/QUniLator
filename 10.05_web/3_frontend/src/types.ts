@@ -18,6 +18,8 @@ export interface ApiParam {
   base?: number;
   bitwidth?: number;
   readonly?: boolean;
+  // read-only only while the device is on the bus; a configuration sets it
+  locked?: boolean;
   info?: string;
   unit?: string;
   values?: string[];
@@ -68,6 +70,7 @@ export interface LiveParam {
   n: string; // name
   s?: string; // shortname
   ro?: boolean; // readonly
+  lk?: boolean; // readonly only while the device is on the bus
   i: string; // info
   u: string; // unit
   t: LiveParamKind;

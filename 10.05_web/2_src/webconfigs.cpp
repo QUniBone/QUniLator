@@ -239,6 +239,10 @@ static bool is_settable(parameter_c *p) {
 	return it == parameter_defaults.end() ? !p->readonly : it->second.writable;
 }
 
+bool webconfigs_param_settable(parameter_c *p) {
+	return is_settable(p);
+}
+
 // The kind a live device assigns a parameter, looked up by device and parameter
 // name. A configuration saved by older logic may still carry a running-state
 // parameter (an activity LED, a mirrored register); comparing against the live

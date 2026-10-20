@@ -372,6 +372,25 @@ export async function copyPackageRom(name: string, dir: string): Promise<string>
   return res.ok && res.data.path ? res.data.path : '';
 }
 
+// The code labels a ROM listing defines, the file named the way a socket
+// parameter names it. A listing seldom changes under the editor, so each file
+// is asked once per page load; a failed answer is asked again next time.
+const romLabelCache = new Map<string, Promise<string[]>>();
+export function romLabels(file: string): Promise<string[]> {
+  let p = romLabelCache.get(file);
+  if (!p) {
+    p = apiJSON<{ labels?: string[] }>('/api/roms/labels?file=' + encodeURIComponent(file)).then((res) => {
+      if (!res.ok || !Array.isArray(res.data.labels)) {
+        romLabelCache.delete(file);
+        return [];
+      }
+      return res.data.labels;
+    });
+    romLabelCache.set(file, p);
+  }
+  return p;
+}
+
 // Rename or move a file or folder (subpaths). Refused (409) when the source is
 // attached/used or the target exists.
 export async function moveImage(from: string, to: string): Promise<boolean> {

@@ -14,6 +14,7 @@ function liveParam(p: ApiParam): LiveParam {
     v: '',
   };
   if (p.content) out.c = p.content;
+  if (p.locked) out.lk = true;
   if (p.type === 'unsigned' || p.type === 'unsigned64') {
     if (p.base === 8) {
       out.t = 'oct';

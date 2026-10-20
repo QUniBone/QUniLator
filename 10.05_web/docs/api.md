@@ -333,6 +333,11 @@ into the configuration. Both collections use the same entry shape. Parameter
 parameters carry `base` (usually 8) and `bitwidth`. Drives reference their
 controller through `parent`.
 
+`"locked": true` marks a parameter that reads `readonly` only while the device
+is on the bus - its bus placement, the M9312's ROM sockets, a DL11's serial
+port. A configuration sets it, and applying the configuration takes the device
+off the bus to do so.
+
 A parameter whose value names a **file of the image tree** says so with
 `content`, which is absent for an ordinary value:
 
@@ -1200,6 +1205,19 @@ single path segment naming a listed file — anything else is `400`, an unknown
 one `404`. Answers `{"ok": true, "path": "roms/23-751A9.lst", "size": …}`.
 Refused `409` when the target file exists, so a copy the operator has since
 edited is never overwritten; delete or rename it to take a fresh one.
+
+### `GET /api/roms/labels?file=<file>`
+
+The code labels a ROM listing defines, which are what the M9312's
+`bootaddress_label` may name. `file` is written the way a socket parameter
+names it: an images-tree subpath, or a listing the package ships under its
+absolute path. `title` is the listing's `.title` line. Any other file answers
+`404`.
+
+```json
+{"file": "roms/23-756A9.lst", "title": "M9312 'DK/DT' BOOT prom for RK03/05 and TU55/56 controllers",
+ "labels": ["dk0d", "dk0n", "dt0d", "dt0n", ...]}
+```
 
 ### `GET /api/images/<subpath>/contents`
 

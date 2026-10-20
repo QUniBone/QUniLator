@@ -12,6 +12,8 @@
 
 #include "picojson.h"
 
+class parameter_c;
+
 struct mg_context;
 
 // register /api/configs; configurations live in $QUNILATOR_DIR/configs
@@ -45,6 +47,11 @@ void webconfigs_mirror_hold(bool hold);
 // keys are the old set's addresses, and capture the fresh set's. Call right
 // after devices_startup(), before anything is applied to the new set.
 void webconfigs_devices_rebuilt(void);
+
+// Whether an operator may set this parameter in a configuration. A device locks
+// some of its parameters while it is on the bus, and those count as settable:
+// applying a configuration takes the device off the bus to set them.
+bool webconfigs_param_settable(parameter_c *p);
 
 // Re-select and apply the DIP-matched configuration, as a power-on does. The
 // the configuration the running machine currently represents

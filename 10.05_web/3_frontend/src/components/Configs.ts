@@ -43,6 +43,17 @@ import { serialEndpoint, serialLines } from '../lib/serial';
 import type { SerialLine, SerialRole } from '../lib/serial';
 import { useStore } from '../store';
 import { Chip, ImageField, FileField, DelButton } from './common';
+import {
+  ROM_SOCKETS,
+  bootController,
+  configPromsOf,
+  isM9312,
+  promFile,
+  promOfFile,
+  socketLabels,
+  unitZeroLabel,
+} from '../lib/bootprom';
+import type { BootProm } from '../lib/bootprom';
 import type { LiveDev, LiveParam, ConfigSnapshot, ConfigSummary } from '../types';
 
 // ---- staged edits of a stored document ----
@@ -92,8 +103,6 @@ interface Row {
 // A device's bus placement — where it sits in the I/O page and how it
 // interrupts. Editable as a menu of the type's standard values; the backend
 // gates a live change on the CPU being halted.
-const BUS_PLACEMENT = new Set(['base_addr', 'intr_vector', 'intr_level']);
-
 // The parameter a device declares as the medium it holds, if any. A drive's is
 // called "image", but that is the device's business: what marks it is the
 // content the backend publishes for it.
@@ -123,11 +132,11 @@ function storedRow(d: LiveDev, st: Staged): Row {
     enabled: !!st.enabled[d.name],
     imageParam: mediumParam(d),
     image: mediumParam(d) && mediumParam(d)! in pv ? pv[mediumParam(d)!] : d.img,
-    // bus-placement fields read back read-only on a live enabled device, but the
-    // configuration still edits them, so they are kept rather than filtered
+    // a parameter the live device locks while it is on the bus - its bus
+    // placement, the M9312's ROM sockets - is still the configuration's to set
     params: d.params
-      .filter((p) => (!p.ro || BUS_PLACEMENT.has(p.n)) && p.c !== 'image')
-      .map((p) => ({ ...p, v: p.n in pv ? pv[p.n] : p.v })),
+      .filter((p) => (!p.ro || p.lk) && p.c !== 'image')
+      .map((p) => ({ ...p, ro: p.ro && !p.lk, v: p.n in pv ? pv[p.n] : p.v })),
     drives: (d.drives || []).map((c) => storedRow(c, st)),
     addressOptions: d.addressOptions,
     vectorOptions: d.vectorOptions,
@@ -219,7 +228,92 @@ function placementOptions(row: Row, p: LiveParam): string[] | null {
 // copied into roms/ first, which is why a socket opens on that folder.
 const CONTENT_DIR: Record<string, string> = { rom: 'roms', image: '' };
 
-function paramControl(row: Row, p: LiveParam, onParam: SetParam) {
+// What the M9312's parameters are shown against: the boot PROMs of the
+// controllers the configuration carries, the one it boots from, and how a PROM
+// is put in the first boot socket.
+interface BootCtx {
+  proms: BootProm[];
+  suggested?: BootProm;
+  usePromIn: (row: Row, prom: BootProm) => void;
+}
+
+// Which controller of the configuration a socket's PROM boots, or that it boots
+// one the configuration does not carry.
+function SocketNote({ row, p, boot }: { row: Row; p: LiveParam; boot: BootCtx }) {
+  const prom = promOfFile(p.v);
+  const plugged = new Set(ROM_SOCKETS.map((n) => promOfFile(paramOf(row, n))?.part));
+  const offer =
+    p.n === 'bootrom1_file' && !p.ro && !(prom && boot.proms.includes(prom))
+      ? boot.proms.filter((b) => !plugged.has(b.part))
+      : [];
+  return html`<span class="rom-note">
+    ${
+      prom
+        ? boot.proms.includes(prom)
+          ? html`<${Chip} cls="ok">boots ${prom.controller}</${Chip}>`
+          : html`<${Chip} cls="warn">${prom.controller} is not in this configuration</${Chip}>`
+        : null
+    }
+    ${offer.map(
+      (b) => html`<button class=${'btn small' + (b === boot.suggested ? ' primary' : '')}
+        title=${'Put the ' + b.controller + ' boot PROM in this socket'}
+        onClick=${() => boot.usePromIn(row, b)}>Use ${b.part} (${b.controller})</button>`
+    )}
+  </span>`;
+}
+
+// The boot label, chosen among the labels the PROMs in the card's sockets
+// define. The unit-0 entries of the configuration's controllers come first.
+function BootLabelField({
+  row,
+  p,
+  boot,
+  onParam,
+}: {
+  row: Row;
+  p: LiveParam;
+  boot: BootCtx;
+  onParam: SetParam;
+}) {
+  const files = ROM_SOCKETS.map((n) => paramOf(row, n));
+  const [labels, setLabels] = useState<string[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    socketLabels(files).then((l) => live && setLabels(l));
+    return () => {
+      live = false;
+    };
+  }, [files.join('\n')]);
+  if (p.ro) return html`<span class="ro">${p.v}</span>`;
+  const known = labels || [];
+  const first = boot.proms
+    .map((b) => ({ label: unitZeroLabel(b), b }))
+    .filter((x) => known.includes(x.label));
+  const rest = known.filter((l) => !first.some((x) => x.label === l));
+  const missing = p.v !== '' && labels !== null && !known.includes(p.v);
+  return html`<select onChange=${(e: Event) =>
+    onParam(row.name, p.n, (e.target as HTMLSelectElement).value)}>
+    <option value="" selected=${p.v === ''}>no auto boot</option>
+    ${missing ? html`<option value=${p.v} selected>${p.v} — not defined by the PROMs</option>` : null}
+    ${first.map(
+      (x) => html`<option value=${x.label} selected=${x.label === p.v}>${x.label} — boots ${x.b.controller} unit 0${
+        x.b === boot.suggested ? ' (suggested)' : ''
+      }</option>`
+    )}
+    ${rest.map((l) => html`<option value=${l} selected=${l === p.v}>${l}</option>`)}
+  </select>`;
+}
+
+function paramControl(row: Row, p: LiveParam, onParam: SetParam, boot?: BootCtx) {
+  if (boot && p.n === 'bootaddress_label')
+    return html`<${BootLabelField} row=${row} p=${p} boot=${boot} onParam=${onParam} />`;
+  const control = paramControlPlain(row, p, onParam);
+  if (boot && ROM_SOCKETS.includes(p.n) && p.n !== 'consemu_file')
+    return html`${control}<${SocketNote} row=${row} p=${p} boot=${boot} />`;
+  return control;
+}
+
+function paramControlPlain(row: Row, p: LiveParam, onParam: SetParam) {
   const placement = placementOptions(row, p);
   if (placement)
     return html`<select onChange=${(e: Event) =>
@@ -291,6 +385,7 @@ function DevRow({
   onParam,
   onImage,
   onPlace,
+  boot,
 }: {
   row: Row;
   cfg: string;
@@ -301,6 +396,7 @@ function DevRow({
   onParam: SetParam;
   onImage: SetImage;
   onPlace: (row: Row) => void;
+  boot?: BootCtx; // set on the M9312
 }) {
   const loc = useLocation();
   const open = device === row.name;
@@ -387,7 +483,7 @@ function DevRow({
           (p) => html`<div class="p-name">${p.n}${
             p.s && p.s !== p.n ? html` <span class="p-short">(${p.s})</span>` : null
           }</div>
-          <div class="p-val">${paramControl(row, p, onParam)}${
+          <div class="p-val">${paramControl(row, p, onParam, boot)}${
             p.u ? html`<span class="unit">${p.u}</span>` : null
           }</div>
           <div class="p-info">${p.i}</div>`
@@ -649,6 +745,28 @@ function Detail({ name }: { name: string }) {
     }));
   })();
   const conflicts = computeConflicts(visible);
+  // The M9312 is shown against the configuration's controllers, and a PROM put
+  // in its first socket brings the label that boots that controller's unit 0
+  // when the card had none, or had the one of the PROM it replaces.
+  const setParam = isCurrent ? liveParam : stagedParam;
+  const usePromIn = async (row: Row, prom: BootProm) => {
+    const file = await promFile(prom);
+    if (!file) {
+      await alertModal('No listing of ' + prom.part, 'The board has no listing of the ' +
+        prom.controller + ' boot PROM ' + prom.part + ' to program the socket from.');
+      return;
+    }
+    await setParam(row.name, 'bootrom1_file', file);
+    const label = paramOf(row, 'bootaddress_label');
+    const old = promOfFile(paramOf(row, 'bootrom1_file'));
+    if (!label || (old && old !== prom && label.startsWith(old.mnemonic)))
+      await setParam(row.name, 'bootaddress_label', unitZeroLabel(prom));
+  };
+  const boot: BootCtx = {
+    proms: configPromsOf(visible).map((c) => c.prom),
+    suggested: bootController(visible),
+    usePromIn,
+  };
   // A memory card goes into the machine at a placement, and its construction
   // default answers the whole space below the I/O page — which every machine
   // that carries memory of its own already answers. So the card is placed
@@ -680,6 +798,9 @@ function Detail({ name }: { name: string }) {
     const pick = await pickDevice('Add a device', available);
     if (!pick) return;
     const row = roots.find((r) => r.name === pick);
+    // an M9312 comes with the boot PROM of the controller the machine boots from
+    if (row && isM9312(row) && !paramOf(row, 'bootrom1_file') && boot.suggested)
+      await usePromIn(row, boot.suggested);
     if (row && isMemoryCard(row)) {
       if (await placeCard(row, 'Add')) (isCurrent ? liveToggle : stagedToggle)(pick, true);
       return;
@@ -786,7 +907,8 @@ function Detail({ name }: { name: string }) {
                 onToggle=${isCurrent ? liveToggle : stagedToggle}
                 onParam=${isCurrent ? liveParam : stagedParam}
                 onImage=${isCurrent ? liveImage : stagedImage}
-                onPlace=${(rw: Row) => placeCard(rw, 'Place')} key=${r.name} />`
+                onPlace=${(rw: Row) => placeCard(rw, 'Place')}
+                boot=${isM9312(r) ? boot : undefined} key=${r.name} />`
             )
           : html`<div class="cfg-empty muted">No devices yet — use “Add device” to add one.</div>`
       }

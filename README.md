@@ -47,10 +47,14 @@ and the RL, TS and TMSCP families among them.
 were found and fixed against it, the emulated PDP-11/20 and 11/34 boot XXDP
 from an emulated RL02, and a VAX-11/780 core boots VMS V4.7 from an emulated
 UDA50 — see [`docs/unibone-bringup-issues.md`](docs/unibone-bringup-issues.md)
-and [`docs/vax-host.md`](docs/vax-host.md). What is still untried is a UniBone
-in a live, terminated backplane driving real cards: the emulated processors
-have run against the card's internal bus, and whether one on a physical bus can
-reach the card's own emulated devices is an open question. The DEUNA has been
+and [`docs/vax-host.md`](docs/vax-host.md). In a live UNIBUS machine, an
+11/05 with its own memory boots Mini-Unix from the UniBone's emulated RK05s
+through its emulated M9312 (reported in
+[#125](https://github.com/QUniBone/QUniLator/issues/125)). What is still
+untried is one of the card's emulated processors driving real cards on a
+physical backplane: the emulated processors have run against the card's
+internal bus, and whether one on a physical bus can reach the card's own
+emulated devices is an open question. The DEUNA has been
 carried through VMS boots on the emulated VAX, with three defects fixed there;
 no guest's network stack has driven it on a real UNIBUS machine.
 

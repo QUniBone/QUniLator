@@ -18,17 +18,20 @@
      DELETE /api/folders/<subpath>      remove an empty folder
      GET    /api/roms                   the ROM listings the package ships
      POST   /api/roms                   {name,dir} copy one into the tree
+     GET    /api/roms/labels?file=      the code labels a ROM listing defines
 
    Attaching an image to a drive is a parameter write on the drive
    (PUT /api/devices/<drive>/params/image with the subpath).
 */
 
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <pwd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -473,6 +476,123 @@ static void package_roms_list(struct mg_connection *conn) {
 	}
 	picojson::object out;
 	out["roms"] = picojson::value(roms);
+	send_json(conn, 200, picojson::value(out));
+}
+
+// The code labels a MACRO-11 listing defines, by the rules the M9312 programs
+// a socket with (memoryimage_c::load_macro11_listing): a numbered line names a
+// label as its first word that is not an octal number, followed by ':', and the
+// label takes the address of the line it stands on or of the next line that
+// carries one. Reading only the names keeps this off the shared memory buffer
+// the loader fills.
+static std::vector<std::string> listing_labels(const std::string &abspath) {
+	std::vector<std::string> labels;
+	FILE *f = fopen(abspath.c_str(), "r");
+	if (f == nullptr)
+		return labels;
+	char line[1024];
+	int lineno_width = -1;
+	std::string pending; // a label still waiting for an address
+	while (fgets(line, sizeof line, f) != nullptr) {
+		if (!strncasecmp(line, "Symbol table", 12))
+			break;
+		if (line[0] != ' ' && line[0] != '\t')
+			continue; // a page header, not a numbered line
+		const char *p = line;
+		while (*p && isspace((unsigned char) *p))
+			p++;
+		if (*p == 0)
+			continue;
+		if (lineno_width < 0) {
+			while (isdigit((unsigned char) *p))
+				p++;
+			lineno_width = (int) (p - line);
+		}
+		if ((int) strlen(line) <= lineno_width)
+			continue;
+		p = line + lineno_width;
+		bool addressed = false; // the line carries an address
+		for (;;) {
+			while (*p && isspace((unsigned char) *p))
+				p++;
+			const char *q = p;
+			while (*q >= '0' && *q <= '7')
+				q++;
+			if (q > p) {
+				if (q - p != 3 && q - p != 6)
+					break; // a local label such as "1$:", or anything else
+				if (q - p == 6 && !addressed) {
+					addressed = true;
+					if (!pending.empty()) {
+						labels.push_back(pending); // a label of an earlier line
+						pending.clear();
+					}
+				}
+				p = q;
+				continue;
+			}
+			// the first word that is not a number ends the line, and a word
+			// marked PC-relative (165004') ends it with nothing found
+			while (*q && (isalnum((unsigned char) *q) || *q == '$' || *q == '.'))
+				q++;
+			if (q > p && *q == ':' && *p != '8' && *p != '9') {
+				if (addressed)
+					labels.push_back(std::string(p, q - p));
+				else
+					pending = std::string(p, q - p);
+			}
+			break;
+		}
+	}
+	fclose(f);
+	std::sort(labels.begin(), labels.end());
+	labels.erase(std::unique(labels.begin(), labels.end()), labels.end());
+	return labels;
+}
+
+// Whether a listing named by a configuration may be read here: a file of the
+// images tree, or one the package ships.
+static bool rom_listing_readable(const std::string &abspath) {
+	char *real = realpath(abspath.c_str(), nullptr);
+	if (real == nullptr)
+		return false;
+	std::string r = real;
+	free(real);
+	for (const std::string &dir : {images_dir, package_roms_dir()}) {
+		char *rd = realpath(dir.c_str(), nullptr);
+		if (rd == nullptr)
+			continue;
+		std::string root = std::string(rd) + "/";
+		free(rd);
+		if (r.compare(0, root.size(), root) == 0)
+			return true;
+	}
+	return false;
+}
+
+// GET /api/roms/labels?file=<value> — the code labels of the listing a ROM
+// socket names, written the way a configuration writes it
+static void rom_labels(struct mg_connection *conn) {
+	const struct mg_request_info *ri = mg_get_request_info(conn);
+	char file[1024] = "";
+	if (ri->query_string == nullptr
+			|| mg_get_var(ri->query_string, strlen(ri->query_string), "file",
+					file, sizeof file) <= 0) {
+		send_error(conn, 400, "file= names the listing");
+		return;
+	}
+	std::string abs = image_abs(file);
+	if (abs.empty() || !rom_listing_readable(abs)) {
+		send_error(conn, 404, std::string("no ROM listing \"") + file + "\"");
+		return;
+	}
+	picojson::array labels;
+	for (const std::string &l : listing_labels(abs))
+		labels.push_back(picojson::value(l));
+	picojson::object out;
+	out["file"] = picojson::value(std::string(file));
+	out["title"] = picojson::value(listing_title(abs));
+	out["labels"] = picojson::value(labels);
 	send_json(conn, 200, picojson::value(out));
 }
 
@@ -1069,9 +1189,18 @@ static int api_move_handler(struct mg_connection *conn, void *) {
 	return 200;
 }
 
-// GET /api/roms  and  POST /api/roms
+// GET /api/roms, POST /api/roms  and  GET /api/roms/labels
 static int api_roms_handler(struct mg_connection *conn, void *) {
 	const struct mg_request_info *ri = mg_get_request_info(conn);
+	std::string uri = ri->local_uri ? ri->local_uri : "";
+	if (uri == "/api/roms/labels") {
+		if (strcmp(ri->request_method, "GET") != 0) {
+			send_error(conn, 405, "GET required");
+			return 405;
+		}
+		rom_labels(conn);
+		return 200;
+	}
 	if (strcmp(ri->request_method, "GET") == 0)
 		package_roms_list(conn);
 	else if (strcmp(ri->request_method, "POST") == 0)

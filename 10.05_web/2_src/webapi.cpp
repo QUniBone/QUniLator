@@ -114,6 +114,9 @@ static picojson::value param_to_json(device_c *dev, parameter_c *p) {
 	o["name"] = picojson::value(p->name);
 	o["shortname"] = picojson::value(p->shortname);
 	o["readonly"] = picojson::value(p->readonly);
+	// read-only only while the device is on the bus: a configuration sets it
+	if (p->readonly && webconfigs_param_settable(p))
+		o["locked"] = picojson::value(true);
 	if (!p->info.empty())
 		o["info"] = picojson::value(p->info);
 	if (!p->unit.empty())
