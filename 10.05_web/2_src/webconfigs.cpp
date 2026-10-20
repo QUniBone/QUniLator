@@ -290,12 +290,44 @@ static bool param_default_value(const std::string &devname,
 	return false;
 }
 
+// Set a parameter the way a configuration names it. A device keeps part of its
+// setup for as long as it is on the bus - the M9312 its ROM sockets, a DL11 the
+// serial port it holds open, a processor the memory it was built with - and
+// locks those parameters or refuses a change to them. A configuration describes
+// the card as it goes into the machine, so a device holding a value the
+// configuration changes comes off the bus to take it, and the enable at the end
+// of the apply plugs it back in. unplug is false on a dark machine, whose
+// devices are out of it already. Throws what parse() throws.
+static void set_config_param(device_c *dev, parameter_c *p, const std::string &text,
+		bool unplug) {
+	unplug = unplug && dev->enabled.value && p != &dev->enabled
+			&& p->kind != parameter_c::PARAM_STATUS;
+	if (p->readonly) {
+		if (!unplug || !is_settable(p))
+			return;
+		dev->enabled.set(false);
+		if (p->readonly || *p->render() == text)
+			return; // locked by something other than the bus, or already right
+		unplug = false;
+	}
+	std::string was = *p->render();
+	p->parse(text);
+	// A refusal keeps the value there was. A device in the machine may refuse
+	// only while it is in, so it is asked once more out of it.
+	if (unplug && dev->enabled.value && *p->render() == was && was != text) {
+		dev->enabled.set(false);
+		p->parse(text);
+	}
+}
+
 // Put a device back the way it was constructed. Parameters named in "keep" are
 // left alone, the caller being about to set them.
 static void reset_to_defaults(device_c *dev, const std::set<std::string> *keep,
-		picojson::array *errors) {
+		picojson::array *errors, bool unplug = false) {
 	for (parameter_c *p : dev->parameter) {
-		if (p->readonly || is_default(p))
+		if (is_default(p))
+			continue;
+		if (p->readonly && !unplug)
 			continue;
 		if (keep != nullptr && keep->count(p->name))
 			continue;
@@ -303,7 +335,7 @@ static void reset_to_defaults(device_c *dev, const std::set<std::string> *keep,
 		if (it == parameter_defaults.end())
 			continue;
 		try {
-			p->parse(it->second.value);
+			set_config_param(dev, p, it->second.value, unplug);
 		} catch (bad_parameter &e) {
 			if (errors != nullptr)
 				errors->push_back(picojson::value(
@@ -1547,26 +1579,6 @@ static bool apply_document(const picojson::value &content, const std::string &na
 						d.get("params").get<picojson::object>())
 					listed.insert(kv.first);
 
-			// A device's bus placement (address, vector, level, slot) is locked
-			// while it is installed. When the configuration moves an enabled
-			// device, unplug it first so the fields below apply; the enable at the
-			// end re-registers it at the new placement.
-			if (dev->enabled.value && d.get("params").is<picojson::object>()) {
-				const picojson::object &po = d.get("params").get<picojson::object>();
-				static const char *placement[] = {"base_addr", "intr_vector",
-						"intr_level", "slot"};
-				for (const char *k : placement) {
-					picojson::object::const_iterator it = po.find(k);
-					if (it == po.end() || !it->second.is<std::string>())
-						continue;
-					parameter_c *p = dev->param_by_name(k);
-					if (p != nullptr && *p->render() != it->second.get<std::string>()) {
-						dev->enabled.set(false);
-						break;
-					}
-				}
-			}
-
 			// The memory card is placed in one step, from parameters that
 			// describe one range together; reset_to_defaults() would apply
 			// them one at a time.
@@ -1576,7 +1588,7 @@ static bool apply_document(const picojson::value &content, const std::string &na
 				listed.insert("size");
 			}
 
-			reset_to_defaults(dev, &listed, errors);
+			reset_to_defaults(dev, &listed, errors, !dark);
 
 			// What a card is programmed from comes before what refers to it: the
 			// M9312's boot address names a code label of a socket's listing, and
@@ -1596,7 +1608,8 @@ static bool apply_document(const picojson::value &content, const std::string &na
 					if (dark && kv.first == "image")
 						continue; // put in the drive of the dark machine below
 					parameter_c *param = dev->param_by_name(kv.first);
-					if (param == nullptr || param->readonly)
+					if (param == nullptr
+							|| (param->readonly && (dark || !is_settable(param))))
 						continue;
 					if ((param->content == parameter_c::CONTENT_ROM) != (pass == 0))
 						continue; // the other pass takes it
@@ -1622,10 +1635,14 @@ static bool apply_document(const picojson::value &content, const std::string &na
 						// a rejection like any other, so it is reported rather
 						// than leaving the file and the machine quietly apart.
 						dev->last_error.clear();
-						param->parse(text);
+						set_config_param(dev, param, text, !dark);
 						if (*param->render() != text && !dev->last_error.empty())
 							errors->push_back(picojson::value(
 									devname + "." + kv.first + ": " + dev->last_error));
+						else if (*param->render() != text && param->readonly)
+							errors->push_back(picojson::value(devname + "." + kv.first
+									+ ": locked by the device, which keeps "
+									+ *param->render()));
 					} catch (bad_parameter &e) {
 						errors->push_back(picojson::value(
 								devname + "." + kv.first + ": " + e.what()));

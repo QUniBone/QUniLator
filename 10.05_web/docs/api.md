@@ -1377,6 +1377,12 @@ are skipped, rejections are collected. A **Revert** is this call with the
 current name: it re-initialises the live machine to the saved device set,
 dropping any device enabled since the last save.
 
+A device keeps part of its setup for as long as it is on the bus: the M9312 its
+ROM sockets and boot label, a DL11 its serial port, the KA780 its memory size, a
+card its bus placement. When the configuration changes such a setting, the
+device comes off the bus, takes the value, and is enabled again at the end of
+the apply.
+
 ```json
 {"ok": true, "errors": [], "warnings": []}
 ```

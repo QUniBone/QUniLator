@@ -273,7 +273,34 @@ struct test_refusing_device_c : public test_device_c {
 	}
 };
 
+/*** a card that holds part of its setup while it is on the bus, the way the
+     M9312 locks its ROM sockets and boot label and the KA780 refuses a memory
+     size while it runs ***/
+struct test_holding_device_c : public test_device_c {
+	parameter_string_c rom = parameter_string_c(this, "rom", "rom", false, "ROM listing");
+	parameter_string_c label = parameter_string_c(this, "label", "lbl", false,
+			"boot label");
+	parameter_unsigned_c memory = parameter_unsigned_c(this, "memory", "mem", false,
+			"MB", "%d", "memory size", 8, 10);
+
+	test_holding_device_c(const char *nm, const char *ty) : test_device_c(nm, ty) {
+		rom.content = parameter_c::CONTENT_ROM;
+	}
+
+	bool on_param_changed(parameter_c *param) override {
+		if (param == &enabled) {
+			rom.readonly = enabled.new_value;
+			label.readonly = enabled.new_value;
+		} else if (param == &memory && enabled.value) {
+			last_error = "memory can only be changed while the card is disabled";
+			return false;
+		}
+		return test_device_c::on_param_changed(param);
+	}
+};
+
 static test_device_c *rl, *rl0, *rl1, *dl;
+static test_holding_device_c *rom;
 
 static void reset_devices(void) {
 	for (device_c *d : device_c::mydevices) {
@@ -379,6 +406,7 @@ int main(void) {
 	rl0 = new test_device_c("rl0", "RL02");
 	rl1 = new test_device_c("rl1", "RL02");
 	dl = new test_device_c("dl", "DL11");
+	rom = new test_holding_device_c("rom", "M9312");
 
 	webconfigs_init(configs_dir);
 
@@ -1422,6 +1450,48 @@ int main(void) {
 		unlink(cfg_path("bootcfg").c_str());
 		g_dip_value = -1;
 		reset_devices();
+	}
+
+	/* A configuration applied over a card that holds its setup while it is on
+	   the bus programs the card all the same: the card comes off the bus, takes
+	   the configuration's values, and goes back on. */
+	{
+		std::string err;
+		std::vector<std::string> rej;
+		reset_devices();
+		{
+			std::ofstream out(cfg_path("holdA").c_str());
+			out << make_doc({dev_entry("rom", true,
+					{{"rom", "a.lst"}, {"label", "A"}, {"memory", "4"}})}).serialize();
+		}
+		{
+			std::ofstream out(cfg_path("holdB").c_str());
+			out << make_doc({dev_entry("rom", true,
+					{{"rom", "b.lst"}, {"label", "B"}})}).serialize();
+		}
+		check(webconfigs_apply("holdA", &rej, &err), "apply holdA");
+		check(rom->enabled.value && rom->rom.readonly, "the card is on the bus and holds its ROM");
+		check(rom->rom.value == "a.lst" && rom->label.value == "A" && rom->memory.value == 4,
+				"holdA programs the card");
+		check(webconfigs_apply("holdB", &rej, &err), "apply holdB over the running card");
+		check(rej.empty(), "holdB applies without rejections");
+		check(rom->rom.value == "b.lst", "a locked ROM takes the new configuration's");
+		check(rom->label.value == "B", "a locked label takes the new configuration's");
+		check(rom->memory.value == 0, "a refused setting goes back to its default");
+		check(rom->enabled.value, "the card is back on the bus");
+		check(!modified_now(), "the machine is what holdB says");
+		check(webconfigs_apply("holdA", &rej, &err), "apply holdA over the running card");
+		check(rom->memory.value == 4, "a refused setting takes the configuration's value");
+		check(rom->rom.value == "a.lst" && rom->label.value == "A" && rom->enabled.value,
+				"and the rest of holdA with it");
+		unlink(cfg_path("holdA").c_str());
+		unlink(cfg_path("holdB").c_str());
+		reset_devices();
+		rom->rom.readonly = false;
+		rom->label.readonly = false;
+		rom->rom.set("");
+		rom->label.set("");
+		rom->memory.set(0);
 	}
 
 	// An action parameter - a console examine or deposit - is performed on

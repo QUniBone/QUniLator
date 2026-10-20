@@ -219,8 +219,13 @@ bool slu_c::on_param_changed(parameter_c *param)
 		// the new config while the device stays on the bus. on_param_changed runs
 		// before the parameter's value is committed, so the changed field's
 		// new_value is used and the two unchanged fields keep their current value.
-		// Only a device already carrying its line over TCP is retuned; a
-		// serial-port DL11 is not switched to TCP live.
+		// Only a device already carrying its line over TCP is retuned. Which of
+		// the two carries the line is chosen when the card goes on the bus.
+		if (enabled.value && param == &tcp_role
+				&& tcp_role.new_value.empty() == use_tcp) {
+			ERROR("the line moves between serial port and TCP while the card is disabled");
+			return false;
+		}
 		if (enabled.value && use_tcp) {
 			std::string role = tcp_role.value;
 			std::string host = tcp_host.value;

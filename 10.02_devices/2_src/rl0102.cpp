@@ -64,10 +64,12 @@ bool RL0102_c::on_param_changed(parameter_c *param)
             // disable switches power OFF and releases the door lock at once. The
             // unlock normally happens in state_power_off() on the worker thread,
             // but a disabled drive's worker is not running, so unlock here: a
-            // powered-off drive holds no medium, and a configuration apply must be
-            // able to load a new image before the drive is enabled again.
+            // powered-off drive holds no medium and may be switched between RL01
+            // and RL02, and a configuration apply must be able to set both before
+            // the drive is enabled again.
             power_switch.value = false;
             image_params_readonly(false);
+            type_name.readonly = false;
             change_state(RL0102_STATE_power_off);
         } else
             // A drive is powered with the box it sits in: enabling it closes
