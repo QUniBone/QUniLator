@@ -139,6 +139,10 @@ private:
 	bool xmt_break; // transmit continuous break
 	uint8_t xmt_buffer;
 
+	/// The data bits `mode` names, as a mask over a character: a 7-bit line
+	/// carries bits 6..0 of XBUF and delivers 0 in bit 7 of RBUF.
+	uint8_t data_mask = 0xff;
+
 	// convert between register ansd state variables	
 	bool get_rcv_intr_level(void);bool get_xmt_intr_level(void);
 
@@ -173,8 +177,9 @@ public:
 	/// 57600, and `mode` is data bits, parity and stop bits in three characters:
 	/// `8N1`, `7E1`, `8O2`. A port, rate or mode the board cannot open refuses the
 	/// enable. All three are read when the device is enabled and are locked while
-	/// it is. On a line carried over the network `serialport` and `mode` are unused,
-	/// and `baudrate` sets the character time both directions are paced at.
+	/// it is. On a line carried over the network `serialport` is unused, `mode`
+	/// sets the data bits the line carries, and `baudrate` sets the character time
+	/// both directions are paced at.
 	parameter_string_c serialport = parameter_string_c(this, "serialport", "p", /*readonly*/
 	false, "Linux serial port: \"ttyS1\" or \"ttyS2\"");
 	parameter_unsigned_c baudrate = parameter_unsigned_c(this, "baudrate", "b", /*readonly*/

@@ -126,6 +126,11 @@ bool slu_c::on_before_install(void)
 {
 	use_tcp = !tcp_role.value.empty();
 
+	// the data bits lead the mode ("7E1"); a line carries that many bits of
+	// each character, the UART and the network alike
+	char bits = mode.value.empty() ? '8' : mode.value[0];
+	data_mask = (bits >= '5' && bits <= '8') ? (uint8_t) (0xff >> ('8' - bits)) : 0xff;
+
 	if (use_tcp) {
 		// carry the line over TCP instead of a physical UART
 		if (tcp_role.value == "listen")
@@ -157,6 +162,7 @@ bool slu_c::on_before_install(void)
 
 		// tcp_role/tcp_host/tcp_port stay writable so the line can be retuned live
 		// (see on_param_changed); they do not touch the bus registration.
+		mode.readonly = true;
 		INFO("DL11 line on TCP (%s port %u)", tcp_role.value.c_str(), (unsigned) tcp_port.value);
 		return true;
 	}
@@ -190,6 +196,7 @@ void slu_c::on_after_uninstall(void)
 		rs232adapter.tcp_line = NULL;
 		tcp_line.close();
 		use_tcp = false;
+		mode.readonly = false;
 		INFO("DL11 TCP line closed");
 		return;
 	}
@@ -535,7 +542,7 @@ void slu_c::worker_rcv(void)
 				rcv_or_err = 1;
 				DEBUG_FAST("RCV OVERRUN");
 			}
-			rcv_buffer = rcv_byte.c;
+			rcv_buffer = rcv_byte.c & data_mask;
 			if (rcv_byte.format_error)
 				rcv_fr_err = rcv_p_err = 1;
 			rcv_done = 1;
@@ -600,7 +607,7 @@ void slu_c::worker_xmt(void)
 
 		// 2. transmit
 		rs232byte_t xmt_byte;
-		xmt_byte.c = xmt_buffer;
+		xmt_byte.c = xmt_buffer & data_mask;
 		xmt_byte.format_error = false;
 		rs232adapter.rs232byte_xmt_send(xmt_byte);
 		xmt_ready = 0;
