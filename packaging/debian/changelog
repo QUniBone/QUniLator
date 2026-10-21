@@ -1,3 +1,42 @@
+qbone (1.24.0-1) trixie; urgency=low
+
+  The VAX console floppy, and configurations that set up every device
+
+  1.24.0 gives the emulated VAX-11/780 its console floppy, from which a
+  standalone BACKUP kit boots, makes applying a configuration set up devices
+  that hold their settings while on the bus, and fills in the M9312 boot PROM
+  for the controller the machine boots from.
+
+  * VAX console floppy. The KA780's `image` parameter, and the CSA1 field on
+    the processor's dashboard card, put an RX01 image in the 780 console's
+    own drive. VMS mounts it as CSA1: after SYSGEN CONNECT CONSOLE, and the
+    floppy can be swapped while the machine runs. `bootdevice` CS and START
+    boot from it: a standalone BACKUP kit loads across its volumes and comes
+    up at its $ prompt.
+  * VAX boot flags. `bootdevice` is accepted on the running machine and
+    takes effect at the next START, so a conversational boot (`RQ0 /R5:1`)
+    is set for one boot, and Revert ends it. The KA780 manual page walks
+    through it in the web interface.
+  * Configurations. Applying a configuration sets every device up as it
+    says, including devices that hold their setup while on the bus: the
+    M9312's ROMs and boot label, a DL11's serial port, speed and mode or its
+    move between serial port and TCP, the DEUNA, the KA780's memory and boot
+    image, the MRV11-D, the VCB01 and the RL drive type. Such a device is
+    taken off the bus, set up and put back.
+  * M9312 boot PROM. Adding an M9312 to a configuration fills its first boot
+    PROM socket with the PROM of the controller the machine boots from and
+    sets the boot label to its unit 0. The Configurations screen marks a
+    PROM whose controller the configuration lacks, offers the right one, and
+    picks the boot label from the labels the PROMs define.
+  * DL11 data bits. A line carried over TCP or the browser terminal carries
+    the data bits its `mode` names, so the output of a 7-bit guest such as
+    Mini-Unix, which sets parity in bit 7, arrives as plain ASCII.
+  * Images in subfolders. A configuration naming a drive's image as
+    `dk/folder/x.dsk` opens it at AUX ON. A drive whose image cannot be
+    opened reads as an empty disk, and the service keeps running.
+
+ -- Hans Huebner <hans@huebner.org>  Wed, 21 Oct 2026 23:00:23 +0200
+
 qbone (1.23.0-1) trixie; urgency=low
 
   RK06/RK07 disks, and updating without the internet
