@@ -31,6 +31,7 @@
  The image maybe an plain binary file, or a shared host directory holding an unpacked DEC filesystem.
  */
 #include <assert.h>
+#include <string.h>
 
 #include <fstream>
 #include <ios>
@@ -242,6 +243,12 @@ void storagedrive_c::image_read(uint8_t *buffer, uint64_t position, unsigned len
 {
     if (image == nullptr)
         return ;
+    // A medium that did not open reads as zeroes: the controller asked a drive
+    // with nothing behind it, and its program finds an empty disk.
+    if (!medium_present) {
+        memset(buffer, 0, len) ;
+        return ;
+    }
     set_activity_led(true) ; // indicate only read/write access
     image->read(buffer, position, len) ;
     read_bytes.add(len) ;
@@ -251,8 +258,8 @@ void storagedrive_c::image_read(uint8_t *buffer, uint64_t position, unsigned len
 
 void storagedrive_c::image_write(uint8_t *buffer, uint64_t position, unsigned len) 
 {
-    if (image == nullptr)
-        return ;
+    if (image == nullptr || !medium_present)
+        return ; // nothing behind the drive takes the data
     // A controller reports write protection to its host and refuses the
     // command; a write that still arrives here is dropped, so a controller
     // that does not check loses the data and the process keeps running.

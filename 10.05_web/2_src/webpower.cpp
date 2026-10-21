@@ -351,7 +351,11 @@ bool webpower_set_in_machine(device_c *dev, bool on, std::string *error) {
 	return true;
 }
 
-bool webpower_set_image(device_c *dev, const std::string &path, std::string *error) {
+bool webpower_set_image(device_c *dev, const std::string &value, std::string *error) {
+	// The drive opens its medium through the working directory, so a file of
+	// the image tree is held in the form "images/<subpath>" whichever way the
+	// configuration or the request spelled it.
+	const std::string path = webstorage_image_path(value);
 	parameter_string_c *img = image_param_of(dev);
 	if (img == nullptr) {
 		if (error != nullptr)
