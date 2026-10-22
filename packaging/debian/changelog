@@ -1,3 +1,39 @@
+qbone (1.25.0-1) trixie; urgency=low
+
+  The VAX-11/780 console, and ULTRIX-32
+
+  1.25.0 gives the emulated VAX-11/780 the console of the real machine: it
+  boots through the command files on its console floppy, takes the keyboard
+  on Ctrl-P, and restarts and reboots the machine as VMS asks it to.
+  ULTRIX-32 boots on it multi-user.
+
+  * Console command files. A `bootdevice` that names none of the
+    processor's own devices is a line of 780 console commands, such as
+    `BOOT RAM`, `BOOT DUA0` or `LOAD COPY; START 2`, which START runs
+    against the floppy in the KA780's `image`. BOOT runs `<name>BOO.CMD`
+    and DEFBOO.CMD, and LOAD, DEPOSIT, EXAMINE, START, WAIT DONE, HALT,
+    UNJAM, INIT and SET DEFAULT work with the console's qualifiers.
+  * The `>>>` prompt. Ctrl-P gives the keyboard to the console while the
+    machine runs, and a halted processor waits at `>>>` for console
+    commands, CONTINUE, NEXT, SHOW, SET STEP and HELP among them, with the
+    console's line editing.
+  * Restart and reboot. A reboot VMS asks for boots DEFBOO.CMD from the
+    console floppy, or `bootdevice` when no floppy is in the drive. The
+    new `auto_restart` parameter is the AUTO RESTART switch: a halted
+    processor runs RESTAR.CMD and then DEFBOO.CMD.
+  * ULTRIX-32. With the ULTRIX-32 console floppy and `bootdevice` BOOT
+    RAM, ULTRIX-32 V1.1 comes up multi-user from an RA81 on the UDA50. The
+    VAX takes a device's interrupt at the instruction after the bus access
+    that raised it, which ULTRIX's controller probes count on.
+  * Console characters. The VAX console terminal shows seven bits of each
+    character, so the even parity multi-user ULTRIX sets in bit 7 does not
+    reach the screen. `console_8bit` passes all eight.
+  * DEUNA receive buffers. A frame that finds the receive ring full waits
+    for the host to hand buffers back, and only a lost frame is reported,
+    which ends the "de0: buffer unavailable" messages under ULTRIX.
+
+ -- Hans Huebner <hans@huebner.org>  Thu, 22 Oct 2026 22:10:00 +0200
+
 qbone (1.24.0-1) trixie; urgency=low
 
   The VAX console floppy, and configurations that set up every device
