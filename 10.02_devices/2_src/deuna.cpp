@@ -1708,10 +1708,14 @@ void deuna_c::enqueue_readq(const uint8_t *data, size_t len, bool loopback)
         }
     }
 
+    // A frame lost for want of a receive buffer is what RCBI reports, and the
+    // host answers it with a polling demand.
     if (dropped) {
         std::lock_guard<std::recursive_mutex> lock(state_mutex);
         stats.rlossl++;
         publish_stats();
+        pcsr0 |= PCSR0_RCBI;
+        update_intr();
     }
 }
 
@@ -1811,7 +1815,6 @@ bool deuna_c::process_receive(void)
     unsigned limit = rx_slots.value ? rx_slots.value : rrlen;
     unsigned processed = 0;
     std::unique_ptr<queue_item> current_item;
-    bool buffers_unavailable = false;
 
     while (true) {
         bool can_continue = false;
@@ -1832,10 +1835,8 @@ bool deuna_c::process_receive(void)
         rxhdr[2] = desc[2];
         rxhdr[3] = desc[3];
 
-        if (!(rxhdr[2] & RXR_OWN)) {
-            buffers_unavailable = true;
+        if (!(rxhdr[2] & RXR_OWN))
             break;
-        }
 
         if (!current_item) {
             std::lock_guard<std::mutex> queue_lock(queue_mutex);
@@ -1920,18 +1921,9 @@ bool deuna_c::process_receive(void)
         read_queue.push_front(std::move(*current_item));
     }
 
-    // Set RCBI if buffers were unavailable but packets are waiting
-    if (buffers_unavailable) {
-        bool has_packets = false;
-        {
-            std::lock_guard<std::mutex> queue_lock(queue_mutex);
-            has_packets = !read_queue.empty() || current_item;
-        }
-        if (has_packets) {
-            pcsr0 |= PCSR0_RCBI;
-        }
-    }
-
+    // A frame that finds the ring full waits in the queue for the host to
+    // hand buffers back, which its receive interrupt does; it is reported
+    // only if the queue overflows and it is lost (enqueue_readq()).
     update_intr();
     return true;
 }
