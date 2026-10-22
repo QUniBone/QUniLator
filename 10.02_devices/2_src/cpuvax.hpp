@@ -93,7 +93,9 @@ public:
     /// `SET DEFAULT` and `SET RELOCATION`. Numbers are hex, and `@` stands for
     /// the value last examined or deposited. Every line of a command file is
     /// printed on the console terminal as it runs; a command that fails stops
-    /// START with an error naming the file, the line and the command.
+    /// START with an error naming the file, the line and the command. The same
+    /// commands, and the rest of the console's, are typed at its `>>>` prompt,
+    /// which CTRL/P on the console terminal brings up.
     ///
     /// `bootimage` stays empty on a working machine: the disks are the `uda`
     /// drives, cards on the UNIBUS like any other. A file named here is
@@ -264,6 +266,28 @@ public:
     parameter_bool_c continue_switch = parameter_bool_c(this, "continue_switch", "c",/*readonly*/
                                        false, "CONT action switch: 1 = resume execution after a HALT.");
 
+    /// The AUTO RESTART switch of the 780's control panel. Off, a processor
+    /// that halts on its own - a HALT instruction in kernel mode, or an error
+    /// halt - stays halted with the console at its `>>>` prompt. On, the
+    /// console starts it again as a real 780's does: it runs `RESTAR.CMD` off
+    /// the console floppy, whose restart referee in the memory controller's
+    /// ROM decides between restarting the system in memory and booting it
+    /// afresh, and a boot runs `DEFBOO.CMD`. The emulated ROM finds no system
+    /// to restart, so a restart always goes on to `DEFBOO.CMD`.
+    ///
+    /// An operating system that asks the console to reboot the machine, as
+    /// VMS does at the end of a `SHUTDOWN` with an automatic reboot, is booted
+    /// with `DEFBOO.CMD` whatever the switch says. With no floppy in the drive,
+    /// the boot is the one START makes from `bootdevice`.
+    ///
+    /// The console remembers that a restart or a boot is under way until the
+    /// operating system reports it complete, so a machine whose restart and
+    /// boot both fail stays halted at `>>>`.
+    /// The switch is not read at power-up: enabling the processor leaves it
+    /// halted, and START boots it.
+    parameter_bool_c auto_restart = parameter_bool_c(this, "auto_restart", "ar",/*readonly*/
+                                    false, "AUTO RESTART switch: 1 = a halted processor is restarted from the console floppy.");
+
     // the front panel's view of the console switches
     parameter_bool_c *panel_run_led(void) override { return &runmode; }
     parameter_bool_c *panel_halt_switch(void) override { return &halt_switch; }
@@ -424,10 +448,21 @@ private:
     void console_wait_begin(void);
     void console_resume(void);
 
+    // The operator's console: CTRL/P, the >>> prompt and the commands typed
+    // at it, served between batches; and the restart or boot the console runs
+    // for a processor that halted or whose operating system asked to reboot.
+    bool console_announce = false;      // prompt once the processor's thread runs
+    void console_operator(void);
+    void console_step(unsigned count);
+    void console_restart(bool reboot);
+    void processor_halted(const char *why);
+
     // memory, disk, boot; leaves it ready to run. Console commands run only
     // when START is pressed, not when the processor is enabled.
-    bool configure_machine(bool start_pressed);
-    void machine_start(void);
+    // console_line, when given, is run as console commands in place of
+    // bootdevice.
+    bool configure_machine(bool start_pressed, const char *console_line = nullptr);
+    void machine_start(bool announce = true);
     void machine_stop(const char *why);
     void publish_status(void);
 };

@@ -47,15 +47,41 @@ static FILE *shim_messages (void)
 return shim_host_bound ? shim_host.message_file : stdout;
 }
 
+/* The console keyboard as the processor reads it. In console I/O mode the
+   keyboard belongs to the console, and the processor reads nothing; in
+   program I/O mode CTRL/P is the console's and every other key the
+   program's. */
 int simh_shim_console_get (void)
+{
+int c;
+
+if (!vax780_console_program_io ())
+    return -1;
+c = simh_shim_console_get_raw ();
+if ((c >= 0) && vax780_console_escape (c))
+    return -1;
+return c;
+}
+
+int simh_shim_console_get_raw (void)
 {
 return shim_host_bound ? shim_host.console_get (shim_host.context) : -1;
 }
 
+/* The last character sent to the console printer, so the console knows
+   whether the terminal stands at the start of a line. */
+static int shim_console_last = '\n';
+
 void simh_shim_console_put (int c)
 {
+shim_console_last = c;
 if (shim_host_bound)
     shim_host.console_put (shim_host.context, c);
+}
+
+int simh_shim_console_last (void)
+{
+return shim_console_last;
 }
 
 double simh_shim_elapsed_usec (void)
@@ -1592,6 +1618,21 @@ shim_note_written (uptr, dptr);
 return SCPE_OK;
 }
 
+/* The VAX's BOOT keeps its command, and the core's reboot request - the
+   console's software reboot code from the operating system - boots it again
+   by itself. The embedding's console answers that request with the console
+   floppy's DEFBOO.CMD as a 780's console does, so the core is left without a
+   command of its own and its request stops the processor with STOP_BOOT,
+   which the embedding acts on. */
+static void shim_forget_reboot_command (void)
+{
+DEVICE *dptr = find_dev ("SBI");
+REG *rptr = find_reg ("BOOTCMD", NULL, dptr);
+
+if ((rptr != NULL) && (rptr->loc != NULL))
+    *(char *) rptr->loc = 0;
+}
+
 simh_shim_status_t simh_shim_boot (const char *unit_name)
 {
 CTAB *cmd;
@@ -1600,8 +1641,12 @@ CTAB *cmd;
    the unit and the R5 flags the operator gave, sets the registers VMB expects,
    and only then asks for the CPU to be booted. */
 for (cmd = sim_vm_cmd; (cmd != NULL) && (cmd->name != NULL); cmd++)
-    if (strcmp (cmd->name, "BOOT") == 0)
-        return cmd->action (cmd->arg, unit_name);
+    if (strcmp (cmd->name, "BOOT") == 0) {
+        t_stat r = cmd->action (cmd->arg, unit_name);
+
+        shim_forget_reboot_command ();
+        return r;
+        }
 
 return run_cmd (RU_BOOT, unit_name);
 }

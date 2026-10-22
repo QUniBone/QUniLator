@@ -137,6 +137,70 @@ simh_shim_console_state_t simh_shim_console_resume (char *message, size_t messag
    done, by halting or by the console's software-done code. */
 int simh_shim_console_done (simh_shim_status_t status);
 
+/* True when a run ended on the software-done code alone, which outside a WAIT
+   DONE asks nothing of the console: the processor goes on. */
+int simh_shim_software_done (simh_shim_status_t status);
+
+/* True when a run ended because the operating system asked the console to
+   reboot the machine. */
+int simh_shim_reboot_requested (simh_shim_status_t status);
+
+/* The operator's console: CTRL/P on the console terminal, the >>> prompt and
+   the commands typed at it, as vax780_console.c describes them. Enabled, the
+   console starts in program I/O mode, with the keyboard the program's. */
+void simh_shim_console_operator_enable (int on);
+
+/* What the operator's commands ask of the embedding. */
+typedef enum {
+    SIMH_SHIM_OPERATOR_NONE,        /* nothing */
+    SIMH_SHIM_OPERATOR_HALT,        /* HALT: stop the processor, then report
+                                       it with simh_shim_console_halted() */
+    SIMH_SHIM_OPERATOR_RUN,         /* run the processor from where it stands */
+    SIMH_SHIM_OPERATOR_WAIT,        /* run it, and WAIT DONE waits for it as
+                                       for simh_shim_console_begin() */
+    SIMH_SHIM_OPERATOR_STEP         /* execute *count instructions one at a
+                                       time, simh_shim_console_halted() after
+                                       each, with the prompt after the last */
+} simh_shim_operator_t;
+
+/* Read what the operator typed and run it. Call on the processor's thread
+   between batches, running or not; running says which. */
+simh_shim_operator_t simh_shim_console_operator (int running, unsigned *count);
+
+/* The processor has stopped: the console prints HALTED AT and the program
+   counter, after why when there is a reason to give, and takes the keyboard.
+   prompt puts the >>> prompt after it. */
+void simh_shim_console_halted (const char *why, int prompt);
+
+/* The console takes the keyboard and prompts, with the processor halted. */
+void simh_shim_console_prompt (void);
+
+/* The processor was started from outside the console, by the front panel:
+   the keyboard is the program's. */
+void simh_shim_console_release (void);
+
+/* Restarting a halted processor, and rebooting one whose operating system
+   asked for it. The console keeps the warm and cold start flags the
+   operating system clears once a restart or a boot has succeeded, and from
+   them decides what is tried next: RESTAR.CMD first, then DEFBOO.CMD, then
+   nothing, so a machine whose restart and boot both fail stays halted. A
+   reboot request always boots. */
+typedef enum {
+    SIMH_SHIM_RESTART_WARM,         /* run RESTAR.CMD */
+    SIMH_SHIM_RESTART_COLD,         /* bootstrap: DEFBOO.CMD */
+    SIMH_SHIM_RESTART_NONE          /* both have failed: stay halted */
+} simh_shim_restart_t;
+
+simh_shim_restart_t simh_shim_console_restart (int reboot);
+
+/* The restart or boot simh_shim_console_restart() chose has begun. Call after
+   any reset of the machine, which clears the flags. */
+void simh_shim_console_restart_begun (simh_shim_restart_t what);
+
+/* The AUTO RESTART switch, as the console tells the operating system. A reset
+   of the machine clears it, so it is set again after one. */
+void simh_shim_console_auto_restart (int on);
+
 /* Text for a status code, for a host that wants to report one. */
 const char *simh_shim_status_text (simh_shim_status_t status);
 

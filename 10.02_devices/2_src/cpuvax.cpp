@@ -101,6 +101,7 @@ cpuvax_c::cpuvax_c() :
     halt_switch.value = false;
     start_switch.value = false;
     continue_switch.value = false;
+    auto_restart.value = false;
 
     // An examine or deposit is performed on every write, so the same address
     // can be read again or written twice running.
@@ -333,8 +334,13 @@ bool cpuvax_c::on_before_install(void)
 
     // the processor's thread is not running yet, so the copy is taken here
     boot_command = bootdevice.value;
+    // The console serves its operator from now on, and greets the terminal
+    // with its prompt once the processor's thread runs: the machine comes up
+    // halted.
+    simh_shim_console_operator_enable(1);
     if (!configure_machine(/*start_pressed*/false))
         return false;                           // qunibusdevice_c aborts the enable
+    console_announce = true;
 
     // The processor is the bus master whether or not it is executing, so a
     // console examine reaches a device register on a stopped machine too.
@@ -367,7 +373,7 @@ void cpuvax_c::on_after_uninstall(void)
 /* Memory, the disk the machine boots from, and the bootstrap itself. Leaves
    the processor sitting at its boot address, stopped; boot_runs says whether
    START is to run it from there. */
-bool cpuvax_c::configure_machine(bool start_pressed)
+bool cpuvax_c::configure_machine(bool start_pressed, const char *console_line)
 {
     simh_shim_host_t host;
     simh_shim_status_t r;
@@ -467,6 +473,9 @@ bool cpuvax_c::configure_machine(bool start_pressed)
         ERROR("VAX cannot configure its own controller: %s", simh_shim_status_text(r));
         return false;
     }
+    // The reset cleared what the console tells the operating system, the
+    // AUTO RESTART switch among it.
+    simh_shim_console_auto_restart(auto_restart.value ? 1 : 0);
 
     // Memory goes through the processor's own setting, which sizes the array
     // and tells the memory controllers what they answer for.
@@ -518,8 +527,9 @@ bool cpuvax_c::configure_machine(bool start_pressed)
     }
 
     // A bootdevice that names none of the processor's devices is a line of
-    // console commands.
-    bool console_commands = false;
+    // console commands, and so is the line a restart hands over.
+    bool console_commands = (console_line != nullptr);
+    const std::string command = console_line != nullptr ? console_line : boot_command;
 
     {
         // What the bootstrap will be told to look for. A controller that takes
@@ -529,8 +539,8 @@ bool cpuvax_c::configure_machine(bool start_pressed)
         int on = 0;
 
         boot_ba_known = false;
-        if (!boot_command.empty() && !internal_disk
-                && !simh_shim_device_info(boot_command.c_str(), &ba, &on)) {
+        if (console_commands || (!command.empty() && !internal_disk
+                && !simh_shim_device_info(command.c_str(), &ba, &on))) {
             // The console's command files boot from the UDA50 at the address
             // RQ answers at, so that address is the one watched.
             console_commands = true;
@@ -540,11 +550,11 @@ bool cpuvax_c::configure_machine(bool start_pressed)
                 simh_shim_bus_watch(ba);
                 iotrace_base = ba & 0777777;
             }
-        } else if (simh_shim_device_info(boot_command.c_str(), &ba, &on)) {
+        } else if (simh_shim_device_info(command.c_str(), &ba, &on)) {
             boot_ba = ba;
             boot_ba_known = true;
             INFO("boot device %s: %s, would answer at %06o",
-                 boot_command.c_str(), on ? "configured" : "not configured", ba);
+                 command.c_str(), on ? "configured" : "not configured", ba);
             // A reset of the controller the core carries re-runs the
             // auto-configuration, which takes these registers back for the
             // core mid-run; watching them heals the claim within the same
@@ -555,8 +565,8 @@ bool cpuvax_c::configure_machine(bool start_pressed)
             // the info's address form carries the core's physical prefix;
             // transfers name the eighteen bit bus address
             iotrace_base = ba & 0777777;
-        } else if (!boot_command.empty())
-            ERROR("the processor has no device called %s", boot_command.c_str());
+        } else if (!command.empty())
+            ERROR("the processor has no device called %s", command.c_str());
     }
 
     if (internal_disk
@@ -571,7 +581,7 @@ bool cpuvax_c::configure_machine(bool start_pressed)
     if (!insert_floppy(image.value))
         return false;
 
-    if (boot_command.empty()) {
+    if (command.empty()) {
         INFO("no bootdevice set, so nothing is booted and the VAX stays halted");
         return true;
     }
@@ -581,12 +591,12 @@ bool cpuvax_c::configure_machine(bool start_pressed)
 
         if (!start_pressed) {
             INFO("bootdevice holds console commands, which START runs: %s",
-                 boot_command.c_str());
+                 command.c_str());
             boot_runs = false;
             return true;
         }
-        INFO("running console commands: %s", boot_command.c_str());
-        switch (simh_shim_console_begin(boot_command.c_str(), message, sizeof message)) {
+        INFO("running console commands: %s", command.c_str());
+        switch (simh_shim_console_begin(command.c_str(), message, sizeof message)) {
         case SIMH_SHIM_CONSOLE_HALTED:
             INFO("the console commands started nothing, so the VAX stays halted");
             boot_runs = false;
@@ -603,11 +613,11 @@ bool cpuvax_c::configure_machine(bool start_pressed)
         return false;
     }
 
-    if ((r = simh_shim_boot(boot_command.c_str())) != 0) {
-        ERROR("VAX cannot boot %s: %s", boot_command.c_str(), simh_shim_status_text(r));
+    if ((r = simh_shim_boot(command.c_str())) != 0) {
+        ERROR("VAX cannot boot %s: %s", command.c_str(), simh_shim_status_text(r));
         return false;
     }
-    INFO("booting from %s%s", boot_command.c_str(),
+    INFO("booting from %s%s", command.c_str(),
          internal_disk ? "" : " on the bus");
     return true;
 }
@@ -616,7 +626,7 @@ bool cpuvax_c::configure_machine(bool start_pressed)
 /* Running                                                                   */
 /* ------------------------------------------------------------------------ */
 
-void cpuvax_c::machine_start(void)
+void cpuvax_c::machine_start(bool announce)
 {
     simh_shim_state_t state;
 
@@ -651,7 +661,8 @@ void cpuvax_c::machine_start(void)
         the_flexi_timeout_controller->set_mode(flexi_timeout_c::world_time);
         simh_shim_set_fixed_ips(0.0);
     }
-    INFO("VAX running");
+    if (announce)
+        INFO("VAX running");
 }
 
 void cpuvax_c::machine_stop(const char *why)
@@ -952,23 +963,43 @@ void cpuvax_c::worker(unsigned instance)
             }
         }
 
+        // The console greets its terminal once the machine is built.
+        if (console_announce) {
+            console_announce = false;
+            if (!machine_running)
+                simh_shim_console_prompt();
+        }
+
         if (start_switch.value) {
             start_switch.value = false;         // momentary action
             machine_stop(NULL);
-            if (configure_machine(/*start_pressed*/true) && boot_runs && !halt_switch.value)
+            console_waiting = false;
+            if (configure_machine(/*start_pressed*/true) && boot_runs && !halt_switch.value) {
+                simh_shim_console_release();
                 machine_start();
+            } else
+                simh_shim_console_prompt();
         }
 
         // CONTINUE picks up where the processor halted: the core keeps its
         // register state across a stop, so resuming is enabling it again.
         if (continue_switch.value) {
             continue_switch.value = false;      // momentary action
-            if (!machine_running && !halt_switch.value)
+            if (!machine_running && !halt_switch.value) {
+                simh_shim_console_release();
                 machine_start();
+            }
         }
 
-        if (halt_switch.value && machine_running)
+        // The HALT switch stops the processor as the console's HALT does, and
+        // the console takes the terminal.
+        if (halt_switch.value && machine_running) {
             machine_stop("HALT switch");
+            console_waiting = false;
+            simh_shim_console_halted(NULL, 1);
+        }
+
+        console_operator();
 
         if (!machine_running) {
             timeout.wait_ms(10);                // nothing to run; leave the board alone
@@ -1020,12 +1051,134 @@ void cpuvax_c::worker(unsigned instance)
         }
 
         // The batch running out is the ordinary end of a pass. Anything else
-        // stopped the processor, and HALT is the one an operator expects.
+        // stopped the processor - HALT is the one an operator expects - or is
+        // a request to the console: a reboot, or a software-done signal that
+        // no WAIT DONE waits for, which the processor runs on past.
         if (simh_shim_halted(r))
-            machine_stop("HALT instruction");
+            processor_halted(NULL);
+        else if (simh_shim_reboot_requested(r)) {
+            machine_stop("the operating system asked for a reboot");
+            console_restart(/*reboot*/true);
+        } else if (simh_shim_software_done(r))
+            continue;
         else if (!simh_shim_batch_ended(r))
-            machine_stop(simh_shim_status_text(r));
+            processor_halted(simh_shim_status_text(r));
     }
+}
+
+/* What the operator typed at the console, served between two batches. */
+void cpuvax_c::console_operator(void)
+{
+    unsigned count = 0;
+
+    switch (simh_shim_console_operator(machine_running ? 1 : 0, &count)) {
+    case SIMH_SHIM_OPERATOR_NONE:
+        return;
+    case SIMH_SHIM_OPERATOR_HALT:
+        machine_stop("console HALT");
+        console_waiting = false;
+        simh_shim_console_halted(NULL, 1);
+        return;
+    case SIMH_SHIM_OPERATOR_RUN:
+        // the console's CONTINUE, START or BOOT releases the panel's HALT
+        halt_switch.value = false;
+        machine_start();
+        return;
+    case SIMH_SHIM_OPERATOR_WAIT:
+        halt_switch.value = false;
+        machine_start();
+        console_wait_begin();
+        return;
+    case SIMH_SHIM_OPERATOR_STEP:
+        console_step(count);
+        return;
+    }
+}
+
+/* NEXT: the processor executes one instruction for each step and halts after
+   it, and the console reports where it stopped. */
+void cpuvax_c::console_step(unsigned count)
+{
+    for (unsigned i = 0; i < count; i++) {
+        machine_start(/*announce*/false);
+        simh_shim_status_t r = simh_shim_run(1);
+        machine_stop(NULL);
+        bool ended = simh_shim_batch_ended(r) != 0;
+        bool last = (i + 1 == count) || !ended;
+
+        simh_shim_console_halted(ended || simh_shim_halted(r) ? NULL : simh_shim_status_text(r),
+                                 last ? 1 : 0);
+        if (last)
+            return;
+    }
+}
+
+/* The processor halted on its own. With AUTO RESTART off the console takes
+   the terminal and waits at its prompt; on, it starts the machine again. */
+void cpuvax_c::processor_halted(const char *why)
+{
+    machine_stop(why != NULL ? why : "HALT instruction");
+    console_waiting = false;
+    simh_shim_console_halted(why, auto_restart.value ? 0 : 1);
+    if (auto_restart.value)
+        console_restart(/*reboot*/false);
+}
+
+/* A restart, or the reboot the operating system asked for, as a 780's console
+   runs it: RESTAR.CMD off the console floppy, whose restart referee halts when
+   there is no system to restart, then DEFBOO.CMD. The restart runs on the
+   machine as it stands, since the system to restart is in its memory; a boot
+   builds the machine afresh, as START does. With no floppy in the drive the
+   restart fails at once and the boot is bootdevice's. The processor is
+   stopped when this is called. */
+void cpuvax_c::console_restart(bool reboot)
+{
+    bool floppy = !image.value.empty();
+    simh_shim_restart_t what = simh_shim_console_restart(reboot ? 1 : 0);
+
+    if (what == SIMH_SHIM_RESTART_WARM) {
+        simh_shim_console_restart_begun(what);
+        if (floppy) {
+            char message[256];
+
+            INFO("AUTO RESTART: running RESTAR.CMD");
+            switch (simh_shim_console_begin("@RESTAR", message, sizeof message)) {
+            case SIMH_SHIM_CONSOLE_RUNNING:
+                machine_start();
+                return;
+            case SIMH_SHIM_CONSOLE_WAITING:
+                machine_start();
+                console_wait_begin();
+                return;
+            case SIMH_SHIM_CONSOLE_HALTED:
+                break;
+            case SIMH_SHIM_CONSOLE_ERROR:
+                WARNING("RESTAR.CMD failed at %s", message);
+                break;
+            }
+        }
+        // the restart started nothing, which is how it fails
+        what = simh_shim_console_restart(0);
+    }
+    if (what == SIMH_SHIM_RESTART_COLD) {
+        INFO("%s: booting %s", reboot ? "reboot" : "AUTO RESTART",
+             floppy ? "DEFBOO.CMD off the console floppy" : boot_command.c_str());
+        bool built = configure_machine(/*start_pressed*/true, floppy ? "BOOT" : nullptr);
+
+        // the build reset the flags; the boot is under way from here
+        simh_shim_console_restart_begun(what);
+        if (built && boot_runs) {
+            simh_shim_console_release();
+            machine_start();
+            return;
+        }
+        if (!built)
+            ERROR("the console could not boot the machine");
+        simh_shim_console_prompt();
+        return;
+    }
+    INFO("restart and boot have both failed, so the VAX stays halted");
+    simh_shim_console_prompt();
 }
 
 /* ------------------------------------------------------------------------ */
@@ -1145,6 +1298,15 @@ bool cpuvax_c::on_param_changed(parameter_c *param)
                 return false;
             }
         }
+        return true;
+    }
+
+    // The switch is read by the console when the processor halts, and shown to
+    // the operating system through the console's communication region.
+    if (param == &auto_restart) {
+        auto_restart.value = auto_restart.new_value;
+        if (enabled.value)
+            simh_shim_console_auto_restart(auto_restart.value ? 1 : 0);
         return true;
     }
 

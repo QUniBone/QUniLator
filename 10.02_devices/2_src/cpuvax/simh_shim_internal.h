@@ -11,8 +11,21 @@
 /* One character from the host's console keyboard, or -1 when none is waiting. */
 int simh_shim_console_get (void);
 
+/* The same, past the console: what the operator typed, whichever mode the
+   console is in. */
+int simh_shim_console_get_raw (void);
+
 /* One character to the host's console printer. */
 void simh_shim_console_put (int c);
+
+/* The last character sent to the printer. */
+int simh_shim_console_last (void);
+
+/* vax780_console.c: whether the keyboard is the program's (program I/O
+   mode), and CTRL/P, which puts it in console I/O mode. The escape is non-zero
+   when the console took the character. */
+int vax780_console_program_io (void);
+int vax780_console_escape (int c);
 
 /* The host's elapsed time in microseconds, from any fixed origin. */
 double simh_shim_elapsed_usec (void);

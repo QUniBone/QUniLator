@@ -37,6 +37,24 @@
  *
  * As the real console does, every line of a command file is printed on the
  * console terminal as it is executed.
+ *
+ * The operator's side of the console works as the 780's does. The terminal is
+ * in program I/O mode, where every key goes to the program, until CTRL/P puts
+ * it in console I/O mode: the console prints >>> and takes a command line,
+ * echoing it and editing it with DELETE, CTRL/U and CTRL/C. Entering console
+ * I/O mode leaves the processor running, so HALT stops it, and only the
+ * commands the console can serve without the processor - SHOW, SET, CLEAR,
+ * HELP and HALT - run before that; CONTINUE, START and BOOT hand the terminal
+ * back to the program, and SET TERMINAL PROGRAM does so without touching the
+ * processor. NEXT steps it an instruction at a time. A processor that halts
+ * comes to the console with HALTED AT and the prompt.
+ *
+ * The embedding drives this: it calls simh_shim_console_operator() between
+ * batches and does what the result asks - halt, run, wait, step - and it
+ * reports a halt of its own with simh_shim_console_halted(). The console also
+ * keeps the warm and cold start flags of the communication region, from which
+ * simh_shim_console_restart() decides whether a halted or rebooting processor
+ * is restarted with RESTAR.CMD or bootstrapped with DEFBOO.CMD.
  */
 
 #include "simh_shim.h"
@@ -60,6 +78,18 @@ extern t_stat rtfile_read (uint32 block, uint32 count, uint16 *buffer);
 
 /* The memory controllers' ROMs, which the console can start a program in. */
 extern uint32 rom_lw[][ROMSIZE >> 2];
+
+/* The console's half of the communication region: the warm and cold start
+   flags the operating system clears once a restart or a boot has succeeded,
+   the AUTO RESTART switch, and the microcode versions SHOW VERSION reports. */
+extern uint8 comm_region[];
+#define CON_COMM_WRMS           0145            /* warm start in progress */
+#define CON_COMM_CLDS           0146            /* cold start in progress */
+#define CON_COMM_AUTO           0151            /* AUTO RESTART switch */
+#define CON_COMM_PCSV           0152            /* PCS version */
+#define CON_COMM_WCSV           0153            /* WCS version */
+#define CON_COMM_WCSS           0154            /* WCS secondary version */
+#define CON_COMM_FPLV           0155            /* FPLA version */
 
 extern t_stat cpu_reset (DEVICE *dptr);
 
@@ -97,17 +127,65 @@ static t_bool con_started = FALSE;              /* a START has run */
 static char *con_msg = NULL;
 static size_t con_msg_size = 0;
 
+/* EXAMINE and DEPOSIT remember the location last referenced, which *, + and -
+   and an EXAMINE without an address are relative to. */
+static int con_last_space = -1;                 /* none yet */
+static uint32 con_last_addr = 0;
+static uint32 con_last_size = L_LONG;
+
+/* The operator's side. */
+#define CON_CTRL_C              003
+#define CON_CTRL_H              010
+#define CON_CTRL_P              020
+#define CON_CTRL_U              025
+#define CON_DELETE              0177
+
+static t_bool con_operator = FALSE;             /* the embedding serves an operator */
+static t_bool con_console_io = FALSE;           /* the keyboard is the console's */
+static t_bool con_interactive = FALSE;          /* the commands were typed at >>> */
+static t_bool con_step = FALSE;                 /* SET STEP INSTRUCTION */
+static t_bool con_spacebar = FALSE;             /* NEXT without a count: space steps */
+static t_bool con_rubout = FALSE;               /* DELETE echo between backslashes */
+static t_bool con_prompted = FALSE;             /* >>> is the last thing printed */
+static char con_typed[CON_LINE_MAX];
+static size_t con_typed_len = 0;
+
 /* ------------------------------------------------------------------------ */
 /* Messages and the terminal                                                 */
 /* ------------------------------------------------------------------------ */
+
+static void con_put (int c)
+{
+simh_shim_console_put (c);
+con_prompted = FALSE;
+}
 
 static void con_print (const char *text)
 {
 for (; *text != 0; text++) {
     if (*text == '\n')
-        simh_shim_console_put ('\r');
-    simh_shim_console_put (*text);
+        con_put ('\r');
+    con_put (*text);
     }
+}
+
+/* Start a line, unless the terminal is at the start of one. Program output
+   reaches the terminal past con_put(), so its column is taken from what the
+   embedding last sent, which simh_shim_console_last() tracks. */
+static void con_newline (void)
+{
+if (simh_shim_console_last () != '\n')
+    con_print ("\n");
+}
+
+/* The prompt, unless it is already the last thing on the terminal. */
+static void con_prompt (void)
+{
+if (con_prompted && (simh_shim_console_last () == '>'))
+    return;
+con_newline ();
+con_print (">>>");
+con_prompted = TRUE;
 }
 
 static void con_where (const con_command_t *cmd, char *buf, size_t size)
@@ -153,7 +231,8 @@ size_t n = strlen (word);
 return (n >= min) && (n <= strlen (name)) && (strncmp (word, name, n) == 0);
 }
 
-/* A number in the current radix, or @ for the last value. */
+/* A number in the current radix, or @ for the last value. %O, %X and %D in
+   front of the digits name the radix for that number alone. */
 static t_bool con_number (const char *text, uint32 radix, uint32 *value)
 {
 char *end;
@@ -162,6 +241,16 @@ unsigned long long v;
 if (strcmp (text, "@") == 0) {
     *value = con_last;
     return TRUE;
+    }
+if (text[0] == '%') {
+    if (text[1] == 'O')
+        radix = 8;
+    else if (text[1] == 'X')
+        radix = 16;
+    else if (text[1] == 'D')
+        radix = 10;
+    else return FALSE;
+    text += 2;
     }
 if (*text == 0)
     return FALSE;
@@ -359,8 +448,9 @@ return TRUE;
 
 /* The commands the console executes, and how short each may be written. */
 static const con_keyword_t con_verbs[] = {
-    { "BOOT", 1 }, { "DEPOSIT", 1 }, { "EXAMINE", 1 }, { "HALT", 1 },
-    { "INITIALIZE", 1 }, { "LOAD", 1 }, { "SET", 2 }, { "START", 1 },
+    { "BOOT", 1 }, { "CLEAR", 2 }, { "CONTINUE", 1 }, { "DEPOSIT", 1 },
+    { "EXAMINE", 1 }, { "HALT", 1 }, { "HELP", 2 }, { "INITIALIZE", 1 },
+    { "LOAD", 1 }, { "NEXT", 1 }, { "SET", 2 }, { "SHOW", 2 }, { "START", 1 },
     { "UNJAM", 1 }, { "WAIT", 1 } };
 
 static t_bool con_known (const char *verb)
@@ -455,8 +545,9 @@ return SIMH_SHIM_CONSOLE_HALTED;
 /* Executing                                                                 */
 /* ------------------------------------------------------------------------ */
 
-/* Where EXAMINE and DEPOSIT reach. */
-typedef enum { CON_GPR, CON_PSL, CON_IPR, CON_MEM } con_space_t;
+/* Where EXAMINE and DEPOSIT reach. The ID bus holds the 780's microcode
+   registers, which the emulation does not have. */
+typedef enum { CON_GPR, CON_PSL, CON_IPR, CON_MEM, CON_ID } con_space_t;
 
 typedef struct {
     con_space_t space;
@@ -498,12 +589,36 @@ for (i = 0; i < w->nqual; i++) {
         }
     else if (strcmp (q, "V") == 0)
         return con_fail (cmd, "virtual addresses are not reached by this console");
-    else if (strcmp (q, "ID") == 0)
-        return con_fail (cmd, "the ID bus is not reached by this console");
+    else if (strcmp (q, "ID") == 0) {
+        t->space = CON_ID;
+        return SIMH_SHIM_CONSOLE_RUNNING;
+        }
     else return con_fail (cmd, "unknown qualifier /%s", q);
     }
-if (w->narg == 0)
-    return con_fail (cmd, "no address");
+/* No address, +, - and * are the location last referenced and its
+   neighbours, in the space it was in; a register's neighbour is the next
+   register, and memory's the next location of the size last used. */
+if ((w->narg == 0) || (strcmp (w->arg[0], "+") == 0) || (strcmp (w->arg[0], "-") == 0)
+        || (strcmp (w->arg[0], "*") == 0)) {
+    const char *sym = (w->narg == 0) ? "+" : w->arg[0];
+    uint32 step;
+
+    if (con_last_space < 0) {
+        t->space = CON_MEM;
+        t->addr = con_rel;
+        return SIMH_SHIM_CONSOLE_RUNNING;
+        }
+    t->space = (con_space_t) con_last_space;
+    step = (t->space == CON_MEM) ? con_last_size : 1;
+    if (sym[0] == '+')
+        t->addr = con_last_addr + step;
+    else if (sym[0] == '-')
+        t->addr = con_last_addr - step;
+    else t->addr = con_last_addr;
+    if (gpr && (t->space != CON_GPR))
+        return con_fail (cmd, "%s is not a general register", sym);
+    return SIMH_SHIM_CONSOLE_RUNNING;
+    }
 if (strcmp (w->arg[0], "PSL") == 0) {
     t->space = CON_PSL;
     t->addr = 0;
@@ -589,8 +704,16 @@ if (write) {
     if (!con_number (w->arg[1], con_radix, &data))
         return con_fail (cmd, "%s is not a number", w->arg[1]);
     }
-else if (w->narg != 1)
+else if (w->narg > 1)
     return con_fail (cmd, "EXAMINE wants one address");
+/* RESTAR.CMD examines the ID bus for the record; the console says what it
+   cannot show and goes on with the file. A deposit there is refused. */
+if (t.space == CON_ID) {
+    if (write)
+        return con_fail (cmd, "the ID bus is not reached by this console");
+    con_print ("?ID BUS NOT REACHED BY THIS CONSOLE\n");
+    return SIMH_SHIM_CONSOLE_RUNNING;
+    }
 
 for (i = 0; i < t.count; i++) {
     switch (t.space) {
@@ -619,10 +742,15 @@ for (i = 0; i < t.count; i++) {
                 return con_fail (cmd, "no memory at %08X", t.addr);
             snprintf (line, sizeof line, "P %08X %0*X\n", t.addr, (int) (t.size * 2), data);
             break;
+        case CON_ID:
+            break;
         }
     if (!write)
         con_print (line);
     con_last = data;
+    con_last_space = (int) t.space;
+    con_last_addr = t.addr;
+    con_last_size = t.size;
     if (t.space == CON_MEM)
         t.addr += t.size;
     else t.addr++;
@@ -686,12 +814,15 @@ static t_stat con_init (void)
 return cpu_reset (&cpu_dev);
 }
 
-/* The MS780 memory controller carries a ROM whose program a VMS command file
-   starts at 20003000. It finds the first 64 KB of good memory, leaves SP
-   pointing ^X200 into it and halts, and the command file loads VMB there. The
-   emulation does not carry DEC's ROM image; its memory has no bad pages, so
-   the program it puts in an empty ROM does the same in two instructions:
-   MOVL #^X200,SP and HALT. */
+/* The MS780 memory controller carries a ROM with two programs a VMS command
+   file starts. At 20003000 the memory sizer finds the first 64 KB of good
+   memory, leaves SP pointing ^X200 into it and halts, and the command file
+   loads VMB there. At 20003004 the restart referee decides between a warm
+   and a cold start, and halts for a cold one, which sends the console on to
+   DEFBOO.CMD. The emulation does not carry DEC's ROM image. Its memory has no
+   bad pages and no restart parameter block is looked for, so the programs it
+   puts in an empty ROM are short: the entry at 0 branches over the referee
+   to MOVL #^X200,SP and HALT, and the referee at 4 is a HALT. */
 static void con_rom_program (uint32 addr)
 {
 uint32 (*rom)[ROMSIZE >> 2] = NULL;
@@ -702,8 +833,10 @@ else if (ADDR_IS_ROM1 (addr))
     rom = &rom_lw[1];
 if ((rom == NULL) || ((*rom)[0] != 0) || ((*rom)[1] != 0))
     return;
-(*rom)[0] = 0x02008FD0;                         /* D0 8F 00 02 */
-(*rom)[1] = 0x005E0000;                         /* 00 00 5E 00 */
+(*rom)[0] = 0x01000531;                         /* 0: BRW 8; 3: NOP */
+(*rom)[1] = 0x01010100;                         /* 4: HALT; 5: NOP NOP NOP */
+(*rom)[2] = 0x02008FD0;                         /* 8: D0 8F 00 02 */
+(*rom)[3] = 0x005E0000;                         /*    00 00 5E; F: HALT */
 }
 
 static simh_shim_console_state_t con_start (const con_command_t *cmd, const con_words_t *w)
@@ -790,7 +923,64 @@ if (con_is (what, "DEFAULT", 3)) {
         }
     return SIMH_SHIM_CONSOLE_RUNNING;
     }
+if (con_is (what, "TERMINAL", 1)) {
+    /* SET TERMINAL PROGRAM hands the keyboard back to the program */
+    if ((value != NULL) && con_is (value, "PROGRAM", 1)) {
+        con_console_io = FALSE;
+        return SIMH_SHIM_CONSOLE_RUNNING;
+        }
+    return con_fail (cmd, "SET TERMINAL knows only PROGRAM");
+    }
+if (con_is (what, "STEP", 2)) {
+    if ((value != NULL) && con_is (value, "INSTRUCTION", 1)) {
+        con_step = TRUE;
+        return SIMH_SHIM_CONSOLE_RUNNING;
+        }
+    if ((value != NULL) && (con_is (value, "BUS", 1) || con_is (value, "STATE", 2)))
+        return con_fail (cmd, "the processor steps by instruction only");
+    return con_fail (cmd, "SET STEP wants INSTRUCTION");
+    }
 return con_fail (cmd, "SET %s is not known", what);
+}
+
+/* SHOW, as the console prints its state. */
+static simh_shim_console_state_t con_show (const con_command_t *cmd, const con_words_t *w,
+                                           t_bool running)
+{
+static const char *const radix_name[] = { "OCT", "DEC", "HEX" };
+static const char *const size_name[] = { "BYTE", "WORD", "", "LONG" };
+char line[128];
+
+if ((w->narg == 1) && con_is (w->arg[0], "VERSION", 1)) {
+    snprintf (line, sizeof line, "VER: PCS=%02X WCS=%02X-%02X FPLA=%02X\n",
+              comm_region[CON_COMM_PCSV], comm_region[CON_COMM_WCSV],
+              comm_region[CON_COMM_WCSS], comm_region[CON_COMM_FPLV]);
+    con_print (line);
+    return SIMH_SHIM_CONSOLE_RUNNING;
+    }
+if (w->narg != 0)
+    return con_fail (cmd, "SHOW knows only VERSION");
+snprintf (line, sizeof line, "CPU %s,SOMM CLEAR,STEP=%s,CLOCK=NORM\n",
+          running ? "RUNNING" : "HALTED", con_step ? "INST" : "NONE");
+con_print (line);
+snprintf (line, sizeof line, "RAD=%s,ADD=PHYS,DAT=%s,FILL=00,REL=%08X\n",
+          radix_name[(con_radix == 8) ? 0 : (con_radix == 10) ? 1 : 2],
+          size_name[(con_size - 1) & 3], con_rel);
+con_print (line);
+return SIMH_SHIM_CONSOLE_RUNNING;
+}
+
+/* HELP prints the console's help file off the floppy. */
+static simh_shim_console_state_t con_help (const con_command_t *cmd)
+{
+static char text[CON_FILE_BLOCKS_MAX * 512 + 1];
+const char *why = NULL;
+
+if (!con_read_file ("CONSOL.HLP", text, sizeof text, &why))
+    return con_fail (cmd, "CONSOL.HLP: %s", why);
+con_print (text);
+con_newline ();
+return SIMH_SHIM_CONSOLE_RUNNING;
 }
 
 /* One command. RUNNING means it ran and the next may follow. */
@@ -816,6 +1006,25 @@ if (con_is (w.verb, "START", 1))
     return con_start (cmd, &w);
 if (con_is (w.verb, "SET", 2))
     return con_set (cmd, &w);
+if (con_is (w.verb, "SHOW", 2))
+    return con_show (cmd, &w, FALSE);
+if (con_is (w.verb, "HELP", 2))
+    return con_help (cmd);
+if (con_is (w.verb, "CLEAR", 2)) {
+    if ((w.narg != 1) || !con_is (w.arg[0], "STEP", 2))
+        return con_fail (cmd, "CLEAR knows only STEP");
+    con_step = FALSE;
+    return SIMH_SHIM_CONSOLE_RUNNING;
+    }
+if (con_is (w.verb, "CONTINUE", 1)) {
+    /* the processor goes on from where it stands, uninitialized */
+    if ((w.narg != 0) || (w.nqual != 0))
+        return con_fail (cmd, "CONTINUE takes nothing more");
+    con_started = TRUE;
+    return SIMH_SHIM_CONSOLE_RUNNING;
+    }
+if (con_is (w.verb, "NEXT", 1))
+    return con_fail (cmd, "NEXT is typed at the console, not run from a file");
 if (con_is (w.verb, "HALT", 1) || con_is (w.verb, "UNJAM", 1)) {
     /* the processor is halted while the console runs it, and the SBI the
        emulation carries does not jam */
@@ -843,11 +1052,16 @@ return con_fail (cmd, "unknown command %s", w.verb);
 }
 
 /* A command as the terminal shows it: a line of a command file as it stands,
-   a command of the command line after the console's prompt. */
+   a command of the command line after the console's prompt. A line the
+   operator typed is on the terminal already. */
 static void con_echo (const con_command_t *cmd)
 {
-if (cmd->source[0] == 0)
-    con_print (">>>");
+if (cmd->source[0] == 0) {
+    if (con_interactive)
+        return;
+    if (!con_prompted || (simh_shim_console_last () != '>'))
+        con_prompt ();
+    }
 con_print (cmd->echo);
 con_print ("\n");
 }
@@ -889,28 +1103,19 @@ return SIMH_SHIM_CONSOLE_HALTED;
 }
 
 /* ------------------------------------------------------------------------ */
-/* The embedding API                                                         */
+/* Running a line                                                            */
 /* ------------------------------------------------------------------------ */
 
-simh_shim_console_state_t simh_shim_console_begin (const char *commands,
-                                                   char *message, size_t message_size)
+/* Commands on a line are separated by semicolons. Each is expanded into the
+   command list, command files included, before the first one runs. */
+static simh_shim_console_state_t con_run_line (const char *commands)
 {
 const char *p = commands;
 unsigned n = 0;
 simh_shim_console_state_t s;
 
-con_msg = message;
-con_msg_size = message_size;
-if ((message != NULL) && (message_size > 0))
-    message[0] = 0;
 con_count = con_next = 0;
-con_radix = 16;
-con_size = L_LONG;
-con_rel = 0;
-con_last = 0;
 con_started = FALSE;
-
-/* commands on the command line are separated by semicolons */
 while (*p != 0) {
     char line[CON_LINE_MAX];
     size_t len = strcspn (p, ";");
@@ -928,6 +1133,185 @@ while (*p != 0) {
 return con_run ();
 }
 
+/* Where the terminal is left once commands have run: a program started has
+   the keyboard, and commands that leave the processor halted leave the
+   console at its prompt. */
+static simh_shim_console_state_t con_settle (simh_shim_console_state_t s)
+{
+if (!con_operator)
+    return s;
+switch (s) {
+    case SIMH_SHIM_CONSOLE_RUNNING:
+    case SIMH_SHIM_CONSOLE_WAITING:
+        con_console_io = FALSE;
+        break;
+    case SIMH_SHIM_CONSOLE_HALTED:
+    case SIMH_SHIM_CONSOLE_ERROR:
+        con_console_io = TRUE;
+        con_prompt ();
+        break;
+    }
+return s;
+}
+
+/* ------------------------------------------------------------------------ */
+/* The operator                                                              */
+/* ------------------------------------------------------------------------ */
+
+/* The commands the console serves without the processor, which are all that
+   run while it is running. */
+static t_bool con_runs_beside (const char *verb)
+{
+return con_is (verb, "SHOW", 2) || con_is (verb, "SET", 2) || con_is (verb, "CLEAR", 2)
+    || con_is (verb, "HELP", 2) || con_is (verb, "HALT", 1);
+}
+
+static simh_shim_operator_t con_command_line (const char *typed, int running, unsigned *count)
+{
+con_command_t cmd;
+con_words_t w;
+char text[CON_LINE_MAX];
+char *bang;
+size_t n;
+simh_shim_console_state_t s;
+
+/* the command, upper case and without its comment */
+strncpy (text, typed, sizeof text - 1);
+text[sizeof text - 1] = 0;
+if ((bang = strchr (text, '!')) != NULL)
+    *bang = 0;
+for (n = 0; text[n] != 0; n++)
+    text[n] = (char) toupper ((unsigned char) text[n]);
+for (n = strlen (text); (n > 0) && isspace ((unsigned char) text[n - 1]); n--)
+    text[n - 1] = 0;
+for (n = 0; isspace ((unsigned char) text[n]); n++)
+    ;
+if (n > 0)
+    memmove (text, text + n, strlen (text + n) + 1);
+if (text[0] == 0) {
+    con_prompt ();
+    return SIMH_SHIM_OPERATOR_NONE;
+    }
+
+memset (&cmd, 0, sizeof cmd);
+snprintf (cmd.echo, sizeof cmd.echo, "%s", typed);
+snprintf (cmd.text, sizeof cmd.text, "%s", text);
+cmd.line = 1;
+con_msg = NULL;
+con_msg_size = 0;
+
+if (text[0] != '@') {
+    if (!con_split (text, &w) || !con_known (w.verb)) {
+        con_print ("?'");
+        con_print (text);
+        con_print ("' IS INCORRECT\n");
+        con_prompt ();
+        return SIMH_SHIM_OPERATOR_NONE;
+        }
+    if (running && !con_runs_beside (w.verb)) {
+        con_print ("?CPU NOT IN CONSOLE WAIT LOOP, COMMAND ABORTED\n");
+        con_prompt ();
+        return SIMH_SHIM_OPERATOR_NONE;
+        }
+    if (con_is (w.verb, "HALT", 1) && (w.narg == 0) && (w.nqual == 0)) {
+        if (running)
+            return SIMH_SHIM_OPERATOR_HALT;
+        con_prompt ();
+        return SIMH_SHIM_OPERATOR_NONE;
+        }
+    if (con_is (w.verb, "SHOW", 2)) {
+        con_show (&cmd, &w, running ? TRUE : FALSE);
+        con_prompt ();
+        return SIMH_SHIM_OPERATOR_NONE;
+        }
+    if (con_is (w.verb, "NEXT", 1)) {
+        uint32 steps = 1;
+
+        if ((w.nqual != 0) || (w.narg > 1)
+                || ((w.narg == 1) && (!con_number (w.arg[0], con_radix, &steps) || (steps == 0)))) {
+            con_fail (&cmd, "NEXT wants a count");
+            con_prompt ();
+            return SIMH_SHIM_OPERATOR_NONE;
+            }
+        /* without a count, the space bar steps on */
+        con_spacebar = (w.narg == 0);
+        *count = steps;
+        return SIMH_SHIM_OPERATOR_STEP;
+        }
+    }
+else if (running) {
+    con_print ("?CPU NOT IN CONSOLE WAIT LOOP, COMMAND ABORTED\n");
+    con_prompt ();
+    return SIMH_SHIM_OPERATOR_NONE;
+    }
+
+con_interactive = TRUE;
+s = con_run_line (typed);
+con_interactive = FALSE;
+switch (s) {
+    case SIMH_SHIM_CONSOLE_RUNNING:
+        con_console_io = FALSE;
+        if (con_step) {
+            *count = 1;
+            return SIMH_SHIM_OPERATOR_STEP;
+            }
+        return SIMH_SHIM_OPERATOR_RUN;
+    case SIMH_SHIM_CONSOLE_WAITING:
+        con_console_io = FALSE;
+        return SIMH_SHIM_OPERATOR_WAIT;
+    case SIMH_SHIM_CONSOLE_HALTED:
+    case SIMH_SHIM_CONSOLE_ERROR:
+        break;
+    }
+/* SET TERMINAL PROGRAM leaves the keyboard with the program */
+if (con_console_io)
+    con_prompt ();
+return SIMH_SHIM_OPERATOR_NONE;
+}
+
+static void con_clear_line (void)
+{
+con_typed_len = 0;
+con_rubout = FALSE;
+}
+
+/* CTRL/P, wherever it was typed: the terminal goes to console I/O mode. */
+int vax780_console_escape (int c)
+{
+if (!con_operator || ((c & 0177) != CON_CTRL_P))
+    return 0;
+con_console_io = TRUE;
+con_spacebar = FALSE;
+con_clear_line ();
+con_prompt ();
+return 1;
+}
+
+int vax780_console_program_io (void)
+{
+return !con_operator || !con_console_io;
+}
+
+/* ------------------------------------------------------------------------ */
+/* The embedding API                                                         */
+/* ------------------------------------------------------------------------ */
+
+simh_shim_console_state_t simh_shim_console_begin (const char *commands,
+                                                   char *message, size_t message_size)
+{
+con_msg = message;
+con_msg_size = message_size;
+if ((message != NULL) && (message_size > 0))
+    message[0] = 0;
+con_radix = 16;
+con_size = L_LONG;
+con_rel = 0;
+con_last = 0;
+con_last_space = -1;
+con_interactive = FALSE;
+return con_settle (con_run_line (commands));
+}
+
 simh_shim_console_state_t simh_shim_console_resume (char *message, size_t message_size)
 {
 con_msg = message;
@@ -935,10 +1319,184 @@ con_msg_size = message_size;
 if ((message != NULL) && (message_size > 0))
     message[0] = 0;
 con_started = FALSE;
-return con_run ();
+return con_settle (con_run ());
 }
 
 int simh_shim_console_done (simh_shim_status_t status)
 {
 return (status == STOP_HALT) || (status == STOP_SWDN);
+}
+
+int simh_shim_reboot_requested (simh_shim_status_t status)
+{
+return (status == STOP_BOOT);
+}
+
+int simh_shim_software_done (simh_shim_status_t status)
+{
+return (status == STOP_SWDN);
+}
+
+void simh_shim_console_operator_enable (int on)
+{
+con_operator = on ? TRUE : FALSE;
+con_console_io = FALSE;
+con_spacebar = FALSE;
+con_clear_line ();
+}
+
+simh_shim_operator_t simh_shim_console_operator (int running, unsigned *count)
+{
+int c;
+simh_shim_operator_t op;
+
+*count = 0;
+if (!con_operator)
+    return SIMH_SHIM_OPERATOR_NONE;
+for (;;) {
+    if (!con_console_io) {
+        /* A running processor polls the keyboard itself, and CTRL/P is
+           caught there. A halted one reads nothing, and only CTRL/P counts. */
+        if (running || ((c = simh_shim_console_get_raw ()) < 0))
+            return SIMH_SHIM_OPERATOR_NONE;
+        vax780_console_escape (c);
+        continue;
+        }
+    if ((c = simh_shim_console_get_raw ()) < 0)
+        return SIMH_SHIM_OPERATOR_NONE;
+    c &= 0177;
+    if (con_spacebar) {
+        /* after NEXT without a count, each space is one more step and any
+           other key ends the stepping */
+        if ((c == ' ') && !running) {
+            *count = 1;
+            return SIMH_SHIM_OPERATOR_STEP;
+            }
+        con_spacebar = FALSE;
+        con_prompt ();
+        continue;
+        }
+    switch (c) {
+        case '\r': {
+            char line[CON_LINE_MAX];
+
+            if (con_rubout)
+                con_put ('\\');
+            memcpy (line, con_typed, con_typed_len);
+            line[con_typed_len] = 0;
+            con_clear_line ();
+            con_print ("\n");
+            if ((op = con_command_line (line, running, count)) != SIMH_SHIM_OPERATOR_NONE)
+                return op;
+            break;
+            }
+        case CON_DELETE:
+        case CON_CTRL_H:
+            /* the deleted characters echo between backslashes, as on the
+               console's hardcopy terminal */
+            if (con_typed_len == 0)
+                break;
+            if (!con_rubout) {
+                con_put ('\\');
+                con_rubout = TRUE;
+                }
+            con_put (con_typed[--con_typed_len]);
+            break;
+        case CON_CTRL_U:
+            con_print ("^U\n");
+            con_clear_line ();
+            con_prompt ();
+            break;
+        case CON_CTRL_C:
+            con_print ("^C\n");
+            con_clear_line ();
+            con_prompt ();
+            break;
+        case CON_CTRL_P:
+            con_clear_line ();
+            con_prompt ();
+            break;
+        default:
+            if ((c < 040) || (c >= CON_DELETE))
+                break;                          /* other control characters */
+            if (con_rubout) {
+                con_put ('\\');
+                con_rubout = FALSE;
+                }
+            if (con_typed_len >= sizeof con_typed - 1) {
+                con_put (007);                  /* the line is full */
+                break;
+                }
+            con_typed[con_typed_len++] = (char) c;
+            con_put (c);
+            break;
+        }
+    }
+}
+
+void simh_shim_console_halted (const char *why, int prompt)
+{
+char line[32];
+
+if (!con_operator)
+    return;
+con_console_io = TRUE;
+con_clear_line ();
+con_newline ();
+if (why != NULL) {
+    con_print ("?");
+    con_print (why);
+    con_print ("\n");
+    }
+snprintf (line, sizeof line, "HALTED AT %08X\n", (uint32) PC);
+con_print (line);
+if (prompt && !con_spacebar)
+    con_prompt ();
+}
+
+void simh_shim_console_prompt (void)
+{
+if (!con_operator)
+    return;
+con_console_io = TRUE;
+con_clear_line ();
+con_prompt ();
+}
+
+void simh_shim_console_release (void)
+{
+con_console_io = FALSE;
+con_spacebar = FALSE;
+con_clear_line ();
+}
+
+simh_shim_restart_t simh_shim_console_restart (int reboot)
+{
+if (reboot)
+    return SIMH_SHIM_RESTART_COLD;
+if (comm_region[CON_COMM_WRMS] == 0)
+    return SIMH_SHIM_RESTART_WARM;
+if (comm_region[CON_COMM_CLDS] == 0)
+    return SIMH_SHIM_RESTART_COLD;
+return SIMH_SHIM_RESTART_NONE;
+}
+
+void simh_shim_console_restart_begun (simh_shim_restart_t what)
+{
+switch (what) {
+    case SIMH_SHIM_RESTART_WARM:
+        comm_region[CON_COMM_WRMS] = 1;
+        break;
+    case SIMH_SHIM_RESTART_COLD:
+        comm_region[CON_COMM_WRMS] = 0;
+        comm_region[CON_COMM_CLDS] = 1;
+        break;
+    case SIMH_SHIM_RESTART_NONE:
+        break;
+    }
+}
+
+void simh_shim_console_auto_restart (int on)
+{
+comm_region[CON_COMM_AUTO] = on ? 1 : 0;
 }
