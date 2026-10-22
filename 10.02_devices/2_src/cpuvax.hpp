@@ -288,6 +288,13 @@ public:
     parameter_bool_c auto_restart = parameter_bool_c(this, "auto_restart", "ar",/*readonly*/
                                     false, "AUTO RESTART switch: 1 = a halted processor is restarted from the console floppy.");
 
+    /// The console terminal shows seven bits of each character, which is what
+    /// ULTRIX's console needs: multi-user ULTRIX sends it with even parity in
+    /// bit 7, and a terminal of the time ignored that bit. Set it for a
+    /// guest that writes eight-bit characters to the console.
+    parameter_bool_c console_8bit = parameter_bool_c(this, "console_8bit", "c8",/*readonly*/
+                                    false, "Console terminal: 1 = 8-bit characters, 0 = 7 bits, parity ignored.");
+
     // the front panel's view of the console switches
     parameter_bool_c *panel_run_led(void) override { return &runmode; }
     parameter_bool_c *panel_halt_switch(void) override { return &halt_switch; }
@@ -358,6 +365,7 @@ public:
     const char *category(void) const override { return "cpu"; }
 
     // reached from the seam's C callbacks
+    void deliver_bus_interrupts(void);
     bool bus_read(unsigned addr, unsigned *data);
     bool bus_write(unsigned addr, unsigned data, bool byte);
 

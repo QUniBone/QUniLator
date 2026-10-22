@@ -558,6 +558,19 @@ bool qunibusadapter_c::request_is_blocking_active(uint8_t level_index)
     return false;
 }
 
+bool qunibusadapter_c::intr_requested_above(unsigned cpu_level)
+{
+    for (unsigned level_index = PRIORITY_LEVEL_INDEX_BR4;
+            level_index <= PRIORITY_LEVEL_INDEX_BR7; level_index++) {
+        if (level_index + 4 <= cpu_level)
+            continue;
+        priority_request_level_c *prl = &request_levels[level_index];
+        if (prl->active || prl->slot_request_mask)
+            return true;
+    }
+    return false;
+}
+
 // helper: push the active request to the PRU for execution
 // VB: the next request to schedule already calculated and saved in priority_request_level_c.active
 void qunibusadapter_c::request_execute_active_on_PRU(unsigned level_index) 

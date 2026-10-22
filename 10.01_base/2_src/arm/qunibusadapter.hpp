@@ -173,6 +173,11 @@ public:
 	priority_request_c *request_activate_lowest_slot(unsigned level_index);
 //	bool request_is_active(		unsigned level_index);
 	bool request_is_blocking_active(uint8_t level_index);
+	// Whether a device here has an interrupt request above 'cpu_level' (4..7,
+	// 0 for none) that the bus has not yet delivered. Read without the
+	// requests lock: an emulated processor asks it after each bus cycle, and a
+	// request that lands just after it asked is delivered on its next one.
+	bool intr_requested_above(unsigned cpu_level);
 	void request_active_complete(unsigned level_index, bool signal_complete);
 	void request_execute_active_on_PRU(unsigned level_index);
 

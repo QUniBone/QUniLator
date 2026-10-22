@@ -44,6 +44,11 @@
    board runs the machine faster or slower than the original. */
 #define VAX_INSTRUCTION_NS      2000
 
+/* How long a bus cycle waits for an interrupt it has let through to arrive.
+   The vector takes a few microseconds; the bound ends the wait for a request
+   the arbitration holds back. */
+#define BUS_INTR_DELIVERY_NS    200000
+
 /* How long the console's WAIT DONE lets a program run before it gives up on
    it. The programs it waits for - the memory controller's ROM program among
    them - finish in a fraction of that. */
@@ -102,6 +107,7 @@ cpuvax_c::cpuvax_c() :
     start_switch.value = false;
     continue_switch.value = false;
     auto_restart.value = false;
+    console_8bit.value = false;
 
     // An examine or deposit is performed on every write, so the same address
     // can be read again or written twice running.
@@ -190,6 +196,31 @@ static int vax_bus_write(void *context, unsigned addr, unsigned data, int byte)
     return vax->bus_write(addr, data, byte != 0) ? 1 : 0;
 }
 
+/* A device answers a register access and interrupts in the same moment: the
+   UDA50 shows the next initialisation step in SA and raises its request, and
+   ULTRIX's probe returns on seeing the step and counts the controller as one
+   that does not interrupt unless the interrupt has already been taken. A real
+   processor takes it at the next instruction. Here the arbitration grants only
+   when the processor lets it, so after each of its bus cycles the processor
+   lets a waiting request through and waits the few microseconds the vector
+   takes to reach it. A level whose slot in the adapter is still full is not
+   granted, and is left waiting. */
+void cpuvax_c::deliver_bus_interrupts(void)
+{
+    unsigned held = simh_shim_bus_interrupt_pending();
+
+    if (!qunibusadapter->intr_requested_above(held))
+        return;
+    unibone_prioritylevelchange((uint8_t) held);
+    unibone_grant_interrupts();
+
+    uint64_t start = timeout_c::abstime_ns();
+    while (simh_shim_bus_interrupt_pending() == held
+            && qunibusadapter->intr_requested_above(held)
+            && timeout_c::abstime_ns() - start < BUS_INTR_DELIVERY_NS)
+        ;
+}
+
 bool cpuvax_c::bus_read(unsigned addr, unsigned *data)
 {
     uint16_t word;
@@ -205,6 +236,7 @@ bool cpuvax_c::bus_read(unsigned addr, unsigned *data)
     *data = word;
     DEBUG("DATI %06o = %06o", addr, (unsigned) word);
     iotrace_note(0, addr, word, true);
+    deliver_bus_interrupts();
     return true;
 }
 
@@ -224,6 +256,7 @@ bool cpuvax_c::bus_write(unsigned addr, unsigned data, bool byte)
     }
     DEBUG("DATO%s %06o = %06o", byte ? "B" : "", addr, (unsigned) word);
     iotrace_note(byte ? 2 : 1, addr, word, true);
+    deliver_bus_interrupts();
     return true;
 }
 
@@ -476,6 +509,7 @@ bool cpuvax_c::configure_machine(bool start_pressed, const char *console_line)
     // The reset cleared what the console tells the operating system, the
     // AUTO RESTART switch among it.
     simh_shim_console_auto_restart(auto_restart.value ? 1 : 0);
+    simh_shim_console_8bit(console_8bit.value ? 1 : 0);
 
     // Memory goes through the processor's own setting, which sizes the array
     // and tells the memory controllers what they answer for.
@@ -1307,6 +1341,13 @@ bool cpuvax_c::on_param_changed(parameter_c *param)
         auto_restart.value = auto_restart.new_value;
         if (enabled.value)
             simh_shim_console_auto_restart(auto_restart.value ? 1 : 0);
+        return true;
+    }
+
+    if (param == &console_8bit) {
+        console_8bit.value = console_8bit.new_value;
+        if (enabled.value)
+            simh_shim_console_8bit(console_8bit.value ? 1 : 0);
         return true;
     }
 

@@ -75,6 +75,13 @@ else
 return c;
 }
 
+extern UNIT tto_unit;
+
+void simh_shim_console_8bit (int on)
+{
+tto_unit.flags = (tto_unit.flags & ~TT_MODE) | (on ? TT_MODE_8B : TT_MODE_7B);
+}
+
 /* Output conversion. 7P discards a character that would print as nothing. */
 int32 sim_tt_outcvt (int32 c, uint32 mode)
 {
