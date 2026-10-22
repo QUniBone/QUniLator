@@ -110,8 +110,16 @@ jobs:
           fi
           body=$(printf '%s\n' "$stanza" | awk 'NF && !t {t=1; next} t' | sed '/./,$!d' \
                  | sed -e 's/^  \* /- /' -e 's/^    /  /')
-          notes=$(printf '%s\n\nPackages and appliance images for both boards (qbone/QBUS, unibone/UNIBUS). Image base: %s.\n' \
-                  "$body" "$BASE_VERSION")
+          # The files table names each board's assets: the release page shows
+          # the first ten assets and folds the rest under "Show all".
+          debver=$(ls qbone_*_armhf.deb | sed -e 's/^qbone_//' -e 's/_armhf\.deb$//')
+          files=$(for b in qbone:QBUS unibone:UNIBUS; do
+                    n=${b%%:*}
+                    printf '| %s (%s) | `%s-dist.img.xz` | `%s_%s_armhf.deb` | `%s_%s_armhf.update.tar` |\n' \
+                      "$n" "${b#*:}" "$n" "$n" "$debver" "$n" "$debver"
+                  done)
+          notes=$(printf '%s\n\n| Board | Appliance image | Package | Update file |\n|---|---|---|---|\n%s\n\nAll files are under Assets below; "Show all" lists the ones past the first ten. Image base: %s.\n' \
+                  "$body" "$files" "$BASE_VERSION")
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release edit "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME — $title" --notes "$notes"
             gh release upload "$GITHUB_REF_NAME" *_armhf.deb --clobber
