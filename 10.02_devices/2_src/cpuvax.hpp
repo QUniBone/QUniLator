@@ -25,7 +25,8 @@
  the bus. docs/vax-host.md is the running record of what that reaches.
 
  A machine boots from the emulated UDA50 on the bus, or, with bootimage set,
- from the disk simh carries inside the core; bootdevice names the unit.
+ from the disk simh carries inside the core; bootdevice names the unit, or
+ holds 780 console commands that run the command files of the console floppy.
  */
 #ifndef _CPUVAX_HPP_
 #define _CPUVAX_HPP_
@@ -78,6 +79,22 @@ public:
     /// halts again at once. A change takes effect at the next START, so the
     /// boot flags for one boot are set on the running machine and START pressed.
     ///
+    /// Anything else in `bootdevice` is a line of 780 console commands,
+    /// separated by `;`, which START runs against the console floppy in
+    /// `image` as the real console would: `BOOT RAM` runs `RAMBOO.CMD` off the
+    /// floppy and `BOOT` alone `DEFBOO.CMD`, `BOOT DUA0` runs `DU0BOO.CMD`,
+    /// `@file` runs a command file (`.CMD` by default), and `LOAD COPY; START 2`
+    /// loads a program off the floppy and starts it. The console's own commands
+    /// are understood, with their abbreviations: `DEPOSIT` and `EXAMINE` with
+    /// `/G`, `/I`, `/P`, `/B`, `/W`, `/L` and `/N:`, register names and memory
+    /// addresses; `LOAD file/START:addr`; `START addr`, which starts the
+    /// processor with PSL 041F0000; `WAIT DONE`, which lets the program run
+    /// until it halts, for at most 30 seconds; `HALT`, `UNJAM`, `INIT`,
+    /// `SET DEFAULT` and `SET RELOCATION`. Numbers are hex, and `@` stands for
+    /// the value last examined or deposited. Every line of a command file is
+    /// printed on the console terminal as it runs; a command that fails stops
+    /// START with an error naming the file, the line and the command.
+    ///
     /// `bootimage` stays empty on a working machine: the disks are the `uda`
     /// drives, cards on the UNIBUS like any other. A file named here is
     /// instead attached to a test MSCP controller that is part of the VAX
@@ -94,7 +111,8 @@ public:
     parameter_string_c bootimage = parameter_string_c(this, "bootimage", "bi",/*readonly*/false,
             "Test only: disk image for the emulation's own MSCP controller. Empty: boot from the uda.");
     parameter_string_c bootdevice = parameter_string_c(this, "bootdevice", "bd",/*readonly*/false,
-            "What START boots: RQ0..RQ3, HK0..HK7 or CS, with boot flags as RQ0 /R5:1. Empty: no boot.");
+            "What START boots: RQ0..RQ3, HK0..HK7 or CS, with boot flags as RQ0 /R5:1, or 780 console"
+            " commands such as BOOT RAM or LOAD COPY; START 2. Empty: no boot.");
 
     /// The console floppy: the RX01 drive that is part of a 780's console,
     /// which VMS calls `CSA1:` once `SYSGEN CONNECT CONSOLE` has made it
@@ -103,7 +121,8 @@ public:
     /// the RX11 or RX211 on the UNIBUS, which VMS calls `DY` or `DX`.
     ///
     /// `bootdevice` set to `CS` boots from it, which is how a 780 starts
-    /// standalone BACKUP.
+    /// standalone BACKUP, and console commands in `bootdevice` run the command
+    /// files and programs on it.
     ///
     /// The floppy can be changed at any time, as on the real drive. What the
     /// machine writes reaches the file within a few seconds, and when the
@@ -395,7 +414,19 @@ private:
     bool machine_running = false;       // the core is executing, not halted
     uint64_t instructions_at_start = 0; // sim_gtime() when the machine started
 
-    bool configure_machine(void);       // memory, disk, boot; leaves it ready to run
+    // A bootdevice that names no device of the processor is a line of 780
+    // console commands, which START runs against the console floppy. They may
+    // leave the processor halted, hand it over, or wait for the program they
+    // started to signal it is done before the rest of them runs.
+    bool boot_runs = true;              // the last START left the processor to run
+    bool console_waiting = false;       // a WAIT DONE waits for the running program
+    uint64_t console_wait_deadline = 0; // CLOCK_MONOTONIC second the wait fails at
+    void console_wait_begin(void);
+    void console_resume(void);
+
+    // memory, disk, boot; leaves it ready to run. Console commands run only
+    // when START is pressed, not when the processor is enabled.
+    bool configure_machine(bool start_pressed);
     void machine_start(void);
     void machine_stop(const char *why);
     void publish_status(void);

@@ -110,6 +110,33 @@ simh_shim_status_t simh_shim_set (const char *setting);
 /* Boot from a device, as scp's BOOT does: find it, and call its boot routine. */
 simh_shim_status_t simh_shim_boot (const char *unit_name);
 
+/* The VAX-11/780 console's command language, run against the console floppy:
+   BOOT, @file, LOAD, DEPOSIT, EXAMINE, START, WAIT DONE and the rest, as
+   vax780_console.c describes them. Commands are separated by semicolons, and
+   BOOT and @ run command files off the floppy, whose lines the console prints
+   on the terminal as it executes them.
+
+   What the commands left the processor doing: */
+typedef enum {
+    SIMH_SHIM_CONSOLE_HALTED,       /* they ran out with nothing started */
+    SIMH_SHIM_CONSOLE_RUNNING,      /* a START handed the processor over */
+    SIMH_SHIM_CONSOLE_WAITING,      /* started, and WAIT DONE waits for it */
+    SIMH_SHIM_CONSOLE_ERROR         /* a command failed; message says which */
+} simh_shim_console_state_t;
+
+/* Read every command file the line reaches and run the commands, until they
+   end, START hands over or WAIT DONE waits. A failure writes the file, line and
+   command into message. Call on the processor's thread with it stopped. */
+simh_shim_console_state_t simh_shim_console_begin (const char *commands,
+                                                   char *message, size_t message_size);
+
+/* The program a WAIT DONE waited for is done: run the commands after it. */
+simh_shim_console_state_t simh_shim_console_resume (char *message, size_t message_size);
+
+/* True when a run ended because the program signalled the console that it is
+   done, by halting or by the console's software-done code. */
+int simh_shim_console_done (simh_shim_status_t status);
+
 /* Text for a status code, for a host that wants to report one. */
 const char *simh_shim_status_text (simh_shim_status_t status);
 

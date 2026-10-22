@@ -44,6 +44,11 @@
    board runs the machine faster or slower than the original. */
 #define VAX_INSTRUCTION_NS      2000
 
+/* How long the console's WAIT DONE lets a program run before it gives up on
+   it. The programs it waits for - the memory controller's ROM program among
+   them - finish in a fraction of that. */
+#define CONSOLE_WAIT_S          30
+
 /* The processor the seam serves. Its callbacks are plain C functions and reach
    the device through this, and through the context the host structure carries. */
 static cpuvax_c *the_vax = NULL;
@@ -328,7 +333,7 @@ bool cpuvax_c::on_before_install(void)
 
     // the processor's thread is not running yet, so the copy is taken here
     boot_command = bootdevice.value;
-    if (!configure_machine())
+    if (!configure_machine(/*start_pressed*/false))
         return false;                           // qunibusdevice_c aborts the enable
 
     // The processor is the bus master whether or not it is executing, so a
@@ -360,8 +365,9 @@ void cpuvax_c::on_after_uninstall(void)
 }
 
 /* Memory, the disk the machine boots from, and the bootstrap itself. Leaves
-   the processor sitting at its boot address, stopped. */
-bool cpuvax_c::configure_machine(void)
+   the processor sitting at its boot address, stopped; boot_runs says whether
+   START is to run it from there. */
+bool cpuvax_c::configure_machine(bool start_pressed)
 {
     simh_shim_host_t host;
     simh_shim_status_t r;
@@ -375,6 +381,8 @@ bool cpuvax_c::configure_machine(void)
     dma_failures.value = 0;
     dma_byte_offset.value = 0;
     pru_dma_counts_seen = pru_dma_counts();
+    boot_runs = true;
+    console_waiting = false;
 
     memset(&host, 0, sizeof host);
     host.context = this;
@@ -509,6 +517,10 @@ bool cpuvax_c::configure_machine(void)
         }
     }
 
+    // A bootdevice that names none of the processor's devices is a line of
+    // console commands.
+    bool console_commands = false;
+
     {
         // What the bootstrap will be told to look for. A controller that takes
         // no part in the auto-configuration keeps no address, and a bootstrap
@@ -517,7 +529,18 @@ bool cpuvax_c::configure_machine(void)
         int on = 0;
 
         boot_ba_known = false;
-        if (simh_shim_device_info(boot_command.c_str(), &ba, &on)) {
+        if (!boot_command.empty() && !internal_disk
+                && !simh_shim_device_info(boot_command.c_str(), &ba, &on)) {
+            // The console's command files boot from the UDA50 at the address
+            // RQ answers at, so that address is the one watched.
+            console_commands = true;
+            if (simh_shim_device_info("RQ", &ba, &on) && ba != 0) {
+                boot_ba = ba;
+                boot_ba_known = true;
+                simh_shim_bus_watch(ba);
+                iotrace_base = ba & 0777777;
+            }
+        } else if (simh_shim_device_info(boot_command.c_str(), &ba, &on)) {
             boot_ba = ba;
             boot_ba_known = true;
             INFO("boot device %s: %s, would answer at %06o",
@@ -551,6 +574,33 @@ bool cpuvax_c::configure_machine(void)
     if (boot_command.empty()) {
         INFO("no bootdevice set, so nothing is booted and the VAX stays halted");
         return true;
+    }
+
+    if (console_commands) {
+        char message[256];
+
+        if (!start_pressed) {
+            INFO("bootdevice holds console commands, which START runs: %s",
+                 boot_command.c_str());
+            boot_runs = false;
+            return true;
+        }
+        INFO("running console commands: %s", boot_command.c_str());
+        switch (simh_shim_console_begin(boot_command.c_str(), message, sizeof message)) {
+        case SIMH_SHIM_CONSOLE_HALTED:
+            INFO("the console commands started nothing, so the VAX stays halted");
+            boot_runs = false;
+            return true;
+        case SIMH_SHIM_CONSOLE_RUNNING:
+            return true;
+        case SIMH_SHIM_CONSOLE_WAITING:
+            console_wait_begin();
+            return true;
+        case SIMH_SHIM_CONSOLE_ERROR:
+            break;
+        }
+        ERROR("console commands failed at %s", message);
+        return false;
     }
 
     if ((r = simh_shim_boot(boot_command.c_str())) != 0) {
@@ -805,6 +855,42 @@ void cpuvax_c::service_console_access(void)
     console_access = console_access_none;
 }
 
+/* WAIT DONE: the program the console started runs until it halts or signals
+   done, and for at most CONSOLE_WAIT_S seconds, since a program that never
+   does would otherwise hold the console forever. */
+void cpuvax_c::console_wait_begin(void)
+{
+    struct timespec now;
+
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    console_waiting = true;
+    console_wait_deadline = (uint64_t) now.tv_sec + CONSOLE_WAIT_S;
+}
+
+/* The program WAIT DONE waited for is done: the console runs the commands
+   after it, on the processor's thread with the processor stopped between two
+   batches. */
+void cpuvax_c::console_resume(void)
+{
+    char message[256];
+
+    console_waiting = false;
+    switch (simh_shim_console_resume(message, sizeof message)) {
+    case SIMH_SHIM_CONSOLE_HALTED:
+        machine_stop("console commands done");
+        return;
+    case SIMH_SHIM_CONSOLE_RUNNING:
+        return;
+    case SIMH_SHIM_CONSOLE_WAITING:
+        console_wait_begin();
+        return;
+    case SIMH_SHIM_CONSOLE_ERROR:
+        break;
+    }
+    ERROR("console commands failed at %s", message);
+    machine_stop("console command failed");
+}
+
 /* Put a floppy in the console drive, or with an empty path take it out. What
    the machine wrote to the one it held reaches that file first. An RX01 has no
    write protection, so a file the board may not write goes in as any other
@@ -869,7 +955,7 @@ void cpuvax_c::worker(unsigned instance)
         if (start_switch.value) {
             start_switch.value = false;         // momentary action
             machine_stop(NULL);
-            if (configure_machine() && !halt_switch.value)
+            if (configure_machine(/*start_pressed*/true) && boot_runs && !halt_switch.value)
                 machine_start();
         }
 
@@ -913,6 +999,25 @@ void cpuvax_c::worker(unsigned instance)
         if (executed > 0)
             the_flexi_timeout_controller->emu_step_ns(
                 (unsigned) (executed * VAX_INSTRUCTION_NS));
+
+        // A program the console's WAIT DONE waits for has halted or signalled
+        // it is done, and the console takes up the commands after it.
+        if (console_waiting) {
+            struct timespec now;
+
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            if (simh_shim_console_done(r)) {
+                console_resume();
+                continue;
+            }
+            if ((uint64_t) now.tv_sec >= console_wait_deadline) {
+                console_waiting = false;
+                ERROR("console command WAIT DONE: the program did not signal done"
+                      " within %u seconds", CONSOLE_WAIT_S);
+                machine_stop("WAIT DONE timed out");
+                continue;
+            }
+        }
 
         // The batch running out is the ordinary end of a pass. Anything else
         // stopped the processor, and HALT is the one an operator expects.

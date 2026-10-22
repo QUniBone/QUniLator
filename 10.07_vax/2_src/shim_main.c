@@ -7,10 +7,11 @@
  * application will have when the core moves onto the board.
  *
  *	vax780-shim [-m megabytes] [-b instructions] [-l seconds]
- *	            [-s "DEV PARAM"] [-a UNIT=file] [-B UNIT] [-D] [image]
+ *	            [-s "DEV PARAM"] [-a UNIT=file] [-B UNIT] [-c COMMANDS] [-D] [image]
  *
  * With an image it is loaded at address 0 and the processor started there; with
- * a unit to boot from it runs that unit's bootstrap; with neither the core
+ * a unit to boot from it runs that unit's bootstrap; with -c it runs a line of
+ * 780 console commands against the floppy attached to CS; with none the core
  * comes up reset, which is enough to say the seam links and the event queue
  * turns. -l bounds the run so an unattended check terminates.
  */
@@ -101,13 +102,14 @@ static void usage (const char *argv0)
 {
 fprintf (stderr,
     "usage: %s [-m megabytes] [-b instructions] [-l seconds]\n"
-    "          [-s \"DEV PARAM\"] [-a UNIT=file] [-B UNIT] [image]\n"
+    "          [-s \"DEV PARAM\"] [-a UNIT=file] [-B UNIT] [-c COMMANDS] [image]\n"
     "  -m  memory size, default 8\n"
     "  -b  instructions per batch, default 100000\n"
     "  -l  stop after this many seconds of host time, default 0 for no limit\n"
     "  -s  set a device parameter, repeatable, e.g. -s \"RQ0 RD54\"\n"
     "  -a  attach a file to a unit, repeatable, e.g. -a RQ0=system.dsk\n"
     "  -B  boot from a unit instead of loading an image\n"
+    "  -c  run 780 console commands, e.g. -a CS=console.rx1 -c \"BOOT ANY\"\n"
     "  -D  trace every device to stderr\n"
     "  image  loaded at address 0 and started there\n",
     argv0);
@@ -132,6 +134,9 @@ int main (int argc, char *argv[])
 simh_shim_host_t host;
 const char *image = NULL;
 const char *boot_unit = NULL;
+const char *console_commands = NULL;
+simh_shim_console_state_t console = SIMH_SHIM_CONSOLE_RUNNING;
+char console_message[256];
 const char *settings[MAX_SETTINGS];
 const char *attachments[MAX_SETTINGS];
 int nsettings = 0, nattachments = 0;
@@ -153,6 +158,8 @@ for (i = 1; i < argc; i++) {
         limit_s = strtol (argv[++i], NULL, 10);
     else if ((strcmp (argv[i], "-B") == 0) && (i + 1 < argc))
         boot_unit = argv[++i];
+    else if ((strcmp (argv[i], "-c") == 0) && (i + 1 < argc))
+        console_commands = argv[++i];
     else if (strcmp (argv[i], "-D") == 0)
         trace = 1;
     else if ((strcmp (argv[i], "-s") == 0) && (i + 1 < argc) && (nsettings < MAX_SETTINGS))
@@ -234,10 +241,35 @@ if (boot_unit != NULL) {
     fprintf (stderr, "booting from %s\n", boot_unit);
     }
 
+if (console_commands != NULL) {
+    console = simh_shim_console_begin (console_commands, console_message,
+                                       sizeof console_message);
+    if (console == SIMH_SHIM_CONSOLE_ERROR) {
+        fprintf (stderr, "console commands failed: %s\n", console_message);
+        return 1;
+        }
+    if (console == SIMH_SHIM_CONSOLE_HALTED) {
+        fprintf (stderr, "console commands started nothing\n");
+        return 0;
+        }
+    }
+
 console_open ();
 started = host_elapsed_usec (NULL);
 for (;;) {
     r = simh_shim_run ((int32) batch);
+    /* a program the console waits for has signalled it, and the console
+       takes its commands up again */
+    if ((console == SIMH_SHIM_CONSOLE_WAITING) && simh_shim_console_done (r)) {
+        console = simh_shim_console_resume (console_message, sizeof console_message);
+        if (console == SIMH_SHIM_CONSOLE_ERROR) {
+            fprintf (stderr, "\nconsole commands failed: %s\n", console_message);
+            break;
+            }
+        if (console == SIMH_SHIM_CONSOLE_HALTED)
+            break;
+        continue;
+        }
     if (r != SCPE_STOP)                                 /* SCPE_STOP ends a batch */
         break;
     if ((limit_s > 0) &&
