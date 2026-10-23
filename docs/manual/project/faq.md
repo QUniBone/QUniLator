@@ -172,6 +172,14 @@ boot. A configuration from the
 [catalogue](https://qunilator.com/configurations/) brings whatever it needs with
 it.
 
+## How do I get a file onto the running guest, or off it?
+
+Through its console. **Send file** on the dashboard's console, or a file
+dropped on it, types a text file into whatever reads the terminal, or sends any
+file by XMODEM or Kermit to a receiver started on the guest; **Receive file**
+fetches files the guest sends by XMODEM or Kermit. See
+[Sending and receiving files](../operating/dashboard.md#sending-and-receiving-files).
+
 ## Where do I ask something not answered here?
 
 - [GitHub issues](https://github.com/QUniBone/QUniLator/issues) for the software.

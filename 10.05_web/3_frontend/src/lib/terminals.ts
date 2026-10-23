@@ -50,6 +50,82 @@ let replayPending = false;
 // this console is the server-designated terminal answerer (only it answers the
 // guest's identification queries, so several open consoles do not each reply)
 let answerer = false;
+// A file transfer holds the line while it runs: what the guest sends goes to
+// it, the keyboard is set aside, and the screen shows the guest's output only
+// when the transfer says so - typed text shows its echo, a protocol's packets
+// are not for reading.
+let transferTap: ((data: Uint8Array) => void) | null = null;
+let transferShows = true;
+
+// The board is told too, so it keeps the transfer's packets to this page:
+// the other consoles do not show them, and the history replayed on connect
+// and the recording do not hold them.
+export function setTransferTap(tap: ((data: Uint8Array) => void) | null, shows: boolean): void {
+  transferTap = tap;
+  transferShows = shows;
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ transfer: tap != null }));
+}
+
+// Bytes to the guest as they are, in a binary frame, so a byte past 127 goes
+// over unchanged. False when nothing carries the console.
+export function sendConsoleBytes(bytes: Uint8Array): boolean {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(bytes);
+    return true;
+  }
+  if (serialWriter) {
+    serialWriter.write(bytes);
+    return true;
+  }
+  return false;
+}
+
+// A log of the console, kept in this browser from when it is started to when
+// it is saved: what the screen shows, without the history replayed on connect.
+// It goes on across pages, since the module outlives the terminal.
+let logChunks: Uint8Array[] | null = null;
+let logStarted = new Date();
+
+export function consoleLogging(): boolean {
+  return logChunks != null;
+}
+
+export function startConsoleLog(): void {
+  logChunks = [];
+  logStarted = new Date();
+}
+
+// Stop the log and hand it to the browser as a file.
+export function saveConsoleLog(): void {
+  if (!logChunks) return;
+  const blob = new Blob(logChunks, { type: 'application/octet-stream' });
+  logChunks = null;
+  const stamp = logStarted.toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '-');
+  saveFile('console-' + stamp + '.log', blob);
+}
+
+// Hand a file to the browser to save.
+export function saveFile(name: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// The guest's output: to the screen and the log, and to a transfer that holds
+// the line.
+function guestOutput(data: Uint8Array): void {
+  if (transferTap) {
+    transferTap(data);
+    if (!transferShows) return;
+  }
+  logChunks?.push(data.slice());
+  term?.write(data);
+}
 
 export function serialConnected(): boolean {
   return serialPort != null;
@@ -162,6 +238,7 @@ function wireTerminal(): void {
   t.parser.registerCsiHandler({ final: 'c' }, identify);
   t.parser.registerEscHandler({ final: 'Z' }, identify);
   t.onData((d) => {
+    if (transferTap) return;
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(d);
     else if (serialWriter) serialWriter.write(serialEncoder.encode(d));
   });
@@ -262,6 +339,10 @@ function connectConsole(): void {
         try {
           const msg = JSON.parse(e.data);
           if (typeof msg.answerer === 'boolean') answerer = msg.answerer;
+          // another page's file transfer holds the line, and its packets are
+          // not sent here; say so, so a quiet screen is not taken for a hang
+          if (typeof msg.transfer === 'boolean' && term)
+            term.write(msg.transfer ? '\r\n[a file transfer is using the console]\r\n' : '[file transfer ended]\r\n');
           // The server marks where the replayed history ends. That is the
           // exact moment answerbacks become safe again, so take it in
           // preference to the write-callback and the timeout below, both of
@@ -283,7 +364,7 @@ function connectConsole(): void {
           replaying = false;
         });
       } else {
-        term.write(data);
+        guestOutput(data);
       }
     };
     sock.onclose = () => {
@@ -332,7 +413,7 @@ export async function serialConnect(baudRate: number): Promise<void> {
         while (true) {
           const { value, done } = await serialReader.read();
           if (done) break;
-          if (value && term) term.write(value);
+          if (value) guestOutput(value);
         }
       } finally {
         serialReader.releaseLock();
@@ -388,9 +469,10 @@ export function clearConsole(): void {
 // panel: its switches are operated with the mouse, and anything typed is meant
 // for the machine, so the caret belongs in the terminal whenever nothing on the
 // page is asking for text itself.
-
 export function focusConsole(): void {
   if (!term) return;
+  // a dialog holds the keyboard while it is open
+  if (document.querySelector('.modal-overlay')) return;
   const active = document.activeElement as HTMLElement | null;
   if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA'
       || active.tagName === 'SELECT' || active.isContentEditable))

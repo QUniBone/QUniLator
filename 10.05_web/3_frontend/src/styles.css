@@ -1778,3 +1778,23 @@ label.btn.disabled { opacity: .6; pointer-events: none; }
 .cat-url-input { flex: 1; min-width: 0; }
 a.cat-entry-name { color: var(--ink); text-decoration: underline dotted var(--ink-faint); }
 a.cat-entry-name:hover { color: var(--accent); }
+
+/* the console's Send file dialog: the form, a hint on starting the guest's
+   receiver, and the progress of the transfer under them */
+.modal-card.sf-card { width: 680px; }
+.sf-card .set-grid { grid-template-columns: max-content 1fr; }
+.sf-card .set-name { white-space: nowrap; }
+.sf-card .set-val input.sf-num { min-width: 0; width: calc(5ch + 20px); text-align: right; }
+.sf-card .set-val input.sf-prompt { min-width: 0; width: calc(12ch + 20px); }
+/* a number and its unit stay on one line */
+.sf-unit { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.sf-hint { font-size: var(--fs-0); color: var(--ink-muted); margin: 10px 0 0; }
+.sf-progress { margin-top: 14px; }
+.sf-progress progress { width: 100%; height: 10px; accent-color: var(--accent); }
+.sf-progress .muted { font-size: var(--fs-0); margin-top: 4px; }
+.sf-outcome { font-size: var(--fs-1); margin: 10px 0 0; }
+.sf-outcome.good { color: var(--ok); }
+.sf-outcome.bad { color: var(--err); }
+.sf-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+/* a file held over the console, which dropping sends */
+.console-card.console-drop { outline: 2px dashed var(--accent); outline-offset: -2px; }

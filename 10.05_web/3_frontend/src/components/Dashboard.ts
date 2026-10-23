@@ -4,7 +4,15 @@ import type { ComponentChildren } from 'preact';
 import { useLocation } from 'preact-iso';
 import { useStore, store, emit } from '../store';
 import { liveControl, loadConfigs, fetchConfigSnapshot, setConfigLayout } from '../api';
-import { initLiveTerminal, teardownTerminals, consoleSource, focusConsole } from '../lib/terminals';
+import {
+  initLiveTerminal,
+  teardownTerminals,
+  consoleSource,
+  focusConsole,
+  consoleLogging,
+  startConsoleLog,
+  saveConsoleLog,
+} from '../lib/terminals';
 import { recordingState, startRecording, stopRecording } from '../api';
 import { enabledDevices } from '../lib/devmodel';
 import { placeItems, gridRows, fits, occupancyExcept, firstFree } from '../lib/dashlayout';
@@ -12,6 +20,8 @@ import type { GridItem } from '../lib/dashlayout';
 import { toast } from '../lib/toast';
 import { Led, Chip } from './common';
 import { PerfCard } from './Perf';
+import { TransferDialog } from './FileTransfer';
+import type { Direction } from './FileTransfer';
 import { widgetFor, widgetOptions, WidgetCard } from './widgets';
 import type { Cells, WidgetOpts } from './widgets';
 import type { LiveDev, DashLayout } from '../types';
@@ -297,17 +307,68 @@ function RecordButton() {
   >${on ? html`<span class="rec-dot"></span>Recording` : 'Record'}</button>`;
 }
 
+// The console log. It is kept in this browser and saved as a file when it is
+// stopped: what the screen showed from the moment it was started.
+function LogButton() {
+  const [on, setOn] = useState(consoleLogging());
+  const toggle = () => {
+    if (consoleLogging()) saveConsoleLog();
+    else startConsoleLog();
+    setOn(consoleLogging());
+  };
+  return html`<button
+    class=${'btn small' + (on ? ' recording' : '')}
+    title=${on ? 'Stop the log and save it as a file' : 'Log the console in this browser, to save as a file'}
+    onClick=${toggle}
+  >${on ? html`<span class="rec-dot"></span>Logging` : 'Log'}</button>`;
+}
+
+// The file transfer dialog, opened by its buttons or by a file dropped on the
+// console, which opens it to send that file.
+interface Transfer {
+  direction: Direction;
+  file: File | null;
+}
+
 function ConsoleCard() {
   useStore();
   const live = store.consoleConnected;
   const src = CONSOLE_SOURCE_LABEL[consoleSource()] || '';
-  return html`<div class=${'card console-card' + (live ? '' : ' console-down')}>
+  const [transfer, setTransfer] = useState<Transfer | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const carriesFile = (e: DragEvent) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
+  const over = (e: DragEvent) => {
+    if (!live || !carriesFile(e)) return;
+    e.preventDefault();
+    e.dataTransfer!.dropEffect = 'copy';
+    setDragging(true);
+  };
+  const leave = (e: DragEvent) => {
+    if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragging(false);
+  };
+  const drop = (e: DragEvent) => {
+    setDragging(false);
+    if (!live || !carriesFile(e)) return;
+    e.preventDefault();
+    const f = e.dataTransfer!.files[0];
+    if (f && transfer == null) setTransfer({ direction: 'send', file: f });
+  };
+  return html`<div class=${'card console-card' + (live ? '' : ' console-down') + (dragging ? ' console-drop' : '')}
+    onDragOver=${over} onDragEnter=${over} onDragLeave=${leave} onDrop=${drop}>
     <div class="card-head"><h3>Console</h3>
+      <button class="btn small" disabled=${!live}
+        title="Send a file to the guest: as typed text, by XMODEM or by Kermit. Dropping a file on the console does this too."
+        onClick=${() => setTransfer({ direction: 'send', file: null })}>Send file</button>
+      <button class="btn small" disabled=${!live} title="Receive a file from the guest by XMODEM or Kermit"
+        onClick=${() => setTransfer({ direction: 'receive', file: null })}>Receive file</button>
+      <${LogButton} />
       <${RecordButton} />
       <span class=${'disk-status ' + (live ? 'ok' : 'idle')}
         >${live ? src : 'disconnected'}</span>
     </div>
     <div class="card-body dash-term">${html`<${TerminalHost} />`}</div>
+    ${transfer &&
+    html`<${TransferDialog} direction=${transfer.direction} initial=${transfer.file} onClose=${() => setTransfer(null)} />`}
   </div>`;
 }
 
