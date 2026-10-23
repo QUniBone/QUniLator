@@ -210,6 +210,10 @@ void simh_shim_console_auto_restart (int on);
    terminal that ignores the parity bit an operating system may set. */
 void simh_shim_console_8bit (int on);
 
+/* While on, CTRL/P is a character for the program like any other, which a
+   file transfer through the console needs: its binary data holds the byte. */
+void simh_shim_console_hold_escape (int on);
+
 /* Text for a status code, for a host that wants to report one. */
 const char *simh_shim_status_text (simh_shim_status_t status);
 

@@ -78,6 +78,14 @@ void console_channel_c::append(const char *data, size_t len) {
 	if (len == 0)
 		return;
 	std::lock_guard<std::mutex> lock(mutex_);
+	if (transfer_ != nullptr) {
+		if (send_(transfer_, data, len) < 0) {
+			clients_.erase(transfer_);
+			transfer_ = nullptr;
+			announce_transfer_locked(false);
+		}
+		return;
+	}
 	if (recorder_ != nullptr)
 		recorder_->output(data, len);
 	ring_.append(data, len);
@@ -119,11 +127,54 @@ void console_channel_c::add_client(void *client) {
 		}
 	}
 	clients_.insert(client);
+	if (transfer_ != nullptr && send_text_ != nullptr) {
+		static const char busy[] = "{\"transfer\":true}";
+		send_text_(client, busy, sizeof(busy) - 1);
+	}
+}
+
+// caller holds mutex_
+void console_channel_c::announce_transfer_locked(bool on) {
+	static const char start[] = "{\"transfer\":true}";
+	static const char end[] = "{\"transfer\":false}";
+	if (transfer_hook_ != nullptr)
+		transfer_hook_(transfer_context_, on);
+	if (send_text_ == nullptr)
+		return;
+	for (void *c : clients_)
+		if (c != transfer_)
+			send_text_(c, on ? start : end, on ? sizeof(start) - 1 : sizeof(end) - 1);
+}
+
+void console_channel_c::set_transfer(void *client, bool on) {
+	std::lock_guard<std::mutex> lock(mutex_);
+	if (on) {
+		transfer_ = client;
+		announce_transfer_locked(true);
+	} else if (transfer_ == client) {
+		transfer_ = nullptr;
+		announce_transfer_locked(false);
+	}
+}
+
+void console_channel_c::set_transfer_hook(transfer_fn_t hook, void *context) {
+	std::lock_guard<std::mutex> lock(mutex_);
+	transfer_hook_ = hook;
+	transfer_context_ = context;
+}
+
+bool console_channel_c::transfer_by(void *client) {
+	std::lock_guard<std::mutex> lock(mutex_);
+	return transfer_ != nullptr && transfer_ == client;
 }
 
 void console_channel_c::remove_client(void *client) {
 	std::lock_guard<std::mutex> lock(mutex_);
 	clients_.erase(client);
+	if (client == transfer_) {
+		transfer_ = nullptr;
+		announce_transfer_locked(false);
+	}
 	// The answerer left: promote the first remaining client that can take it.
 	if (client == answerer_) {
 		answerer_ = nullptr;

@@ -174,7 +174,7 @@ static void ws_ready_handler(struct mg_connection *conn, void *cbdata) {
 	console->channel.add_client(conn);
 }
 
-static int ws_data_handler(struct mg_connection *, int opcode, char *data,
+static int ws_data_handler(struct mg_connection *conn, int opcode, char *data,
 		size_t len, void *cbdata) {
 	console_c *console = (console_c *) cbdata;
 	if ((opcode & 0x0f) == MG_WEBSOCKET_OPCODE_CONNECTION_CLOSE)
@@ -186,14 +186,19 @@ static int ws_data_handler(struct mg_connection *, int opcode, char *data,
 	// and is injected like every other byte.
 	if ((opcode & 0x0f) == MG_WEBSOCKET_OPCODE_TEXT
 			&& web_console_is_control(data, len)) {
-		if (web_console_is_break(data, len) && console->slu != nullptr)
+		int transfer = web_console_transfer(data, len);
+		if (transfer >= 0)
+			console->channel.set_transfer(conn, transfer == 1);
+		else if (web_console_is_break(data, len) && console->slu != nullptr)
 			console->slu->receive_break();
 		return 1;
 	}
 	// inject like the menu's "dl11 rcv" command
 	if (console->adapter == nullptr)
 		return 1;
-	console->recorder.input(data, len);
+	// a file transfer's packets are kept out of the recording both ways
+	if (!console->channel.transfer_by(conn))
+		console->recorder.input(data, len);
 	pthread_mutex_lock(&console->adapter->mutex);
 	console->rcv_stream->clear();
 	console->rcv_stream->write(data, len);
@@ -205,6 +210,12 @@ static void ws_close_handler(const struct mg_connection *conn, void *cbdata) {
 	console_c *console = (console_c *) cbdata;
 	console->channel.remove_client(const_cast<struct mg_connection *>(conn));
 }
+
+#if defined(UNIBUS)
+static void vax_console_transfer(void *context, bool on) {
+	((cpuvax_c *) context)->console_transfer(on);
+}
+#endif
 
 void webconsole_register(struct mg_context *ctx) {
 	if (device_configuration != nullptr) {
@@ -218,6 +229,10 @@ void webconsole_register(struct mg_context *ctx) {
 		if (device_configuration->CPUVAX != nullptr) {
 			consoles[2].adapter = &device_configuration->CPUVAX->rs232adapter;
 			consoles[2].rcv_stream = &device_configuration->cpuvax_rcv_stream;
+			// a transfer's binary data holds CTRL/P, which is the console's
+			// key on this line; the console leaves it to the program meanwhile
+			consoles[2].channel.set_transfer_hook(vax_console_transfer,
+					device_configuration->CPUVAX);
 		}
 #endif
 	}

@@ -85,6 +85,21 @@ public:
 	void set_recorder(console_recorder_c *rec);
 	console_recorder_c *recorder();
 
+	// A file transfer holds the line. From set_transfer(client, true) until
+	// set_transfer(client, false), or until that client goes away, the guest's
+	// output goes to that client alone and stays out of the history and the
+	// recording: it is the transfer's packets, which the program running it
+	// reads and nobody else should see or have replayed. The other clients are
+	// told with the {"transfer":...} control frame, and so is one that connects
+	// while it runs.
+	void set_transfer(void *client, bool on);
+	// Told whenever a transfer starts or ends, with the context given here,
+	// under the channel's lock: the line's own device reacts to it there.
+	typedef void (*transfer_fn_t)(void *context, bool on);
+	void set_transfer_hook(transfer_fn_t hook, void *context);
+	// Is client the one running a transfer? Its input is the transfer's too.
+	bool transfer_by(void *client);
+
 	// Introspection for tests.
 	size_t ring_size();
 	size_t client_count();
@@ -103,6 +118,11 @@ private:
 	console_recorder_c *recorder_ = nullptr;
 	bool designate_answerer_;      // false: every client is a plain mirror
 	void *answerer_ = nullptr;     // the one client that answers guest queries
+	void *transfer_ = nullptr;     // the client running a file transfer, if any
+	// caller holds mutex_: tell every client but the transfer's whether one runs
+	void announce_transfer_locked(bool on);
+	transfer_fn_t transfer_hook_ = nullptr;
+	void *transfer_context_ = nullptr;
 };
 
 #endif // _WEBCONSOLE_CHANNEL_HPP_

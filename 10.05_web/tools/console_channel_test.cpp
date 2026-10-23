@@ -313,6 +313,63 @@ int main(void) {
 		check(ch.client_count() == 1, "a client dead on the marker does not join");
 	}
 
+	/* 16. a file transfer holds the line: its packets go to the client
+	      running it alone and stay out of the history, the others are told,
+	      and the line returns to everyone when it ends */
+	{
+		console_channel_c ch(mock_send, mock_send_text);
+		mock_client xfer, other;
+		ch.add_client(&xfer);
+		ch.add_client(&other);
+		ch.append("before", 6);
+		ch.set_transfer(&xfer, true);
+		check(other.ctrl == LIVE + "{\"transfer\":true}", "the other client is told a transfer started");
+		check(xfer.ctrl == LIVE, "the transfer's own client is not told");
+		check(ch.transfer_by(&xfer) && !ch.transfer_by(&other), "the channel knows whose transfer it is");
+		ch.append("PACKETS", 7);
+		check(xfer.got == "beforePACKETS", "the transfer's client gets its packets");
+		check(other.got == "before", "the other client does not");
+		mock_client late;
+		ch.add_client(&late);
+		check(late.got == "before", "the packets are not in the history");
+		check(late.ctrl == LIVE + "{\"transfer\":true}", "a client joining during the transfer is told");
+		ch.set_transfer(&other, false);
+		check(ch.transfer_by(&xfer), "only the transfer's client ends it");
+		ch.set_transfer(&xfer, false);
+		check(other.ctrl == LIVE + "{\"transfer\":true}{\"transfer\":false}", "the end is announced");
+		ch.append("after", 5);
+		check(other.got == "beforeafter" && xfer.got == "beforePACKETSafter",
+		      "the line returns to everyone");
+	}
+
+	/* 17. a transfer whose client goes away ends with it */
+	{
+		console_channel_c ch(mock_send, mock_send_text);
+		mock_client xfer, other;
+		ch.add_client(&xfer);
+		ch.add_client(&other);
+		ch.set_transfer(&xfer, true);
+		ch.remove_client(&xfer);
+		check(!ch.transfer_by(&xfer), "the transfer ended with its client");
+		ch.append("x", 1);
+		check(other.got == "x", "the line returns to the others");
+	}
+
+	/* 18. the line's device hears of every start and end, including the end a
+	      disconnect brings, so it never stays in transfer mode */
+	{
+		console_channel_c ch(mock_send, mock_send_text);
+		std::string heard;
+		ch.set_transfer_hook([](void *ctx, bool on) { *(std::string *) ctx += on ? "+" : "-"; }, &heard);
+		mock_client xfer;
+		ch.add_client(&xfer);
+		ch.set_transfer(&xfer, true);
+		ch.set_transfer(&xfer, false);
+		ch.set_transfer(&xfer, true);
+		ch.remove_client(&xfer);
+		check(heard == "+-+-", "the hook hears each start and end");
+	}
+
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures == 0 ? 0 : 1;
 }

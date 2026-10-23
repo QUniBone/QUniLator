@@ -287,7 +287,7 @@ static void ws_ready_handler(struct mg_connection *conn, void *) {
 	channel.add_client(conn);
 }
 
-static int ws_data_handler(struct mg_connection *, int opcode, char *data,
+static int ws_data_handler(struct mg_connection *conn, int opcode, char *data,
 		size_t len, void *) {
 	if ((opcode & 0x0f) == MG_WEBSOCKET_OPCODE_CONNECTION_CLOSE)
 		return 0;
@@ -301,14 +301,19 @@ static int ws_data_handler(struct mg_connection *, int opcode, char *data,
 	// queued and the ones after it, in the order the client sent them.
 	if ((opcode & 0x0f) == MG_WEBSOCKET_OPCODE_TEXT
 			&& web_console_is_control(data, len)) {
-		if (web_console_is_break(data, len)) {
+		int transfer = web_console_transfer(data, len);
+		if (transfer >= 0) {
+			channel.set_transfer(conn, transfer == 1);
+		} else if (web_console_is_break(data, len)) {
 			std::lock_guard<std::mutex> lk(tx_mutex);
 			tx_queue.push_back(TX_BREAK);
 			tx_cv.notify_one();
 		}
 		return 1;
 	}
-	recorder.input(data, len);
+	// a file transfer's packets are kept out of the recording both ways
+	if (!channel.transfer_by(conn))
+		recorder.input(data, len);
 	{
 		std::lock_guard<std::mutex> lk(tx_mutex);
 		for (size_t i = 0; i < len; i++)

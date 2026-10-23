@@ -46,6 +46,10 @@ public:
                                   uint8_t unibus_control, DATO_ACCESS access) override;
     void on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_edge) override;
     void on_init_changed(void) override;
+
+    // A file transfer holds the console line: CTRL/P is the program's data,
+    // and the console leaves it alone. Called by the web console's thread.
+    void console_transfer(bool on);
     void on_interrupt(uint16_t vector, uint8_t level) override;
     bool on_dma(uint8_t qunibus_cycle, uint32_t unibus_addr,
                 uint16_t *buffer, uint32_t wordcount) override;

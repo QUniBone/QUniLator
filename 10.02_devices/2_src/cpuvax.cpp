@@ -1308,6 +1308,11 @@ void cpuvax_c::on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dcl
     unibuscpu_c::on_power_changed(aclo_edge, dclo_edge);
 }
 
+void cpuvax_c::console_transfer(bool on)
+{
+    simh_shim_console_hold_escape(on ? 1 : 0);
+}
+
 void cpuvax_c::on_init_changed(void)
 {
     // A machine that is running is not reset by INIT; the console START switch

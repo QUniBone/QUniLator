@@ -1936,6 +1936,8 @@ Server to client:
 |---|---|
 | `{"live":true}` | the replayed history ends here; everything after is live |
 | `{"answerer":true}` | you are the one client that answers the guest's terminal queries |
+| `{"transfer":true}` | another client's file transfer holds the line; its bytes are not sent to you |
+| `{"transfer":false}` | that transfer has ended |
 
 The `live` marker is sent after the replay and before the client joins the live
 set, so the boundary is exact. A program driving the console anchors its pattern
@@ -1948,6 +1950,8 @@ Client to server:
 | | |
 |---|---|
 | `{"break":true}` | assert a line BREAK |
+| `{"transfer":true}` | this client starts a file transfer on the line |
+| `{"transfer":false}` | and ends it |
 
 BREAK is a line condition rather than a character, which is why it cannot ride
 in the byte stream. On `/ws/console/ext` it holds the real tty spacing for
@@ -1955,6 +1959,14 @@ in the byte stream. On `/ws/console/ext` it holds the real tty spacing for
 (`/ws/console/0`, `/1`) the SLU reports a null data byte with a framing error,
 which is what a UART gives its driver for a received BREAK. The VAX console
 ignores it. A client that ignores TEXT frames is unaffected by any of this.
+
+A file transfer's packets are bytes on the line, but they are for the program
+running the transfer. From `{"transfer":true}` until `{"transfer":false}`, or
+until the client that sent it disconnects, the guest's output goes to that
+client alone: it is not sent to the other clients, not kept in the history a
+connecting client is replayed, and neither direction is recorded. The other
+clients, and any that connect meanwhile, get `{"transfer":true}`, and
+`{"transfer":false}` when the line is theirs again.
 
 ### Console recordings
 

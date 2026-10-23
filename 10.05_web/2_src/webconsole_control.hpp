@@ -12,9 +12,17 @@
                         {"answerer":true}  you answer the guest's queries
 
      client -> server   {"break":true}     assert a line BREAK
+                        {"transfer":true}  this client starts a file transfer
+                        {"transfer":false} and ends it
+
+     server -> client   {"transfer":true}  another client's file transfer
+                        {"transfer":false} holds the line, and has ended
 
    BREAK is a line condition rather than a character, which is why it cannot
-   ride in the byte stream at all.
+   ride in the byte stream at all. A file transfer's packets are bytes on the
+   line, but they are for the program running the transfer and not for anyone
+   reading the console, so the channel keeps them to that client while it says
+   a transfer is running.
 */
 #ifndef _WEBCONSOLE_CONTROL_HPP_
 #define _WEBCONSOLE_CONTROL_HPP_
@@ -43,7 +51,25 @@ static inline bool web_console_is_control(const char *data, size_t len) {
 	for (size_t i = b; i + 7 <= e; i++)
 		if (memcmp(data + i, "\"break\"", 7) == 0)
 			return true;
+	for (size_t i = b; i + 10 <= e; i++)
+		if (memcmp(data + i, "\"transfer\"", 10) == 0)
+			return true;
 	return false;
+}
+
+// The {"transfer":...} control message: 1 for true, 0 for false, -1 for a
+// frame that is not one.
+static inline int web_console_transfer(const char *data, size_t len) {
+	bool saw_key = false, saw_true = false;
+	for (size_t i = 0; i < len; i++) {
+		if (len - i >= 10 && memcmp(data + i, "\"transfer\"", 10) == 0)
+			saw_key = true;
+		if (len - i >= 4 && memcmp(data + i, "true", 4) == 0)
+			saw_true = true;
+	}
+	if (!saw_key)
+		return -1;
+	return saw_true ? 1 : 0;
 }
 
 // Is this TEXT frame the {"break":true} control message? Parsed by hand: the

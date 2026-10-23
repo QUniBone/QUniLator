@@ -144,6 +144,7 @@ static uint32 con_last_size = L_LONG;
 #define CON_DELETE              0177
 
 static t_bool con_operator = FALSE;             /* the embedding serves an operator */
+static volatile int con_escape_held = 0;        /* CTRL/P is the program's data */
 static t_bool con_console_io = FALSE;           /* the keyboard is the console's */
 static t_bool con_interactive = FALSE;          /* the commands were typed at >>> */
 static t_bool con_step = FALSE;                 /* SET STEP INSTRUCTION */
@@ -1285,7 +1286,7 @@ con_rubout = FALSE;
 /* CTRL/P, wherever it was typed: the terminal goes to console I/O mode. */
 int vax780_console_escape (int c)
 {
-if (!con_operator || ((c & 0177) != CON_CTRL_P))
+if (!con_operator || con_escape_held || ((c & 0177) != CON_CTRL_P))
     return 0;
 con_console_io = TRUE;
 con_spacebar = FALSE;
@@ -1506,4 +1507,13 @@ switch (what) {
 void simh_shim_console_auto_restart (int on)
 {
 comm_region[CON_COMM_AUTO] = on ? 1 : 0;
+}
+
+/* While a file transfer holds the console line, its bytes are the program's
+   data, CTRL/P among them, as the console key switch at LOCAL DISABLE leaves
+   them: the console stays out of the way until the transfer ends. Set from
+   the thread that serves the line. */
+void simh_shim_console_hold_escape (int on)
+{
+con_escape_held = on ? 1 : 0;
 }
