@@ -362,6 +362,15 @@ expect_out "not signed with the key" &&
 expect "staged version" "" "$(local_version_of)" &&
 [ ! -e "$SANDBOX_ROOT/state/local/qbone.deb" ] && ok || fail "a package was kept"
 
+case_begin "update file: one signed after the board's own time names the clock"
+signed_source
+knob bundle_signed future
+mkbundle qbone_1.13.0-1_armhf.deb 1.13.0-1
+run --stage-local
+expect_rc 1 &&
+expect_out "before 2026-10-23 14:28 UTC, when the update file was signed; reload the web interface" &&
+expect "staged version" "" "$(local_version_of)" && ok
+
 case_begin "update file: a package that does not match its index is refused"
 signed_source
 knob bundle_tampered yes

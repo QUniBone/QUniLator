@@ -1,4 +1,4 @@
-/* websystem.cpp: the board's own name and the operator's ssh key
+/* websystem.cpp: the board's own name, the operator's ssh key and the clock
 
    Copyright (c) 2026, Hans Huebner
    hans@huebner.org
@@ -11,6 +11,8 @@
      PUT /api/hostname   {hostname}
      GET /api/sshkey     {user, configured}
      PUT /api/sshkey     {key}
+     GET /api/clock      {time, synchronized}
+     PUT /api/clock      {time}
 
    Boards ship with one hostname, so several on a network are told apart only by
    the mDNS suffix boot order hands out. Naming a board settles which is which:
@@ -20,13 +22,21 @@
    The ssh key is what makes the operator's account reachable from a
    workstation. The account itself, its home and the group memberships that
    carry its rights are webshares.cpp's; this only carries the key to it.
+
+   A BeagleBone has no clock that runs while it is off. On a network it takes
+   the time from a time server; a board with no way to one keeps whatever time
+   it last had, and an update file, signed when it was published, is refused
+   as signed in its future. The operator's browser knows the time, so the
+   interface hands it to a board whose clock no time server keeps.
 */
 
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <string>
@@ -338,7 +348,87 @@ static int api_sshkey_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	return 405;
 }
 
+/*** /api/clock ***/
+
+// systemd-timesyncd marks a clock it has set from a time server here.
+static const char *TIMESYNC_SYNCHRONIZED = "/run/systemd/timesync/synchronized";
+// and keeps the last time it knew as this file's modification time, which it
+// sets the clock to at boot when the clock is behind it
+static const char *TIMESYNC_CLOCK = "/var/lib/systemd/timesync/clock";
+
+// The earliest and latest time a browser may hand over: before 2025 or after
+// 2100 is a browser whose own clock is wrong.
+static const int64_t CLOCK_EARLIEST_MS = 1735689600000LL; // 2025-01-01
+static const int64_t CLOCK_LATEST_MS = 4102444800000LL;   // 2100-01-01
+
+static bool clock_synchronized(void) {
+	return access(TIMESYNC_SYNCHRONIZED, F_OK) == 0;
+}
+
+static int64_t clock_now_ms(void) {
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	return (int64_t) ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+static void clock_get(struct mg_connection *conn) {
+	picojson::object o;
+	o["time"] = picojson::value((double) clock_now_ms());
+	o["synchronized"] = picojson::value(clock_synchronized());
+	send_json(conn, 200, picojson::value(o));
+}
+
+// Set the clock to the time given, in milliseconds since 1970. A clock a time
+// server keeps is left to it.
+static void clock_put(struct mg_connection *conn) {
+	picojson::value body;
+	if (!read_json_body(conn, &body) || !body.get("time").is<double>()) {
+		send_error(conn, 400, "time, in milliseconds since 1970, is required");
+		return;
+	}
+	if (clock_synchronized()) {
+		send_error(conn, 409, "a time server keeps this board's clock");
+		return;
+	}
+	int64_t ms = (int64_t) body.get("time").get<double>();
+	if (ms < CLOCK_EARLIEST_MS || ms > CLOCK_LATEST_MS) {
+		send_error(conn, 422, "that time is not one this board can be set to");
+		return;
+	}
+	struct timespec ts;
+	ts.tv_sec = (time_t) (ms / 1000);
+	ts.tv_nsec = (long) (ms % 1000) * 1000000;
+	if (clock_settime(CLOCK_REALTIME, &ts) != 0) {
+		send_error(conn, 500, std::string("the clock could not be set: ") + strerror(errno));
+		return;
+	}
+	// the board starts from this time at its next boot, too
+	struct timespec times[2] = { ts, ts };
+	utimensat(AT_FDCWD, TIMESYNC_CLOCK, times, 0);
+	WEB_INFO("the clock was set from the operator's browser");
+	picojson::object o;
+	o["ok"] = picojson::value(true);
+	o["time"] = picojson::value((double) clock_now_ms());
+	o["synchronized"] = picojson::value(false);
+	send_json(conn, 200, picojson::value(o));
+}
+
+static int api_clock_handler(struct mg_connection *conn, void * /*cbdata*/) {
+	const struct mg_request_info *ri = mg_get_request_info(conn);
+	if (!strcmp(ri->request_method, "GET")) {
+		clock_get(conn);
+		return 200;
+	}
+	if (!strcmp(ri->request_method, "PUT") || !strcmp(ri->request_method, "POST")) {
+		clock_put(conn);
+		return 200;
+	}
+	send_error(conn, 405, "method not allowed");
+	return 405;
+}
+
 void websystem_register(struct mg_context *ctx) {
 	mg_set_request_handler(ctx, "/api/hostname", api_hostname_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/sshkey", api_sshkey_handler, nullptr);
+	mg_set_request_handler(ctx, "/api/clock", api_clock_handler, nullptr);
 }

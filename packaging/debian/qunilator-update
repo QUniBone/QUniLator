@@ -513,6 +513,11 @@ do_stage_local() {
     if ! sl_out=$(apt-get update -q $sl_opts $APT_OPTS 2>&1) \
             || printf '%s\n' "$sl_out" | grep -q '^[EW]: '; then
         printf '%s\n' "$sl_out" | grep -v '^\(Get\|Hit\|Reading\)' | tail -20 >&2
+        # a signature made after the board's own time: the clock is behind
+        sl_signed=$(printf '%s\n' "$sl_out" | sed -n 's/.*Not live until \([0-9-]*\)T\([0-9]*:[0-9]*\).*/\1 \2/p' | head -1)
+        if [ -n "$sl_signed" ]; then
+            local_fail "this QUniLator's clock reads $(date -u '+%Y-%m-%d %H:%M') UTC, before $sl_signed UTC, when the update file was signed; reload the web interface to set the clock from your browser, then upload the file again"
+        fi
         local_fail "the update file is not signed with the key of this QUniLator's repository"
     fi
     # shellcheck disable=SC2086

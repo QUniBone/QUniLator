@@ -185,6 +185,29 @@ offer, both with 422. An installation with no operator answers 409.
 
 Answers `{"ok": true, "user": "operators"}`.
 
+### `GET /api/clock`
+
+```json
+{"time": 1792800000000, "synchronized": false}
+```
+
+The board's time, in milliseconds since 1970, and whether a time server keeps
+it. A BeagleBone has no clock that runs while it is off: one with no way to a
+time server keeps whatever time it last had.
+
+### `PUT /api/clock`
+
+```json
+{"time": 1792800000000}
+```
+
+Sets the board's clock to that time, and moves systemd-timesyncd's saved time
+with it, so the board also starts from it at its next boot. The web interface
+hands over the browser's time when it signs in and finds the board's clock more
+than a minute off. A clock a time server keeps is left to it, with 409; a time
+before 2025 or after 2099 is refused with 422. Answers
+`{"ok": true, "time": …, "synchronized": false}`.
+
 ### `GET /api/serialports`
 
 ```json

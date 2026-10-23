@@ -115,6 +115,13 @@ machine stops, the new version has to come up, and the old one goes back if it
 does not. A file carrying the version already installed installs it again.
 **Discard the file** drops it without installing.
 
+The signed index carries the date it was signed, and a board whose clock is
+behind that date refuses the file. A BeagleBone has no clock that runs while it
+is off, and one that never reaches a time server keeps whatever time it last
+had, so when you sign in and the board's clock is more than a minute off, the
+web interface sets it from your browser's, and a note at the bottom of the page
+says so. A board that a time server keeps is left alone.
+
 An update file installs the emulator package only. A new version that needs a
 Debian package the board does not have yet cannot be installed this way; the
 install fails and the running version stays.

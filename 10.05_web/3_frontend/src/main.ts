@@ -8,6 +8,7 @@ import { checkAuth } from './lib/modals';
 import { refreshDevices, refreshSettings } from './api';
 import { initEvents, eventsWs } from './lib/events';
 import { syncVersion } from './lib/version';
+import { syncBoardClock } from './lib/clock';
 import { resumeInstallIfPending } from './lib/update';
 import { shutdownTerminals } from './lib/terminals';
 import { vcb01Socket } from './lib/vcb01';
@@ -30,6 +31,7 @@ async function initLive(): Promise<void> {
     const state = await st.json();
     setStore({ imagesDir: state.images_dir || '', platform: state.platform || '' });
     await checkAuth().catch(() => {});
+    syncBoardClock().catch(() => {});
     await syncVersion().catch(() => {});
     await refreshDevices();
     setStore({ connected: true });

@@ -128,6 +128,11 @@ if [ -n "$local_repo" ]; then
        [ "$(knob bundle_signed)" = no ] && {
           echo "Err:1 file:$local_repo trixie InRelease"
           echo "E: The repository 'file:$local_repo trixie InRelease' is not signed."; }
+       # what sqv says of a signature made after the board's own time
+       [ "$(knob bundle_signed)" = future ] && {
+          echo "Err:1 file:$local_repo trixie InRelease"
+          echo "  Sub-process /usr/bin/sqv returned an error code (1), error message is: Verifying signature:            Not live until 2026-10-23T14:28:45Z"
+          echo "E: The repository 'file:$local_repo trixie InRelease' is not signed."; }
        exit 0 ;;
     download)
        spec=""; for a in "$@"; do case "$a" in *=*.*) spec=$a;; esac; done
