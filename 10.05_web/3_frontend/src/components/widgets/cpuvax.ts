@@ -75,7 +75,9 @@ export class VaxCpuWidget extends DeviceWidget {
           <span class="cpu-mode" title="current mode / previous mode"
             >${s.mode}<span class="cpu-prev">${s.prevMode}</span></span
           >
-          <span class="cpu-pri" title="priority the processor runs at">IPL${s.ipl}</span>
+          <span class="cpu-pri" title="priority the processor runs at"
+            >IPL<span class="cpu-ipl">${s.ipl}</span></span
+          >
           ${s.flags.map((f) => html`<${Bit} lit=${!!(s.value & f[1])}>${f[0]}</${Bit}>`)}
         </div>`}
         <div class="lamps">

@@ -685,6 +685,8 @@ table.data.inner td { padding: 4px 8px; font-size: var(--fs-0); }
 }
 .cpu-prev { opacity: .5; }
 .cpu-prev::before { content: "/"; }
+/* the VAX's IPL runs to 31, and holds the room of two digits at every level */
+.cpu-ipl { display: inline-block; min-width: calc(2ch + .12em); }
 .cpu-swr:focus { outline: 2px solid var(--cap-red-lit); outline-offset: 1px; }
 
 /* the console display and switch register: a row of lamps, a row of toggles
