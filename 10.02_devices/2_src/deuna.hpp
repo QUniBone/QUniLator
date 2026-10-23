@@ -118,6 +118,22 @@ public:
     parameter_bool_c trace = parameter_bool_c(this, "trace", "tr", false,
             "Trace CSR/ring events to log");
 
+    /// A workaround for ULTRIX-32 V1.1: the IP broadcast address the guest
+    /// uses, such as `10.0.0.0`. ULTRIX-32 V1.1 recognises one broadcast, its
+    /// network's address with the host part zero, and takes every other IP
+    /// broadcast - 255.255.255.255, the all-ones broadcast of its own network,
+    /// the broadcast of another network on the LAN - for a packet to forward.
+    /// Its forwarding of it corrupts kernel memory, so the system panics
+    /// (`mfree`, `Segmentation fault`, `Protection fault`) at the first such
+    /// packet. Set to ULTRIX's broadcast address, the controller drops every
+    /// received IPv4 frame sent to the Ethernet broadcast address with another
+    /// IP destination, before the driver sees it. ULTRIX's own broadcasts -
+    /// rwho, routed - ARP and every other protocol still arrive. Empty leaves
+    /// every frame to the driver, which suits every other guest. Takes effect
+    /// at once.
+    parameter_string_c ultrix11_broadcast = parameter_string_c(this, "ultrix11_broadcast", "u11b", false,
+            "ULTRIX-32 V1.1 workaround: the guest's IP broadcast address; other IPv4 broadcasts are dropped");
+
     /*
      * Read-only statistics (updated during operation, visible in menu)
      */
@@ -317,6 +333,10 @@ private:
      */
     bool mac_override = false;
     uint8_t mac_addr[6] = {0};
+    // ultrix11_broadcast, parsed: an IPv4 broadcast to any other address is
+    // dropped while ultrix11_filter is set
+    bool ultrix11_filter = false;
+    uint32_t ultrix11_address = 0;
 
     /*
      * Controller reset/initialization

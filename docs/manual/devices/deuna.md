@@ -40,6 +40,25 @@ one.
 `interface`, `mac`, `rx_slots` and `tx_slots` can only be changed while the
 controller is disabled.
 
+## ULTRIX-32 V1.1
+
+ULTRIX-32 V1.1 recognises one IP broadcast address: its network's address
+with the host part zero, `10.0.0.0` for the 10.0.0.200 its disk image comes
+configured with, which is where its own rwho and routed broadcasts go. Every
+other IP broadcast — 255.255.255.255, the all-ones `10.255.255.255`, the
+broadcast of another network on the same LAN — it takes for a packet to
+forward, and its forwarding of it corrupts kernel memory: the system panics at
+the first such packet, with `mfree`, `Segmentation fault` or
+`Protection fault`. The crash dump shows the network interrupt running through
+`ip_forward` and `ip_output`, and a single UDP broadcast from another host
+brings it down. A LAN with an ordinary mix of hosts carries such broadcasts
+every few minutes.
+
+Set `ultrix11_broadcast` to ULTRIX's broadcast address. The controller then
+drops every IPv4 broadcast sent to another address before the driver sees it.
+ULTRIX's own broadcasts, ARP and every other protocol still arrive, and ULTRIX
+runs on.
+
 ## What has been verified
 
 - VMS V4.7 on the emulated [KA780](ka780.md) boots to a login prompt with the
@@ -65,6 +84,7 @@ What a configuration stores and an operator sets.
 | [`rx_slots`](#rx_slots-tx_slots) | `rx` | number | 0 | RX ring scan limit (0 = no limit) |
 | [`tx_slots`](#rx_slots-tx_slots) | `tx` | number | 0 | TX ring scan limit (0 = no limit) |
 | [`trace`](#trace) | `tr` | 0 or 1 | 0 | Trace CSR/ring events to log |
+| [`ultrix11_broadcast`](#ultrix11_broadcast) | `u11b` | text | *empty* | ULTRIX-32 V1.1 workaround: the guest's IP broadcast address; other IPv4 broadcasts are dropped |
 
 ### Status
 
@@ -105,6 +125,10 @@ The most descriptors of the driver's receive and transmit rings the controller w
 #### `trace`
 
 Writes the controller's port commands, interrupts and ring events to the log at WARNING level, so they appear without raising the log level. For following a driver's conversation with the controller; it is verbose, and takes effect at once.
+
+#### `ultrix11_broadcast`
+
+A workaround for ULTRIX-32 V1.1: the IP broadcast address the guest uses, such as `10.0.0.0`. ULTRIX-32 V1.1 recognises one broadcast, its network's address with the host part zero, and takes every other IP broadcast - 255.255.255.255, the all-ones broadcast of its own network, the broadcast of another network on the LAN - for a packet to forward. Its forwarding of it corrupts kernel memory, so the system panics (`mfree`, `Segmentation fault`, `Protection fault`) at the first such packet. Set to ULTRIX's broadcast address, the controller drops every received IPv4 frame sent to the Ethernet broadcast address with another IP destination, before the driver sees it. ULTRIX's own broadcasts - rwho, routed - ARP and every other protocol still arrive. Empty leaves every frame to the driver, which suits every other guest. Takes effect at once.
 
 #### `rx_frames`, `tx_frames`, `rx_errors`, `tx_errors`
 

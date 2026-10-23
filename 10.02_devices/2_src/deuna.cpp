@@ -454,6 +454,21 @@ bool deuna_c::on_param_changed(parameter_c *param)
             WARNING("DEUNA: interface cannot be changed while device is installed");
             return false;
         }
+    } else if (param == &ultrix11_broadcast) {
+        uint32_t address = 0;
+        if (!ultrix11_broadcast.new_value.empty()) {
+            unsigned a, b, c, d;
+            char tail;
+            if (sscanf(ultrix11_broadcast.new_value.c_str(), "%u.%u.%u.%u%c", &a, &b, &c, &d, &tail) != 4
+                    || a > 255 || b > 255 || c > 255 || d > 255) {
+                ERROR("DEUNA: ultrix11_broadcast '%s' is not an IP address, such as 10.0.0.0",
+                      ultrix11_broadcast.new_value.c_str());
+                return false;
+            }
+            address = (a << 24) | (b << 16) | (c << 8) | d;
+        }
+        ultrix11_address = address;
+        ultrix11_filter = !ultrix11_broadcast.new_value.empty();
     } else if (param == &mac) {
         if (mac.new_value.empty()) {
             // Empty puts back the address the board derived for itself, which
@@ -1582,6 +1597,9 @@ bool deuna_c::execute_command(void)
         mode = pcb[1];
         setup.promiscuous = (mode & MODE_PROM) != 0;
         setup.multicast = (mode & MODE_ENAL) != 0;
+        if (prev != mode)
+            INFO("DEUNA: mode %06o%s%s", mode, setup.promiscuous ? ", promiscuous" : "",
+                 setup.multicast ? ", all multicast" : "");
         if (((prev ^ mode) & (MODE_PROM | MODE_ENAL)) != 0)
             update_address_filter();
         break;
@@ -1747,6 +1765,14 @@ bool deuna_c::accept_packet(const uint8_t *data, size_t len) const
     if (len >= 12) {
         const uint8_t *src = data + 6;
         if (!mac_is_zero(mac_addr) && mac_equal(src, mac_addr))
+            return false;
+    }
+
+    if (ultrix11_filter && len >= 34 && mac_is_broadcast(data)
+            && data[12] == 0x08 && data[13] == 0x00) {
+        uint32_t dst = ((uint32_t) data[30] << 24) | ((uint32_t) data[31] << 16)
+                | ((uint32_t) data[32] << 8) | data[33];
+        if (dst != ultrix11_address)
             return false;
     }
 
