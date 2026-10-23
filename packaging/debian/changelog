@@ -1,3 +1,17 @@
+qbone (1.25.1-1) trixie; urgency=low
+
+  ULTRIX-32 reboots
+
+  1.25.1 lets ULTRIX-32 reboot itself on the emulated VAX-11/780.
+
+  * UNIBUS reset. An init of the VAX's UNIBUS adapter, by the guest or by
+    the console's UNJAM, pulses INIT on the bus, so the cards stop what
+    the running system set them doing. `reboot` under ULTRIX-32 boots the
+    system again; the DEUNA and the UDA50 used to keep writing into the
+    memory the bootstrap is loaded into.
+
+ -- Hans Huebner <hans@huebner.org>  Fri, 23 Oct 2026 06:35:00 +0200
+
 qbone (1.25.0-1) trixie; urgency=low
 
   The VAX-11/780 console, and ULTRIX-32
