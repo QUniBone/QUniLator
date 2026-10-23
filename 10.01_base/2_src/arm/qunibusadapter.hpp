@@ -78,9 +78,11 @@ private:
 	// runs to its end and signals like any other, but nothing is waiting for it
 	// any more: until that signal arrives the PRU still owns mailbox->dma, and
 	// filling it for the next request would run two transfers together. Set on
-	// the cancel, cleared by the completion that belongs to it. Written and read
-	// only under requests_mutex.
-	bool dma_orphan_on_pru;
+	// the cancel, cleared by the completion that belongs to it. Written under
+	// requests_mutex; atomic because the CPU access spin in DMA() also reads it
+	// outside the lock, as one of the conditions that decide whether taking the
+	// lock is worth it at all - the decision is re-checked under the mutex.
+	std::atomic<bool> dma_orphan_on_pru;
 
 	// When it was set, so a later INIT or power event can tell an orphan still
 	// in flight - the PRU has microseconds of bus cycle left to run - from one

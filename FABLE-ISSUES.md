@@ -474,7 +474,7 @@ infrastructure already in place (`cpu_access_profile_note`,
 cores, in the per-instruction engine round trips.
 
 
-### 3.1 One PRU round trip per instruction for interrupt granting
+### 3.1 One PRU round trip per instruction for interrupt granting — FIXED in 5f6a1f0
 `cpu.cpp:87-105` — `unibone_grant_interrupts()` runs before **every** opcode
 fetch (`kd11ea_condstep`/`ka11_condstep`) and costs a full
 `mailbox_execute(ARM2PRU_ARB_GRANT_INTR_REQUESTS)` plus a spin on
@@ -488,7 +488,45 @@ then reads one uncached byte and skips the whole round trip in the common
 no-interrupt case. That is the single biggest speedup available to the
 emulated processors.
 
-### 3.2 The CPU bus-access spin loop contends on the global request mutex
+Done as proposed. `sm_arb_worker_cpu()` publishes the BR4-7 request-line
+state into a new mailbox byte, `ifs_intr_request_mask`, from the same latch
+read it grants from; `unibone_grant_interrupts()` reads that one uncached
+byte and takes the round trip only when a standing request could actually
+be granted. One refinement beyond the proposal: the ARM also mirrors the
+PRU's grant predicate against `ifs_priority_level`, so a standing request
+the CPU's priority masks — an interrupt handler running at or above the
+request's level, or the FETCHING window between vector and PSW fetch —
+skips the round trip too, instead of paying it every instruction for a
+grant the PRU would refuse. A skipped pass is therefore always one the PRU
+would have refused: the mask is stale by at most one arbitration pass, and
+only toward "fewer grants" — a request raised after the ARM's read is
+granted at the next instruction boundary, exactly as one raised just after
+the arbitration pass always was. `sm_arb_reset()` parks the mask at "all
+four requesting", which keeps the ARM on the slow path until the first real
+pass writes the truth. Both PRU trees carry the store, so the shared struct
+means the same thing on either bus.
+
+Measured on ubx (UniBone, emulated CPU20, non-PMI), A/B against the
+unpatched binary on the same board and configuration:
+
+| workload | before | after |
+|---|---|---|
+| branch-to-self loop | 117k instr/s | 871k instr/s (7.4×) |
+| XXDP monitor idle | 92k instr/s | 290k instr/s (3.1×) |
+
+PMI made no measurable difference on the tight loop either side, which
+confirms the grant round trip — not memory access — was the per-instruction
+ceiling. Interrupt delivery verified live: XXDP boots from RL and serves a
+directory listing, and a DL11 transmit-interrupt storm (ISR writes XBUF and
+counts into memory) sustains ~600 vectors/s through the new path,
+exercising request → grant → vector → FETCHING → RTI continuously,
+priority filter included. One measurement caveat for whoever repeats this:
+the xxdp configuration autoboots and keeps the RL DMAing well past the
+first prompt, so an "idle" `cycle_count` sample taken too early catches the
+boot tail and reads several times low — wait for `/api/debug/pru` to show
+the dma events near zero first.
+
+### 3.2 The CPU bus-access spin loop contends on the global request mutex — FIXED in e0b5a96
 `qunibusadapter.cpp:822-851`: while the PRU performs a single-word CPU access,
 the CPU thread loops `pthread_mutex_lock(&requests_mutex)` /
 `dynamic_cast` / unlock. Every iteration takes the same mutex that every
@@ -504,6 +542,33 @@ effort:
 - add a `__builtin_arm_yield()`/short pause in the loop so the spinning
   low-priority CPU thread stops stealing whole scheduler quanta from device
   workers on the single core.
+
+All three done. A lock-free gate fronts the loop: every state it must react
+to announces itself outside the lock — the PRU's completion in the dma
+event counters, a cancellation in the request's own atomic `complete` flag
+(`requests_cancel_scheduled()` force-completes everything it clears), and
+the orphan holdoff in `dma_orphan_on_pru`, promoted to `std::atomic` so the
+gate may read it. Whatever the gate lets through is re-established under
+the mutex, so the lock protects exactly what it did before; the gate cannot
+be starved, because the adapter worker skips cpu_access dma events
+(`!mailbox->dma.cpu_access`) and their completion is only ever this loop's
+to take. The `dynamic_cast` turned out to need no type tag at all — "is the
+active request mine" is a pointer comparison. A spin that outlasts a few
+thousand iterations starts yielding its quantum; below that it spins with a
+`yield` hint.
+
+Measured on ubx (CPU20), A/B against the unpatched binary: neutral on
+every workload the rig can produce — branch-to-self 848k instr/s, XXDP
+monitor idle 276k, an XCSR write loop (one device-register event per
+iteration, the worst case for CPU-thread-vs-worker contention) 17.2k
+instr/s with event latency mean 36 µs / max 609 µs, all within noise of
+before. The prediction in this issue assumed the old spin held the lock
+against the realtime worker long enough to matter; on this rig, with one
+RL and a DL11, it did not. The contention this removes grows with the
+device count — a 2.11BSD machine with UDA and DELQA is the case it was
+written for — and the RTTI and the instruction-rate locking are gone
+either way. Interrupt delivery re-verified after the change: ~700 DL11
+vectors/s sustained, XXDP boots and lists its directory.
 
 ### 3.3 `direct_memory` (PMI) is the big lever and defaults off
 `cpu.cpp:128, 185-200`: with `direct_memory`, memory DATI/DATO bypass the PRU
