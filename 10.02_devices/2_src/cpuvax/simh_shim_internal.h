@@ -42,6 +42,7 @@ int32 simh_shim_tick_size (int32 tmr);
 /* One register access on the embedding's bus. Zero when it did not answer. */
 int simh_shim_bus_read (unsigned addr, unsigned *data);
 int simh_shim_bus_write (unsigned addr, unsigned data, int byte);
+void simh_shim_bus_init (void);
 
 /* Point the unclaimed part of the I/O page at that bus, or take it off again.
    Defined in simh_shim_bus.c, which only a build with a bus links. */

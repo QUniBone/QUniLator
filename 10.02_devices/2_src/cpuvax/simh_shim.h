@@ -65,6 +65,11 @@ typedef struct {
     int (*bus_read) (void *context, unsigned addr, unsigned *data);
     int (*bus_write) (void *context, unsigned addr, unsigned data, int byte);
 
+    /* Pulse INIT on the UNIBUS, which resets every card on it. The adapter
+       calls it when it initializes. It goes with the pair above and may be
+       NULL with them. */
+    void (*bus_init) (void *context);
+
     /* Set when every peripheral is on the bus, so the I/O page belongs to it
        whole. Clear when the machine also carries a controller inside the core,
        which then keeps its own addresses. */

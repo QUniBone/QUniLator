@@ -31,6 +31,7 @@
 #include "sim_defs.h"
 #include "vax_defs.h"
 #include "simh_shim.h"
+#include "simh_shim_internal.h"
 
 char sim_name[] = "VAX 11/780";
 
@@ -62,23 +63,39 @@ extern DEVICE rq_dev;
    and nothing more: eight units, the RK611's standard address 777440, no
    registers in the core. It stays disabled, which keeps it out of the
    auto-configuration and the I/O page. */
-static UNIT hk_boot_units[8] = {
-    { UDATA (NULL, 0, 0) }, { UDATA (NULL, 0, 0) },
-    { UDATA (NULL, 0, 0) }, { UDATA (NULL, 0, 0) },
-    { UDATA (NULL, 0, 0) }, { UDATA (NULL, 0, 0) },
-    { UDATA (NULL, 0, 0) }, { UDATA (NULL, 0, 0) }
-    };
+static UNIT hk_boot_units[8];
 
 static DIB hk_boot_dib = {
-    IOPAGEBASE + 017440, 040, NULL, NULL, 1, IVCL (HK), 0210
+    .ba = IOPAGEBASE + 017440, .lnt = 040, .vnum = 1, .vloc = IVCL (HK), .vec = 0210
     };
 
 static DEVICE hk_boot_dev = {
-    "HK", hk_boot_units, NULL, NULL,
-    8, 8, 24, 1, 8, 16,
-    NULL, NULL, NULL,
-    NULL, NULL, NULL,
-    &hk_boot_dib, DEV_DIS | DEV_UBUS
+    .name = "HK", .units = hk_boot_units, .numunits = 8,
+    .aradix = 8, .awidth = 24, .aincr = 1, .dradix = 8, .dwidth = 16,
+    .ctxt = &hk_boot_dib, .flags = DEV_DIS | DEV_UBUS
+    };
+
+/* The cards on the bus are reset with the UNIBUS. The adapter's
+   initialization calls the reset of every UNIBUS device simh carries, with
+   UIIP set, and this one passes it on to the bus as an INIT pulse. A reset of
+   the whole machine reaches it with UIIP clear, where power-up has already
+   initialized the bus. */
+extern uint32 uba_uiip;
+
+static t_stat ubinit_reset (DEVICE *dptr)
+{
+(void) dptr;
+if (uba_uiip)
+    simh_shim_bus_init ();
+return SCPE_OK;
+}
+
+static UNIT ubinit_unit;
+
+static DEVICE ubinit_dev = {
+    .name = "UBINIT", .units = &ubinit_unit, .numunits = 1,
+    .aradix = 8, .awidth = 1, .aincr = 1, .dradix = 8, .dwidth = 8,
+    .reset = &ubinit_reset, .flags = DEV_DIS | DEV_UBUS
     };
 
 DEVICE *sim_devices[] = {
@@ -100,6 +117,7 @@ DEVICE *sim_devices[] = {
     &rq_dev,
 #endif
     &hk_boot_dev,
+    &ubinit_dev,
     NULL
     };
 
@@ -158,7 +176,6 @@ state->ipl = (unsigned) PSL_GETIPL (PSL);
 {
 extern unsigned shim_iopage_claimed;
 extern unsigned shim_iopage_dispatches;
-extern uint32 uba_uiip;
 extern int32 uba_cr;
 extern uint32 uba_dr;
 extern int32 nexus_req[IPL_HLVL];

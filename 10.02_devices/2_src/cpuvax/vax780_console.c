@@ -19,7 +19,7 @@
  *	EXAMINE[/q] addr	the same, printed on the console terminal
  *	START [addr]		initialize the processor and start it at addr
  *	WAIT DONE		let the program run until it signals completion
- *	HALT, UNJAM, INIT	the processor and the SBI
+ *	HALT, UNJAM, INIT	the processor, and the adapters with UNJAM
  *	SET DEFAULT ..., SET RELOCATION:n
  *	! comment
  *
@@ -106,6 +106,9 @@ extern t_stat cpu_reset (DEVICE *dptr);
 /* What the processor is left with by INIT and START: interrupt stack, IPL 31,
    kernel mode, which on a 780 is PSL 041F0000. */
 #define CON_INIT_PSL            (PSL_IS | PSL_IPL1F)
+/* The UNIBUS adapter's control register, where UNJAM initializes it. */
+#define CON_UBA_CR              (NEXUSBASE + (TR_UBA << REG_V_NEXUS) + (1 << REG_V_OFS))
+#define CON_UBA_ADINIT          0x00000001      /* control register: adapter init */
 
 typedef struct {
     char text[CON_LINE_MAX];                    /* the command, upper case, no comment */
@@ -1026,10 +1029,14 @@ if (con_is (w.verb, "CONTINUE", 1)) {
 if (con_is (w.verb, "NEXT", 1))
     return con_fail (cmd, "NEXT is typed at the console, not run from a file");
 if (con_is (w.verb, "HALT", 1) || con_is (w.verb, "UNJAM", 1)) {
-    /* the processor is halted while the console runs it, and the SBI the
-       emulation carries does not jam */
+    /* the processor is halted while the console runs it */
     if ((w.narg != 0) || (w.nqual != 0))
         return con_fail (cmd, "%s takes nothing more", w.verb);
+    /* UNJAM initializes the adapters on the SBI, and the UNIBUS adapter
+       resets the bus with itself, so the cards a running system left busy
+       stop before a bootstrap is loaded into the memory they write */
+    if (con_is (w.verb, "UNJAM", 1))
+        WriteReg (CON_UBA_CR, CON_UBA_ADINIT, L_LONG);
     return SIMH_SHIM_CONSOLE_RUNNING;
     }
 if (con_is (w.verb, "INITIALIZE", 1)) {

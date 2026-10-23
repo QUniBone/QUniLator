@@ -103,6 +103,12 @@ if (!shim_host_bound || (shim_host.bus_write == NULL))
 return shim_host.bus_write (shim_host.context, addr, data, byte);
 }
 
+void simh_shim_bus_init (void)
+{
+if (shim_host_bound && (shim_host.bus_init != NULL))
+    shim_host.bus_init (shim_host.context);
+}
+
 /* ------------------------------------------------------------------------ */
 /* State scp owns                                                            */
 /* ------------------------------------------------------------------------ */

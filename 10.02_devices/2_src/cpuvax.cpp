@@ -196,6 +196,12 @@ static int vax_bus_write(void *context, unsigned addr, unsigned data, int byte)
     return vax->bus_write(addr, data, byte != 0) ? 1 : 0;
 }
 
+static void vax_bus_init(void *context)
+{
+    (void) context;
+    qunibus->init();
+}
+
 /* A device answers a register access and interrupts in the same moment: the
    UDA50 shows the next initialisation step in SA and raises its request, and
    ULTRIX's probe returns on seeing the step and counts the controller as one
@@ -472,6 +478,7 @@ bool cpuvax_c::configure_machine(bool start_pressed, const char *console_line)
     if (bus_iopage.value) {
         host.bus_read = vax_bus_read;
         host.bus_write = vax_bus_write;
+        host.bus_init = vax_bus_init;
         host.bus_owns_iopage = bus_exclusive.value ? 1 : 0;
     }
     host.message_file = stdout;
