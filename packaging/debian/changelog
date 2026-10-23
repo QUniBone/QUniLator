@@ -1,3 +1,18 @@
+qbone (1.26.1-1) trixie; urgency=low
+
+  The clock of an offline board
+
+  1.26.1 lets a board that no time server reaches take update files.
+
+  * Clock. A BeagleBone keeps no time while it is off, and a board that
+    reaches no time server refused every update file, signed after its
+    own clock's time. Signing in to the web interface now sets such a
+    board's clock from the browser's, and says so.
+  * Update file errors. A file refused for that reason says what the
+    board's clock reads and when the file was signed, and what to do.
+
+ -- Hans Huebner <hans@huebner.org>  Fri, 23 Oct 2026 21:25:00 +0200
+
 qbone (1.26.0-1) trixie; urgency=low
 
   Files through the console
