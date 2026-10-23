@@ -1,3 +1,30 @@
+qbone (1.26.0-1) trixie; urgency=low
+
+  Files through the console
+
+  1.26.0 moves files between the browser and the guest through the
+  console, and keeps ULTRIX-32 V1.1 running on a busy LAN.
+
+  * File transfer. The console card sends a file to the guest as typed
+    text, by XMODEM or by Kermit, and receives files by XMODEM or
+    Kermit; a file dropped on the console opens the dialog with it.
+    Typed text waits for each echo, with a receive buffer of characters
+    sent ahead, and for a prompt after each line when one is given;
+    Kermit carries binary files over a seven-bit line.
+  * The line during a transfer. A transfer's packets go to the page
+    running it alone, and stay out of the other consoles, the history
+    replayed on connect and recordings. On the VAX console, CTRL/P in
+    the data is the program's.
+  * Console log. Log keeps what the console shows in the browser and
+    saves it as a file.
+  * ULTRIX-32 V1.1 and IP broadcasts. ULTRIX-32 V1.1 panics on an IP
+    broadcast to any address but its own network's host-part-zero one.
+    The DEUNA's new ultrix11_broadcast drops the others.
+  * The KA780 widget keeps room for a two-digit IPL, so the lamps
+    beside it stay in place.
+
+ -- Hans Huebner <hans@huebner.org>  Fri, 23 Oct 2026 16:45:00 +0200
+
 qbone (1.25.1-1) trixie; urgency=low
 
   ULTRIX-32 reboots
