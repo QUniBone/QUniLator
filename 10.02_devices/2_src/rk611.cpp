@@ -769,10 +769,11 @@ void rk611_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 		format_20 = v & CS1_CFMT;
 		if (old_ie && !interrupt_enable)
 			clear_interrupt_flops();
-		// UG 7.2.1: setting IE while the controller is ready forces an
-		// interrupt, as does writing IE with RDY
-		if (interrupt_enable && ready && !(v & CS1_GO)
-				&& (!old_ie || (v & CS1_RDY)))
+		// UG 7.2.1: a write that sets IE and RDY together forces an
+		// interrupt. IE alone enables the next one: VMS's handler for an
+		// interrupt no unit owns clears the controller and writes IE, and
+		// expects no interrupt from that write.
+		if (interrupt_enable && ready && !(v & CS1_GO) && (v & CS1_RDY))
 			ci = true;
 		if (v & CS1_GO)
 			start_command();
