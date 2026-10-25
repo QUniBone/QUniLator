@@ -88,10 +88,11 @@ shortcut to every one of them in `/root`:
 sudo /root/xxdp22-25.dlx.sh
 ```
 
-Each file starts with `#!/root/10.03_app_demo/4_deploy/demo --verbose`, so it
-runs as a program rather than as an argument to one. It runs as root because it
-drives the PRUs, and the program in the tree is not the set-user-id one the
-package installs.
+Each file starts with `#!/usr/bin/qbone-cli --verbose` — `unibone-cli` on a
+UNIBUS board, which is what `qunibone-platform.sh` writes into the examples that
+serve both buses when it merges the trees — so it runs as a program rather than
+as an argument to one. It is run with `sudo` because it drives the PRUs: the
+set-user-id bit on `/usr/bin/qbone-cli` does not carry through a `#!` line.
 
 Nothing has to be stopped first: the program asks the service for the board and
 the service hands it over for the length of the session — see [Coming from

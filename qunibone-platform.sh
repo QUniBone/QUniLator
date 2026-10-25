@@ -156,6 +156,22 @@ fi
 rm -f -R  "$TREE/10.03_app_demo/5_applications_u"
 rm -f -R  "$TREE/10.03_app_demo/5_applications_q"
 
+# An example is run by the emulator's menu program, which it names on its "#!"
+# line, and that program carries the board's name: /usr/bin/qbone-cli on a QBUS
+# board, /usr/bin/unibone-cli on a UNIBUS one. The bus-specific examples name
+# theirs already; the ones that serve both buses are written in the QBone
+# spelling, as the packaging is, and are rebranded here.
+SUFFIX=$QUNILATOR_PLATFORM_SUFFIX
+if [ -f "$TREE/packaging/board.sh" ] ; then
+  . "$TREE/packaging/board.sh"
+else
+  # a tree predating packaging/board.sh: the same mapping, spelled out
+  if [ "$SUFFIX" = _u ] ; then NAME=unibone ; else NAME=qbone ; fi
+fi
+echo "Naming the examples' interpreter /usr/bin/$NAME-cli"
+find "$appdir" -type f -name \*.sh -exec \
+  sed -i "1s|^#!/usr/bin/qbone-cli|#!/usr/bin/$NAME-cli|" '{}' \;
+
 # Shortcuts to the example scripts, in the root of the tree - which on a board
 # is /root, the directory an operator lands in. A shortcut never overwrites a
 # file which is not one: the scripts of the tree itself live there too.

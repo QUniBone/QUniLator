@@ -1,5 +1,5 @@
-#!/root/10.03_app_demo/4_deploy/demo --verbose
-# inputfile for demo to select a MSCP disk in the "device test" menu.
+#!/usr/bin/qbone-cli --verbose
+# inputfile for the menu program to select a MSCP disk in the "device test" menu.
 d			# device menu
 
 # first, make a serial port. Default ist
