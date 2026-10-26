@@ -19,6 +19,12 @@ installed; no password is involved and none should be typed. Deploys
 A `.local` host name is mDNS, which does not resolve inside the tool sandbox.
 Either run the command with the sandbox off or use the address it resolves to.
 
+**A board that does not answer is not a name to work around — do not edit
+`build.env`.** The usual reasons are that the board is not switched on, or that
+a freshly flashed image is waiting in its first-run dialog to be configured.
+Neither is fixable from here: if the board cannot be reached, stop trying and
+ask.
+
 `build.env` also records the bus that board carries and where a deploy puts
 what it built; `build.env.example` documents every setting. It is not in git —
 it describes one person's board — and `crossbuild.sh` creates it from the

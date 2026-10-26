@@ -106,6 +106,9 @@ void sm_arb_reset() {
 	sm_arb.grant_bbsy_ssyn_wait_grant_mask = 0;
 	sm_arb.cpu_request = 0;
 	sm_arb.arbitrator_grant_mask = 0;
+	// park the ARM's fast-path mask at "all requesting" until the first
+	// arbitration pass reads the real request lines - see mailbox.h
+	mailbox.arbitrator.ifs_intr_request_mask = PRIORITY_ARBITRATION_INTR_MASK;
 	timeout_cleanup(TIMEOUT_SACK);
 }
 
@@ -239,6 +242,10 @@ uint8_t sm_arb_worker_cpu() {
 	uint8_t intr_request_mask;
 	uint8_t latch1val = buslatches_getbyte(1);
 	bool do_intr_arbitration = mailbox.arbitrator.ifs_intr_arbitration_pending; // ARM allowed INTR arbitration
+
+	// publish the BR request-line state for the ARM's fast path, which skips
+	// the per-instruction grant round trip while this stays 0 - see mailbox.h
+	mailbox.arbitrator.ifs_intr_request_mask = latch1val & PRIORITY_ARBITRATION_INTR_MASK;
 
 	// monitor BBSY
 	if (latch1val & BIT(5)) {
