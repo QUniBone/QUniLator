@@ -1,3 +1,17 @@
+qbone (1.26.3-1) trixie; urgency=low
+
+  A serial line's lock
+
+  1.26.3 keeps a console line's receive and transmit from working on its
+  input at the same time.
+
+  * Serial lines. Each byte a guest transmitted released the lock its
+    line's receiver and the web console hold while they take and add
+    input, so both could work on it at once. A Kermit transfer through
+    the console gave that the most chances.
+
+ -- Hans Huebner <hans@huebner.org>  Thu, 29 Oct 2026 09:55:22 +0100
+
 qbone (1.26.2-1) trixie; urgency=low
 
   Kermit into RT-11, and VMS V3.0 on an RK07
