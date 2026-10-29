@@ -187,9 +187,16 @@ static int ws_data_handler(struct mg_connection *conn, int opcode, char *data,
 	if ((opcode & 0x0f) == MG_WEBSOCKET_OPCODE_TEXT
 			&& web_console_is_control(data, len)) {
 		int transfer = web_console_transfer(data, len);
-		if (transfer >= 0)
+		int xonxoff = web_console_xonxoff(data, len);
+		if (transfer >= 0) {
 			console->channel.set_transfer(conn, transfer == 1);
-		else if (web_console_is_break(data, len) && console->slu != nullptr)
+			// a transfer's flow control ends with it
+			if (transfer == 0 && console->adapter != nullptr)
+				console->adapter->set_stream_rcv_xonxoff(false);
+		} else if (xonxoff >= 0) {
+			if (console->adapter != nullptr)
+				console->adapter->set_stream_rcv_xonxoff(xonxoff == 1);
+		} else if (web_console_is_break(data, len) && console->slu != nullptr)
 			console->slu->receive_break();
 		return 1;
 	}
@@ -208,7 +215,11 @@ static int ws_data_handler(struct mg_connection *conn, int opcode, char *data,
 
 static void ws_close_handler(const struct mg_connection *conn, void *cbdata) {
 	console_c *console = (console_c *) cbdata;
-	console->channel.remove_client(const_cast<struct mg_connection *>(conn));
+	struct mg_connection *client = const_cast<struct mg_connection *>(conn);
+	// a transfer whose client goes away ends, and its flow control with it
+	if (console->channel.transfer_by(client) && console->adapter != nullptr)
+		console->adapter->set_stream_rcv_xonxoff(false);
+	console->channel.remove_client(client);
 }
 
 #if defined(UNIBUS)

@@ -173,7 +173,9 @@ export function TransferDialog({
 
   // Hold the console line for one transfer: what the guest sends goes to the
   // transfer, and the screen shows it only for typed text, where it is the echo.
-  const run = async (heading: string, shows: boolean, total: number, body: (link: { send(b: Uint8Array): void }, input: ByteQueue, signal: AbortSignal) => Promise<string>) => {
+  // With xonxoff the board keeps to the guest's XON/XOFF, which typed text and
+  // Kermit never carry as data and XMODEM's blocks do.
+  const run = async (heading: string, shows: boolean, xonxoff: boolean, total: number, body: (link: { send(b: Uint8Array): void }, input: ByteQueue, signal: AbortSignal) => Promise<string>) => {
     saveSettings({
       protocol, crForLf, echo, echoTimeout, fifo, prompt, promptTimeout, charDelay, lineDelay, oneK,
       rxProtocol, stripPadding, rxTextToLf,
@@ -186,7 +188,7 @@ export function TransferDialog({
         if (!sendConsoleBytes(bytes)) throw new TransferError('the console is not connected');
       },
     };
-    setTransferTap((d) => input.push(d), shows);
+    setTransferTap((d) => input.push(d), shows, xonxoff);
     setTitle(heading);
     setOutcome(null);
     setProgress({ sent: 0, total, note: 'starting' });
@@ -204,7 +206,7 @@ export function TransferDialog({
   const send = () => {
     if (!file) return;
     const how = protocol === 'text' ? 'as typed text' : protocol === 'xmodem' ? 'by XMODEM' : 'by Kermit';
-    run(`Sending ${file.name} ${how}`, protocol === 'text', file.data.length, async (link, input, signal) => {
+    run(`Sending ${file.name} ${how}`, protocol === 'text', protocol !== 'xmodem', file.data.length, async (link, input, signal) => {
       if (protocol === 'text') {
         const opts: RawOptions = {
           crForLf,
@@ -233,7 +235,7 @@ export function TransferDialog({
   };
 
   const receive = () => {
-    run(`Receiving by ${rxProtocol === 'xmodem' ? 'XMODEM' : 'Kermit'}`, false, 0, async (link, input, signal) => {
+    run(`Receiving by ${rxProtocol === 'xmodem' ? 'XMODEM' : 'Kermit'}`, false, rxProtocol === 'kermit', 0, async (link, input, signal) => {
       if (rxProtocol === 'xmodem') {
         const data = await receiveXmodem(link, input, { startTimeoutMs: START_TIMEOUT_MS, stripPadding }, setProgress, signal);
         const name = rxName.trim() || 'xmodem.bin';

@@ -1975,6 +1975,8 @@ Client to server:
 | `{"break":true}` | assert a line BREAK |
 | `{"transfer":true}` | this client starts a file transfer on the line |
 | `{"transfer":false}` | and ends it |
+| `{"xonxoff":true}` | hold this channel's bytes back while the guest has sent XOFF |
+| `{"xonxoff":false}` | and stop doing so |
 
 BREAK is a line condition rather than a character, which is why it cannot ride
 in the byte stream. On `/ws/console/ext` it holds the real tty spacing for
@@ -1990,6 +1992,15 @@ client alone: it is not sent to the other clients, not kept in the history a
 connecting client is replayed, and neither direction is recorded. The other
 clients, and any that connect meanwhile, get `{"transfer":true}`, and
 `{"transfer":false}` when the line is theirs again.
+
+`{"xonxoff":true}` makes the emulated line (`/ws/console/0`, `/1`, `vax`)
+behave like a terminal set for XON/XOFF: once the guest transmits XOFF (023),
+the bytes clients have sent wait on the board until it transmits XON (021). A
+guest that reads through a buffer smaller than what a client sends at once — a
+Kermit packet into RT-11's 64-character `XL` handler — is not overrun. It ends
+with `{"xonxoff":false}`, and when a file transfer ends, which its client
+disconnecting does too. A client sending binary data in which those bytes are data, such
+as XMODEM, leaves it off. `/ws/console/ext` ignores it.
 
 ### Console recordings
 

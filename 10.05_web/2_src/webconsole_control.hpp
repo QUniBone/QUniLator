@@ -14,6 +14,9 @@
      client -> server   {"break":true}     assert a line BREAK
                         {"transfer":true}  this client starts a file transfer
                         {"transfer":false} and ends it
+                        {"xonxoff":true}   hold this channel's bytes back
+                                           while the guest has sent XOFF
+                        {"xonxoff":false}  and stop doing so
 
      server -> client   {"transfer":true}  another client's file transfer
                         {"transfer":false} holds the line, and has ended
@@ -23,6 +26,11 @@
    line, but they are for the program running the transfer and not for anyone
    reading the console, so the channel keeps them to that client while it says
    a transfer is running.
+
+   XON/XOFF is what a terminal does for a guest whose line takes characters
+   into a small buffer: a client sending more than a keyboard would, a file
+   transfer's packets or typed text, asks for it, and XMODEM, whose binary
+   blocks hold those bytes as data, goes without. It ends with the transfer.
 */
 #ifndef _WEBCONSOLE_CONTROL_HPP_
 #define _WEBCONSOLE_CONTROL_HPP_
@@ -54,6 +62,9 @@ static inline bool web_console_is_control(const char *data, size_t len) {
 	for (size_t i = b; i + 10 <= e; i++)
 		if (memcmp(data + i, "\"transfer\"", 10) == 0)
 			return true;
+	for (size_t i = b; i + 9 <= e; i++)
+		if (memcmp(data + i, "\"xonxoff\"", 9) == 0)
+			return true;
 	return false;
 }
 
@@ -63,6 +74,21 @@ static inline int web_console_transfer(const char *data, size_t len) {
 	bool saw_key = false, saw_true = false;
 	for (size_t i = 0; i < len; i++) {
 		if (len - i >= 10 && memcmp(data + i, "\"transfer\"", 10) == 0)
+			saw_key = true;
+		if (len - i >= 4 && memcmp(data + i, "true", 4) == 0)
+			saw_true = true;
+	}
+	if (!saw_key)
+		return -1;
+	return saw_true ? 1 : 0;
+}
+
+// The {"xonxoff":...} control message: 1 for true, 0 for false, -1 for a
+// frame that is not one.
+static inline int web_console_xonxoff(const char *data, size_t len) {
+	bool saw_key = false, saw_true = false;
+	for (size_t i = 0; i < len; i++) {
+		if (len - i >= 9 && memcmp(data + i, "\"xonxoff\"", 9) == 0)
 			saw_key = true;
 		if (len - i >= 4 && memcmp(data + i, "true", 4) == 0)
 			saw_true = true;

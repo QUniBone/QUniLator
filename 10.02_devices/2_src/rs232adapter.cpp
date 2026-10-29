@@ -69,6 +69,8 @@ rs232adapter_c::rs232adapter_c()
 	stream_rcv = NULL;
 	stream_xmt = NULL;
 	stream_xmt_tap = NULL;
+	stream_rcv_xonxoff = false;
+	stream_rcv_held = false;
 	rcv_termios_error_encoding = false;
 	rcvbuffer.clear();
 	pattern_stream_data[0] = 0;
@@ -143,7 +145,7 @@ bool rs232adapter_c::rs232byte_rcv_poll(rs232byte_t *rcvbyte)
 		result = (n > 0);
 	}
 
-	if (!result && stream_rcv) {
+	if (!result && stream_rcv && !stream_rcv_held) {
 		// deliver next char from stream delayed, with simulated baudrate
 //		if (baudrate == 0 || rcv_baudrate_delay.reached()) {
 		int c = stream_rcv->get();
@@ -167,10 +169,23 @@ bool rs232adapter_c::rs232byte_rcv_poll(rs232byte_t *rcvbyte)
 	return result;
 }
 
+void rs232adapter_c::set_stream_rcv_xonxoff(bool on)
+{
+	stream_rcv_xonxoff = on;
+	stream_rcv_held = false;
+}
+
 void rs232adapter_c::rs232byte_xmt_send(rs232byte_t xmtbyte) 
 {
 //	pthread_mutex_lock(&mutex);
 //		printf("%c >\n", xmtbyte) ;
+
+	if (stream_rcv_xonxoff) {
+		if (xmtbyte.c == 0x13) // XOFF
+			stream_rcv_held = true;
+		else if (xmtbyte.c == 0x11) // XON
+			stream_rcv_held = false;
+	}
 
 	if (rs232)
 		rs232->SendByte(xmtbyte.c);

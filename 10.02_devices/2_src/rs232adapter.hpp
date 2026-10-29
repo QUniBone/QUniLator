@@ -30,6 +30,7 @@
 #include <istream>
 #include <sstream>
 #include <deque>
+#include <atomic>
 #include "utils.hpp"
 #include "timeout.hpp"
 #include "logsource.hpp"
@@ -96,6 +97,14 @@ public:
 	std::ostream *stream_xmt_tap; // permanent second xmt sink: every
 	// transmitted byte is copied here as well (web console tap), while
 	// stream_xmt remains free for the menu's temporary echo/pattern use
+
+	// XON/XOFF for stream_rcv, as a terminal does it: while set, an XOFF the
+	// guest transmits holds stream_rcv's bytes back until it transmits XON.
+	// A guest whose input buffer is smaller than what the stream holds
+	// overruns without it. Clearing it releases a held stream.
+	void set_stream_rcv_xonxoff(bool on);
+	std::atomic<bool> stream_rcv_xonxoff;
+	std::atomic<bool> stream_rcv_held;
 
 	/*** PATTERN detection ***/
 	void set_pattern(char *pattern);

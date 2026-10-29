@@ -59,11 +59,16 @@ let transferShows = true;
 
 // The board is told too, so it keeps the transfer's packets to this page:
 // the other consoles do not show them, and the history replayed on connect
-// and the recording do not hold them.
-export function setTransferTap(tap: ((data: Uint8Array) => void) | null, shows: boolean): void {
+// and the recording do not hold them. With xonxoff the board also holds this
+// page's bytes back while the guest has sent XOFF, as a terminal does, so a
+// guest with a small input buffer is not overrun; it ends with the transfer.
+export function setTransferTap(tap: ((data: Uint8Array) => void) | null, shows: boolean, xonxoff = false): void {
   transferTap = tap;
   transferShows = shows;
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ transfer: tap != null }));
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ transfer: tap != null }));
+    if (tap && xonxoff) ws.send(JSON.stringify({ xonxoff: true }));
+  }
 }
 
 // Bytes to the guest as they are, in a binary frame, so a byte past 127 goes

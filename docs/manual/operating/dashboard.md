@@ -70,7 +70,8 @@ copies the selection again. Ctrl+C itself goes to the machine.
 console, in one of three ways. Pick the file, or drop it on the console, choose
 how it goes, and press **Send** — the dialog remembers the last choice, so a
 dropped file usually needs only Return. **Receive file** fetches files from
-the guest by XMODEM or Kermit, and the browser saves them. A bar shows the
+the guest by XMODEM or Kermit, and the browser saves them where it saves any
+download — on the computer running the browser, not on the board. A bar shows the
 progress, and **Cancel** stops the transfer. The keyboard waits while a file is
 going over.
 
@@ -117,6 +118,12 @@ line ends or as binary. Start Kermit on the guest and give it `RECEIVE`, or
 put it in server mode, before or within a minute of **Send**. The packets are
 printable characters, and a byte with its eighth bit set goes as a prefixed
 pair, so a binary file arrives whole over a seven-bit line.
+
+Typed text and Kermit keep to XON/XOFF on an emulated console line: while the
+guest has sent XOFF, the board holds the rest back until XON, as a terminal
+does. A guest that reads its line through a small buffer needs it — RT-11's
+`XL` handler holds 64 characters, less than a Kermit packet. XMODEM goes
+without, since its blocks carry those bytes as data.
 
 To receive, press **Receive file**, choose the protocol, start the sender on
 the guest, and press **Receive** — in either order, within a minute.
