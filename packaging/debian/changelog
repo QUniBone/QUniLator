@@ -1,3 +1,23 @@
+qbone (1.26.2-1) trixie; urgency=low
+
+  Kermit into RT-11, and VMS V3.0 on an RK07
+
+  1.26.2 lets Kermit and typed text through a guest's small line buffer,
+  and boots VMS V3.0 from an RK07.
+
+  * Console file transfer. Typed text and Kermit keep to the guest's
+    XON/XOFF: while the guest has sent XOFF, the board holds the rest
+    back until XON. RT-11's XL handler holds 64 characters, less than a
+    Kermit packet, and Kermit-11 on it took most data packets damaged.
+    XMODEM goes without, since its blocks carry those bytes as data.
+  * Received files. The manual says where they go: a browser download,
+    on the computer running the browser.
+  * RK611. The controller forces an interrupt only when IE and RDY are
+    written together, which VMS V3.0's handler for an unowned interrupt
+    relies on; VMS V3.0 now boots from an RK07 to Username:.
+
+ -- Hans Huebner <hans@huebner.org>  Thu, 29 Oct 2026 05:47:16 +0100
+
 qbone (1.26.1-1) trixie; urgency=low
 
   The clock of an offline board
