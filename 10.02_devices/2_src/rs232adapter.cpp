@@ -175,10 +175,11 @@ void rs232adapter_c::set_stream_rcv_xonxoff(bool on)
 	stream_rcv_held = false;
 }
 
+// Takes the mutex the receive poll and the stream injectors hold, so the
+// unlock at the end releases this thread's own lock.
 void rs232adapter_c::rs232byte_xmt_send(rs232byte_t xmtbyte) 
 {
-//	pthread_mutex_lock(&mutex);
-//		printf("%c >\n", xmtbyte) ;
+	pthread_mutex_lock(&mutex);
 
 	if (stream_rcv_xonxoff) {
 		if (xmtbyte.c == 0x13) // XOFF
