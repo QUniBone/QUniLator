@@ -107,6 +107,12 @@ public:
 	// A guest whose input buffer is smaller than what the stream holds
 	// overruns without it. Clearing it releases a held stream.
 	void set_stream_rcv_xonxoff(bool on);
+
+	// Drop what stream_rcv holds that the guest has not taken yet. Its bytes
+	// wait for the guest to read the one before, so input nobody reads stays
+	// queued: the end of a transfer the guest stopped answering, or typing at
+	// a machine that is switched off.
+	void discard_stream_rcv(void);
 	std::atomic<bool> stream_rcv_xonxoff;
 	std::atomic<bool> stream_rcv_held;
 

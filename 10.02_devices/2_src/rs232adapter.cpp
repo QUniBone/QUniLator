@@ -169,6 +169,18 @@ bool rs232adapter_c::rs232byte_rcv_poll(rs232byte_t *rcvbyte, bool stream_ready)
 	return result;
 }
 
+void rs232adapter_c::discard_stream_rcv(void)
+{
+	pthread_mutex_lock(&mutex);
+	if (stream_rcv) {
+		std::streamsize n;
+		while ((n = stream_rcv->rdbuf()->in_avail()) > 0)
+			stream_rcv->ignore(n);
+		stream_rcv->clear();
+	}
+	pthread_mutex_unlock(&mutex);
+}
+
 void rs232adapter_c::set_stream_rcv_xonxoff(bool on)
 {
 	stream_rcv_xonxoff = on;

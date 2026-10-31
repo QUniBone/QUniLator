@@ -192,13 +192,15 @@ export function TransferDialog({
     setTitle(heading);
     setOutcome(null);
     setProgress({ sent: 0, total, note: 'starting' });
+    let completed = false;
     try {
       const text = await body(link, input, ctrl.signal);
+      completed = true;
       setOutcome({ ok: true, text });
     } catch (e) {
       setOutcome({ ok: false, text: e instanceof TransferError ? 'Stopped: ' + e.message + '.' : String(e) });
     } finally {
-      setTransferTap(null, true);
+      setTransferTap(null, true, false, !completed);
       abort.current = null;
     }
   };

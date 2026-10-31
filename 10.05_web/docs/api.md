@@ -1977,6 +1977,7 @@ Client to server:
 | `{"transfer":false}` | and ends it |
 | `{"xonxoff":true}` | hold this channel's bytes back while the guest has sent XOFF |
 | `{"xonxoff":false}` | and stop doing so |
+| `{"discard":true}` | drop the bytes this channel holds that the guest has not read |
 
 BREAK is a line condition rather than a character, which is why it cannot ride
 in the byte stream. On `/ws/console/ext` it holds the real tty spacing for
@@ -2001,6 +2002,14 @@ Kermit packet into RT-11's 64-character `XL` handler — is not overrun. It ends
 with `{"xonxoff":false}`, and when a file transfer ends, which its client
 disconnecting does too. A client sending binary data in which those bytes are data, such
 as XMODEM, leaves it off. `/ws/console/ext` ignores it.
+
+On an emulated line, a byte a client sends waits on the board until the guest
+has read the one before it, so a guest that stops reading leaves input queued.
+The board drops it when a file transfer starts, when a transfer's client
+disconnects, and when the machine's power is switched off or on;
+`{"discard":true}` drops it at any time. A transfer that stops part way sends
+it before `{"transfer":false}`. One that completes does not, since its last
+bytes - the acknowledgement the guest is waiting for - still have to be read.
 
 ### Console recordings
 

@@ -190,12 +190,20 @@ static int ws_data_handler(struct mg_connection *conn, int opcode, char *data,
 		int xonxoff = web_console_xonxoff(data, len);
 		if (transfer >= 0) {
 			console->channel.set_transfer(conn, transfer == 1);
-			// a transfer's flow control ends with it
-			if (transfer == 0 && console->adapter != nullptr)
-				console->adapter->set_stream_rcv_xonxoff(false);
+			if (console->adapter != nullptr) {
+				// a transfer starts on a line with nothing queued, and its
+				// flow control ends with it
+				if (transfer == 1)
+					console->adapter->discard_stream_rcv();
+				else
+					console->adapter->set_stream_rcv_xonxoff(false);
+			}
 		} else if (xonxoff >= 0) {
 			if (console->adapter != nullptr)
 				console->adapter->set_stream_rcv_xonxoff(xonxoff == 1);
+		} else if (web_console_is_discard(data, len)) {
+			if (console->adapter != nullptr)
+				console->adapter->discard_stream_rcv();
 		} else if (web_console_is_break(data, len) && console->slu != nullptr)
 			console->slu->receive_break();
 		return 1;
@@ -216,9 +224,11 @@ static int ws_data_handler(struct mg_connection *conn, int opcode, char *data,
 static void ws_close_handler(const struct mg_connection *conn, void *cbdata) {
 	console_c *console = (console_c *) cbdata;
 	struct mg_connection *client = const_cast<struct mg_connection *>(conn);
-	// a transfer whose client goes away ends, and its flow control with it
-	if (console->channel.transfer_by(client) && console->adapter != nullptr)
+	// a transfer whose client goes away is stopped, and its input and flow control go with it
+	if (console->channel.transfer_by(client) && console->adapter != nullptr) {
+		console->adapter->discard_stream_rcv();
 		console->adapter->set_stream_rcv_xonxoff(false);
+	}
 	console->channel.remove_client(client);
 }
 

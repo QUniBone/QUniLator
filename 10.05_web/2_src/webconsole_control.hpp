@@ -17,6 +17,8 @@
                         {"xonxoff":true}   hold this channel's bytes back
                                            while the guest has sent XOFF
                         {"xonxoff":false}  and stop doing so
+                        {"discard":true}   drop what this channel holds that
+                                           the guest has not read yet
 
      server -> client   {"transfer":true}  another client's file transfer
                         {"transfer":false} holds the line, and has ended
@@ -31,6 +33,12 @@
    into a small buffer: a client sending more than a keyboard would, a file
    transfer's packets or typed text, asks for it, and XMODEM, whose binary
    blocks hold those bytes as data, goes without. It ends with the transfer.
+
+   What a client sends waits on the board until the guest has read the byte
+   before it, so input the guest stops reading stays queued. A transfer starts
+   on a line with nothing queued; one that is stopped part way asks for the
+   rest of its packets to be dropped, and one that completes leaves its last
+   bytes - an acknowledgement the guest is waiting for - to be read.
 */
 #ifndef _WEBCONSOLE_CONTROL_HPP_
 #define _WEBCONSOLE_CONTROL_HPP_
@@ -65,7 +73,22 @@ static inline bool web_console_is_control(const char *data, size_t len) {
 	for (size_t i = b; i + 9 <= e; i++)
 		if (memcmp(data + i, "\"xonxoff\"", 9) == 0)
 			return true;
+	for (size_t i = b; i + 9 <= e; i++)
+		if (memcmp(data + i, "\"discard\"", 9) == 0)
+			return true;
 	return false;
+}
+
+// Is this TEXT frame the {"discard":true} control message?
+static inline bool web_console_is_discard(const char *data, size_t len) {
+	bool saw_key = false, saw_true = false;
+	for (size_t i = 0; i < len; i++) {
+		if (len - i >= 9 && memcmp(data + i, "\"discard\"", 9) == 0)
+			saw_key = true;
+		if (len - i >= 4 && memcmp(data + i, "true", 4) == 0)
+			saw_true = true;
+	}
+	return saw_key && saw_true;
 }
 
 // The {"transfer":...} control message: 1 for true, 0 for false, -1 for a

@@ -463,6 +463,8 @@ void slu_c::on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_e
 	UNUSED(aclo_edge);
 	UNUSED(dclo_edge);
 	reset() ;
+	// input queued for a machine that went down is not typed at the one that comes up
+	rs232adapter.discard_stream_rcv();
 }
 
 

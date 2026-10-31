@@ -62,10 +62,15 @@ let transferShows = true;
 // and the recording do not hold them. With xonxoff the board also holds this
 // page's bytes back while the guest has sent XOFF, as a terminal does, so a
 // guest with a small input buffer is not overrun; it ends with the transfer.
-export function setTransferTap(tap: ((data: Uint8Array) => void) | null, shows: boolean, xonxoff = false): void {
+//
+// A transfer that stops part way passes discard, and the board drops what it
+// still holds of the transfer's bytes for the guest; one that completes leaves
+// its last bytes, the acknowledgement the guest waits for, to be read.
+export function setTransferTap(tap: ((data: Uint8Array) => void) | null, shows: boolean, xonxoff = false, discard = false): void {
   transferTap = tap;
   transferShows = shows;
   if (ws && ws.readyState === WebSocket.OPEN) {
+    if (discard) ws.send(JSON.stringify({ discard: true }));
     ws.send(JSON.stringify({ transfer: tap != null }));
     if (tap && xonxoff) ws.send(JSON.stringify({ xonxoff: true }));
   }
