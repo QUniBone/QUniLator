@@ -90,12 +90,16 @@ boot ROM's ODT (`@`) prompt; power cycle and drive the boot from the top instead
 ## The console
 
 **Send console input one character at a time, waiting for its echo before the
-next.** The DL11/SLU has no receive FIFO: a burst of bytes overruns the one
-RBUF register and the program sees only a few of them — "ra(0,0,0)unix" arrives
-as "r,)x". This holds for every console path (emulated DL11 channels and the
-external bridge alike) and for every program driving it (ODT, boot blocks, the
-OS). Pace each character on the echo; where nothing echoes (a password prompt),
-fall back to a delay per character.
+next.** A CPU's own SLU has no receive FIFO: a burst of bytes over the external
+bridge overruns the one RBUF register and the program sees only a few of them —
+"ra(0,0,0)unix" arrives as "r,)x". This holds for every program driving it (ODT,
+boot blocks, the OS). Pace each character on the echo; where nothing echoes (a
+password prompt), fall back to a delay per character.
+
+The emulated DL11 channels (`/ws/console/0` and `/1`) hold a byte from the
+WebSocket until the guest has read RBUF, so a burst arrives whole there. Pace
+on the echo anyway: it is the same code for both paths, and the echo is what
+says the guest took the line.
 
 **Which WebSocket carries the console depends on the CPU in the box**, and the
 CPU is swapped from time to time. Read `GET /api/devices` and

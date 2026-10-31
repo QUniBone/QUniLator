@@ -87,7 +87,7 @@ rs232adapter_c::rs232adapter_c()
 // If IGNPAR=0, PARMRK=1: error on <char> received as \377 \0 <char>
 // \377 received as \377 \377
 // result: true if data received
-bool rs232adapter_c::rs232byte_rcv_poll(rs232byte_t *rcvbyte) 
+bool rs232adapter_c::rs232byte_rcv_poll(rs232byte_t *rcvbyte, bool stream_ready)
 {
 	bool result = false;
 	// mixing input streams, with RS232 priority
@@ -145,7 +145,7 @@ bool rs232adapter_c::rs232byte_rcv_poll(rs232byte_t *rcvbyte)
 		result = (n > 0);
 	}
 
-	if (!result && stream_rcv && !stream_rcv_held) {
+	if (!result && stream_rcv && stream_ready && !stream_rcv_held) {
 		// deliver next char from stream delayed, with simulated baudrate
 //		if (baudrate == 0 || rcv_baudrate_delay.reached()) {
 		int c = stream_rcv->get();

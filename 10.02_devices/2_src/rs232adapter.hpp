@@ -82,7 +82,11 @@ public:
 	serial_tcp_line_c *tcp_line;
 
 	/*** BYTE interface ***/
-	bool rs232byte_rcv_poll(rs232byte_t *rcvbyte);
+	// stream_ready says whether the receiver has room for a byte from
+	// stream_rcv. The stream has no line clock of its own, so its next byte
+	// waits while the receiver still holds an unread one. Bytes from RS232
+	// and TCP arrive on their own clock and are delivered as they come.
+	bool rs232byte_rcv_poll(rs232byte_t *rcvbyte, bool stream_ready = true);
 	void rs232byte_xmt_send(rs232byte_t xmtbyte);
 	void rs232byte_loopback(rs232byte_t xmtbyte);
 

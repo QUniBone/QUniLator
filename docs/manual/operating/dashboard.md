@@ -57,12 +57,16 @@ Selecting text in the console copies it to the clipboard; **Ctrl+Shift+C**
 copies the selection again. Ctrl+C itself goes to the machine.
 
 > [!CAUTION]
-> **The line has no receive buffer**
+> **The external console has no receive buffer**
 >
-> Typing at human speed is fine. Pasting is not: a burst of bytes overruns the
-> single receive register and the guest sees only a few of them — `ra(0,0,0)unix`
-> arrives as `r,)x`. Type it, send it with **Send file** and its echo check, or
-> drive it from a script that paces each character on its echo.
+> On the external console, typing at human speed is fine. Pasting is not: a
+> burst of bytes overruns the processor's single receive register and the guest
+> sees only a few of them — `ra(0,0,0)unix` arrives as `r,)x`. Type it, send it
+> with **Send file** and its echo check, or drive it from a script that paces
+> each character on its echo.
+>
+> The emulated `DL11` channels hand the guest each character when it has read
+> the one before, so a paste reaches them whole.
 
 ### Sending and receiving files
 

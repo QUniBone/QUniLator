@@ -533,8 +533,10 @@ void slu_c::worker_rcv(void)
 		// "query
 		// rcv_active: can only be set by polling the UART input GPIO pin?
 		// at the moments, it is only sent on maintenance loopback xmt
-		/* read serial data, if any */
-		if (rs232adapter.rs232byte_rcv_poll(&rcv_byte)) {
+		/* read serial data, if any. A byte from the web console waits until
+		 the guest has read RBUF: a slow processor busy elsewhere would
+		 otherwise lose characters to overrun that the sender cannot know of. */
+		if (rs232adapter.rs232byte_rcv_poll(&rcv_byte, !rcv_done)) {
 			DEBUG_FAST("rcv_byte=0x%02x", (unsigned)rcv_byte.c);
 			pthread_mutex_lock(&on_after_rcv_register_access_mutex); // signal changes atomic against QBUS/UNIBUS accesses
 			rcv_or_err = rcv_fr_err = rcv_p_err = 0;
