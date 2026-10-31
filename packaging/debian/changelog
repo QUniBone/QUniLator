@@ -1,3 +1,18 @@
+qbone (1.27.0-1) trixie; urgency=low
+
+  VHD disk images
+
+  1.27.0 reads and writes disk images in the VHD format SIMH and other
+  emulators use.
+
+  * Storage. A fixed or dynamic VHD goes into the image library as it is,
+    and a disk drive reads and writes it in place, growing a dynamic one
+    as blocks are written. It downloads and crosses the file shares
+    unchanged. A VHD carries no copy-on-write overlay. New image… can
+    create a blank dynamic VHD, and the contents listing reads VHDs.
+
+ -- Hans Huebner <hans@huebner.org>  Sat, 31 Oct 2026 20:05:06 +0100
+
 qbone (1.26.5-1) trixie; urgency=low
 
   Console input left from a stopped transfer
