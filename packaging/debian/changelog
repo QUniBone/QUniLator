@@ -1,3 +1,17 @@
+qbone (1.26.4-1) trixie; urgency=low
+
+  Web console input waits for the guest
+
+  1.26.4 keeps characters typed or sent from the web console from being
+  lost on a guest that is slow to read them.
+
+  * DL11. A character from the web console goes into the receiver when
+    the guest has read the one before it. Kermit-11 on RT-11's XL handler
+    on an 11/05 lost most packets at 9600 baud to overrun, and a paste
+    into a slow guest lost characters the same way.
+
+ -- Hans Huebner <hans@huebner.org>  Sat, 31 Oct 2026 12:05:51 +0100
+
 qbone (1.26.3-1) trixie; urgency=low
 
   A serial line's lock
