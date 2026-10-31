@@ -16,6 +16,10 @@
    civetweb's own complaints go through the same callback the service installs,
    and the test reads them back from the logger's file sink.
 
+   A VHD in the library is a medium in its own right: a blank one is made by
+   name, the listing says what it is and how big its disk is, and it is offered
+   no copy-on-write overlay, even with an ".ovl" lying beside it.
+
    Build & run: 10.05_web/tools/run_config_test.sh
 */
 
@@ -34,9 +38,11 @@
 #include <unistd.h>
 
 #include "civetweb.h"
+#include "picojson.h"
 #include "logger.hpp"
 #include "device.hpp"
 #include "storagedrive.hpp"
+#include "storageimage_vhd.hpp"
 #include "webconfigs.hpp"
 #include "webevents.hpp"
 #include "weblog.hpp"
@@ -57,12 +63,12 @@ bool webevents_is_powered(void) { return false; }
 
 static int failures = 0;
 static int checks = 0;
-static void check(bool ok, const char *what)
+static void check(bool ok, const std::string &what)
 {
 	checks++;
 	if (!ok) {
 		failures++;
-		fprintf(stderr, "FAIL: %s\n", what);
+		fprintf(stderr, "FAIL: %s\n", what.c_str());
 	}
 }
 
@@ -165,6 +171,57 @@ static int upload(const std::string &dir, const std::string &filename,
 	return status;
 }
 
+// One request with an optional body. Returns the HTTP status, 0 for none, and
+// the reply's body in *body.
+static int http(const std::string &method, const std::string &path,
+		const std::string &content, std::string *body)
+{
+	std::string request = method + " " + path + " HTTP/1.1\r\n"
+			"Host: localhost\r\n"
+			"Content-Type: application/json\r\n"
+			"Content-Length: " + std::to_string(content.size()) + "\r\n"
+			"Connection: close\r\n\r\n" + content;
+	int fd = socket(AF_INET, SOCK_STREAM, 0);
+	struct sockaddr_in sa;
+	memset(&sa, 0, sizeof sa);
+	sa.sin_family = AF_INET;
+	sa.sin_port = htons(PORT);
+	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	if (connect(fd, (struct sockaddr *) &sa, sizeof sa) != 0) {
+		close(fd);
+		return 0;
+	}
+	if (send(fd, request.data(), request.size(), 0) != (ssize_t) request.size()) {
+		close(fd);
+		return 0;
+	}
+	std::string resp;
+	char buf[4096];
+	ssize_t r;
+	while ((r = recv(fd, buf, sizeof buf, 0)) > 0)
+		resp.append(buf, (size_t) r);
+	close(fd);
+	size_t split = resp.find("\r\n\r\n");
+	*body = split == std::string::npos ? "" : resp.substr(split + 4);
+	int status = 0;
+	if (sscanf(resp.c_str(), "HTTP/1.1 %d", &status) != 1)
+		status = 0;
+	return status;
+}
+
+// The GET /api/images entry for an image, or a null value.
+static picojson::value listed(const std::string &path)
+{
+	std::string body;
+	picojson::value v;
+	if (http("GET", "/api/images", "", &body) != 200 || !picojson::parse(v, body).empty())
+		return picojson::value();
+	for (const picojson::value &im : v.get("images").get<picojson::array>())
+		if (im.get("path").is<std::string>() && im.get("path").get<std::string>() == path)
+			return im;
+	return picojson::value();
+}
+
 int main()
 {
 	logger = new logger_c();
@@ -240,6 +297,50 @@ int main()
 		check(status != 200, "an upload that cannot be written is refused");
 		check(log_shows(logfile, "Cannot create file"),
 				"civetweb's own error reaches the log");
+	}
+
+	{
+		// A blank VHD is made by its name, a dynamic disk of the size asked for.
+		std::string body;
+		int status = http("POST", "/api/images",
+				"{\"name\":\"blank.vhd\",\"dir\":\"whole\",\"kind\":\"disk\",\"size\":1048576}", &body);
+		check(status == 200, "a blank VHD is created");
+		std::string vhd = root + "/images/whole/blank.vhd";
+		uint64_t disk_size = 0;
+		check(storageimage_vhd_c::is_vhd_file(vhd, &disk_size) && disk_size == 1048576,
+				"a blank VHD is a VHD of the size asked for");
+		status = http("POST", "/api/images",
+				"{\"name\":\"blank.vhd\",\"dir\":\"whole\",\"kind\":\"disk\",\"size\":1048576}", &body);
+		check(status == 409, "a blank VHD does not overwrite a file");
+		status = http("POST", "/api/images",
+				"{\"name\":\"odd.vhd\",\"dir\":\"whole\",\"kind\":\"disk\",\"size\":1000}", &body);
+		check(status == 400, "a blank VHD of no whole number of sectors is refused");
+
+		// the listing says what it is, and offers no overlay - not even the
+		// one an ".ovl" left beside it would make
+		FILE *ovl = fopen((vhd + ".ovl").c_str(), "wb");
+		if (ovl != nullptr) {
+			fputs("stale", ovl);
+			fclose(ovl);
+		}
+		picojson::value im = listed("whole/blank.vhd");
+		check(im.is<picojson::object>(), "a VHD is listed");
+		check(im.get("format").is<std::string>() && im.get("format").get<std::string>() == "vhd",
+				"a VHD is listed as one");
+		check(im.get("disk_size").is<double>() && im.get("disk_size").get<double>() == 1048576,
+				"a VHD is listed with its disk's size");
+		check(im.get("overlay").is<bool>() && !im.get("overlay").get<bool>(),
+				"a VHD is listed with no overlay");
+		for (const char *action : {"discard", "commit"}) {
+			status = http("POST", std::string("/api/images/whole/blank.vhd/overlay/") + action, "", &body);
+			check(status == 404, std::string("a VHD answers no overlay to ") + action);
+		}
+		check(file_holds(vhd + ".ovl", "stale"), "an overlay op on a VHD leaves the files alone");
+		check(storageimage_vhd_c::is_vhd_file(vhd), "an overlay op on a VHD leaves the VHD alone");
+
+		picojson::value raw = listed("whole/disk.dsk");
+		check(raw.is<picojson::object>() && !raw.contains("format"),
+				"a raw image is listed with no format");
 	}
 
 	mg_stop(ctx);

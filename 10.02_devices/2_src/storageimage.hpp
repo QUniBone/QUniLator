@@ -45,6 +45,10 @@
 
 class storagedrive_c ;
 
+// When <fname> is not there but <fname>.gz is, expand it next to the ".gz" and
+// point <fname> at the result. True when an expansion happened.
+bool expand_gz_image(std::string &fname) ;
+
 // generic interface to emulated drive
 // storage is accessed as stream of bytes
 class storageimage_base_c: public logsource_c  {

@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Install qemu-img, which cross-checks the VHD images the tests write
+        run: sudo apt-get update && sudo apt-get install -y qemu-utils
       - name: Run the configuration-model host test
         run: ./10.05_web/tools/run_config_test.sh
 

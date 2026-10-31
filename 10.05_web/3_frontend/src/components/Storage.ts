@@ -656,7 +656,7 @@ export function StoragePage() {
         e.preventDefault();
         if (e.dataTransfer && e.dataTransfer.files.length) upload(e.dataTransfer.files);
       }}>
-      ${status}<span class="mono">.rl02 .rl01 .rk05 .rx2 .dsk .tap (.gz ok)</span>
+      ${status}<span class="mono">.rl02 .rl01 .rk05 .rx2 .dsk .vhd .tap (.gz ok)</span>
       <span class="muted"> → ${cwd ? html`<span class="mono">${cwd}</span>` : 'root'}</span></div>
     <input type="file" hidden multiple ref=${fileRef}
       onChange=${(e: Event) => {

@@ -41,6 +41,7 @@
 
 #include "sharedfilesystem/filesystem_base.hpp"
 #include "sharedfilesystem/storageimage_shared.hpp"
+#include "storageimage_vhd.hpp"
 
 #include "storagedrive.hpp"
 
@@ -136,10 +137,14 @@ bool storagedrive_c::image_recreate_on_param_change(parameter_c *param)
         image_delete() ;
 		accepted = image_recreate_shared_on_param_change(image_filepath.new_value, image_filesystem.value, image_shareddir.value) ;
 	    if (image == nullptr) {
-	        // not a shared dir: a regular binary image. Disks default to a
+	        // not a shared dir: a regular binary image. A disk holding a VHD
+	        // reads and writes the VHD in place. Other disks default to a
 	        // copy-on-write overlay (base stays pristine, writes go to a sibling
 	        // ".ovl"); tapes and drives with the overlay disabled write in place.
-	        if (use_overlay.value && !strcmp(category(), "disk")
+	        bool disk = !strcmp(category(), "disk") ;
+	        if (disk && storageimage_vhd_c::takes(image_filepath.new_value))
+	            image = new storageimage_vhd_c(image_filepath.new_value) ;
+	        else if (use_overlay.value && disk
 	                && !image_filepath.new_value.empty()) {
 	            // the overlay and its bitmap are named after the base, which the
 	            // image resolves for itself: a script's image may sit next to

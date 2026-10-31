@@ -185,6 +185,7 @@ on disk           root              <-----        root
 
 #include "storagedrive.hpp"
 #include "storageimage_shared.hpp"
+#include "storageimage_vhd.hpp"
 #include "filesystem_dec.hpp"
 #include "filesystem_xxdp.hpp"
 #include "filesystem_rt11.hpp"
@@ -259,7 +260,11 @@ bool storageimage_shared_c::open(storagedrive_c *_drive, bool create)
 
     drive = _drive ;
 
-    image = new storageimage_binfile_c(image_path);
+    // the volume is kept in a VHD when the image is one, see storageimage_vhd.hpp
+    if (storageimage_vhd_c::takes(image_path))
+        image = new storageimage_vhd_c(image_path);
+    else
+        image = new storageimage_binfile_c(image_path);
 //    image = new storageimage_memory_c(drive_info.capacity);
 
     if (!image->open(drive, create)) {

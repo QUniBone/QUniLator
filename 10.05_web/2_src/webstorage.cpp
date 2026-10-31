@@ -53,6 +53,7 @@
 #include "device.hpp"
 #include "storagedrive.hpp"
 #include "storageimage.hpp"
+#include "storageimage_vhd.hpp"
 
 #include "weblog.hpp"
 #include "webstorage.hpp"
@@ -303,8 +304,16 @@ static storagedrive_c *find_open_drive(const std::string &sub, storageimage_cow_
 	return nullptr;
 }
 
+// A VHD is written in place, so it carries no overlay; an ".ovl" lying beside
+// one is not laid over it.
+static bool image_is_vhd(const std::string &sub) {
+	return storageimage_vhd_c::is_vhd_file(image_abs(sub));
+}
+
 static overlay_status_t overlay_status(const std::string &sub) {
 	overlay_status_t out;
+	if (image_is_vhd(sub))
+		return out;
 	std::lock_guard<std::mutex> lock(device_c::mydevices_mutex);
 	storageimage_cow_c *cow;
 	if (find_open_drive(sub, &cow) != nullptr) {
@@ -358,6 +367,11 @@ static void walk_images(const std::string &reldir, picojson::array &dirs,
 			o["dir"] = picojson::value(reldir);    // parent folder ("" = root)
 			o["size"] = picojson::value((double) st.st_size);
 			o["writable"] = picojson::value((st.st_mode & S_IWUSR) != 0);
+			uint64_t disk_size;
+			if (storageimage_vhd_c::is_vhd_file(abs, &disk_size)) {
+				o["format"] = picojson::value("vhd");
+				o["disk_size"] = picojson::value((double) disk_size);
+			}
 			char mtime[32];
 			strftime(mtime, sizeof mtime, "%Y-%m-%d %H:%M", localtime(&st.st_mtime));
 			o["mtime"] = picojson::value(mtime);
@@ -790,6 +804,10 @@ static void images_upload(struct mg_connection *conn) {
 // point with nothing on it still carries a file mark, so the drive reads a mark
 // and then end of medium rather than end of medium straight away. That is one
 // SIMH marker of 0x00000000 and nothing else (see simh_tape.hpp).
+//
+// A disk whose name ends in ".vhd" is made a dynamic VHD of `size` bytes with no
+// block allocated yet, so it too costs what is written to it; its size is a
+// whole number of 512-byte sectors.
 static const uint64_t IMAGE_CREATE_MAX = 4ull * 1024 * 1024 * 1024;
 
 static void image_create(struct mg_connection *conn) {
@@ -824,6 +842,31 @@ static void image_create(struct mg_connection *conn) {
 		return;
 	}
 	std::string abs = image_abs(sub);
+	if (kind == "disk" && name.size() > 4
+			&& strcasecmp(name.c_str() + name.size() - 4, ".vhd") == 0) {
+		struct stat st;
+		if (lstat(abs.c_str(), &st) == 0) {
+			send_error(conn, 409, "\"" + sub + "\" already exists");
+			return;
+		}
+		if (size % 512 != 0) {
+			send_error(conn, 400, "a VHD's disk is a whole number of 512-byte sectors");
+			return;
+		}
+		std::string err;
+		if (!storageimage_vhd_c::create_dynamic(abs, size, &err)) {
+			send_error(conn, 500, "cannot write \"" + sub + "\": " + err);
+			return;
+		}
+		own_by_qunilator(abs);
+		WEB_INFO("blank VHD %s created, %llu bytes", sub.c_str(), (unsigned long long) size);
+		picojson::object res;
+		res["ok"] = picojson::value(true);
+		res["name"] = picojson::value(sub);
+		res["size"] = picojson::value((double) size);
+		send_json(conn, 200, picojson::value(res));
+		return;
+	}
 	int fd = open(abs.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0664);
 	if (fd < 0) {
 		if (errno == EEXIST)
@@ -1020,6 +1063,12 @@ static void image_overlay_op(struct mg_connection *conn, const std::string &base
 			return;
 		}
 		dest_abs = images_dir + "/" + dest_sub;
+	}
+
+	if (image_is_vhd(base)) {
+		send_error(conn, 404, "\"" + base + "\" is a VHD, which is written in place "
+				"and has no copy-on-write overlay");
+		return;
 	}
 
 	std::string drive_name = "none";

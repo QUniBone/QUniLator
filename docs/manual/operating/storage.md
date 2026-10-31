@@ -6,8 +6,8 @@ sidebar:
 ---
 
 The library of disk and tape images, in `/var/lib/qunilator/images`. Drag a file
-onto the page to upload it — `.rl02`, `.rl01`, `.rk05`, `.rx2`, `.dsk` and
-`.tap`, gzipped or not — or use **New image…** to make an empty one and **New
+onto the page to upload it — `.rl02`, `.rl01`, `.rk05`, `.rx2`, `.dsk`, `.vhd`
+and `.tap`, gzipped or not — or use **New image…** to make an empty one and **New
 folder** to organise them.
 
 ![The image library](../assets/screenshots/storage.jpg)
@@ -15,6 +15,26 @@ folder** to organise them.
 The folders are conventions, one per device family: `dl` for RL packs, `dk` for
 RK, `du` for MSCP volumes, `mu` for tapes, `rx` for floppies, and `roms` for
 bootstrap images, where **Copy default ROM…** drops in the ones QUniLator ships.
+
+## VHD images
+
+A disk image can also be a **VHD**, the format SIMH and other emulators write
+alongside raw images. A drive reads and writes a fixed or a dynamic VHD as it
+is: upload one, attach it, and download it or copy it off the file share
+afterwards to take it back to the emulator it came from. A VHD is recognised by
+its content, so one named `.dsk` or `.rl02` works as well as one named `.vhd`.
+A differencing VHD holds only the changes to a parent disk, and a drive refuses
+it; merge it into a fixed or dynamic VHD first.
+
+A dynamic VHD stores only the blocks that have been written, so the file can be
+much smaller than the disk it holds. A drive sizes the disk from the VHD, which
+is what an MSCP drive with `useimagesize` takes. **New image…** makes a dynamic
+VHD when the file name you give ends in `.vhd`. Such a VHD carries no SIMH drive
+type, so Open SIMH attaches it after `SET <unit> NOAUTOSIZE`; a VHD SIMH made
+keeps its drive type however much QUniLator writes to it.
+
+A VHD is written in place and has no [overlay](#overlays); to keep a master,
+make it read-only or work on a copy.
 
 ## Reading the table
 
@@ -47,7 +67,8 @@ consolidated. A row whose image has one shows **Overlay active** and how many
 blocks have been written.
 
 That is what makes a shared or read-only master pack usable: boot it, let the
-guest write all it likes, and decide afterwards what to keep.
+guest write all it likes, and decide afterwards what to keep. A VHD has no
+overlay; its drive writes the VHD itself.
 
 | | |
 |---|---|

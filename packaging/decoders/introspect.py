@@ -14,6 +14,9 @@ is shown is the volume as the guest sees it. Which blocks those are comes from
 drive holds the image open there is no map, and the overlay's allocated regions
 say instead, which the drive keeps exact by writing whole filesystem pages.
 
+A VHD - fixed or dynamic, as SIMH writes them - is read through its own layout
+and has no overlay: a drive writes it in place.
+
     introspect.py <image-file>  ->  JSON on stdout
 """
 import bisect
@@ -82,11 +85,92 @@ def overlay_extents(fd):
     return out
 
 
+def vhd_checksum(data, at):
+    """The one's complement of the byte sum, the field at `at` counted as zero."""
+    return ~(sum(data) - sum(data[at:at + 4])) & 0xFFFFFFFF
+
+
+def vhd_footer(fd, size):
+    """The footer of a VHD file, or None when the file is no VHD.
+
+    The footer closes the file; a dynamic disk carries a copy at its start.
+    """
+    for at in (size - BLOCK, 0):
+        if size < BLOCK:
+            break
+        footer = os.pread(fd, BLOCK, at)
+        if (len(footer) == BLOCK and footer[:8] == b"conectix"
+                and struct.unpack(">I", footer[64:68])[0] == vhd_checksum(footer, 64)
+                and (at > 0 or struct.unpack(">I", footer[60:64])[0] == 3)):
+            return footer
+    return None
+
+
+class VhdImage:
+    """Byte access to the disk a fixed or dynamic VHD holds."""
+
+    def __init__(self, fd, footer):
+        self.fd = fd
+        self.size = struct.unpack(">Q", footer[48:56])[0]
+        self.type = struct.unpack(">I", footer[60:64])[0]
+        self.dirty_blocks = 0
+        if self.type == 4:
+            raise ValueError("a differencing VHD needs its parent disk")
+        if self.type == 2:
+            return
+        if self.type != 3:
+            raise ValueError(f"unknown VHD disk type {self.type}")
+        header = os.pread(fd, 1024, struct.unpack(">Q", footer[16:24])[0])
+        if header[:8] != b"cxsparse" or len(header) != 1024:
+            raise ValueError("the VHD's dynamic disk header is missing")
+        table_at, = struct.unpack(">Q", header[16:24])
+        entries, self.block_size = struct.unpack(">II", header[28:36])
+        self.bitmap_bytes = ((self.block_size // BLOCK + 7) // 8 + BLOCK - 1) // BLOCK * BLOCK
+        raw = os.pread(fd, entries * 4, table_at)
+        self.bat = struct.unpack(f">{len(raw) // 4}I", raw)
+
+    def read(self, offset, length):
+        length = max(0, min(length, self.size - offset))
+        if self.type == 2:
+            chunk = os.pread(self.fd, length, offset)
+            return chunk + bytes(length - len(chunk))
+        out = bytearray()
+        while length > 0:
+            block, within = divmod(offset, self.block_size)
+            n = min(length, self.block_size - within)
+            at = self.bat[block] if block < len(self.bat) else 0xFFFFFFFF
+            if at == 0xFFFFFFFF:
+                out += bytes(n)  # a block never written reads as zeros
+            else:
+                base = at * BLOCK
+                bitmap = os.pread(self.fd, self.bitmap_bytes, base)
+                data = bytearray(os.pread(self.fd, n, base + self.bitmap_bytes + within))
+                data += bytes(n - len(data))
+                # a sector the bitmap does not mark was never written
+                for s in range(within // BLOCK, (within + n + BLOCK - 1) // BLOCK):
+                    if not bitmap[s >> 3] >> (7 - (s & 7)) & 1:
+                        lo = max(s * BLOCK, within) - within
+                        hi = min((s + 1) * BLOCK, within + n) - within
+                        data[lo:hi] = bytes(hi - lo)
+                out += data
+            offset += n
+            length -= n
+        return bytes(out)
+
+
+def open_image(path):
+    fd = os.open(path, os.O_RDONLY)
+    footer = vhd_footer(fd, os.fstat(fd).st_size)
+    if footer is not None:
+        return VhdImage(fd, footer)
+    return Image(path, fd)
+
+
 class Image:
     """Byte access to an image file, with its overlay's blocks read over it."""
 
-    def __init__(self, path):
-        self.fd = os.open(path, os.O_RDONLY)
+    def __init__(self, path, fd):
+        self.fd = fd
         self.size = os.fstat(self.fd).st_size
         self.ovl = None
         self.extents = []
@@ -172,12 +256,14 @@ def scan_ods1(rx):
 
 
 def introspect(path):
-    image = Image(path)
+    image = open_image(path)
     if image.size == rx01.IMAGE_SIZE:
         rx = FloppyVolume(image)      # RX01 floppy: undo the sector interleave
     else:
         rx = LinearVolume(image)      # RL/RK/MSCP disk: linear logical blocks
     record = {"file": os.path.basename(path), "image_size": image.size}
+    if isinstance(image, VhdImage):
+        record["format"] = "vhd"
     if image.dirty_blocks:
         record["overlay_dirty_blocks"] = image.dirty_blocks
     for reader in (scan_ods1, scan.scan_ods2, scan.scan_rt11):

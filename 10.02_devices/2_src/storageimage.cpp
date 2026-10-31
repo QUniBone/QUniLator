@@ -121,7 +121,7 @@ static bool uncompress_gz(const std::string &gz_path, const std::string &out_pat
 // found again on the next run.
 //
 // result: an expansion happened, and <fname> now names the expanded file
-static bool expand_gz_image(std::string &fname)
+bool expand_gz_image(std::string &fname)
 {
     std::string compressed_fname = scriptpath_resolve(fname + ".gz") ;
     FILE *fz = fopen(compressed_fname.c_str(), "r") ;

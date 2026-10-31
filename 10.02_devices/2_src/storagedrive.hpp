@@ -130,8 +130,11 @@ public:
     /// board's image tree. Empty takes the medium out. When the file is not
     /// there but the same name with `.gz` is, it is expanded first.
     ///
-    /// A disk writes through an overlay beside the image unless `use_overlay`
-    /// is 0; a tape writes the image itself.
+    /// A disk takes a raw image - the disk's bytes, front to back - or a
+    /// fixed or dynamic VHD, which SIMH and other emulators write and which is
+    /// recognised by its content whatever its name. A disk writes a raw image
+    /// through an overlay beside it unless `use_overlay` is 0, and a VHD in
+    /// place; a tape writes the image itself.
     parameter_string_c image_filepath = parameter_string_c(this, "image", "img", /*readonly*/
                                         false, "Path to binary image file. Empty to detach. \".gz\" archive also searched.");
     // if shared host dir
@@ -185,7 +188,7 @@ public:
     /// this is 1, so the image itself stays as it was and an unclean shutdown
     /// can only damage the overlay; the Storage screen discards the overlay or
     /// folds it into the image. At 0 the disk writes the image itself. It is
-    /// read when the image is set.
+    /// read when the image is set. A VHD is always written in place.
     parameter_bool_c use_overlay = parameter_bool_c(this, "use_overlay", "ovl", false,
                             "Write through a copy-on-write overlay, keeping the base image pristine");
 

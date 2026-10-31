@@ -139,6 +139,19 @@ $CXX -std=c++11 -Wall -Wextra -I "$DEV" -I "$BASE" -I "$COMMON" \
 	"$COMMON/scriptpath.cpp" \
 	-lpthread -o "$OUT/cow_image_test"
 
+# The VHD disk image is file I/O on a VHD file, with the same logger and path
+# helpers. qemu-img, where it is installed, cross-checks every VHD it writes.
+$CXX -std=c++11 -Wall -Wextra -I "$DEV" -I "$BASE" -I "$COMMON" \
+	"$TOOLS/vhd_image_test.cpp" \
+	"$DEV/storageimage_vhd.cpp" \
+	"$DEV/storageimage.cpp" \
+	"$BASE/utils.cpp" \
+	"$BASE/bytebuffer.cpp" \
+	"$COMMON/logger.cpp" \
+	"$COMMON/logsource.cpp" \
+	"$COMMON/scriptpath.cpp" \
+	-lpthread -o "$OUT/vhd_image_test"
+
 # The image upload runs the real webstorage.cpp under civetweb on a loopback
 # port, with the images root in a temp directory. It links the copy-on-write
 # image, the parameter system and the logger webstorage.cpp names; devices, drives and the
@@ -149,6 +162,7 @@ $CXX -std=c++11 -Wall -Wextra -I "$STUBS" -I "$WEB" -I "$BASE" -I "$COMMON" \
 	"$WEB/webstorage.cpp" \
 	"$WEB/weblog.cpp" \
 	"$DEV/storageimage.cpp" \
+	"$DEV/storageimage_vhd.cpp" \
 	"$BASE/parameter.cpp" \
 	"$COMMON/bitcalc.cpp" \
 	"$BASE/utils.cpp" \
@@ -171,4 +185,5 @@ $CXX -std=c++11 -Wall -Wextra -I "$STUBS" -I "$WEB" -I "$BASE" -I "$COMMON" \
 "$OUT/simh_tape_test"
 "$OUT/ether_filter_test"
 "$OUT/cow_image_test"
+"$OUT/vhd_image_test"
 "$OUT/upload_test"

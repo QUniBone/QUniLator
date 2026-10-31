@@ -179,6 +179,7 @@ OBJECTS = $(OBJDIR)/application.o	\
 	$(OBJDIR)/dzv11.o \
 	$(OBJDIR)/dhv11.o \
 	$(OBJDIR)/storageimage.o	\
+	$(OBJDIR)/storageimage_vhd.o	\
 	$(OBJDIR)/storagedrive.o	\
     $(OBJDIR)/storagecontroller.o	\
 	$(OBJDIR)/sharedfilesystem/storageimage_partition.o \
@@ -505,6 +506,9 @@ $(OBJDIR)/dhv11.o :  $(DEVICE_SRC_DIR)/dhv11.cpp $(DEVICE_SRC_DIR)/dhv11.hpp $(D
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/storageimage.o :  $(DEVICE_SRC_DIR)/storageimage.cpp $(DEVICE_SRC_DIR)/storageimage.hpp
+	$(CC) $(CCFLAGS) $< -o $@
+
+$(OBJDIR)/storageimage_vhd.o :  $(DEVICE_SRC_DIR)/storageimage_vhd.cpp $(DEVICE_SRC_DIR)/storageimage_vhd.hpp $(DEVICE_SRC_DIR)/storageimage.hpp
 	$(CC) $(CCFLAGS) $< -o $@
 
 $(OBJDIR)/storagedrive.o :  $(DEVICE_SRC_DIR)/storagedrive.cpp $(DEVICE_SRC_DIR)/storagedrive.hpp

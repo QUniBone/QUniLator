@@ -1134,11 +1134,19 @@ offer the machine no disk. `used` lists the configuration/device pairs that
 reference it. `writable` reports the file's owner write bit — cleared, the
 image is a write-protected medium.
 
+A VHD carries `"format": "vhd"` and `disk_size`, the size of the disk it holds,
+which for a dynamic VHD is more than the file's `size`. A file that is no VHD
+carries neither. A file is a VHD by its content: a footer with the `conectix`
+cookie and a valid checksum, as Microsoft's VHD format and SIMH write it,
+whatever the file is called. Fixed and dynamic VHDs are served; a drive refuses
+a differencing VHD, which needs its parent disk.
+
 `overlay` is true when the image has a copy-on-write overlay, and then
 `overlay_dirty_blocks` counts the blocks written to it and `overlay_bytes` its
 footprint on disk. A drive holding the image open reports its live state; an
 image no drive holds open reports what its overlay files hold, so the writes a
-switched-off drive left behind stay visible.
+switched-off drive left behind stay visible. A VHD is written in place and
+reports no overlay.
 
 ### `POST /api/images/<subpath>/overlay/<action>`
 
@@ -1151,8 +1159,8 @@ named by the body `{"dest": <subpath>}`, leaving both alone, and answers
 An image a drive holds open is worked on through that drive, and only while the
 machine is not running — powered off or halted — so no guest I/O races the
 operation (`409` otherwise). An image no drive holds open is worked on through
-its files at any time. `404` when the image has no overlay; `409` when a drive
-holds it open writing in place.
+its files at any time. `404` when the image has no overlay, which a VHD never
+has; `409` when a drive holds it open writing in place.
 
 ### `POST /api/images?dir=<folder>`
 
@@ -1179,6 +1187,10 @@ drive takes is the drive's own read-only `capacity` parameter, so a caller reads
 the size off the drive it means; a controller that takes the size from the image
 instead (MSCP with `useimagesize`) will accept any, which is why this is a byte
 count and not a menu.
+
+A disk whose `name` ends in `.vhd` is made a dynamic VHD of `size` bytes with no
+block allocated, so it too costs only what is written to it; its `size` is a
+whole number of 512-byte sectors (`400` otherwise).
 
 A **tape** ignores `size`: a reel at the load point with nothing on it still
 carries a file mark, so the file is one SIMH marker of `0x00000000` and nothing
@@ -1247,7 +1259,8 @@ absolute path. `title` is the listing's `.title` line. Any other file answers
 Read-only listing of the files inside a disk/tape image, decoded by the Python
 decoders under `/usr/share/qunilator/decoders`. It reads the volume as the guest
 sees it: blocks a copy-on-write overlay holds are read from the overlay, and
-`overlay_dirty_blocks` says how many there are. Returns the detected filesystem,
+`overlay_dirty_blocks` says how many there are. A VHD is read through its own
+layout and reports `"format": "vhd"`, with `image_size` the disk's size. Returns the detected filesystem,
 the volume/home-block metadata, and the file list:
 
 ```json
