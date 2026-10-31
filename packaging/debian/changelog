@@ -1,3 +1,19 @@
+qbone (1.26.5-1) trixie; urgency=low
+
+  Console input left from a stopped transfer
+
+  1.26.5 drops console input the guest never read once it can no longer
+  mean anything.
+
+  * Web console. A Kermit transfer that stalled and was cancelled left
+    its packets waiting on the board, and the next transfer got them
+    first: Kermit-11 took them for duplicates and the transfer failed.
+    The board drops queued input when a transfer starts, when one is
+    stopped or its page goes away, and when the machine's power is
+    switched off or on.
+
+ -- Hans Huebner <hans@huebner.org>  Sat, 31 Oct 2026 18:17:20 +0100
+
 qbone (1.26.4-1) trixie; urgency=low
 
   Web console input waits for the guest
