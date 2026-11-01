@@ -95,16 +95,33 @@ ka11_init(KA11 *cpu)
 	pthread_mutex_init(&cpu->mutex, NULL);
 }
 
-// only to be called from ka11_condstep() thread.
+// RESET opcode. only to be called from ka11_condstep() thread.
 // The devices on the bus are reset by unibone_bus_init(), which the RESET
 // opcode pulses separately; there is no core-internal device list.
+//
+// An interrupt vector already taken off the bus stays pending. The bus
+// delivers it asynchronously to this thread, so it can land while the RESET
+// that follows the grant is being fetched; the device counts it as delivered,
+// and the arbitrator grants nothing more until the PSW of that vector has been
+// loaded. Dropping it here would lose the interrupt and stop every later one.
 void
 ka11_reset(KA11 *cpu)
 {
 	cpu->traps = 0;
+}
+
+// console START and power-up: everything ka11_reset() does, and a vector
+// taken before the machine stopped is discarded with the program it was for.
+// The arbitrator held off further grants for that vector's PSW, so the level
+// is announced again to reopen it.
+void
+ka11_power_reset(KA11 *cpu)
+{
+	ka11_reset(cpu);
 	pthread_mutex_lock(&cpu->mutex) ;
 	cpu->external_intr = 0;
 	pthread_mutex_unlock(&cpu->mutex) ;
+	levelchange(cpu->psw);
 }
 
 static int

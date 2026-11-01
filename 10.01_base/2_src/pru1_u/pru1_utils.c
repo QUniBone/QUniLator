@@ -44,8 +44,17 @@ void do_event_initializationsignals() {
 	uint8_t bussignals_cur = buslatches_getbyte(7) & 0x38; // now sampled
 	
 	if (bussignals_cur & INITIALIZATIONSIGNAL_INIT) {
-	sm_arb.device_request_mask = 0 ; // INIT clears all PRIORITY request signals
-		// SACK cleared later on end of INTR/DMA transaction
+		sm_arb.device_request_mask = 0 ; // INIT clears all PRIORITY request signals
+		// A grant taken before INIT and still waiting for the bus is void as
+		// well: SACK comes off with it. Held, it would carry an interrupt or a
+		// transfer onto the bus after INIT, for a request the ARM cancels on
+		// INIT and a processor that has started over and granted nothing.
+		// A transaction already on the bus ends by itself, see
+		// sm_intr_master_state_2() and sm_dma_state_99().
+		if (sm_arb.grant_bbsy_ssyn_wait_grant_mask) {
+			sm_arb.grant_bbsy_ssyn_wait_grant_mask = 0;
+			buslatches_setbits(1, BIT(5), 0); // SACK = latch[1], bit 5
+		}
 	}
 
 	    // Power event

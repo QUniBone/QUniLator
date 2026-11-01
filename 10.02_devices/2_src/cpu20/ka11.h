@@ -39,7 +39,8 @@ struct KA11
 void ka11_tracestate(KA11 *cpu);
 void ka11_printstate(KA11 *cpu);
 void ka11_init(KA11 *cpu);	// once at creation, before other threads exist
-void ka11_reset(KA11 *cpu);
+void ka11_reset(KA11 *cpu);		// RESET opcode
+void ka11_power_reset(KA11 *cpu);	// console START / power-up
 void ka11_setintr(KA11 *cpu, unsigned vec);
 void ka11_pwrfail_trap(KA11 *cpu);
 void ka11_pwrup_vector_fetch(KA11 *cpu);

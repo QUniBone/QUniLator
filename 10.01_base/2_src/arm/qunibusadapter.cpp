@@ -571,6 +571,17 @@ bool qunibusadapter_c::intr_requested_above(unsigned cpu_level)
     return false;
 }
 
+void qunibusadapter_c::requests_snapshot(int active_slot[], uint32_t slot_mask[])
+{
+    pthread_mutex_lock(&requests_mutex);
+    for (unsigned level_index = 0; level_index < PRIORITY_LEVEL_COUNT; level_index++) {
+        priority_request_level_c *prl = &request_levels[level_index];
+        active_slot[level_index] = prl->active ? (int) prl->active->priority_slot : -1;
+        slot_mask[level_index] = prl->slot_request_mask;
+    }
+    pthread_mutex_unlock(&requests_mutex);
+}
+
 // helper: push the active request to the PRU for execution
 // VB: the next request to schedule already calculated and saved in priority_request_level_c.active
 void qunibusadapter_c::request_execute_active_on_PRU(unsigned level_index) 
@@ -907,6 +918,16 @@ void qunibusadapter_c::DMA(dma_request_c& dma_request, bool blocking, uint8_t qu
 
     pthread_mutex_lock(&requests_mutex); // lock schedule table operations
 
+    // INIT may have come since the test above; see INTR().
+    if (bus_init_active()) {
+        pthread_mutex_unlock(&requests_mutex);
+        dma_request.success = false;
+        dma_request.qunibus_start_addr = unibus_addr;
+        dma_request.qunibus_end_addr = unibus_addr;
+        dma_request.complete = true;
+        return;
+    }
+
     // In contrast to re-raised INTR, overlapping DMA requests from same board
     // must not be ignored (different DATA situation) and are an device implementation error.
     // If a device indeed has multiple DMA channels, it must use different pseudo-slots.
@@ -1204,6 +1225,18 @@ void qunibusadapter_c::INTR(intr_request_c& intr_request,
 
     priority_request_level_c *prl = &request_levels[intr_request.level_index];
     pthread_mutex_lock(&requests_mutex); // lock schedule table operations
+    // Asked again under the lock, which worker_init_event() holds while it
+    // cancels: an INIT that came between the test above and here has already
+    // emptied the tables and withdrawn the PRU's requests, and the PRU drops
+    // whatever is handed to it while INIT is asserted. Scheduled now, the
+    // request would stand in the tables with nothing on the bus behind it,
+    // and every later request of its level would queue behind it until the
+    // next INIT.
+    if (bus_init_active()) {
+        pthread_mutex_unlock(&requests_mutex);
+        intr_request.complete = true;
+        return;
+    }
 //if (intr_request.device->log_level == LL_DEBUG)
     DEBUG_FAST("INTR() req: dev %s, slot/level/vector= %d/%d/%03o",
           intr_request.device->name.value.c_str(), (unsigned ) intr_request.priority_slot,
@@ -1385,11 +1418,26 @@ void qunibusadapter_c::worker_init_event()
             device->on_init_changed();
         }
 
-    // Clear bus request queues,
+    // INIT clears every bus request. That is done once, on the assert: a
+    // request raised after INIT has ended is the device's first of the new
+    // epoch, and cancelling it on the negate would leave the device waiting on
+    // an interrupt that is never delivered.
+    if (line_INIT)
+        requests_cancel_all();
+}
+
+// Clear the request tables and withdraw every interrupt request the PRU holds,
+// so that the two agree that nothing is pending. The PRU drops its requests
+// itself while INIT is asserted, but one handed to it after it saw INIT end and
+// before this thread got to the INIT would otherwise stay raised there with no
+// request behind it here.
+void qunibusadapter_c::requests_cancel_all(void)
+{
     pthread_mutex_lock(&requests_mutex);
     requests_cancel_scheduled();
-    // reset all scheduled tables, also requests on PRU
     requests_init();
+    mailbox->intr.priority_arbitration_bit = PRIORITY_ARBITRATION_INTR_MASK;
+    mailbox_execute(ARM2PRU_INTR_CANCEL);
     pthread_mutex_unlock(&requests_mutex);
 }
 
@@ -1411,14 +1459,8 @@ void qunibusadapter_c::worker_power_event(signal_edge_enum aclo_edge, signal_edg
         }
 
     // in true power fail, terminate pending DMA/CPU transfer
-    if (dclo_edge == SIGNAL_EDGE_RAISING) {
-        // Clear bus request queues,
-        pthread_mutex_lock(&requests_mutex);
-        requests_cancel_scheduled();
-        // reset all scheduled tables, also requests on PRU
-        requests_init();
-        pthread_mutex_unlock(&requests_mutex);
-    }
+    if (dclo_edge == SIGNAL_EDGE_RAISING)
+        requests_cancel_all();
 }
 
 // process DATI/DATO access to active device registers

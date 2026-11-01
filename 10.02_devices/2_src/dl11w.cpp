@@ -462,7 +462,7 @@ void slu_c::on_power_changed(signal_edge_enum aclo_edge, signal_edge_enum dclo_e
 {
 	UNUSED(aclo_edge);
 	UNUSED(dclo_edge);
-	reset() ;
+	reset_serialized() ;
 	// input queued for a machine that went down is not typed at the one that comes up
 	rs232adapter.discard_stream_rcv();
 }
@@ -473,8 +473,23 @@ void slu_c::on_init_changed(void)
 {
 	// write all registers to "reset-values"
 	if (init_asserted) {
-		reset() ;
+		reset_serialized() ;
 	}
+}
+
+// reset() against the receiver and transmitter workers, which change the same
+// state under these locks. Unserialized, a reset landing inside a worker's
+// update leaves a mix of both - a character the worker delivers after the reset
+// cleared the receiver stands in it through INIT, with its interrupt edge
+// recorded or not depending on where the two crossed.
+// Lock order as worker_xmt() takes them: transmitter, then receiver.
+void slu_c::reset_serialized(void)
+{
+	pthread_mutex_lock(&on_after_xmt_register_access_mutex);
+	pthread_mutex_lock(&on_after_rcv_register_access_mutex);
+	reset() ;
+	pthread_mutex_unlock(&on_after_rcv_register_access_mutex);
+	pthread_mutex_unlock(&on_after_xmt_register_access_mutex);
 }
 
 
@@ -538,9 +553,16 @@ void slu_c::worker_rcv(void)
 		/* read serial data, if any. A byte from the web console waits until
 		 the guest has read RBUF: a slow processor busy elsewhere would
 		 otherwise lose characters to overrun that the sender cannot know of. */
+		pthread_mutex_lock(&on_after_rcv_register_access_mutex); // signal changes atomic against QBUS/UNIBUS accesses
+		// Asked again under the lock reset_serialized() takes: an INIT that
+		// came since the test above has reset the receiver, and the character
+		// waits for INIT to end, so it arrives in a receiver that stays set.
+		if (qunibusadapter->bus_init_active()) {
+			pthread_mutex_unlock(&on_after_rcv_register_access_mutex);
+			continue;
+		}
 		if (rs232adapter.rs232byte_rcv_poll(&rcv_byte, !rcv_done)) {
 			DEBUG_FAST("rcv_byte=0x%02x", (unsigned)rcv_byte.c);
-			pthread_mutex_lock(&on_after_rcv_register_access_mutex); // signal changes atomic against QBUS/UNIBUS accesses
 			rcv_or_err = rcv_fr_err = rcv_p_err = 0;
 			if (rcv_done) { // not yet cleared? overrun!
 				rcv_or_err = 1;
@@ -553,8 +575,8 @@ void slu_c::worker_rcv(void)
 			rcv_active = 0;
 			set_rbuf_dati_value();
 			set_rcsr_dati_value_and_INTR(); // INTR!
-			pthread_mutex_unlock(&on_after_rcv_register_access_mutex); // signal changes atomic against QBUS/UNIBUS accesses
 		}
+		pthread_mutex_unlock(&on_after_rcv_register_access_mutex); // signal changes atomic against QBUS/UNIBUS accesses
 	}
 }
 

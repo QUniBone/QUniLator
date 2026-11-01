@@ -76,10 +76,30 @@ static statemachine_state_func sm_intr_master_state_1() {
 	return (statemachine_state_func) &sm_intr_master_state_2;
 }
 
+// release vector, INTR and BBSY: the bus is free again
+static void sm_intr_master_release(void) {
+	buslatches_setbyte(5, 0); // DATA[0..7] = latch[5]
+	buslatches_setbyte(6, 0); // DATA[8..15] = latch[6]
+	buslatches_setbits(7, BIT(0), 0); // INTR = latch 7, bit 0
+	buslatches_setbits(1, BIT(6), 0); // BBSY
+}
+
 // wait for SSYN
 static statemachine_state_func sm_intr_master_state_2() {
-	if (!(buslatches_getbyte(4) & BIT(5)))
+	if (!(buslatches_getbyte(4) & BIT(5))) {
+		// INIT while the vector waits for its SSYN: the processor has started
+		// over and is not fielding an interrupt, so no SSYN is coming. Holding
+		// BBSY and INTR would keep it off the bus for good - through a power
+		// cycle too, since this master state is left only on SSYN and the
+		// slave loop that reports INIT and power events to the ARM does not
+		// run meanwhile. The ARM cancels the request on INIT, so there is
+		// nothing to signal.
+		if (buslatches_getbyte(7) & BIT(3)) { // INIT = latch[7], bit 3
+			sm_intr_master_release();
+			return NULL;
+		}
 		return (statemachine_state_func) &sm_intr_master_state_2; // wait
+	}
 	// received SSYN
 
 	// Complete and signal this INTR transaction only after ARM has processed the previous event.
@@ -88,15 +108,9 @@ static statemachine_state_func sm_intr_master_state_2() {
 	if (! EVENT_IS_ACKED(mailbox,intr_master[sm_intr_master.level_index]))
 		return (statemachine_state_func) &sm_intr_master_state_2; // wait
 
-	// remove vector
-	buslatches_setbyte(5, 0); // DATA[0..7] = latch[5]
-	buslatches_setbyte(6, 0); // DATA[8..15] = latch[6]
-
-	// deassert INTR. Interrupt fielding processor then removes SSYN
-	buslatches_setbits(7, BIT(0), 0); // INTR = latch 7, bit 0
-
-	// deassert BBSY
-	buslatches_setbits(1, BIT(6), 0);
+	// remove vector, deassert INTR - the interrupt fielding processor then
+	// removes SSYN - and deassert BBSY
+	sm_intr_master_release();
 	// device cycle ended: now CPU may become UNIBUS master again
 	// SACK already removed
 

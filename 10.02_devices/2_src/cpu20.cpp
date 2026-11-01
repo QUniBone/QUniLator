@@ -77,7 +77,8 @@ void cpu20_c::core_condstep(void)
 
 void cpu20_c::core_reset(void)
 {
-    ka11_reset(ka11);
+    // console START / power-up, not the RESET opcode
+    ka11_power_reset(ka11);
 }
 
 void cpu20_c::core_setintr(uint16_t vector)

@@ -157,9 +157,15 @@ void main(void) {
 				// latch[0]: BG signals are inverted, "get" is non-inverting:  bit = active signal.
 				// "set" is inverting!
 				cpu_grant_mask = buslatches_getbyte(0) & PRIORITY_ARBITRATION_BIT_MASK; // read GRANT IN
-				// forward un-requested GRANT IN to GRANT OUT for other cards on neighbor slots
+				// forward un-requested GRANT IN to GRANT OUT for other cards on neighbor slots.
+				// A grant once passed stays passed until GRANT IN drops, even if a
+				// request of ours comes up meanwhile: the card it went to may have
+				// taken it, and a second SACK on that grant puts two masters on the
+				// bus - or, if nobody took it and the processor has gone on, an
+				// interrupt the processor is not fielding, whose SSYN never comes.
 				sm_arb.device_forwarded_grant_mask = cpu_grant_mask
-						& ~sm_arb.device_request_signalled_mask;
+						& (~sm_arb.device_request_signalled_mask
+								| sm_arb.device_forwarded_grant_mask);
 				buslatches_setbits(0, PRIORITY_ARBITRATION_BIT_MASK, ~sm_arb.device_forwarded_grant_mask)
 				;
 				// "A device may not accept a grant (assert SACK) after it passes the grant"

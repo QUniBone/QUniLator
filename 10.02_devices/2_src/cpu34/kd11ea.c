@@ -140,13 +140,16 @@ kd11ea_init(KD11EA *cpu)
 // only to be called from kd11ea_condstep() thread.
 // The devices on the bus are reset by unibone_bus_init(), which the RESET
 // opcode pulses separately; there is no core-internal device list.
+//
+// An interrupt vector already taken off the bus stays pending. The bus
+// delivers it asynchronously to this thread, so it can land while the RESET
+// that follows the grant is being fetched; the device counts it as delivered,
+// and the arbitrator grants nothing more until the PSW of that vector has been
+// loaded. Dropping it here would lose the interrupt and stop every later one.
 void
 kd11ea_reset(KD11EA *cpu)
 {
 	cpu->traps = 0;
-	pthread_mutex_lock(&cpu->mutex) ;
-	cpu->external_intr = 0;
-	pthread_mutex_unlock(&cpu->mutex) ;
 
 	// INIT reaches MMR0..MMR2 of the KT11-D but not its address map: an OS
 	// executing RESET keeps its PAR/PDR pairs, but relocation is switched off
@@ -162,6 +165,11 @@ void
 kd11ea_power_reset(KD11EA *cpu)
 {
 	kd11ea_reset(cpu);
+	// a vector taken before the machine stopped belongs to the program that
+	// ran then; kd11ea_set_psw() below reopens the arbitration it held off
+	pthread_mutex_lock(&cpu->mutex) ;
+	cpu->external_intr = 0;
+	pthread_mutex_unlock(&cpu->mutex) ;
 	kt11d_reset(&cpu->mmu);	// clears MMR0, disabling relocation
 	cpu->stackpointer[KD11EA_SP_KERNEL] = 0;
 	cpu->stackpointer[KD11EA_SP_USER] = 0;

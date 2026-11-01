@@ -853,7 +853,26 @@ names the case:
 `events` block is the other half of that picture: a count signalled and not
 acknowledged is the ARM owing the PRU an answer, with the PRU holding a bus
 cycle open (`deviceregister`) or a transfer's result (`dma`) until it comes. The
-two should never sit apart for long.
+two should never sit apart for long. The same holds for `intr_master4`..`7`
+(an interrupt vector a device here put on the bus), `intr_slave` (a vector an
+emulated processor took off it) and `init`.
+
+The interrupt side has its own two fields:
+
+```json
+{"ifs_priority_level": 0,
+ "requests": [{"level": "BR4", "active_slot": 1, "slot_mask": 2}, ...,
+              {"level": "NPR", "active_slot": -1, "slot_mask": 0}]}
+```
+
+`ifs_priority_level` is the processor priority the PRU grants against when the
+board emulates the processor; `255` is the moment between a vector taken and its
+PSW loaded, in which nothing is granted, and a value that stays there is an
+interrupt the processor lost. `requests` is the ARM's request table per level:
+the slot of the request handed to the PRU (`-1` for none) and the bit mask of
+slots scheduled. A level that keeps an `active_slot` while nothing is delivered
+holds a request the PRU no longer has, and every device of that level queues
+behind it.
 
 For scale, this rig: an idle dark board turns about 56000 passes in 50 ms, one
 running XXDP about 35000, and a directory listing puts some 5% of them in the

@@ -51,7 +51,7 @@ public:
 
     void power_reset(void) override
     {
-        ka11_reset(&ka11);
+        ka11_power_reset(&ka11);
     }
 
     void condstep(void) override

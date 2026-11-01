@@ -271,7 +271,39 @@ static int api_debug_pru_handler(struct mg_connection *conn, void * /*cbdata*/) 
 		picojson::value((double) mailbox->events.deviceregister.acked);
 	ev["dma_signaled"] = picojson::value((double) mailbox->events.dma.signaled);
 	ev["dma_acked"] = picojson::value((double) mailbox->events.dma.acked);
+	for (unsigned i = 0; i < 4; i++) {
+		char key[32];
+		snprintf(key, sizeof key, "intr_master%u_signaled", i + 4);
+		ev[key] = picojson::value((double) mailbox->events.intr_master[i].signaled);
+		snprintf(key, sizeof key, "intr_master%u_acked", i + 4);
+		ev[key] = picojson::value((double) mailbox->events.intr_master[i].acked);
+	}
+	ev["intr_slave_signaled"] = picojson::value((double) mailbox->events.intr_slave.signaled);
+	ev["intr_slave_acked"] = picojson::value((double) mailbox->events.intr_slave.acked);
+	ev["init_signaled"] = picojson::value((double) mailbox->events.init.signaled);
+	ev["init_acked"] = picojson::value((double) mailbox->events.init.acked);
 	o["events"] = picojson::value(ev);
+
+	// The processor priority the PRU arbitrates against; 255 is the window
+	// between a vector taken and the new PSW loaded, in which no BR is granted.
+	o["ifs_priority_level"] = picojson::value((double) mailbox->arbitrator.ifs_priority_level);
+
+	// The ARM's side of the same: per level, the request handed to the PRU
+	// and the slots waiting behind it.
+	{
+		int active_slot[PRIORITY_LEVEL_COUNT];
+		uint32_t slot_mask[PRIORITY_LEVEL_COUNT];
+		qunibusadapter->requests_snapshot(active_slot, slot_mask);
+		picojson::array levels;
+		for (unsigned i = 0; i < PRIORITY_LEVEL_COUNT; i++) {
+			picojson::object l;
+			l["level"] = picojson::value(std::string(i < 4 ? std::string("BR") + (char) ('4' + i) : "NPR"));
+			l["active_slot"] = picojson::value((double) active_slot[i]);
+			l["slot_mask"] = picojson::value((double) slot_mask[i]);
+			levels.push_back(picojson::value(l));
+		}
+		o["requests"] = picojson::value(levels);
+	}
 #else
 	o["available"] = picojson::value(false); // host build, no PRU
 #endif

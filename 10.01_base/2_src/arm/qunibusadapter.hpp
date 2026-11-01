@@ -170,6 +170,7 @@ public:
 
 	void request_schedule(priority_request_c& request);
 	void requests_cancel_scheduled(void);
+	void requests_cancel_all(void);
 	priority_request_c *request_activate_lowest_slot(unsigned level_index);
 //	bool request_is_active(		unsigned level_index);
 	bool request_is_blocking_active(uint8_t level_index);
@@ -178,6 +179,9 @@ public:
 	// requests lock: an emulated processor asks it after each bus cycle, and a
 	// request that lands just after it asked is delivered on its next one.
 	bool intr_requested_above(unsigned cpu_level);
+	// For diagnosis: per priority level (0..3 = BR4..BR7, 4 = NPR) the slot of
+	// the request the PRU holds (-1 for none) and the mask of slots scheduled.
+	void requests_snapshot(int active_slot[], uint32_t slot_mask[]);
 	void request_active_complete(unsigned level_index, bool signal_complete);
 	void request_execute_active_on_PRU(unsigned level_index);
 

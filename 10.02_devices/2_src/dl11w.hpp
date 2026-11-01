@@ -234,6 +234,7 @@ public:
 			/*readonly*/false, "s", "%d", "drop a silent TCP client after N seconds, 0 = never", 16, 10);
 
 	void reset(void) ;
+	void reset_serialized(void) ;
 
 	bool on_before_install(void) override ;
 	void on_after_uninstall(void) override ;
