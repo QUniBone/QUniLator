@@ -1,3 +1,19 @@
+qbone (1.27.2-1) trixie; urgency=high
+
+  A new kernel no longer takes the board off the network
+
+  1.27.2 keeps the board reachable when a new kernel is installed.
+
+  * Network. BeagleBoard published a new kernel on 2026-10-31, and
+    "apt upgrade" installs it. It booted with eth0 on a driver the board's
+    bridge does not take, and the board dropped off the network. A kernel
+    installed now gets the device tree that keeps eth0 a plain network
+    card, "apt upgrade" leaves the kernel where it is, and the bridge takes
+    eth0 on either driver. Installing this release mends a board that has
+    taken the new kernel already; it needs one reboot.
+
+ -- Hans Huebner <hans@huebner.org>  Sun, 01 Nov 2026 12:28:10 +0100
+
 qbone (1.27.1-1) trixie; urgency=low
 
   INIT and interrupts
