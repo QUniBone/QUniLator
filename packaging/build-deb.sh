@@ -272,6 +272,14 @@ chmod 644 $STAGE/lib/systemd/system/$NAME.service
 # NIC. The same eth0 fix serves both boards.
 install -m 644 02_bbb_config/01_cape/am335x-boneblack-bone.dts \
     $STAGE/usr/share/qunilator/am335x-boneblack-bone.dts
+# A kernel installed later gets the same device tree built for it by this hook,
+# which the kernel package runs with the new kernel's version.
+install -d $STAGE/etc/kernel/postinst.d
+install -m 755 packaging/debian/qunilator-kernel-dtb $STAGE/etc/kernel/postinst.d/zzz-qunilator-dtb
+# and keeps "apt upgrade" from bringing in a new kernel through the BeagleBoard
+# kernel meta-package; the image holds the kernel package itself
+install -d $STAGE/etc/apt/preferences.d
+install -m 644 packaging/debian/apt-preferences-kernel $STAGE/etc/apt/preferences.d/qunilator-kernel
 # the bridge that carries the emulated machine, installed by qunilator-setup
 for f in br0.netdev br0.network eth0.network veth-br.network veth-pdp.network usb0.network; do
     install -m 644 packaging/debian/network/$f $STAGE/usr/share/qunilator/network/$f
@@ -328,6 +336,7 @@ INSTALLED_KB=$(du -sk $STAGE | cut -f1)
     echo "/etc/qunilator/network.conf"
     echo "/etc/modprobe.d/bone.conf"
     echo "/etc/modules-load.d/bone.conf"
+    echo "/etc/apt/preferences.d/qunilator-kernel"
     echo "/etc/apt/apt.conf.d/51qunilator-unattended"
     echo "/etc/sudoers.d/qunilator-admin"
     # a conffile so an operator who deletes it is not given it back on the
@@ -410,6 +419,21 @@ if [ "$1" = configure ]; then
     if [ -x "$cli" ]; then
         chown root:qunilator-admin "$cli" || true
         chmod 4750 "$cli" || true
+    fi
+    # A new kernel boots the device tree it brings, which puts eth0 on the
+    # switchdev driver, and a board on it can drop off the network. Every
+    # kernel already installed gets the legacy-Ethernet device tree, which
+    # mends a board that booted one before the kernel hook was there; the hook
+    # covers the ones to come. A bridge written without the [Bridge] settings
+    # gains the ones that keep eth0 in it on the switchdev driver.
+    if [ -x /usr/sbin/qunilator-setup ]; then
+        for d in /boot/dtbs/*/; do
+            [ -d "$d" ] && /usr/sbin/qunilator-setup --kernel-dtb "$(basename "$d")" || true
+        done
+    fi
+    br0=/etc/systemd/network/br0.netdev
+    if [ -f "$br0" ] && ! grep -q '^\[Bridge\]' "$br0"; then
+        printf '\n[Bridge]\nVLANFiltering=no\nDefaultPVID=0\n' >> "$br0"
     fi
     install -d -m 2775 /var/lib/qunilator/images
     # the seeded media folders, re-asserted on an upgrade so a board that

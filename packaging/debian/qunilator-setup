@@ -17,9 +17,16 @@
 # refuses to add to a software bridge, so eth0 is moved to the legacy ti,cpsw
 # driver by a device tree built here. See /usr/share/qunilator/README.Debian.
 #
+# A kernel installed later boots the device tree it brings, which binds the
+# switchdev driver again. /etc/kernel/postinst.d/zzz-qunilator-dtb runs
+# --kernel-dtb for each kernel as it is installed, so the next boot finds the
+# legacy device tree under that kernel's /boot/dtbs as well.
+#
 # usage:
-#   qunilator-setup                 set up, including the network
-#   qunilator-setup --no-network    set up without touching the network
+#   qunilator-setup                       set up, including the network
+#   qunilator-setup --no-network          set up without touching the network
+#   qunilator-setup --kernel-dtb VERSION  build the legacy-Ethernet device tree
+#                                         for one installed kernel, nothing else
 
 set -e
 
@@ -44,6 +51,7 @@ fi
 
 WANT_NET=yes
 AUTO=no
+KERNEL_DTB=
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-network|--no-bridge) WANT_NET=no ;;
@@ -52,7 +60,11 @@ while [ $# -gt 0 ]; do
         # qunilator-setup.service so a distribution image configures itself with no
         # login. It stops running once /var/lib/qunilator/.setup-done exists.
         --auto) AUTO=yes ;;
-        *) echo "usage: $0 [--no-network] [--auto]" >&2; exit 2 ;;
+        --kernel-dtb)
+            [ -n "${2:-}" ] || { echo "usage: $0 --kernel-dtb VERSION" >&2; exit 2; }
+            KERNEL_DTB=$2
+            shift ;;
+        *) echo "usage: $0 [--no-network] [--auto] [--kernel-dtb VERSION]" >&2; exit 2 ;;
     esac
     shift
 done
@@ -112,7 +124,7 @@ configure_boot() {
     return 0
 }
 
-if ! capemgr && [ -f $UENV ]; then
+if [ -z "$KERNEL_DTB" ] && ! capemgr && [ -f $UENV ]; then
     say "checking the boot settings"
     cp -n $UENV $UENV.bone-orig 2>/dev/null || true
     if configure_boot; then
@@ -128,9 +140,13 @@ fi
 # The DTB is built from the device tree sources the base image ships in
 # /opt/source, so it follows whatever kernel is installed rather than being
 # pinned to one. It is installed under the name U-Boot loads.
+# The kernel the device tree is built for: the running one, or the one
+# --kernel-dtb names.
+KVER=${KERNEL_DTB:-$(uname -r)}
+
 dt_src_dir() {
-    # /opt/source/dtb-<major>.<minor>.x for the running kernel
-    kv=$(uname -r | cut -d. -f1-2)
+    # /opt/source/dtb-<major>.<minor>.x for the kernel
+    kv=$(echo "$KVER" | cut -d. -f1-2)
     for d in /opt/source/dtb-${kv}.x /opt/source/dtb-${kv}; do
         [ -d "$d/src/arm/ti/omap" ] && { echo "$d"; return 0; }
     done
@@ -147,8 +163,9 @@ eth0_is_plain() {
 # unavailable
 configure_ethernet_dtb() {
     ETH_DTB_STATE=unavailable
-    dtbdir=/boot/dtbs/$(uname -r)
+    dtbdir=/boot/dtbs/$KVER
     target=$dtbdir/$BASE_DTB
+    [ -e "$target" ] || { say "  no $target to replace"; return 1; }
 
     # if it is already the legacy DTB, nothing to do
     if [ -e "$target" ] &&
@@ -160,7 +177,7 @@ configure_ethernet_dtb() {
     fi
 
     src=$(dt_src_dir) || {
-        say "  no device tree sources under /opt/source for kernel $(uname -r);"
+        say "  no device tree sources under /opt/source for kernel $KVER;"
         say "  cannot build the Ethernet device tree. The emulated controller"
         say "  will not reach the network. Install the dtb source package, or"
         say "  build $BASE_DTB by hand from $DTS."
@@ -174,7 +191,7 @@ configure_ethernet_dtb() {
     done
     [ -r "$DTS" ] || { say "  $DTS is missing"; return 1; }
 
-    say "building the legacy-Ethernet device tree for $(uname -r)"
+    say "building the legacy-Ethernet device tree for $KVER"
     cp "$DTS" "$src/src/arm/ti/omap/"
     dtb=$src/src/arm/ti/omap/am335x-boneblack-bone.dtb
     ( cd "$src" && make ARCH=arm CPP=cpp DTC=dtc \
@@ -189,6 +206,25 @@ configure_ethernet_dtb() {
     ETH_DTB_STATE=applied
     return 0
 }
+
+# For one kernel, from the kernel's install hook or the package's: only on a
+# board setup has put on the legacy driver, and never failing, so a kernel
+# install is not stopped by it.
+if [ -n "$KERNEL_DTB" ]; then
+    if capemgr || ! { [ -e /var/lib/qunilator/.setup-done ] ||
+                      ls /boot/dtbs/*/$BASE_DTB.stock >/dev/null 2>&1; }; then
+        exit 0
+    fi
+    if configure_ethernet_dtb; then
+        [ "$ETH_DTB_STATE" = applied ] && [ "$KVER" = "$(uname -r)" ] &&
+            say "  reboot to put eth0 on the legacy driver"
+    else
+        say "  WARNING: kernel $KVER boots with eth0 on the switch driver."
+        say "  The bridge keeps the board on the network, but the emulated"
+        say "  Ethernet controller may not reach it. See README.Debian."
+    fi
+    exit 0
+fi
 
 if ! capemgr; then
     if configure_ethernet_dtb; then

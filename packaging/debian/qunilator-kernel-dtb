@@ -1,0 +1,13 @@
+#!/bin/sh
+# /etc/kernel/postinst.d/zzz-qunilator-dtb: a kernel just installed gets the
+# legacy-Ethernet device tree under its /boot/dtbs, so eth0 stays a plain,
+# bridgeable NIC when the board boots it. The kernel package runs this with the
+# kernel version as the first argument.
+#
+# The name sorts after zz-uenv_txt, the BeagleBoard hook that copies the
+# kernel's stock device trees into /boot/dtbs/<version>: run-parts takes the
+# hooks in name order, and this one has to have the last word.
+[ -x /usr/sbin/qunilator-setup ] || exit 0
+[ -n "$1" ] || exit 0
+/usr/sbin/qunilator-setup --kernel-dtb "$1" || true
+exit 0

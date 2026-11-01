@@ -1,0 +1,11 @@
+# Keep the BeagleBoard kernel meta-packages at the version installed.
+#
+# A new version of one brings a new kernel, and a new kernel boots the device
+# tree it ships, which puts eth0 on the switchdev driver the bridge is not set
+# up for. The image holds the kernel package itself; this keeps "apt upgrade"
+# and "apt full-upgrade" from installing a new one through the meta-package.
+# Remove this file to take a new kernel deliberately: the kernel install hook
+# /etc/kernel/postinst.d/zzz-qunilator-dtb builds the device tree it needs.
+Package: /^bbb\.io-kernel-[0-9]/
+Pin: release o=rcn-ee.net
+Pin-Priority: -1

@@ -6,7 +6,17 @@
 # otherwise adopts the lowest MAC among its ports, and a veth's random address
 # can undercut the uplink's, changing the DHCP identity. Keeping the uplink MAC
 # keeps the lease stable.
+#
+# The [Bridge] settings let eth0 join while the switchdev cpsw driver is bound,
+# which is what a kernel booting its stock device tree does: that driver refuses
+# a port to a bridge that filters VLANs or gives its ports a default VLAN, and
+# eth0 then fails and takes the board off the network. With the legacy driver
+# setup installs they change nothing.
 [NetDev]
 Name=br0
 Kind=bridge
 # MACAddress set by qunilator-setup to the uplink's address
+
+[Bridge]
+VLANFiltering=no
+DefaultPVID=0

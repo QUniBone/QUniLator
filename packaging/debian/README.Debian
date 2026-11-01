@@ -79,6 +79,15 @@ is a hardware switch port the kernel will not add to a software bridge, so
 qunilator-setup builds a device tree that binds the legacy ti,cpsw driver and
 installs it as the DTB U-Boot loads.
 
+That device tree lives under the kernel's own /boot/dtbs/<kernel>, so a new
+kernel would boot its stock one. /etc/kernel/postinst.d/zzz-qunilator-dtb builds
+the legacy device tree for every kernel as it is installed, and installing this
+package builds it for every kernel already there. /etc/apt/preferences.d/
+qunilator-kernel keeps "apt upgrade" from bringing in a new kernel at all; remove
+it to take one deliberately. Should a kernel still come up on the switchdev
+driver, br0's [Bridge] settings (no VLAN filtering, no default VLAN) let eth0
+join the bridge anyway, so the board stays reachable.
+
 The bridge itself is systemd-networkd: br0 carries eth0 (the uplink) and
 veth-br (the controller's veth), and holds this board's DHCP address, pinned
 to the uplink's MAC so the lease does not change. qunilator-network creates the
@@ -272,7 +281,8 @@ The board's other packages are reported by the same check and upgraded with
 "qunilator-update --os-upgrade", or from the interface. That path has no
 rollback - apt cannot undo an upgrade - so it holds the emulator package back,
 upgrades nothing that would remove another package, and never reboots the
-board. The kernel stays held from the image build.
+board. The kernel stays held from the image build, and the BeagleBoard kernel
+meta-package by /etc/apt/preferences.d/qunilator-kernel.
 
 Building on the board
 ---------------------
