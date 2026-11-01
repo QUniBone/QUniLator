@@ -138,6 +138,12 @@ private:
 	bool xmt_maint; // set 1 for local loop back
 	bool xmt_break; // transmit continuous break
 	uint8_t xmt_buffer;
+	// XBUF is a holding register in front of the shift register: a character
+	// written while another shifts out waits here, and READY comes back as
+	// soon as the shift register has taken one. A driver that puts XON or
+	// XOFF into XBUF without testing READY - while an acknowledgement is still
+	// going out - has it sent after that character, as on a real DL11.
+	bool xmt_pending = false; // XBUF holds a character the shift register has not taken
 
 	/// The data bits `mode` names, as a mask over a character: a 7-bit line
 	/// carries bits 6..0 of XBUF and delivers 0 in bit 7 of RBUF.

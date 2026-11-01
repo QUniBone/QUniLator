@@ -445,6 +445,7 @@ void slu_c::on_after_register_access(qunibusdevice_register_t *device_reg,
 			pthread_mutex_lock(&on_after_xmt_register_access_mutex);
 			eval_xbuf_dato_value();
 			xmt_ready = 0; // signal worker: xmt_data pending
+			xmt_pending = true;
 			set_xcsr_dati_value_and_INTR();
 			// on_after_register_access_cond used for xmt worker
 			pthread_cond_signal(&on_after_xmt_register_access_cond);
@@ -505,6 +506,7 @@ void slu_c::reset(void)
 	rcv_p_err = 0;
 	rcv_buffer = 0;
 	xmt_ready = 1;
+	xmt_pending = false;
 	xmt_intr_enable = 0;
 	xmt_maint = 0;
 	xmt_break = 0;
@@ -620,24 +622,27 @@ void slu_c::worker_xmt(void)
 	worker_init_realtime_priority(rt_device);
 
 	while (!workers_terminate) {
-		// 1. wait for xmt signal
-		int res = pthread_cond_wait(&on_after_xmt_register_access_cond,
-				&on_after_xmt_register_access_mutex);
-		// on_after_xmt_register_access_mutex remains locked all the time
-		if (res != 0) {
-			ERROR("SLU::worker_xmt() pthread_cond_wait = %d = %s>", res, strerror(res));
-			continue;
+		// 1. wait for a character in XBUF. One written while the previous one
+		// shifted out is waiting already, and goes without a wait.
+		while (!xmt_pending && !workers_terminate) {
+			int res = pthread_cond_wait(&on_after_xmt_register_access_cond,
+					&on_after_xmt_register_access_mutex);
+			// on_after_xmt_register_access_mutex remains locked all the time
+			if (res != 0)
+				ERROR("SLU::worker_xmt() pthread_cond_wait = %d = %s>", res, strerror(res));
 		}
 		if (workers_terminate)
 			break; // the unlock below releases the mutex held across the loop
 
-		// 2. transmit
+		// 2. the shift register takes the character, and XBUF is free for the
+		// next one
 		rs232byte_t xmt_byte;
 		xmt_byte.c = xmt_buffer & data_mask;
 		xmt_byte.format_error = false;
-		rs232adapter.rs232byte_xmt_send(xmt_byte);
-		xmt_ready = 0;
+		xmt_pending = false;
+		xmt_ready = 1;
 		set_xcsr_dati_value_and_INTR();
+		rs232adapter.rs232byte_xmt_send(xmt_byte);
 		if (xmt_maint) { // loop back: simulate data byte coming in
 			pthread_mutex_lock(&on_after_rcv_register_access_mutex);
 			rcv_active = 1;
@@ -652,8 +657,6 @@ void slu_c::worker_xmt(void)
 		if (xmt_maint)
 			// put sent byte into rcv buffer, receiver will poll it
 			rs232adapter.rs232byte_loopback(xmt_byte);
-		xmt_ready = 1;
-		set_xcsr_dati_value_and_INTR();
 
 		// has rcv or xmt interrupt priority on maintennace loop back
 	}
