@@ -1,3 +1,20 @@
+qbone (1.27.1-1) trixie; urgency=low
+
+  INIT and interrupts
+
+  1.27.1 keeps a reset of the machine from leaving the bus held or
+  interrupts lost.
+
+  * Bus. A machine reset - the RESET instruction, a power cycle - while
+    the board was delivering an interrupt could leave the board holding
+    the bus, so the processor stopped and only restarting the service
+    freed it. INIT now releases the bus, and the board's interrupt
+    requests stay in step with the processor across a reset.
+  * Emulated processors. An interrupt arriving just before a RESET
+    instruction could stop all later interrupts.
+
+ -- Hans Huebner <hans@huebner.org>  Sun, 01 Nov 2026 11:59:19 +0100
+
 qbone (1.27.0-1) trixie; urgency=low
 
   VHD disk images
