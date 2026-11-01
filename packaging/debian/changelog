@@ -1,3 +1,17 @@
+qbone (1.27.3-1) trixie; urgency=low
+
+  A character written while the DL11 transmits
+
+  1.27.3 sends a character a program writes to the DL11 while the
+  previous one is still going out.
+
+  * DL11. Such a character was lost; a real DL11 holds it and sends it
+    next. RT-11's XL handler sends XON that way, so a Kermit transfer
+    that had asked the sender to pause with XOFF could stay paused for
+    good, most often at 19200 baud.
+
+ -- Hans Huebner <hans@huebner.org>  Sun, 01 Nov 2026 23:00:30 +0100
+
 qbone (1.27.2-1) trixie; urgency=high
 
   A new kernel no longer takes the board off the network
