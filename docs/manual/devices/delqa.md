@@ -44,6 +44,17 @@ machine reaches every host on the LAN, DEC multicast included, and the board
 itself. `interface` and `deqna_lock` are read when the controller is enabled; to
 change one, disable the controller, change it, and enable it again.
 
+### Its address on the network
+
+The bridge works at the Ethernet level, so the machine is a host of its own on
+the LAN, beside the BeagleBone, with its own station address from `mac`. It
+needs an IP address of its own, in the same subnet as the BeagleBone's, with
+the same netmask and gateway. That address must not be the BeagleBone's, and
+it must not be one the DHCP server can hand out. Pick a free address outside
+the DHCP pool and set it in the guest; a PDP-11 operating system has no DHCP
+client. The alternative is a reservation in the DHCP server for the station
+address, so the server never gives that address to anything else.
+
 For DEC's diagnostic, set `loopback`: the controller then behaves as one with a
 loopback connector on its transceiver port, and is off the network until it is
 cleared.

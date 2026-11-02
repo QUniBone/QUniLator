@@ -37,8 +37,12 @@ Three devices. The processor supplies everything else.
 
 - A 2.11BSD **MSCP disk image**. The one here is `du/2.11BSD_qbone.dsk`, a
   1 GB volume carrying a kernel built for this machine.
-- A free address on your LAN, and its gateway. This walkthrough uses
-  **192.168.2.180** with gateway **192.168.2.1** — substitute your own.
+- A free address on your LAN, and its gateway. The PDP-11 is a host of its
+  own beside the BeagleBone, so it needs an address of its own in the same
+  subnet, outside the range your DHCP server hands out
+  ([its address on the network](../devices/delqa.md#its-address-on-the-network)).
+  This walkthrough uses **192.168.2.180** with gateway **192.168.2.1** —
+  substitute your own.
 - The console line cabled and its speed set, per
   [the XXDP walkthrough](xxdp-rl02.md#1-point-the-console-at-the-right-line).
 

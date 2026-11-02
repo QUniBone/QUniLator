@@ -40,6 +40,17 @@ one.
 `interface`, `mac`, `rx_slots` and `tx_slots` can only be changed while the
 controller is disabled.
 
+### Its address on the network
+
+The bridge works at the Ethernet level, so the machine is a host of its own on
+the LAN, beside the BeagleBone, with its own station address from `mac`. It
+needs an IP address of its own, in the same subnet as the BeagleBone's, with
+the same netmask and gateway. That address must not be the BeagleBone's, and
+it must not be one the DHCP server can hand out. Pick a free address outside
+the DHCP pool and set it in the guest. The alternative is a reservation in the
+DHCP server for the station address, so the server never gives that address to
+anything else.
+
 ## ULTRIX-32 V1.1
 
 ULTRIX-32 V1.1 recognises one IP broadcast address: its network's address
