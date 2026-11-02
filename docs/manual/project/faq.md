@@ -76,6 +76,31 @@ boot device, and will always boot from eMMC.** So the BeagleBone must be on the 
 boot your image at all. Holding the **S2** button while applying power forces SD
 boot.
 
+## It boots from the card only while S2 is held
+
+Without S2 the BeagleBone's boot ROM tries the eMMC first, and the U-Boot it
+finds there decides what starts. A recent Debian on the eMMC boots the eMMC; the
+U-Boot of older eMMC images looked at the SD card first, which is why an older
+card may boot without the button. With the eMMC's boot area erased, the ROM
+finds no bootloader there and goes on to the SD card by itself.
+
+The card's image switches the eMMC off, because with the card fitted its pins
+belong to the cape. So the eMMC is erased with the BeagleBone **off the card**:
+
+1. Boot from the card, holding S2. In `/boot/uEnv.txt`, put a `#` in front of
+   both `enable_uboot_overlays=1` and `disable_uboot_overlay_emmc=1`. Shut
+   down.
+2. Take the BeagleBone off the card and power it on its own with the microSD
+   in, holding S2. `lsblk` now lists the eMMC as `mmcblk1`.
+3. Erase its boot area. This also erases the Debian on the eMMC, which
+   QUniLator does not use:
+   ```
+   sudo dd if=/dev/zero of=/dev/mmcblk1 bs=1M count=16 && sync
+   ```
+4. Remove both `#` again, **before** the BeagleBone goes back onto the card:
+   without the overlays the cape does not work. Shut down.
+5. Fitted to the card again, it boots from the microSD without S2.
+
 ## My machine will not start with the card fitted
 
 The card closes the grant chain **in software**, by watching the pins and

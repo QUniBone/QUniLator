@@ -168,7 +168,9 @@ Whoever holds the SD card can read its root filesystem either way.
 The image runs from the microSD. The cape occupies the eMMC data lines, so the
 overlay disables the eMMC and it is unusable while the card is fitted. If the
 BeagleBone comes up on something else, hold the **S2** boot button while applying
-power to force SD boot.
+power to force SD boot. A BeagleBone that boots from the card only while S2 is
+held needs its eMMC erased once; the
+[FAQ](../project/faq.md#it-boots-from-the-card-only-while-s2-is-held) says how.
 
 ## Wait out the first boot
 
