@@ -1,3 +1,19 @@
+qbone (1.27.5-1) trixie; urgency=low
+
+  Interrupts that stay in step with a real processor
+
+  1.27.5 keeps every device interrupt when a real processor's interrupt
+  service routine reaches its device before the board has finished with
+  the interrupt that started it. Nothing changes on upgrade.
+
+  * Interrupts. A device interrupt is no longer lost when the processor
+    reads or writes the device as the first thing in its service routine.
+    A DL11 could lose its transmitter interrupt that way and stop sending
+    until the machine was switched off and on, which may be what stalls a
+    Kermit transfer at 19200 baud on an 11/05.
+
+ -- Hans Huebner <hans@huebner.org>  Mon, 02 Nov 2026 20:50:01 +0100
+
 qbone (1.27.4-1) trixie; urgency=low
 
   XON and XOFF with parity, and a report on the console line
