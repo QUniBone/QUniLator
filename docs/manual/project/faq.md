@@ -66,6 +66,19 @@ In practice, no. The journalled filesystem tolerates it and SD cards have some
 protection of their own; QUniLators have been power-cycled hundreds of times without
 harm. A clean shutdown is still tidier.
 
+## How do I shut it down cleanly?
+
+Either of these shuts the BeagleBone down cleanly, and its power LED goes out
+when it is done:
+
+- **Over ssh:** `sudo poweroff`, as the operator.
+- **The BeagleBone's POWER button** (S3, next to the Ethernet jack): a short
+  press asks the system to shut down, the same as `poweroff`. Holding it for
+  about eight seconds cuts the power without a shutdown.
+
+Halt or switch off the machine's operating system first: a disk it is writing
+to stops at an arbitrary point when the board goes down.
+
 ## It boots, but I do not see the QUniLator software
 
 The BeagleBone has an on-board eMMC carrying a factory Debian, and if anything is
