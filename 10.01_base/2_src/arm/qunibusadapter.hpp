@@ -107,6 +107,7 @@ private:
 	// and was discarded - the request standing in its place is still running
 	bool worker_device_dma_chunk_complete_event(void);
 	void worker_intr_complete_event(uint8_t level_index);
+	bool worker_intr_complete_events(void);
 	void worker(unsigned instance) override; // background worker function
 
 public:

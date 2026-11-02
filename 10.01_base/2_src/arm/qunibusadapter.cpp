@@ -1690,9 +1690,8 @@ void qunibusadapter_c::worker_intr_complete_event(uint8_t level_index)
     // Must run under pthread_mutex_lock(&requests_mutex) ;
     priority_request_level_c *prl = &request_levels[level_index];
 
-    // if 1st opcode of an ISR is a "clear of INTR" condition,
-    // cancel_INTR() may be called in worker_deviceregister_event()
-    // then the request is already removed from schedule table.
+    // INIT or a device thread's cancel_INTR() may have removed the request from
+    // the schedule table already.
     //assert(prl->active);
 
     // clear from schedule table of this level
@@ -1707,6 +1706,25 @@ void qunibusadapter_c::worker_intr_complete_event(uint8_t level_index)
         _DEBUG_FAST("INTR() complete, no next scheduled");
     }
     // else INTRs for all slots of this level completed
+}
+
+// Take the interrupts the PRU has finished transmitting. Result: was there any?
+bool qunibusadapter_c::worker_intr_complete_events(void)
+{
+    bool any_event = false;
+    // 4 events for each BG4,5,6,7
+    for (unsigned level_index = 0; level_index < 4; level_index++) {
+        if (!EVENT_IS_ACKED(*mailbox, intr_master[level_index])) {
+            // Device INTR was transmitted. INTRs are granted unpredictable by Arbitrator
+            any_event = true;
+            // INTR of which level? the .active rquest of the"
+            pthread_mutex_lock(&requests_mutex);
+            worker_intr_complete_event(level_index);
+            pthread_mutex_unlock(&requests_mutex);
+            EVENT_ACK(*mailbox, intr_master[level_index]); // PRU may re-raise and change mailbox now
+        }
+    }
+    return any_event;
 }
 
 // runs in background, catches and distributes PRU events
@@ -1898,6 +1916,20 @@ void qunibusadapter_c::worker(unsigned instance)
                 // getting round to this thread and nothing of our own work.
                 event_latency.sample(mailbox->events.deviceregister_signal_cycle);
 
+                // An interrupt the PRU finished before this bus cycle began is
+                // older than the access, and is taken first. A processor reaches
+                // its ISR's first register access sooner than this thread wakes,
+                // so the two are routinely pending together. Taken the other way
+                // round, the access (reading RBUF, writing XBUF) cancels the
+                // finished request and hands the next one of its level to the
+                // PRU, and the completion then retires that one while it still
+                // waits there. The next INTR of the level finds the tables empty
+                // and overwrites its vector on the PRU: one interrupt is lost,
+                // and its device, whose edge is already recorded, never raises
+                // it again.
+                if (worker_intr_complete_events())
+                    any_event = true;
+
                 // DATI/DATO
                 // DEBUG_FAST("EVENT_DEVICEREGISTER:  control=%d, addr=%06o", (int)mailbox->events.unibus_control, mailbox->events.addr);
                 // The PRU stretches the bus cycle across this call, so nothing
@@ -1930,18 +1962,8 @@ void qunibusadapter_c::worker(unsigned instance)
                 EVENT_ACK(*mailbox, dma); // PRU may re-raise and change mailbox now
             }
 
-            // 4 events for each BG4,5,6,7
-            for (unsigned level_index = 0; level_index < 4; level_index++) {
-                if (!EVENT_IS_ACKED(*mailbox, intr_master[level_index])) {
-                    // Device INTR was transmitted. INTRs are granted unpredictable by Arbitrator
-                    any_event = true;
-                    // INTR of which level? the .active rquest of the"
-                    pthread_mutex_lock(&requests_mutex);
-                    worker_intr_complete_event(level_index);
-                    pthread_mutex_unlock(&requests_mutex);
-                    EVENT_ACK(*mailbox, intr_master[level_index]); // PRU may re-raise and change mailbox now
-                }
-            }
+            if (worker_intr_complete_events())
+                any_event = true;
 
             if (!EVENT_IS_ACKED(*mailbox, intr_slave)) {
                 // If CPU emulation enabled: a device INTR was detected on bus,
