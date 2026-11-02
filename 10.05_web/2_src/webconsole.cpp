@@ -20,6 +20,7 @@
    terminal emulation lives entirely in the browser.
 */
 
+#include <stdlib.h>
 #include <string.h>
 
 #include <atomic>
@@ -33,6 +34,7 @@
 #include <thread>
 
 #include "civetweb.h"
+#include "picojson.h"
 #include "webws.hpp"
 #include "webconsole_channel.hpp"
 
@@ -42,6 +44,7 @@
 #include "webconsole_control.hpp"
 #include "webrecording.hpp"
 #include "webconsole.hpp"
+#include "webserver.hpp"
 
 // Wakes the flush thread; defined with the flusher below, declared here because
 // the tap that calls it is part of the bridge state.
@@ -232,6 +235,43 @@ static void ws_close_handler(const struct mg_connection *conn, void *cbdata) {
 	console->channel.remove_client(client);
 }
 
+// GET /api/debug/console?line=<0|1|vax> - the flow control on one emulated
+// line: whether XON/XOFF is on and the line held, what is queued for the guest,
+// the XOFF and XON characters the guest has sent, and its last bytes in hex.
+// It tells a guest that never sent XON from one whose XON the board missed.
+static int api_debug_console_handler(struct mg_connection *conn, void *) {
+	const struct mg_request_info *ri = mg_get_request_info(conn);
+	char buf[8] = "0";
+	if (ri->query_string != nullptr)
+		mg_get_var(ri->query_string, strlen(ri->query_string), "line", buf, sizeof buf);
+	unsigned index = strcmp(buf, "vax") == 0 ? 2 : (unsigned) atoi(buf);
+	picojson::object o;
+	if (index >= CONSOLE_COUNT || consoles[index].adapter == nullptr) {
+		o["error"] = picojson::value(std::string("no such console line"));
+		web_send_json(conn, 404, picojson::value(o));
+		return 404;
+	}
+	rs232adapter_c::flow_report_t r = consoles[index].adapter->flow_report();
+	static const char hex[] = "0123456789abcdef";
+	std::string last;
+	for (unsigned char c : r.last_xmt) {
+		if (!last.empty())
+			last += ' ';
+		last += hex[c >> 4];
+		last += hex[c & 15];
+	}
+	o["line"] = picojson::value((double) index);
+	o["xonxoff"] = picojson::value(r.xonxoff);
+	o["held"] = picojson::value(r.held);
+	o["held_ms"] = picojson::value((double) r.held_ms);
+	o["queued"] = picojson::value((double) r.queued);
+	o["xoff_seen"] = picojson::value((double) r.xoff_seen);
+	o["xon_seen"] = picojson::value((double) r.xon_seen);
+	o["last_sent"] = picojson::value(last);
+	web_send_json(conn, 200, picojson::value(o));
+	return 200;
+}
+
 #if defined(UNIBUS)
 static void vax_console_transfer(void *context, bool on) {
 	((cpuvax_c *) context)->console_transfer(on);
@@ -267,6 +307,7 @@ void webconsole_register(struct mg_context *ctx) {
 #endif
 	for (console_c &console : consoles)
 		console.channel.set_recorder(&console.recorder);
+	mg_set_request_handler(ctx, "/api/debug/console", api_debug_console_handler, nullptr);
 	running = true;
 	flusher = std::thread(flush_loop);
 	for (console_c &console : consoles)

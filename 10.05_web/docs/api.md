@@ -884,6 +884,24 @@ reports what was found in their place instead. `0x00000000` is a PRU that has
 not reached its loop; anything else is the ARM and the PRU disagreeing about the
 mailbox layout, which would make every other field here fiction.
 
+### `GET /api/debug/console?line=<0|1|vax>`
+
+The flow control on one emulated console line (`line` defaults to 0, the
+`DL11`), for a file transfer that stops on a line held by XOFF:
+
+```json
+{"line": 0, "xonxoff": true, "held": true, "held_ms": 41250, "queued": 188,
+ "xoff_seen": 7, "xon_seen": 6, "last_sent": "01 23 20 59 30 0d 13"}
+```
+
+`xonxoff` is on while a transfer has asked for it, and `held` is true while the
+guest's last XOFF has had no XON; `held_ms` says for how long. `queued` counts
+the bytes waiting on the board for the guest. `xoff_seen` and `xon_seen` count
+the XOFF (023) and XON (021) characters the guest has transmitted since the
+board started, either with the eighth bit set as well; `last_sent` is the
+guest's last 64 bytes, oldest first, in hex. A held line whose `last_sent` ends
+in XOFF with no XON after it is a guest that never sent one.
+
 ### `GET /api/debug/cpu`
 
 What the processor holds. One document whichever kind of processor runs the

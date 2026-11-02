@@ -31,6 +31,7 @@
 #include <sstream>
 #include <deque>
 #include <atomic>
+#include <string>
 #include "utils.hpp"
 #include "timeout.hpp"
 #include "logsource.hpp"
@@ -58,6 +59,14 @@ private:
 
 	// deliver rcv chars delayed by this "baudrate"
 	timeout_c rcv_baudrate_delay;
+
+	// flow-control bookkeeping behind flow_report(), under mutex
+	static const unsigned xmt_history_len = 64;
+	uint8_t xmt_history[xmt_history_len];
+	unsigned xmt_history_count;
+	unsigned xoff_seen;
+	unsigned xon_seen;
+	uint64_t held_since_ms;
 
 public:
 
@@ -115,6 +124,20 @@ public:
 	void discard_stream_rcv(void);
 	std::atomic<bool> stream_rcv_xonxoff;
 	std::atomic<bool> stream_rcv_held;
+
+	// What the line has seen of flow control, for GET /api/debug/console:
+	// the XOFF and XON characters the guest transmitted, how long the stream
+	// has been held, and the guest's last bytes, oldest first.
+	struct flow_report_t {
+		bool xonxoff;
+		bool held;
+		uint64_t held_ms;     // how long the stream has been held, 0 if not
+		size_t queued;        // stream_rcv bytes the guest has not taken
+		unsigned xoff_seen;
+		unsigned xon_seen;
+		std::string last_xmt; // up to xmt_history_len bytes
+	};
+	flow_report_t flow_report(void);
 
 	/*** PATTERN detection ***/
 	void set_pattern(char *pattern);

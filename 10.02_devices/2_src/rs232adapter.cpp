@@ -71,6 +71,10 @@ rs232adapter_c::rs232adapter_c()
 	stream_xmt_tap = NULL;
 	stream_rcv_xonxoff = false;
 	stream_rcv_held = false;
+	xmt_history_count = 0;
+	xoff_seen = 0;
+	xon_seen = 0;
+	held_since_ms = 0;
 	rcv_termios_error_encoding = false;
 	rcvbuffer.clear();
 	pattern_stream_data[0] = 0;
@@ -181,6 +185,27 @@ void rs232adapter_c::discard_stream_rcv(void)
 	pthread_mutex_unlock(&mutex);
 }
 
+rs232adapter_c::flow_report_t rs232adapter_c::flow_report(void)
+{
+	flow_report_t r;
+	pthread_mutex_lock(&mutex);
+	r.xonxoff = stream_rcv_xonxoff;
+	r.held = stream_rcv_held;
+	r.held_ms = r.held ? now_ms() - held_since_ms : 0;
+	r.queued = 0;
+	if (stream_rcv) {
+		std::streamsize n = stream_rcv->rdbuf()->in_avail();
+		r.queued = n > 0 ? (size_t) n : 0;
+	}
+	r.xoff_seen = xoff_seen;
+	r.xon_seen = xon_seen;
+	unsigned n = xmt_history_count < xmt_history_len ? xmt_history_count : xmt_history_len;
+	for (unsigned i = xmt_history_count - n; i != xmt_history_count; i++)
+		r.last_xmt.push_back((char) xmt_history[i % xmt_history_len]);
+	pthread_mutex_unlock(&mutex);
+	return r;
+}
+
 void rs232adapter_c::set_stream_rcv_xonxoff(bool on)
 {
 	stream_rcv_xonxoff = on;
@@ -193,12 +218,24 @@ void rs232adapter_c::rs232byte_xmt_send(rs232byte_t xmtbyte)
 {
 	pthread_mutex_lock(&mutex);
 
+	// XOFF and XON with the eighth bit set as well, as a terminal on a seven-bit
+	// line takes them: a guest that sends them with parity still means them.
+	// With XON/XOFF on, a transfer's own bytes are printable or quoted, so no
+	// data byte reads as either.
+	uint8_t c7 = xmtbyte.c & 0x7f;
+	if (c7 == 0x13)
+		xoff_seen++;
+	else if (c7 == 0x11)
+		xon_seen++;
 	if (stream_rcv_xonxoff) {
-		if (xmtbyte.c == 0x13) // XOFF
+		if (c7 == 0x13 && !stream_rcv_held) { // XOFF
 			stream_rcv_held = true;
-		else if (xmtbyte.c == 0x11) // XON
+			held_since_ms = now_ms();
+		} else if (c7 == 0x11) // XON
 			stream_rcv_held = false;
 	}
+	xmt_history[xmt_history_count % xmt_history_len] = xmtbyte.c;
+	xmt_history_count++;
 
 	if (rs232)
 		rs232->SendByte(xmtbyte.c);
