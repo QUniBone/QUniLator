@@ -1,3 +1,15 @@
+qbone (1.27.4-1) trixie; urgency=low
+
+  XON and XOFF with parity, and a report on the console line
+
+  1.27.4 helps find why a console file transfer stays paused.
+
+  * Web console. XON and XOFF sent with the eighth bit set count as
+    well. GET /api/debug/console reports whether a line is held by XOFF,
+    what is queued for the guest and the last bytes the guest sent.
+
+ -- Hans Huebner <hans@huebner.org>  Mon, 02 Nov 2026 18:17:59 +0100
+
 qbone (1.27.3-1) trixie; urgency=low
 
   A character written while the DL11 transmits
