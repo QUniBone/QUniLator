@@ -120,13 +120,14 @@ jobs:
                   done)
           notes=$(printf '%s\n\n| Board | Appliance image | Package | Update file |\n|---|---|---|---|\n%s\n\nAll files are under Assets below; "Show all" lists the ones past the first ten. Image base: %s.\n' \
                   "$body" "$files" "$BASE_VERSION")
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+          # release-image creates this release too, whenever its build finishes,
+          # so a release may appear at any moment: create it, and on a failure
+          # edit the one that is there. The edit fails if none is, and so does
+          # this step.
+          if ! gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME — $title" --notes "$notes"; then
             gh release edit "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME — $title" --notes "$notes"
-            gh release upload "$GITHUB_REF_NAME" *_armhf.deb --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" *_armhf.deb --title "$GITHUB_REF_NAME — $title" \
-              --notes "$notes"
           fi
+          gh release upload "$GITHUB_REF_NAME" *_armhf.deb --clobber
 
       - name: Publish to the apt repository
         # Push both debs to the host over the forced-command deploy key. The
