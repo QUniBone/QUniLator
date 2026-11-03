@@ -1,3 +1,18 @@
+qbone (1.28.0-1) trixie; urgency=low
+
+  Shutting the board down from the web interface
+
+  1.28.0 lets the board be shut down from the browser, so a QUniLator
+  fitted in a machine can close its filesystems before the machine's
+  power goes. Nothing changes on upgrade.
+
+  * Shut down. System › Shut down powers the BeagleBone off after a
+    confirmation, which warns when the machine is switched on. It does
+    what a short press of the BeagleBone's power button does, and
+    POST /api/system/shutdown does the same.
+
+ -- Hans Huebner <hans@huebner.org>  Tue, 03 Nov 2026 06:10:49 +0100
+
 qbone (1.27.5-1) trixie; urgency=low
 
   Interrupts that stay in step with a real processor

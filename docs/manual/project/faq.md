@@ -71,6 +71,7 @@ harm. A clean shutdown is still tidier.
 Either of these shuts the BeagleBone down cleanly, and its power LED goes out
 when it is done:
 
+- **In the web interface:** **System › Shut down**, from version 1.28.0.
 - **Over ssh:** `sudo poweroff`, as the operator.
 - **The BeagleBone's POWER button** (S3, next to the Ethernet jack): a short
   press asks the system to shut down, the same as `poweroff`. Holding it for
