@@ -19,6 +19,8 @@
 set -e
 HOST=${QBONE_HOST:-unibone.huebner.org}
 PW=$(cat ~/.qbone-pw 2>/dev/null || true)
+# The operator the board was set up for, as qcon finds it.
+USERNAME=${QBONE_USER:-$(cat ~/.qbone-user 2>/dev/null || true)}
 API="http://$HOST/api"
 
 DEUNA=no
@@ -34,7 +36,7 @@ for arg in "$@"; do
 done
 
 set_param() {  # device param value
-    curl -sf -m 20 -u ":$PW" -X PUT -H 'Content-Type: application/json' \
+    curl -sf -m 20 -u "$USERNAME:$PW" -X PUT -H 'Content-Type: application/json' \
         -d "{\"value\":\"$3\"}" "$API/devices/$1/params/$2" >/dev/null \
         || { echo "failed: $1.$2 = $3" >&2; exit 1; }
 }
@@ -68,7 +70,7 @@ fi
 # stopped, which is where the build has got to.
 if [ "$FRESH" = yes ]; then
     for img in vms47.dsk scratch_ra81.dsk; do
-        curl -sf -m 60 -u ":$PW" -X POST "$API/images/$img/overlay/discard" \
+        curl -sf -m 60 -u "$USERNAME:$PW" -X POST "$API/images/$img/overlay/discard" \
             >/dev/null 2>&1 && echo "discarded the overlay on $img"
     done
 fi

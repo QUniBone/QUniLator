@@ -3,13 +3,16 @@
  *
  *   qcon run <script.yaml> [--host H] [--console CH] [--var NAME=VALUE]...
  *                          [--record OUT.cast] [--pw-file PATH] [--verbose]
+ *                          [--start restart|dc_on|none]
  *   qcon record <out.cast> --console CH [--host H] [--pw-file PATH]
  *   qcon break [--console CH] [--host H]
  *   qcon render <session.cast> [--mode doc|player] [--out FILE] [--title T]
  *   qcon timings <session.cast> [--margin N]
  *
  * run executes a step file against a console and always records the session
- * (default: <script-stem>-<timestamp>.cast in the working directory). Exit
+ * (default: <script-stem>-<timestamp>.cast in the working directory). --start
+ * replaces the script's machine.start, so one script both boots a machine and
+ * drives a boot already under way (--start none). Exit
  * status: 0 pass, 1 script failure, 2 usage or connection error.
  *
  * record taps a channel and writes its output to a cast until interrupted —
@@ -31,13 +34,20 @@ import { WsTransport, TcpTransport, type Transport } from "./transport.js";
 import { Session } from "./session.js";
 import { MachineEvents } from "./events.js";
 import { CastRecorder } from "./recording.js";
-import { loadScript, runScript, parseDuration, ScriptFailure } from "./steps.js";
+import {
+  loadScript,
+  runScript,
+  parseDuration,
+  ScriptFailure,
+  type MachineSpec,
+} from "./steps.js";
 import { renderDoc, renderPlayer } from "./render.js";
 import { runTimings, formatTimings } from "./timings.js";
 
 function usage(): never {
   process.stderr.write(
     "usage: qcon run <script.yaml> [--host H] [--console CH] [--var N=V]... [--record OUT] [--pw-file P] [--verbose]\n" +
+      "                [--start restart|dc_on|none]\n" +
       "       qcon record <out.cast> --console CH [--host H] [--pw-file P]\n" +
       "       qcon break [--console CH] [--host H] [--pw-file P]\n" +
       "       qcon render <session.cast> [--mode doc|player] [--out FILE] [--title T]\n" +
@@ -78,8 +88,11 @@ async function resolveChannel(
 async function cmdRun(scriptPath: string, opts: CommonOpts, args: {
   vars: Record<string, string>;
   recordPath?: string;
+  start?: MachineSpec["start"];
 }): Promise<number> {
   const script = loadScript(scriptPath);
+  if (args.start !== undefined)
+    script.machine = { ...script.machine, start: args.start };
   const host = opts.host !== "" ? opts.host : (script.host ?? "qbone");
   const common = { ...opts, host };
   const channel = await resolveChannel(common, script.console);
@@ -230,6 +243,7 @@ async function main(): Promise<number> {
       margin: { type: "string" },
       out: { type: "string" },
       title: { type: "string" },
+      start: { type: "string" },
     },
   });
   const [cmd, arg] = positionals;
@@ -249,9 +263,15 @@ async function main(): Promise<number> {
   switch (cmd) {
     case "run":
       if (!arg) usage();
+      if (
+        values.start !== undefined &&
+        !["restart", "dc_on", "none"].includes(values.start)
+      )
+        usage();
       return cmdRun(arg, { ...opts, host: opts.host || "" }, {
         vars,
         recordPath: values.record,
+        start: values.start as MachineSpec["start"],
       });
     case "record":
       if (!arg) usage();

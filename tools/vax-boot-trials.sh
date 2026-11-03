@@ -13,6 +13,8 @@ cd "$(dirname "$0")/.."
 
 HOST=${QBONE_HOST:-unibone.huebner.org}
 PW=$(cat ~/.qbone-pw 2>/dev/null || true)
+# The operator the board was set up for, as qcon finds it.
+USERNAME=${QBONE_USER:-$(cat ~/.qbone-user 2>/dev/null || true)}
 TRIALS=${1:-5}
 shift 2>/dev/null || true
 SETUP_ARGS="$*"
@@ -24,7 +26,7 @@ fail=0
 
 i=1
 while [ $i -le "$TRIALS" ]; do
-    curl -s -m 25 -u ":$PW" -X PUT -H 'Content-Type: application/json' \
+    curl -s -m 25 -u "$USERNAME:$PW" -X PUT -H 'Content-Type: application/json' \
         -d '{"value":"0"}' \
         "http://$HOST/api/devices/cpuvax/params/enabled" >/dev/null || true
     sleep 2
@@ -39,8 +41,8 @@ while [ $i -le "$TRIALS" ]; do
         # The first VMS complaint is what distinguishes one failure from
         # another, and it has to come from this boot: the log opens with the
         # console channel's replayed history, which carries the diagnostics of
-        # every boot before it.
-        why=$(sed -n '/=== machine restarted ===/,$p' "$log" \
+        # every boot before it. qcon notes the restart once that has passed.
+        why=$(sed -n '/^starting the machine/,$p' "$log" \
               | grep -a -m1 -E '%[A-Z]+-[EFW]-|-[A-Z]+-[EFW]-|Unable to locate' \
               | tr -d '\r' | cut -c1-90)
         echo "trial $i: FAIL  ${why:-no diagnostic on the console}"

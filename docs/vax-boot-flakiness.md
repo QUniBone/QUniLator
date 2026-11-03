@@ -150,11 +150,11 @@ snapshots and both readers are gone. Committed as `7c33f16`.
   system disk, optionally `--deuna` and a `--scratch` volume. `--fresh`
   discards the overlays first. No saved config describes a VAX, so a service
   restart leaves every device off and the machine has to be put back.
-- `tools/vax-boot.sh` — boots and logs in, driving the console.
+- `tools/vax-boot.sh` — boots and logs in, driving the console with qcon
+  (`console-harness/`) and the CI's step file `unibone-ci-vms.yaml`. qcon
+  throws the start switch after the socket is open and the board has replayed
+  the channel's history, and prints `starting the machine (restart)`.
+  Everything above that line in a log belongs to an earlier boot; a reader
+  that ignores this will diagnose the wrong run.
 - `tools/vax-boot-trials.sh <n>` — n independent trials, each from a pristine
   disk, scored pass or fail with the first VMS diagnostic.
-- `tools/vax-console.mjs` — the console driver. `--restart` throws the start
-  switch after the socket is open and the board has replayed the channel's
-  history, and prints `=== machine restarted ===`. Everything above that line
-  in a log belongs to an earlier boot; a reader that ignores this will diagnose
-  the wrong run.
