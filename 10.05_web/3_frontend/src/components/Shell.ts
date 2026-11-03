@@ -15,6 +15,7 @@ import {
   SystemAccessPage,
   SystemNetworkPage,
   SystemRecordingsPage,
+  SystemShutdownPage,
   SystemSerialPage,
   SystemUpdatePage,
 } from './System';
@@ -38,7 +39,7 @@ const NAV: [string, string][] = [
 
 // The System entry's own pages, one function each. The sidebar opens these
 // under System while one of them is the current path, and the update badge
-// routes straight at the last of them.
+// routes straight at Updates.
 const SYSTEM_NAV: [string, string][] = [
   ['/system/access', 'Access'],
   ['/system/network', 'Network and shell'],
@@ -46,6 +47,7 @@ const SYSTEM_NAV: [string, string][] = [
   ['/system/selftest', 'Self-test'],
   ['/system/recordings', 'Recordings'],
   ['/system/update', 'Updates'],
+  ['/system/shutdown', 'Shut down'],
 ];
 
 function activeNav(path: string): string {
@@ -287,6 +289,7 @@ export function App() {
           <${SelftestPage} path="/system/selftest" />
           <${SystemRecordingsPage} path="/system/recordings" />
           <${SystemUpdatePage} path="/system/update" />
+          <${SystemShutdownPage} path="/system/shutdown" />
           <${Redirect} default to="/dashboard" />
         </${Router}>
       </main>

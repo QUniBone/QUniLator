@@ -208,6 +208,15 @@ than a minute off. A clock a time server keeps is left to it, with 409; a time
 before 2025 or after 2099 is refused with 422. Answers
 `{"ok": true, "time": …, "synchronized": false}`.
 
+### `POST /api/system/shutdown`
+
+Shuts the board down, as a short press of the BeagleBone's power button does:
+systemd stops the services, this one with them, and powers the BeagleBone off.
+Answers `{"ok": true}` once the shutdown is under way, so the answer arrives
+before the network goes. Nothing stops the guest operating system first; an
+operating system writing to an emulated disk loses what it had not written. A
+build that is not running on a QUniLator board answers 409.
+
 ### `GET /api/serialports`
 
 ```json

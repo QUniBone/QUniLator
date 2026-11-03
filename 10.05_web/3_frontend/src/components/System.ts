@@ -728,6 +728,49 @@ function RecordingsCard() {
   </div>`;
 }
 
+// Shutting the board down. A board fitted in a machine loses its power with the
+// machine's, and closing the filesystems first is the tidy way to go. Once the
+// board has taken the request this page has nothing left to talk to, so it says
+// what to watch for instead.
+function ShutdownCard() {
+  const s = useStore();
+  const [state, setState] = useState<'idle' | 'asking' | 'done'>('idle');
+  const shutDown = async () => {
+    const on = s.hw.powered === true;
+    const body =
+      'The BeagleBone powers off, and this page loses its connection.' +
+      (on
+        ? ' <b>The machine is switched on.</b> An operating system on it that is writing to an' +
+          ' emulated disk loses what it has not written: shut it down first.'
+        : '') +
+      ' The board starts again only when its power is switched off and on.';
+    if (!(await confirmModal('Shut down this QUniLator?', body, 'Shut down'))) return;
+    setState('asking');
+    const r = await apiJSON<{ error?: string }>('/api/system/shutdown', { method: 'POST' }).catch(() => null);
+    if (r && r.ok) {
+      setState('done');
+      return;
+    }
+    setState('idle');
+    toast('POST /api/system/shutdown', (r && r.data.error) || 'the board did not answer');
+  };
+  return html`<div class="card" style="max-width:720px">
+    <div class="card-head"><h3>Shut down</h3></div>
+    <div class="card-body">
+      ${
+        state === 'done'
+          ? html`<p>The board is shutting down. Its power LED goes out when it is done; after
+              that its power can be switched off.</p>`
+          : html`<p class="muted">Closes the filesystems and powers the BeagleBone off, as a short
+              press of its power button does. Do this before switching off the machine the board
+              is fitted in.</p>
+            <button class="btn danger" disabled=${state === 'asking'} onClick=${shutDown}>
+              ${state === 'asking' ? 'Shutting down…' : 'Shut down'}</button>`
+      }
+    </div>
+  </div>`;
+}
+
 // One page per function, all under /system. The sidebar opens the sub-menu when
 // System is the active entry, so a page here carries no navigation of its own.
 
@@ -759,6 +802,13 @@ export function SystemRecordingsPage() {
   return html`<section class="page active" data-page="system-recordings">
     <p class="lede">Console sessions captured with Record on the dashboard.</p>
     <${RecordingsCard} />
+  </section>`;
+}
+
+export function SystemShutdownPage() {
+  return html`<section class="page active" data-page="system-shutdown">
+    <p class="lede">Shutting this QUniLator down before its power goes.</p>
+    <${ShutdownCard} />
   </section>`;
 }
 

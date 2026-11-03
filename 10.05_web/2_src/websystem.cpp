@@ -13,6 +13,7 @@
      PUT /api/sshkey     {key}
      GET /api/clock      {time, synchronized}
      PUT /api/clock      {time}
+     POST /api/system/shutdown
 
    Boards ship with one hostname, so several on a network are told apart only by
    the mDNS suffix boot order hands out. Naming a board settles which is which:
@@ -28,6 +29,10 @@
    it last had, and an update file, signed when it was published, is refused
    as signed in its future. The operator's browser knows the time, so the
    interface hands it to a board whose clock no time server keeps.
+
+   A board fitted in a machine has its power switched with the machine's, and
+   shutting it down first lets the filesystems close. The interface asks the
+   board to power off, the way the BeagleBone's power button does.
 */
 
 #include <errno.h>
@@ -427,8 +432,43 @@ static int api_clock_handler(struct mg_connection *conn, void * /*cbdata*/) {
 	return 405;
 }
 
+/*** /api/system/shutdown ***/
+
+// The package installs this on a board and nowhere else. A host build run on a
+// workstation answers the same API, and there a shutdown would take the
+// workstation down.
+static const char *BOARD_MARKER = "/usr/sbin/qunilator-setup";
+
+static int api_shutdown_handler(struct mg_connection *conn, void * /*cbdata*/) {
+	const struct mg_request_info *ri = mg_get_request_info(conn);
+	if (strcmp(ri->request_method, "POST") != 0) {
+		send_error(conn, 405, "method not allowed");
+		return 405;
+	}
+	if (access(BOARD_MARKER, F_OK) != 0) {
+		send_error(conn, 409, "only a QUniLator board can be shut down from here");
+		return 409;
+	}
+	// --no-block returns once systemd has the job, so the answer reaches the
+	// browser before the network goes down. systemd then stops this service
+	// with the rest, which takes the emulated machine off the bus.
+	const char *argv[] = { "systemctl", "poweroff", "--no-block", nullptr };
+	std::string said;
+	if (run_capturing(argv, &said) != 0) {
+		WEB_ERROR("shutdown: systemctl poweroff refused: %s", tidy(said).c_str());
+		send_error(conn, 500, "the board could not be shut down: " + tidy(said));
+		return 500;
+	}
+	WEB_INFO("the operator shut the board down");
+	picojson::object o;
+	o["ok"] = picojson::value(true);
+	send_json(conn, 200, picojson::value(o));
+	return 200;
+}
+
 void websystem_register(struct mg_context *ctx) {
 	mg_set_request_handler(ctx, "/api/hostname", api_hostname_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/sshkey", api_sshkey_handler, nullptr);
 	mg_set_request_handler(ctx, "/api/clock", api_clock_handler, nullptr);
+	mg_set_request_handler(ctx, "/api/system/shutdown", api_shutdown_handler, nullptr);
 }
