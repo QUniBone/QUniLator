@@ -1,3 +1,19 @@
+qbone (1.29.0-1) trixie; urgency=low
+
+  A DEC VT100 on the console
+
+  1.29.0 puts a real VT100 on the machine's console: PCjs's emulation of
+  the terminal's hardware, running DEC's own firmware, in a window of its
+  own. Nothing changes on upgrade.
+
+  * VT100. The console card's VT100 button opens the terminal on the
+    console line. It starts with the last screenful of the console, keeps
+    the line's flow control, and loads only when it is opened. F1-F4 are
+    PF1-PF4, F6 BREAK, F7 LINE FEED, F8 NO SCROLL and F9 SET-UP. Thanks
+    to Alex for the idea and the first version.
+
+ -- Hans Huebner <hans@huebner.org>  Thu, 05 Nov 2026 21:41:01 +0100
+
 qbone (1.28.0-1) trixie; urgency=low
 
   Shutting the board down from the web interface
