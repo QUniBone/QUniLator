@@ -156,7 +156,7 @@ export function consoleSource(): ConsoleSource {
 
 // The console's channel path, or null when the browser's own serial port
 // carries it and there is no server channel to connect.
-function consolePath(): string | null {
+export function consolePath(): string | null {
   const src = consoleSource();
   if (src === 'ttys2') return '/ws/console/ext';
   if (src === 'dl11') return '/ws/console/0';

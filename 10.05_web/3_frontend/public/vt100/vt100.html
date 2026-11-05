@@ -1,0 +1,70 @@
+<!doctype html>
+<!--
+  A DEC VT100 on one of the board's console channels: PCjs's emulation of the
+  terminal's own 8080 hardware, running DEC's VT100 firmware, connected to the
+  channel named by ?path= (/ws/console/0, /1, ext or vax). See README.md.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VT100</title>
+<link rel="icon" href="/favicon.svg">
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #1b1b1b; color: #ccc;
+    font: 13px system-ui, sans-serif; }
+  #vt100 { display: flex; flex-direction: column; height: 100%; }
+  .bar { display: flex; align-items: center; gap: 14px; padding: 6px 10px;
+    background: #262626; flex-wrap: wrap; }
+  .led { display: inline-flex; align-items: center; gap: 5px; font-size: 11px;
+    letter-spacing: .04em; }
+  .led > div { width: 14px; height: 14px; }
+  .speed { font-size: 11px; color: #888; }
+  #state { margin-left: auto; font-size: 12px; }
+  #state.ok { color: #7ed37e; }
+  #state.down { color: #f0a050; }
+  #monitorVT100 { position: relative; flex: 1; min-height: 0; display: flex;
+    align-items: center; justify-content: center; background: #000; }
+  /* PCjs lays a transparent textarea over the screen to take the keyboard */
+  .pcjs-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    margin: 0; padding: 0; border: 0; opacity: 0; resize: none; cursor: default; }
+  #surfaceVT100 { max-width: 100%; max-height: 100%; aspect-ratio: 5 / 3; outline: none; }
+  button { font: inherit; font-size: 12px; padding: 3px 9px; color: #ddd;
+    background: #3a3a3a; border: 1px solid #555; border-radius: 4px; cursor: pointer; }
+  button:hover { background: #474747; }
+</style>
+</head>
+<body>
+<div id="vt100">
+  <div class="bar">
+    <div class="led">ON LINE<div id="ledOnlineVT100"></div></div>
+    <div class="led">LOCAL<div id="ledLocalVT100"></div></div>
+    <div class="led">LOCKED<div id="ledLockedVT100"></div></div>
+    <div class="led">L1<div id="led1VT100"></div></div>
+    <div class="led">L2<div id="led2VT100"></div></div>
+    <div class="led">L3<div id="led3VT100"></div></div>
+    <div class="led">L4<div id="led4VT100"></div></div>
+    <div class="led">CAPS<div id="ledCapsVT100"></div></div>
+    <span id="speedVT100" class="speed"></span>
+    <span id="state" class="down">connecting</span>
+  </div>
+  <div id="monitorVT100">
+    <canvas id="surfaceVT100" width="1600" height="960" tabindex="0"></canvas>
+  </div>
+  <div class="bar">
+    <button id="keySetupVT100" title="SET-UP (F9)">SET-UP</button>
+    <button id="keyBreakVT100" title="BREAK (F6)">BREAK</button>
+    <button id="keyEscVT100">ESC</button>
+    <button id="keyTabVT100">TAB</button>
+    <button id="keyLineFeedVT100" title="LINE FEED (F7)">LINE FEED</button>
+    <button id="keyCtrlCVT100">CTRL-C</button>
+    <button id="keyCapsLockVT100">CAPS LOCK</button>
+    <button id="zoomVT100">Full screen</button>
+  </div>
+</div>
+<script src="vt100-console.js"></script>
+<script src="vt100-uncompiled.js"></script>
+<script>PCjsMachine('vt100', 'vt100.json');</script>
+</body>
+</html>

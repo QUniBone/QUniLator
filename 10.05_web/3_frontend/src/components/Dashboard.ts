@@ -8,6 +8,7 @@ import {
   initLiveTerminal,
   teardownTerminals,
   consoleSource,
+  consolePath,
   focusConsole,
   consoleLogging,
   startConsoleLog,
@@ -323,6 +324,22 @@ function LogButton() {
   >${on ? html`<span class="rec-dot"></span>Logging` : 'Log'}</button>`;
 }
 
+// A DEC VT100 on the same channel, in a window of its own. The page and the
+// emulator in it load only when it is opened. Each channel gets its own window,
+// so a second press brings that window forward.
+function VT100Button() {
+  useStore();
+  const path = consolePath();
+  if (!path) return null;
+  const open = () => {
+    const w = window.open('/vt100/vt100.html?path=' + encodeURIComponent(path),
+      'vt100' + path.replace(/\W/g, '_'), 'width=1000,height=700');
+    w?.focus();
+  };
+  return html`<button class="btn small" onClick=${open}
+    title="Open a DEC VT100 on this console, in its own window">VT100</button>`;
+}
+
 // The file transfer dialog, opened by its buttons or by a file dropped on the
 // console, which opens it to send that file.
 interface Transfer {
@@ -363,6 +380,7 @@ function ConsoleCard() {
         onClick=${() => setTransfer({ direction: 'receive', file: null })}>Receive file</button>
       <${LogButton} />
       <${RecordButton} />
+      <${VT100Button} />
       <span class=${'disk-status ' + (live ? 'ok' : 'idle')}
         >${live ? src : 'disconnected'}</span>
     </div>

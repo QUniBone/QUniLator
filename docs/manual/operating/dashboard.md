@@ -53,6 +53,17 @@ line, or the emulated DL11 channel otherwise.
 pressed, and saves it as a `console-<date>-<time>.log` file when it is pressed
 again. It goes on while you visit other screens.
 
+**VT100** opens a DEC VT100 on the same line, in a window of its own. It is
+[PCjs](https://www.pcjs.org/machines/dec/vt100/)'s emulation of the terminal's
+hardware running DEC's own firmware, so the guest meets a real VT100: its
+SET-UP screens, its keyboard, its escape sequences and its speed. It starts with
+the last screenful of the console, and keeps the line's flow control: it sends
+XOFF when it falls behind, as the terminal does. F1–F4 are PF1–PF4, F6 is
+BREAK, F7 LINE FEED, F8 NO SCROLL and F9 SET-UP. It starts with DEC's factory
+settings, which include smooth scroll, a few lines a second; SET-UP B switches
+to jump scroll. What SET-UP changes lasts until the window is closed. With the console in the browser's own serial port (Web Serial)
+there is no line on the board for it to use, and the button is not shown.
+
 Selecting text in the console copies it to the clipboard; **Ctrl+Shift+C**
 copies the selection again. Ctrl+C itself goes to the machine.
 
