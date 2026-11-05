@@ -54,4 +54,14 @@ stage_frontend() {
                 install -m 644 "$f" "$dest/assets/$b" ;;
         esac
     done
+    # Every other directory is a page of its own that the bundle opens, such as
+    # vt100/ and the third-party emulator in it. They carry no brand, so they
+    # copy as they are.
+    for f in "$dist"/*/; do
+        b=$(basename "$f")
+        [ "$b" = assets ] && continue
+        rm -rf "${dest:?}/$b"
+        cp -R "$f" "$dest/$b"
+        find "$dest/$b" -type d -exec chmod 755 {} + -o -type f -exec chmod 644 {} +
+    done
 }
