@@ -11,6 +11,7 @@ keyboard, running DEC's VT100 firmware.
 | `vt100.json` | PCjs's VT100 configuration, with the firmware ROM (8 KB) and the character generator ROM (2 KB) inline. Its SDF connection and its debugger are taken out and its serial port is wired to `qunilator` |
 | `vt100.html` | the page: the machine's screen, LEDs and keys |
 | `vt100-console.js` | connects the VT100's serial port to the console WebSocket named by `?path=` |
+| `vt100-nvr.js` | keeps the terminal's NVR, where SET-UP saves its settings, in the browser's local storage |
 | `PCJS-LICENSE.txt` | PCjs's license |
 
 Taken from github.com/jeffpar/pcjs at commit 99e159ba0a6a (2026-11-04),
@@ -26,6 +27,8 @@ them.
 Function keys: F1-F4 are PF1-PF4, F6 BREAK, F7 LINE FEED, F8 NO SCROLL,
 F9 SET-UP.
 
-The terminal starts with DEC's factory settings: 9600 baud, auto XON/XOFF on
-and smooth scroll on. Smooth scroll shows a few lines a second, as on the real
-terminal; SET-UP B switches it to jump scroll.
+A new terminal starts with DEC's factory settings: 9600 baud, auto XON/XOFF
+on and smooth scroll on. Smooth scroll shows a few lines a second, as on the
+real terminal; SET-UP B switches it to jump scroll. SHIFT-S in SET-UP saves
+the settings into the NVR, which this browser keeps for the board, and the
+next VT100 window starts with them.

@@ -61,8 +61,11 @@ the last screenful of the console, and keeps the line's flow control: it sends
 XOFF when it falls behind, as the terminal does. F1–F4 are PF1–PF4, F6 is
 BREAK, F7 LINE FEED, F8 NO SCROLL and F9 SET-UP. It starts with DEC's factory
 settings, which include smooth scroll, a few lines a second; SET-UP B switches
-to jump scroll. What SET-UP changes lasts until the window is closed. With the console in the browser's own serial port (Web Serial)
-there is no line on the board for it to use, and the button is not shown.
+to jump scroll. SHIFT-S in SET-UP saves the settings, as on the real terminal:
+the browser keeps them for the board, and every VT100 window it opens from
+then on starts with them. With the console in the browser's own serial port
+(Web Serial) there is no line on the board for it to use, and the button is not
+shown.
 
 Selecting text in the console copies it to the clipboard; **Ctrl+Shift+C**
 copies the selection again. Ctrl+C itself goes to the machine.
