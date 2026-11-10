@@ -69,6 +69,25 @@
     }
   });
 
+  // The emulated keyboard holds a key down from its keydown to its keyup, and
+  // the VT100 auto-repeats a held key. A keyup that goes to another window or
+  // element never reaches PCjs, so the keys still held are let go whenever
+  // the terminal loses the keyboard focus.
+  function releaseKeys() {
+    var vt = pcjs['machines']['vt100'];
+    var input = vt && vt['input'];
+    if (!input || !input['aActiveKeys']) return;
+    input['aActiveKeys'].slice().forEach(function (key) {
+      input['removeActiveKey'](key['keyNum']);
+    });
+  }
+  document.addEventListener('focusout', function (e) {
+    if (e.target && e.target.id === 'overlayVT100') releaseKeys();
+  }, true);
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) releaseKeys();
+  });
+
   function serialPort() {
     var vt = pcjs['machines']['vt100'];
     var dev = vt && vt['serialPort'];
